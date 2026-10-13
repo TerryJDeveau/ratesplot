@@ -894,7 +894,7 @@ def _controls() -> None:
     )
     buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch")
     st.session_state[_HINTS] = _field_hints()
-    for title, members in control_blocks():
+    for _key, title, members in control_blocks():
         if title:
             bar.subheader(title, divider="gray")
         else:

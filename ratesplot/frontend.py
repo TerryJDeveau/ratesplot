@@ -113,8 +113,8 @@ CONTROL_BLOCKS: tuple[tuple[str, str | None, tuple[str, ...]], ...] = (
 LIMIT_COLUMNS = (("max", "min"), ("top", "bottom"))
 
 
-def control_blocks() -> list[tuple[str | None, list[Option]]]:
-    """Return the control column's blocks in order: each title and its options (a nation's own left out).
+def control_blocks() -> list[tuple[str, str | None, list[Option]]]:
+    """Return the control column's blocks in order: each key, title and options (a nation's own left out).
 
     An option is in the block of its ``panel``, or of its help group. A
     group with no block of its own (an option added later) gets one after
@@ -122,17 +122,17 @@ def control_blocks() -> list[tuple[str | None, list[Option]]]:
     with no change here.
     """
     shown = [option for option in OPTIONS if option.in_gui and option not in NATION_OPTIONS]
-    blocks: list[tuple[str | None, list[Option]]] = []
+    blocks: list[tuple[str, str | None, list[Option]]] = []
     keys = [key for key, _title, _first in CONTROL_BLOCKS]
     for key, title, first in CONTROL_BLOCKS:
         members = [option for option in shown if (option.panel or option.group) == key]
         members.sort(key=lambda option: first.index(option.name) if option.name in first else len(first))
         if members:
-            blocks.append((title, members))
+            blocks.append((key, title, members))
     for group in GROUPS:
         members = [option for option in shown if (option.panel or option.group) == group and group not in keys]
         if members:
-            blocks.append((group_title(group), members))
+            blocks.append((group, group_title(group), members))
     return blocks
 
 

@@ -31,12 +31,15 @@ Controls
     as tick boxes, and its axis limits) are in a panel under its tab, keyed
     "NATION:OPTION". The controls scroll when the
     window is too short for them; Refresh and Save sit in a bar under them
-    that does not, so they are always in sight.
+    that does not, so they are always in sight. A handle between the
+    controls and the charts sets the column's width, remembered with the
+    window's; each block lays its controls out in as many columns as fit,
+    one to three (``_Flow``): two at the default width, one when narrow.
 
 Remembered settings
     The choices of the last successful drawing, the preview mode, the selected
-    tab, and the window's size and place (on any monitor, or across several)
-    and whether it is maximized are saved after every drawing and on closing,
+    tab, the window's size and place (on any monitor, or across several),
+    whether it is maximized, and the column's width are saved after every drawing and on closing,
     and restored at the next start: each command window has its own file,
     so several windows can be open at once (``frontend.state_path``); a
     first run in a new command window starts from the file written last. Options given on the command line override the remembered ones
@@ -179,6 +182,24 @@ _GEOMETRY_PATTERN = re.compile(r"^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$")
 # and drag it. Wherever that is: another monitor, across several.
 _TITLE_BAR_PX = 30
 _MIN_TITLE_ON_SCREEN_PX = 100
+# The column's handle (Terry, 2026-10-08: its width adjustable): the handle's
+# width, and the least the charts keep beside it.
+_SASH_PX = 6
+_MIN_CHARTS_PX = 300
+# The controls' frame's padding in the column.
+_PANEL_PAD_PX = 8
+# A block's controls in up to this many columns, this far apart (``_Flow``).
+_MAX_COLUMNS = 3
+_CELL_GAP_PX = 12
+# The blocks in two columns at the column's default width (Terry, 2026-10-08:
+# the nations, the yields, spreads, policy and mortgages, Start and End on one
+# line, the aspect tick beside the size boxes, the measure), and the
+# regression segments' row whole, its tolerance after the check box.
+_TWO_COLUMN_BLOCKS = ("country", "rates", "dates", "canvas", "units", "regression")
+# A date field's width in characters: room for YYYY-MM-DD.
+_DATE_ENTRY_CHARS = 11
+# The Preview's note wraps at the column's width, never narrower than this.
+_NOTE_WRAP_PX = 150
 # Terry's wording, 2026-10-08: "Drag pointer", "right/middle click", bars between.
 _ZOOM_HINT = "Drag pointer: zoom to box | right/middle click-drag: pan | wheel: zoom dates"
 
@@ -575,6 +596,119 @@ class _SizeEditor:
         self._remember_ratio()
 
 
+class _Flow:
+    """A block's controls in as many columns as fit, one to three, laid out again whenever the block's width changes.
+
+    Terry, 2026-10-08: the column's width adjustable, its controls in two
+    columns at the default width, in one when it is made narrow, in three
+    when it is made wide. Each control is a cell (``add``), placed row by
+    row; a cell added ``wide`` (a caption such as "By level") takes a row
+    of its own and starts a new run of cells. Each run is spread over as
+    few columns as give it as few rows as the most columns that fit would:
+    four boxes in two rows of two, not three and one; three in one row when
+    they fit. Each column is as wide as its widest cell, so the cells line
+    up from row to row.
+    """
+
+    def __init__(self, frame: ttk.Frame) -> None:
+        self.frame = frame
+        self.cells: list[tuple[tk.Widget, bool]] = []
+        self.columns = 0  # the most columns that fit, as last laid out
+
+    def add(self, cell: tk.Widget, wide: bool = False) -> None:
+        self.cells.append((cell, wide))
+
+    def most_columns(self) -> int:
+        """The most columns any run of cells can use (at most ``_MAX_COLUMNS``)."""
+        return max(1, min(_MAX_COLUMNS, max((len(run) for run in self._runs()), default=1)))
+
+    def _runs(self) -> list[list[tk.Widget]]:
+        """The runs of cells between the wide ones."""
+        runs: list[list[tk.Widget]] = [[]]
+        for cell, wide in self.cells:
+            if wide:
+                runs.append([])
+            else:
+                runs[-1].append(cell)
+        return [run for run in runs if run]
+
+    def _places(self, columns: int) -> list[tuple[tk.Widget, int, int, bool]]:
+        """Each cell's row and column with up to ``columns`` columns: (cell, row, column, wide)."""
+        places: list[tuple[tk.Widget, int, int, bool]] = []
+        row = 0
+        run: list[tk.Widget] = []
+
+        def place_run() -> None:
+            nonlocal row
+            if not run:
+                return
+            rows = -(-len(run) // columns)
+            across = min(n for n in range(1, columns + 1) if -(-len(run) // n) == rows)
+            for index, cell in enumerate(run):
+                places.append((cell, row + index // across, index % across, False))
+            row += rows
+            run.clear()
+
+        for cell, wide in self.cells:
+            if wide:
+                place_run()
+                places.append((cell, row, 0, True))
+                row += 1
+            else:
+                run.append(cell)
+        place_run()
+        return places
+
+    def width_for(self, columns: int) -> int:
+        """Return the width the cells need with up to ``columns`` columns (the block's padding and border not included)."""
+        widths: dict[int, int] = {}
+        wide = 0
+        for cell, _row, column, is_wide in self._places(columns):
+            if is_wide:
+                wide = max(wide, cell.winfo_reqwidth())
+            else:
+                widths[column] = max(widths.get(column, 0), cell.winfo_reqwidth())
+        return max(wide, sum(widths.values()) + _CELL_GAP_PX * max(0, len(widths) - 1))
+
+    def fit(self, width: int) -> None:
+        """Lay the cells out in the most columns that fit in a block ``width`` pixels wide (its frame's width)."""
+        inner = width - _block_overhead(self.frame)
+        fitting = [columns for columns in range(1, self.most_columns() + 1) if self.width_for(columns) <= inner]
+        self.arrange(max(fitting, default=1))
+
+    def arrange(self, columns: int) -> None:
+        if columns == self.columns:
+            return
+        self.columns = columns
+        places = self._places(columns)
+        used = max((column for _cell, _row, column, wide in places if not wide), default=0) + 1
+        for cell, row, column, wide in places:
+            if wide:
+                cell.grid(row=row, column=0, columnspan=used, sticky="w", pady=1, padx=0)
+            else:
+                cell.grid(row=row, column=column, columnspan=1, sticky="w", pady=1, padx=(0, _CELL_GAP_PX if column < used - 1 else 0))
+
+    def used_columns(self) -> int:
+        """How many columns the cells are in now."""
+        return max((int(cell.grid_info().get("column", 0)) + 1 for cell, wide in self.cells if not wide and cell.grid_info()), default=1)
+
+
+_overheads: dict[str, int] = {}
+
+
+def _block_overhead(frame: ttk.Frame) -> int:
+    """Return how much of a block's width its padding and border take, measured once per kind of frame."""
+    kind = frame.winfo_class()
+    if kind not in _overheads:
+        probe = type(frame)(frame.master, padding=frame.cget("padding"))
+        inner = tk.Frame(probe, width=100, height=1)
+        inner.pack()
+        probe.update_idletasks()
+        _overheads[kind] = probe.winfo_reqwidth() - 100
+        probe.destroy()
+    return _overheads[kind]
+
+
 def _tooltip_text(option: Option) -> str:
     """Return an option's group notes, its help text and its command-line spelling, one per line."""
     return "\n".join(option_help_lines(option))
@@ -684,6 +818,7 @@ class RatesPlotApp:
         self.status = tk.StringVar(value="Starting …")
 
         self._build_layout()
+        self._set_column_width(state.get("column_width"))
         self._load_choices(choices)
         for name, keep in state.get("keep_ratio", {}).items():
             if name in self.size_editors and isinstance(keep, bool):
@@ -699,21 +834,41 @@ class RatesPlotApp:
     # -- layout -------------------------------------------------------------
 
     def _build_layout(self) -> None:
-        self.root.columnconfigure(1, weight=1)
+        self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
 
-        panel, pinned = self._build_control_column()
+        # The control column and the charts side by side, with a handle
+        # between them that sets the column's width (Terry, 2026-10-08: "The
+        # ability to adjust the horizontal width of the main options pane").
+        # The width is remembered with the window's size (``_remember``).
+        background = ttk.Style(self.root).lookup("TFrame", "background") or None
+        self.paned = tk.PanedWindow(
+            self.root,
+            orient="horizontal",
+            sashwidth=_SASH_PX,
+            sashrelief="raised",
+            borderwidth=0,
+            background=background,
+            opaqueresize=True,
+        )
+        self.paned.grid(row=0, column=0, sticky="nsew")
+        self.column, panel, pinned = self._build_control_column(self.paned)
         self._build_option_controls(panel)
         self._build_actions(panel, pinned)
         self._build_log(panel)
 
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.grid(row=0, column=1, sticky="nsew", padx=(0, 8), pady=8)
+        charts = ttk.Frame(self.paned, padding=(2, 8, 8, 8))
+        charts.rowconfigure(0, weight=1)
+        charts.columnconfigure(0, weight=1)
+        self.notebook = ttk.Notebook(charts)
+        self.notebook.grid(row=0, column=0, sticky="nsew")
         for country in COUNTRIES:
             self._build_tab(country)
+        self.paned.add(self.column, stretch="never")
+        self.paned.add(charts, stretch="always", minsize=_MIN_CHARTS_PX)
 
         bar = ttk.Frame(self.root, padding=(8, 0, 8, 6))
-        bar.grid(row=1, column=0, columnspan=2, sticky="ew")
+        bar.grid(row=1, column=0, sticky="ew")
         bar.columnconfigure(1, weight=1)
         ttk.Label(bar, text="Command line:").grid(row=0, column=0, sticky="w")
         ttk.Entry(bar, textvariable=self.command, state="readonly").grid(row=0, column=1, sticky="ew", padx=4)
@@ -724,8 +879,8 @@ class RatesPlotApp:
         self.root.bind("<Control-s>", lambda _event: self._save_png())
         self.root.bind("<Alt-Left>", lambda _event: self._back())
 
-    def _build_control_column(self) -> tuple[ttk.Frame, ttk.Frame]:
-        """Return the frames the controls go in: a column that scrolls when the window is too short, and a bar below it.
+    def _build_control_column(self, master: tk.Widget) -> tuple[ttk.Frame, ttk.Frame, ttk.Frame]:
+        """Return the column, and the frames the controls go in: a part that scrolls when the window is too short, and a bar below it.
 
         On a laptop screen (a 972 px window) the controls filled the column
         exactly, with the log out of sight, and one more row would have hidden
@@ -737,25 +892,28 @@ class RatesPlotApp:
         The bar under it does not scroll: Refresh and Save go there, so they
         are always in sight however many controls there are (Terry,
         2026-10-06; batch 1 added a panel, and the buttons fell below the
-        fold at 1728x972).
+        fold at 1728x972). The column's width is the handle's (batch 7): the
+        controls' frame takes the canvas's width, and each block lays its
+        controls out to fit it (``_Flow``).
         """
-        outer = ttk.Frame(self.root)
-        outer.grid(row=0, column=0, sticky="nsew")
+        outer = ttk.Frame(master)
         outer.rowconfigure(0, weight=1)
+        outer.columnconfigure(0, weight=1)
         pinned = ttk.Frame(outer, padding=(8, 4, 8, 8))
         pinned.grid(row=1, column=0, columnspan=2, sticky="ew")
         background = ttk.Style(self.root).lookup("TFrame", "background") or None
-        canvas = tk.Canvas(outer, highlightthickness=0, borderwidth=0, background=background)
-        canvas.grid(row=0, column=0, sticky="ns")
+        # width=1: the canvas asks for no width of its own; the handle sets it.
+        canvas = tk.Canvas(outer, highlightthickness=0, borderwidth=0, background=background, width=1)
+        canvas.grid(row=0, column=0, sticky="nsew")
         scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scroll.set)
-        panel = ttk.Frame(canvas, padding=8)
+        panel = ttk.Frame(canvas, padding=_PANEL_PAD_PX)
         window = canvas.create_window(0, 0, window=panel, anchor="nw")
 
         def fit(_event=None) -> None:
-            width, needed = panel.winfo_reqwidth(), panel.winfo_reqheight()
+            width, needed = canvas.winfo_width(), panel.winfo_reqheight()
             height = max(needed, canvas.winfo_height())
-            canvas.configure(width=width, scrollregion=(0, 0, width, height))
+            canvas.configure(scrollregion=(0, 0, width, height))
             canvas.itemconfigure(window, width=width, height=height)
             if needed > canvas.winfo_height():
                 scroll.grid(row=0, column=1, sticky="ns")
@@ -780,22 +938,26 @@ class RatesPlotApp:
         canvas.bind("<Configure>", fit)
         panel.bind("<Configure>", fit)
         self.root.bind_all("<MouseWheel>", wheel, add="+")
-        return panel, pinned
+        self._scroll = scroll
+        return outer, panel, pinned
 
     def _build_option_controls(self, panel: ttk.Frame) -> None:
         """One frame per block of the column (``frontend.control_blocks``), one control per GUI option, all from the table.
 
         A block with no title (the regression segments; the line labels with
         the latest data) is a frame like the others, its border unlabelled.
+        Each control is a cell of its block's ``_Flow``, which puts the cells
+        in as many columns as the column's width allows.
         """
         style = ttk.Style(self.root)
         style.configure("Error.TLabel", foreground=_ERROR_FOREGROUND)
         style.configure("Error.TEntry", foreground=_ERROR_FOREGROUND)
 
-        for title, members in control_blocks():
+        self.flows: list[tuple[str, _Flow]] = []
+        for key, title, members in control_blocks():
             frame = ttk.LabelFrame(panel, text=title or "", padding=(8, 4))
             frame.pack(fill="x", pady=(0, 6))
-            frame.columnconfigure(1, weight=1)
+            flow = _Flow(frame)
             # A value that belongs to a flag (the regression tolerance) goes on
             # the flag's own row, which keeps the column short; tick boxes for
             # a flag's list (mortgage terms, spreads) go on the rows under it.
@@ -816,41 +978,57 @@ class RatesPlotApp:
                 rows.append(option)
                 if option.name in under:
                     rows.append(under[option.name])
-            for row, option in enumerate(rows):
+            for option in rows:
+                cell = ttk.Frame(frame)
                 if option.kind is Kind.VALUE and option.editor == "choices":
-                    self._add_choices_control(frame, row, option)
+                    self._add_choices_control(cell, 0, option)
+                    flow.add(cell, wide=True)
                 elif option.kind is Kind.VALUE and option.editor == "size":
-                    self._add_size_control(frame, row, option)
+                    flow.add(cell)
+                    flow.add(self._add_size_control(cell, frame, option))
                 elif option.kind is Kind.VALUE and option.editor == "levels":
-                    self._add_levels_control(frame, row, option)
+                    # "By level" over its boxes, which line up with the curves' (Terry, 2026-10-08).
+                    caption, boxes = self._add_levels_control(frame, option)
+                    flow.add(caption, wide=True)
+                    for box in boxes:
+                        flow.add(box)
                 elif option.kind is Kind.VALUE:
-                    self._add_value_control(frame, row, option)
+                    self._add_value_control(cell, 0, option, entry_width=_DATE_ENTRY_CHARS if option.editor == "date" else 16)
+                    flow.add(cell)
                 else:
-                    self._add_flag_control(frame, row, option, attached.get(option.name))
+                    value = attached.get(option.name)
+                    field = ttk.Frame(frame) if value is not None else None
+                    self._add_flag_control(cell, 0, option, value, field)
+                    flow.add(cell)
+                    if field is not None:
+                        flow.add(field)
+            frame.bind("<Configure>", lambda event, flow=flow: flow.fit(event.width), add="+")
+            self.flows.append((key, flow))
 
-    def _add_flag_control(self, frame: ttk.LabelFrame, row: int, option: Option, value: Option | None = None) -> None:
-        """A check box; with ``value``, that option's field on the same row, after it.
+    def _add_flag_control(
+        self, cell: ttk.Frame, row: int, option: Option, value: Option | None = None, field: ttk.Frame | None = None
+    ) -> None:
+        """A check box in ``cell``; with ``value``, that option's text field in ``field``, the cell after it.
 
         The regression tolerance reads as one phrase with its box (Terry,
         2026-10-08: the box between the words): "Regression segments,
         tolerance [1] % of axis". Its label, "tolerance, % of axis", stays
         whole in messages and on the page, where a box cannot sit inside a
-        caption; here the box goes where its comma was.
+        caption; here the box goes where its comma was. The field is a cell
+        of its own, so it goes under the check box when the column is narrow.
         """
         variable = tk.BooleanVar(value=False)
         self.flag_vars[option.name] = variable
         box = ttk.Checkbutton(
-            frame,
+            cell,
             text=option.label if value is None else f"{option.label},",
             variable=variable,
             command=lambda name=option.name: self._flag_changed(name),
         )
-        box.grid(row=row, column=0, columnspan=3 if value is None else 1, sticky="w")
+        box.grid(row=row, column=0, sticky="w")
         self.flag_boxes[option.name] = box
         _Tooltip(box, _tooltip_text(option))
-        if value is not None:
-            field = ttk.Frame(frame)
-            field.grid(row=row, column=1, columnspan=2, sticky="w")
+        if value is not None and field is not None:
             before, _comma, after = value.label.partition(", ")
             # No padding: the row stays as tall as a check box.
             self._add_value_control(field, 0, value, entry_width=5, pady=0, text=before, after=after)
@@ -895,28 +1073,28 @@ class RatesPlotApp:
             button.grid(row=row, column=2, padx=(2, 0), pady=1)
             _Tooltip(button, "Pick a date from a calendar")
 
-    def _add_levels_control(self, frame: ttk.LabelFrame, row: int, option: Option) -> None:
-        """One check box per level of government, writing the option's letters ("fp" …).
+    def _add_levels_control(self, frame: ttk.Frame, option: Option) -> tuple[ttk.Label, list[ttk.Checkbutton]]:
+        """One check box per level of government, writing the option's letters ("fp" …): return its caption and its boxes.
 
         Ticking none gives the aggregate lines. The one control serves debt and
         interest alike (``--debt:`` and ``--interest:`` take the same letters).
+        The caption and each box are cells of the block (``_Flow``).
         """
         payload = tk.StringVar()
         self.payload_vars[option.name] = payload
         label = ttk.Label(frame, text=option.label)
-        label.grid(row=row, column=0, sticky="nw", padx=(0, 6), pady=(3, 1))
         self.value_labels[option.name] = label
         editor = _LevelsEditor(payload, on_change=self.request_redraw)
         self.level_editors[option.name] = editor
-        box = ttk.Frame(frame)
-        box.grid(row=row, column=1, columnspan=2, sticky="w", pady=1)
         tip = _tooltip_text(option) + "\nNone ticked = debt and interest in total."
-        for index, (letter, text) in enumerate(LEVEL_BOXES):
-            check = ttk.Checkbutton(box, text=text, variable=editor.boxes[letter], command=editor.box_changed)
-            check.grid(row=index // 2, column=index % 2, sticky="w", padx=(0, 8))
+        boxes = []
+        for letter, text in LEVEL_BOXES:
+            check = ttk.Checkbutton(frame, text=text, variable=editor.boxes[letter], command=editor.box_changed)
             editor.widgets.append(check)
             _Tooltip(check, tip)
+            boxes.append(check)
         _Tooltip(label, tip)
+        return label, boxes
 
     def _add_choices_control(self, frame: ttk.LabelFrame, row: int, option: Option, nation: Nation | None = None) -> None:
         """A list option as tick boxes (``Option.choices``), one row of boxes per row offered.
@@ -950,8 +1128,8 @@ class RatesPlotApp:
             editor.add_row(caption, boxes)
         self.choice_editors[key] = editor
 
-    def _add_size_control(self, frame: ttk.LabelFrame, row: int, option: Option) -> None:
-        """Width and height boxes, "x" between them, and a "Preserve aspect ratio" lock.
+    def _add_size_control(self, cell: ttk.Frame, frame: ttk.Frame, option: Option) -> ttk.Checkbutton:
+        """Width and height boxes, "x" between them, in ``cell``; return the "Preserve aspect ratio" lock, made in ``frame``.
 
         The option's own text variable (``WxH``, the command-line form) stays
         the single source of truth for drawing, the command line, Back/Unzoom
@@ -960,15 +1138,18 @@ class RatesPlotApp:
         the ratio the pair had when the lock was last set (or the pair was
         loaded); with it off, each box changes alone. A blank box with the
         other filled keeps the command line's meaning: 4:3 from the one given.
+        The lock is a cell of its own in the block, so it stands beside the
+        boxes when the column is wide enough and under them when it is not
+        (Terry, 2026-10-08).
         """
         payload = tk.StringVar()
         self.payload_vars[option.name] = payload
-        label = ttk.Label(frame, text=option.label)
-        label.grid(row=row, column=0, sticky="nw", padx=(0, 6), pady=(3, 1))
+        label = ttk.Label(cell, text=option.label)
+        label.grid(row=0, column=0, sticky="w", padx=(0, 6), pady=1)
         self.value_labels[option.name] = label
 
-        box = ttk.Frame(frame)
-        box.grid(row=row, column=1, columnspan=2, sticky="w", pady=1)
+        box = ttk.Frame(cell)
+        box.grid(row=0, column=1, sticky="w", pady=1)
         editor = _SizeEditor(payload, keep_ratio=True)
         self.size_editors[option.name] = editor
         width_entry = ttk.Entry(box, textvariable=editor.width, width=7, justify="right")
@@ -977,8 +1158,7 @@ class RatesPlotApp:
         height_entry = ttk.Entry(box, textvariable=editor.height, width=7, justify="right")
         height_entry.grid(row=0, column=2)
         ttk.Label(box, text=" px").grid(row=0, column=3)
-        lock = ttk.Checkbutton(box, text="Preserve aspect ratio", variable=editor.keep_ratio, command=editor.lock_changed)
-        lock.grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 0))
+        lock = ttk.Checkbutton(frame, text="Preserve aspect ratio", variable=editor.keep_ratio, command=editor.lock_changed)
 
         payload.trace_add("write", lambda *_args: self._text_changed(option.name))
         self.size_entries[option.name] = (width_entry, height_entry)
@@ -994,11 +1174,44 @@ class RatesPlotApp:
         ):
             self.size_hints.append(_Hint(entry, variable, tip, str(pixels)))
         _Tooltip(lock, "When ticked, changing one box changes the other to keep the current shape.")
+        return lock
+
+    def _set_column_width(self, remembered: object) -> None:
+        """Give the column its remembered width, or the default; and the narrowest the handle lets it be.
+
+        The default is wide enough for two columns in the blocks Terry named
+        on 2026-10-08 (the nations, the four rates, Start and End, the size
+        with its lock, the measure: ``_TWO_COLUMN_BLOCKS``), and never
+        narrower than the narrowest. The narrowest is what every block needs
+        in one column, the Preview panel and the Refresh and Save bar; the
+        handle stops there, and the charts keep at least ``_MIN_CHARTS_PX``.
+        A remembered width outside those bounds (another screen) is not used.
+        """
+        # The Preview's note at its narrowest wrap: it widens with the column
+        # (``_build_actions``), and its width then is no measure of the least.
+        self._zoom_note.configure(wraplength=_NOTE_WRAP_PX)
+        self.root.update_idletasks()
+        around = 2 * _PANEL_PAD_PX + self._scroll.winfo_reqwidth()  # the panel's padding, and room for its scroll bar
+        one = [flow.width_for(1) + _block_overhead(flow.frame) for _key, flow in self.flows]
+        two = [flow.width_for(2) + _block_overhead(flow.frame) for key, flow in self.flows if key in _TWO_COLUMN_BLOCKS]
+        narrowest = max(max(one) + around, self._preview.winfo_reqwidth() + around, self._pinned.winfo_reqwidth())
+        default = max([narrowest, *(width + around for width in two)])
+        widest = self.root.winfo_screenwidth() - _MIN_CHARTS_PX
+        width = remembered if isinstance(remembered, int) and narrowest <= remembered <= widest else default
+        self._column_width = width
+        self.paned.paneconfigure(self.column, minsize=narrowest, width=width)
+
+    def _current_column_width(self) -> int:
+        """The column's width now (the handle's place), or the one it was given while the window is not shown."""
+        if self.paned.winfo_ismapped():
+            self._column_width = self.paned.sash_coord(0)[0]
+        return self._column_width
 
     def _build_actions(self, panel: ttk.Frame, pinned: ttk.Frame) -> None:
         """The Preview panel and the Reset button in the column; Refresh and Save in the ``pinned`` bar."""
         preview = ttk.LabelFrame(panel, text="Preview", padding=(8, 4))
         preview.pack(fill="x", pady=(0, 6))
+        self._preview, self._pinned = preview, pinned
         preview.columnconfigure((0, 1), weight=1)
         for column, (value, text) in enumerate((("fit", "Fit to window"), ("actual", "Actual size"))):
             ttk.Radiobutton(preview, text=text, value=value, variable=self.zoom, command=self._refresh_all_views).grid(
@@ -1008,9 +1221,11 @@ class RatesPlotApp:
         self.back_button.grid(row=1, column=0, sticky="ew", padx=1, pady=1)
         self.unzoom_button = ttk.Button(preview, text="Unzoom", command=self._unzoom)
         self.unzoom_button.grid(row=1, column=1, sticky="ew", padx=1, pady=1)
-        ttk.Label(preview, text=_ZOOM_HINT, wraplength=300, foreground="#555555").grid(
-            row=2, column=0, columnspan=2, sticky="w", pady=(2, 0)
-        )
+        hint = ttk.Label(preview, text=_ZOOM_HINT, wraplength=_NOTE_WRAP_PX, foreground="#555555")
+        hint.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        # The note wraps to the column's width, whatever the handle makes it.
+        preview.bind("<Configure>", lambda event: hint.configure(wraplength=max(_NOTE_WRAP_PX, event.width - 24)), add="+")
+        self._zoom_note = hint
 
         for frame, actions in (
             (pinned, (("Refresh (F5)", self._refresh), ("Save PNG… (Ctrl+S)", self._save_png))),
@@ -1025,7 +1240,7 @@ class RatesPlotApp:
     def _build_log(self, panel: ttk.Frame) -> None:
         frame = ttk.LabelFrame(panel, text="Message log", padding=4)
         frame.pack(fill="both", expand=True)
-        self.log = tk.Text(frame, width=44, height=8, wrap="word", state="disabled", font=("Consolas", 9))
+        self.log = tk.Text(frame, width=24, height=8, wrap="word", state="disabled", font=("Consolas", 9))
         scroll = ttk.Scrollbar(frame, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         self.log.pack(side="left", fill="both", expand=True)
@@ -1676,6 +1891,7 @@ class RatesPlotApp:
                 # The size and place before maximizing, and whether it is maximized.
                 "geometry": self._normal_geometry or self.root.geometry(),
                 "maximized": self._maximized,
+                "column_width": self._current_column_width(),
                 "keep_ratio": {name: editor.keep_ratio.get() for name, editor in self.size_editors.items()},
             }
         )
