@@ -72,7 +72,7 @@ from .config import (
     component_column,
 )
 from .de_archive_data import EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY
-from .http import de_get, downloads_of
+from .http import BotCheck, de_get, downloads_of
 from .joins import embedded_frame, ttm_sum
 
 # Chart column -> the Bundesbank's code of that residual maturity in the
@@ -369,11 +369,24 @@ def fetch_de_yields(config: PlotConfig) -> pd.DataFrame:
 
     columns: dict[str, pd.Series] = {}
     history_through: dict[str, pd.Timestamp] = {}
+    checked = False  # the Bundesbank sent a bot check: no more requests
     for column in chosen:
         parts: dict[str, pd.Series] = {}
         for frequency, name in (("M", "end-of-month"), ("D", "daily")):
+            if checked:
+                parts[frequency] = _NO_VALUES
+                continue
             try:
                 parts[frequency] = _term_structure(column, frequency)
+            except BotCheck as exc:
+                # Every other request meets the same check: one warning that
+                # names it (Terry's VPN, 2026-10-08), not one per term.
+                print(
+                    f"  Warning: the Bundesbank ({exc.host}) sent a bot check instead of data; a VPN can "
+                    "cause this. No German yield downloaded: only the built-in history is drawn."
+                )
+                checked = True
+                parts[frequency] = _NO_VALUES
             except Exception as exc:
                 print(f"  Warning: Bundesbank {column} yield, {name} ({DE_YIELD_SERIES[column]}) unavailable ({exc}); drawn without it.")
                 parts[frequency] = _NO_VALUES

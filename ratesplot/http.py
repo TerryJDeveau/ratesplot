@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Iterator, TypeVar
+from urllib.parse import urlsplit
 
 import pandas as pd
 import requests
@@ -212,6 +213,25 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     return result
 
 
+class BotCheck(RuntimeError):
+    """A source answered with a bot check (a "challenge" page) instead of data. Never retried.
+
+    The Bundesbank's API sent one to every request from Buddug, which goes
+    out through a VPN (2026-10-08 and 2026-10-13): a 303 to
+    ``/.enodia/challenge?redirect=...``, then a page of its own or a 400.
+    Asking again does not get past it, and the fix is on the machine's
+    side (the VPN's split tunnelling), never in the request's headers.
+    """
+
+    def __init__(self, host: str) -> None:
+        super().__init__(f"{host} sent a bot check instead of data; a VPN can cause this")
+        self.host = host
+
+
+# Where a bot check sends a request (the Bundesbank's, measured 2026-10-08).
+_BOT_CHECK_PATHS = ("/.enodia/challenge",)
+
+
 def _with_retries(
     describe: str,
     attempt_once: Callable[[], T],
@@ -258,6 +278,9 @@ def _session_get(
 
     def attempt() -> requests.Response | None:
         response = session.get(url, params=params, timeout=timeout)
+        # Before the status: the check's own page may be a 400, which would be retried.
+        if any(path in response.url for path in _BOT_CHECK_PATHS):
+            raise BotCheck(urlsplit(url).netloc)
         if missing_ok and response.status_code == 404:
             return None
         response.raise_for_status()
