@@ -86,6 +86,9 @@ _AXES_GAP_BELOW_SUBTITLE_PX = 10.0
 # The title may use at most this fraction of the figure width before it is
 # shrunk further than font_scale alone would make it.
 _TITLE_MAX_WIDTH_FRACTION = 0.98
+# Each shrink of a title still too wide takes at least this much off its
+# size, so the fitting loop always reaches the next smaller pixel size.
+_TITLE_MIN_SHRINK = 0.99
 
 
 # ---------------------------------------------------------------------------
@@ -337,11 +340,18 @@ def finish_legend_and_title(
 
     # Scaling keeps the title's share of the width, but at MIN_FONT_SCALE (or
     # with a long composed title on a narrow canvas) it can still overflow;
-    # shrink it to fit rather than let both ends fall off the figure.
-    title_width = title_artist.get_window_extent(figure.canvas.get_renderer()).width
+    # shrink it to fit rather than let both ends fall off the figure. Agg
+    # draws text at whole-pixel font sizes, so the width moves in steps of
+    # about 5 %, not in proportion to the size: one proportional shrink can
+    # land on a step that is still too wide (Terry's German title of
+    # 2026-10-12: 13.38 pt measured as wide as 14 pt, 1848 px on an 1830 px
+    # canvas). So measure again after each shrink, and shrink at least 1 %
+    # a time, until it fits.
     max_width = _TITLE_MAX_WIDTH_FRACTION * figure.bbox.width
-    if title_width > max_width:
-        title_artist.set_fontsize(title_artist.get_fontsize() * max_width / title_width)
+    title_width = title_artist.get_window_extent(figure.canvas.get_renderer()).width
+    while title_width > max_width:
+        title_artist.set_fontsize(title_artist.get_fontsize() * min(max_width / title_width, _TITLE_MIN_SHRINK))
+        title_width = title_artist.get_window_extent(figure.canvas.get_renderer()).width
 
     # The subtitle follows the title's actual size, so a shrunken title does
     # not leave a gap above the date range.
