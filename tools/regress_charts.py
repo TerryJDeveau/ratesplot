@@ -202,6 +202,9 @@ CASES: dict[str, list[str]] = {
     "de_reg1995": ["--na:de", "--reg", "-s:1995"],
     "all4": ["--na:ca,us,gb,de", "-s:2010"],
     "de_nat": ["--na:de", "--ger:y:10,30", "--ger:max:6", "--ger:top:4t", "--ger:sp:30-2", "-s:2005"],
+    # Batch 6: the U.S. 20-year was not published 1987-1993, a gap in its line
+    # (drawn flat at its last value until 2026-10-13; tools/check_drawn_values.py).
+    "u_20y_gap": ["-u", "-s:1984", "--e:1996", "--y:2,10,20,30", "--policy"],
 }
 
 

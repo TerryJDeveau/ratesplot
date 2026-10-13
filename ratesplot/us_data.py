@@ -62,6 +62,14 @@ US_YIELD_EARLIEST = {
     "30-Year": pd.Timestamp("1977-02-15"),
 }
 
+# FRED's daily yields have a row for every business day, empty on holidays,
+# and the outer join of the terms adds each other's dates. A fill of this many
+# rows bridges a holiday or a missing print, as Canada's does (cdn_data); a
+# longer gap stays a gap. Filled without a limit until 2026-10-13, the 20-year
+# was drawn flat at 7.39 % from 1987 to 1993, years in which it was not
+# published (found by tools/check_drawn_values.py).
+_US_YIELD_FILL_ROWS = 3
+
 # First observation of each U.S. input other than the yields, used to warn
 # when ``--start`` is earlier (``us_series_earliest`` adds the chosen yields).
 US_SERIES_EARLIEST = {
@@ -111,7 +119,9 @@ def fetch_us_yields(config: PlotConfig) -> pd.DataFrame:
 
     The columns are those drawn and those the spreads are taken from
     (``config.fetched_yield_columns``). Series are outer-joined on date and
-    forward-filled so holidays in one tenor do not create gaps in the others.
+    forward-filled over a few rows (``_US_YIELD_FILL_ROWS``) so holidays in
+    one tenor do not create gaps in the others; a longer gap in a source is
+    left a gap, drawn as a break in its line.
     """
     if not config.fetched_yield_columns:
         return pd.DataFrame()
@@ -120,7 +130,7 @@ def fetch_us_yields(config: PlotConfig) -> pd.DataFrame:
         fetch_fred_csv(US_YIELD_SERIES[label]).set_index(DATE_COLUMN).rename(columns={US_YIELD_SERIES[label]: label})
         for label in config.fetched_yield_columns
     ]
-    data = pd.concat(frames, axis=1).sort_index().ffill().reset_index()
+    data = pd.concat(frames, axis=1).sort_index().ffill(limit=_US_YIELD_FILL_ROWS).reset_index()
     return data.loc[data[DATE_COLUMN] >= config.start]
 
 
