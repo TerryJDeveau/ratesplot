@@ -19,7 +19,8 @@ may not have it) and the two cannot drift apart:
   the field texts a zoom to a box, a pan or a change of the dates' scale
   gives (``zoom_updates``, ``pan_updates``, ``scale_dates_updates``). The
   window's mouse and the web page's drag use the same rules; the page's
-  buttons move the dates by ``move_dates_updates``.
+  buttons move the dates by ``move_dates_updates``;
+* what a blank field shows in grey: the value in effect (``field_hints``).
 """
 
 from __future__ import annotations
@@ -40,7 +41,16 @@ import matplotlib.dates as mdates
 import pandas as pd
 from matplotlib.figure import Figure
 
-from .config import COMPONENT_SYNONYMS, EARLIEST_DATA_START, MIN_CANVAS_PX, MIN_WINDOW_DAYS, NATIONS, Nation, PlotConfig
+from .config import (
+    COMPONENT_SYNONYMS,
+    DEFAULT_REGRESSION_TOLERANCE_PCT,
+    EARLIEST_DATA_START,
+    MIN_CANVAS_PX,
+    MIN_WINDOW_DAYS,
+    NATIONS,
+    Nation,
+    PlotConfig,
+)
 from .options import (
     GROUPS,
     GROUPS_CHOSEN_TOGETHER,
@@ -714,6 +724,36 @@ def axis_updates(geometry: ChartGeometry, config: PlotConfig | None, top_y: floa
             bound_text = _format_relative if config.relative else _format_dollars
             updates.update({"bottom": bound_text(low), "top": bound_text(high)})
     return updates
+
+
+def field_hints(drawn: PlotConfig | None, geometries: Mapping[str, ChartGeometry | None]) -> dict[str, str]:
+    """Return what each field shows in grey while it is blank: the value in effect, by key.
+
+    Terry, 2026-10-08 (decision 18): a blank field shows its default or
+    automatic value in grey, a typed value in black. The regression
+    tolerance's default always; once charts are drawn (``drawn``, with the
+    start found), the dates they were drawn for (the automatic start, today's
+    end) and the axis limits of each chart drawn (``geometries``, by nation),
+    as ``"us:max"`` and so on, written as the field would take them (the
+    zoom's formats, ``axis_updates``, for the whole axis). A grey value is
+    never a field's text: the field stays blank, so it is left off the
+    command line and the automatic values keep following the dates and the
+    curves. The front ends show a hint only while the field is blank and not
+    greyed.
+    """
+    hints = {"regression-tolerance": f"{DEFAULT_REGRESSION_TOLERANCE_PCT:g}"}
+    if drawn is None:
+        return hints
+    hints["start"] = f"{drawn.start:%Y-%m-%d}"
+    hints["end"] = f"{drawn.end:%Y-%m-%d}"
+    for nation in NATIONS:
+        geometry = geometries.get(nation.key)
+        if geometry is None:
+            continue
+        _left, top, _right, bottom = geometry.box
+        texts = axis_updates(geometry, drawn.for_nation(nation.key), top, bottom)
+        hints.update({nation_choice(nation, by_name(name)): text for name, text in texts.items()})
+    return hints
 
 
 def zoom_updates(

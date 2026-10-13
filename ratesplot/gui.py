@@ -20,7 +20,10 @@ Controls
     is greyed out too, its tick or text kept (``frontend.idle_controls``):
     % of GDP and By level without debt or interest; Per capita, Regression
     segments and each chart's Top and Bottom without debt, GDP or interest.
-    A greyed field's text is ignored and left off the command line. Each nation's own choices
+    A greyed field's text is ignored and left off the command line. A blank
+    text field shows the value in effect in grey (``frontend.field_hints``):
+    the automatic start, the end, the tolerance's default, each chart's axis
+    limits as drawn; it is never written in (``_Hint``). Each nation's own choices
     (``frontend.NATION_OPTIONS``: its yield terms, spreads and mortgage terms
     as tick boxes, and its axis limits) are in a panel under its tab, keyed
     "NATION:OPTION". The controls scroll when the
@@ -111,6 +114,7 @@ from .frontend import (
     choice_values,
     choices_text,
     drawn_payloads,
+    field_hints,
     field_problems,
     idle_controls,
     level_letters,
@@ -164,6 +168,9 @@ _DEFAULT_PREVIEW = "fit"
 # Initial window size as a fraction of the screen (when nothing is remembered).
 _SCREEN_FRACTION = 0.9
 _ERROR_FOREGROUND = "#b00020"
+# A blank field's grey value (``_Hint``), on the field's own background.
+_HINT_FOREGROUND = "#8c8c8c"
+_FIELD_BACKGROUND = "SystemWindow" if sys.platform == "win32" else "white"
 _GEOMETRY_PATTERN = re.compile(r"^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$")
 # A remembered window is put back where it was if this much of its title bar
 # (the band this tall below its top edge) is on a monitor: enough to grab
@@ -205,6 +212,60 @@ class _Tooltip:
         if self.window is not None:
             self.window.destroy()
             self.window = None
+
+
+class _Hint:
+    """Grey text over a blank text field: the value in effect while it is blank.
+
+    Terry, 2026-10-08 (decision 18): a blank field shows its default or
+    automatic value in grey, a typed value in black (``frontend.field_hints``).
+    A Tk entry has no placeholder, so the grey text is a label laid over the
+    entry, never the entry's text: the field's variable stays empty, so the
+    command line, the remembered settings and Back see a blank field, which
+    keeps meaning "default" or "automatic". It is shown while the field is
+    empty and not greyed, from the place typed text starts, two pixels to the
+    right so the cursor stays visible; typing hides it, clearing the field
+    brings it back, and a click on it puts the cursor in the field.
+    """
+
+    def __init__(self, entry: ttk.Entry, variable: tk.StringVar, tip: str, text: str = "") -> None:
+        self.entry = entry
+        self.variable = variable
+        self.text = text
+        self.label = tk.Label(
+            entry,
+            text=text,
+            foreground=_HINT_FOREGROUND,
+            background=_FIELD_BACKGROUND,
+            font="TkTextFont",
+            borderwidth=0,
+            padx=0,
+            pady=0,
+            cursor="xterm",
+        )
+        self.label.bind("<Button-1>", self._click)
+        _Tooltip(self.label, tip)
+        variable.trace_add("write", lambda *_args: self.update())
+        entry.bind("<Configure>", lambda _event: self.update(), add="+")
+
+    def set(self, text: str) -> None:
+        self.text = text
+        self.update()
+
+    def update(self) -> None:
+        if self.text and not self.variable.get() and not self.entry.instate(["disabled"]):
+            self.label.configure(text=self.text)
+            try:
+                left = self.entry.bbox(0)[0]  # where typed text starts (the insertion point of an empty field)
+            except (tk.TclError, IndexError):
+                left = 3
+            self.label.place(x=left + 2, rely=0.5, anchor="w")
+        else:
+            self.label.place_forget()
+
+    def _click(self, _event: tk.Event) -> None:
+        self.entry.focus_set()
+        self.entry.icursor("end")
 
 
 class DatePicker:
@@ -576,6 +637,9 @@ class RatesPlotApp:
         self.size_entries: dict[str, tuple[ttk.Entry, ttk.Entry]] = {}  # the width and height boxes
         self.level_editors: dict[str, _LevelsEditor] = {}
         self.choice_editors: dict[str, _ChoicesEditor] = {}
+        # The grey values of the text fields (keyed as payload_vars), and of the size boxes.
+        self.hints: dict[str, _Hint] = {}
+        self.size_hints: list[_Hint] = []
 
         # Per-country preview state, keyed by Country.key.
         self.tabs: dict[str, ttk.Frame] = {}
@@ -796,8 +860,10 @@ class RatesPlotApp:
         variable.trace_add("write", lambda *_args: self._text_changed(key))
         self.value_labels[key] = label
         self.value_entries[key] = entry
+        tip = _tooltip_text(option) + "\nBlank = default (shown in grey)."
         for widget in (label, entry):
-            _Tooltip(widget, _tooltip_text(option) + "\nBlank = default.")
+            _Tooltip(widget, tip)
+        self.hints[key] = _Hint(entry, variable, tip)
         if option.editor == "date":
             button = ttk.Button(
                 frame, text="📅", width=3,
@@ -895,9 +961,15 @@ class RatesPlotApp:
         self.size_entries[option.name] = (width_entry, height_entry)
         for entry in (width_entry, height_entry):
             entry.bind("<Return>", lambda _event: self.request_redraw())
-        tip = _tooltip_text(option) + "\nWidth x height in pixels. Blank = default."
+        tip = _tooltip_text(option) + "\nWidth x height in pixels. Blank = default (shown in grey)."
         for widget in (label, width_entry, height_entry):
             _Tooltip(widget, tip)
+        default = PlotConfig()
+        for entry, variable, pixels in (
+            (width_entry, editor.width, default.width_px),
+            (height_entry, editor.height, default.height_px),
+        ):
+            self.size_hints.append(_Hint(entry, variable, tip, str(pixels)))
         _Tooltip(lock, "When ticked, changing one box changes the other to keep the current shape.")
 
     def _build_actions(self, panel: ttk.Frame, pinned: ttk.Frame) -> None:
@@ -1080,6 +1152,17 @@ class RatesPlotApp:
                 self.choice_editors[key].set_state(state)
             if key in self.level_editors:
                 self.level_editors[key].set_state(state)
+        # A greyed field shows no grey value; one no longer greyed shows it again.
+        for hint in (*self.hints.values(), *self.size_hints):
+            hint.update()
+
+    def _show_hints(self) -> None:
+        """Give each blank field the value in effect, from the charts on screen (``frontend.field_hints``)."""
+        drawn = self.drawn_config
+        keys = [country.key for country in COUNTRIES if drawn is not None and getattr(drawn, country.show_field)]
+        hints = field_hints(drawn, {key: self.geometry.get(key) for key in keys})
+        for key, hint in self.hints.items():
+            hint.set(hints.get(key, ""))
 
     def _text_changed(self, key: str) -> None:
         if self._loading:
@@ -1225,6 +1308,7 @@ class RatesPlotApp:
             drawn = [TAB_TITLES.get(c.key, c.key) for c in COUNTRIES if getattr(config, c.show_field)]
             names = drawn[0] if len(drawn) == 1 else f"{', '.join(drawn[:-1])} and {drawn[-1]}"
             self.status.set(f"Drawn: {names} at {config.width_px} x {config.height_px} px.")
+            self._show_hints()
             self._remember()
         else:
             self.status.set(f"Drawing failed: {error} (details in the message log)")

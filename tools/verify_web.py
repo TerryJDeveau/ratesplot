@@ -200,13 +200,19 @@ def png_size_bytes(width: int, height: int) -> bytes:
     return width.to_bytes(4, "big") + height.to_bytes(4, "big")
 
 
-def _is_automatic_date(placeholder: str) -> bool:
-    """``automatic: YYYY-MM-DD``, any date (the year follows config.DEFAULT_START_FLOOR)."""
-    prefix = "automatic: "
-    if not placeholder.startswith(prefix):
-        return False
+def _is_date(placeholder: str) -> bool:
+    """``YYYY-MM-DD``, any date (the automatic start's year follows config.DEFAULT_START_FLOOR)."""
     try:
-        datetime.date.fromisoformat(placeholder.removeprefix(prefix))
+        datetime.date.fromisoformat(placeholder)
+    except ValueError:
+        return False
+    return True
+
+
+def _is_number(placeholder: str, suffixes: str = "") -> bool:
+    """A number as the zoom writes it, with one of ``suffixes`` allowed at its end ("2.85t", "176%")."""
+    try:
+        float(placeholder.rstrip(suffixes) if suffixes else placeholder)
     except ValueError:
         return False
     return True
@@ -224,8 +230,24 @@ def check_address_and_rules(check: Check) -> None:
     check("address kept", address(at) == "--C --relative --regression --end:2026-09-01", address(at))
     code = [c.value for c in at.code]
     check("command line shown", any(v.startswith("python ratesplot.py --C --relative") for v in code), code[:1])
+    # Blank fields show the value in effect in grey (Terry, 2026-10-08, decision 18).
     placeholder = at.text_input(key="value:start").placeholder
-    check("start placeholder shows the date found", _is_automatic_date(placeholder), placeholder)
+    check("start placeholder: the date found", _is_date(placeholder), placeholder)
+    placeholder = at.text_input(key="value:end").placeholder
+    check("end placeholder: the date drawn to", placeholder == "2026-09-01", placeholder)
+    placeholder = at.text_input(key="value:regression-tolerance").placeholder
+    check("tolerance placeholder: the default", placeholder == "1", placeholder)
+    limits = {name: at.text_input(key=f"value:cdn:{name}").placeholder for name in ("min", "max", "top", "bottom")}
+    check(
+        "Canada's limits as drawn (yields in percent, -r in % of GDP)",
+        all(_is_number(limits[name]) for name in ("min", "max"))
+        and all(limits[name].endswith("%") and _is_number(limits[name], "%") for name in ("top", "bottom"))
+        and float(limits["min"]) < float(limits["max"])
+        and float(limits["bottom"].rstrip("%")) < float(limits["top"].rstrip("%")),
+        limits,
+    )
+    placeholder = at.text_input(key="value:us:max").placeholder
+    check("a chart not drawn: no value of its own", placeholder == "automatic", placeholder)
 
     # One measure at a time; changing it clears Top and Bottom.
     at.text_input(key="value:cdn:top").input("200%")

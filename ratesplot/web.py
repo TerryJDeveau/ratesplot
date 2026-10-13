@@ -19,8 +19,10 @@ What it is
     spreads and mortgage terms, only those its chart can draw, and its axis
     limits) in a sidebar section of its own; a value
     that belongs to a flag (the regression tolerance) greyed while the flag
-    is off, and ignored then. A new option in the table appears here with no
-    change to this module.
+    is off, and ignored then; a blank text field showing the value in effect
+    in grey, as its placeholder (``frontend.field_hints``: the start found,
+    the end, the tolerance's default, each chart's axis limits as drawn). A
+    new option in the table appears here with no change to this module.
 
 The chart's address
     The page's address carries the chart's command line: ``?chart=-c+-r+--reg``
@@ -123,6 +125,7 @@ from .frontend import (  # noqa: E402
     choice_values,
     choices_text,
     drawn_payloads,
+    field_hints,
     field_problems,
     idle_controls,
     level_letters,
@@ -163,7 +166,9 @@ PAGE_SUMMARY = (
 _SCRIPT_NAME = "ratesplot.py"
 # The query parameter that holds the chart's command line.
 ADDRESS_KEY = "chart"
-# What a blank field means, shown in it. The other blank fields mean
+# What a blank field means, shown in it until a drawing gives the value in
+# effect (``frontend.field_hints``: Terry, 2026-10-08, a blank field shows its
+# default or automatic value in grey). The other blank fields mean
 # "automatic" (the axis limits) or are filled with their default.
 _PLACEHOLDERS = {
     "start": "automatic",
@@ -195,7 +200,7 @@ _ADDRESS_PROBLEMS = "address_problems"
 _NOTICE = "notice"   # a message from a control's callback, shown once
 _DRAWING = "drawing"  # the last Drawing
 _FORCE = "force_redraw"
-_START_HINT = "start_hint"  # what the Start field's hint says now
+_HINTS = "hints"    # the grey values the fields were laid out with (frontend.field_hints), by key
 _HISTORY = "history"  # the choices before each zoom, pan or Reset, for Back and Unzoom
 _CHART = "chart:"     # + country key + drawing number: a chart (its dragged box)
 _CALENDAR = "calendar:"  # + option name: a date field's calendar
@@ -649,8 +654,12 @@ def _red_if_wrong(label: str, wrong: bool) -> str:
     return f":red[{label}]" if wrong else label
 
 
-def _value_control(where, option: Option, placeholder: str | None = None, key: str | None = None) -> None:
-    """A text field; ``key`` names a nation's own field ("us:max"), else the option's name."""
+def _value_control(where, option: Option, key: str | None = None) -> None:
+    """A text field; ``key`` names a nation's own field ("us:max"), else the option's name.
+
+    Blank, it shows the value in effect in grey (the placeholder): the
+    last drawing's (``_HINTS``), or before any drawing what blank means.
+    """
     key = key or option.name
     flag_off = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
     where.text_input(
@@ -658,8 +667,8 @@ def _value_control(where, option: Option, placeholder: str | None = None, key: s
         key=_VALUE + key,
         on_change=_field_changed,
         args=(key,),
-        help=_help(option, "Blank = default."),
-        placeholder=placeholder or _PLACEHOLDERS.get(option.name, _DEFAULT_PLACEHOLDER),
+        help=_help(option, "Blank = default (shown in grey)."),
+        placeholder=st.session_state.get(_HINTS, {}).get(key) or _PLACEHOLDERS.get(option.name, _DEFAULT_PLACEHOLDER),
         disabled=flag_off or option.name in _idle(),
     )
 
@@ -691,7 +700,7 @@ def _date_blanked(name: str) -> None:
     _field_changed(name)
 
 
-def _date_control(where, option: Option, placeholder: str | None) -> None:
+def _date_control(where, option: Option) -> None:
     """A date field with a calendar button beside it, as in the window.
 
     Picking a day writes ``YYYY-MM-DD`` in the field, which stays the single
@@ -705,7 +714,7 @@ def _date_control(where, option: Option, placeholder: str | None) -> None:
     # One row that never wraps (st.columns would put the button under the
     # field on a phone); the field takes the room the button leaves.
     row = where.container(horizontal=True, wrap=False, vertical_alignment="bottom")
-    _value_control(row, option, placeholder)
+    _value_control(row, option)
     with row.popover("📅", help="Pick a date from a calendar"):
         st.session_state[_CALENDAR + option.name] = _field_date(option)
         st.date_input(
@@ -856,12 +865,12 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
             )
 
 
-def _start_placeholder() -> str | None:
-    """"automatic: 1981-09-01" once a drawing has found the start (it shows in no field otherwise)."""
+def _field_hints() -> dict[str, str]:
+    """The grey values from the last drawing that succeeded (``frontend.field_hints``), as the window shows them."""
     drawing: Drawing | None = st.session_state.get(_DRAWING)
-    if drawing is not None and drawing.drawn is not None and drawing.config.start is None:
-        return f"automatic: {drawing.drawn.start:%Y-%m-%d}"
-    return None
+    if drawing is None or drawing.drawn is None:
+        return field_hints(None, {})
+    return field_hints(drawing.drawn, drawing.geometry)
 
 
 def _controls() -> None:
@@ -877,6 +886,7 @@ def _controls() -> None:
         width="stretch",
     )
     buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch")
+    st.session_state[_HINTS] = _field_hints()
     for group in GROUPS:
         members = [
             option
@@ -903,10 +913,7 @@ def _controls() -> None:
         # other text fields two to a row (Min and Max, Top and Bottom).
         for option in values:
             if option.editor == "date":
-                placeholder = None
-                if option.name == "start":
-                    placeholder = st.session_state[_START_HINT] = _start_placeholder()
-                _date_control(bar, option, placeholder)
+                _date_control(bar, option)
         paired = [option for option in values if option.editor not in ("date", "levels", "size", "choices")]
         for index in range(0, len(paired), 2):
             for column, option in zip(bar.columns(2), paired[index:index + 2]):
@@ -1089,9 +1096,9 @@ def main() -> None:
             state[_ADDRESS_PROBLEMS] = []  # the visitor has moved on from the address's chart
         if drawing.error is None:
             _set_address(tokens)
-        if _start_placeholder() != state.get(_START_HINT):
-            # The controls were laid out before this drawing found the start:
-            # lay them out again (no new drawing) so the Start field shows it.
+        if _field_hints() != state.get(_HINTS):
+            # The controls were laid out before this drawing: lay them out
+            # again (no new drawing) so the blank fields show its values.
             st.rerun()
     drawing = state.get(_DRAWING)
     if drawing is not None:
