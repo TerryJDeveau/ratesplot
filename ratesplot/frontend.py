@@ -24,10 +24,14 @@ may not have it) and the two cannot drift apart:
 
 from __future__ import annotations
 
+import contextlib
+import ctypes
 import io
 import json
 import math
 import os
+import sys
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -84,35 +88,111 @@ NATION_OPTIONS = tuple(option for option in OPTIONS if per_nation(option) and op
 # ---------------------------------------------------------------------------
 
 
-def state_path() -> Path:
-    """Return where the window's settings are remembered: ``%APPDATA%\\ratesplot`` on Windows."""
+# Several windows at once (Terry, 2026-10-12): each command window has its
+# own settings file, so two windows started from two command windows no
+# longer overwrite each other's settings. The file is named by the command
+# window itself (its console's window handle, the same for its whole life;
+# in Windows Terminal, for each tab), not by a process number: ``python``
+# here is the install manager's launcher, which starts the real Python as a
+# new process on every run (measured 2026-10-13: Python's parent is the
+# launcher, whose parent is cmd.exe). A first run in a command window starts
+# from whichever settings file was written last; a window started without
+# one (a shortcut, pythonw) uses the shared file, as every window did
+# before. Files of command windows not written for STATE_FILE_MAX_AGE_DAYS
+# (long closed) are removed when a window starts.
+_STATE_STEM = "gui_state"
+STATE_FILE_MAX_AGE_DAYS = 30
+# Windows refuses to replace a file another window is reading at that
+# moment: the save is tried once more after this pause.
+_REPLACE_RETRY_SECONDS = 0.25
+
+
+def _state_dir() -> Path:
+    """``%APPDATA%\\ratesplot`` on Windows (``~/.config/ratesplot`` elsewhere)."""
     base = os.environ.get("APPDATA")
-    return (Path(base) if base else Path.home() / ".config") / "ratesplot" / "gui_state.json"
+    return (Path(base) if base else Path.home() / ".config") / "ratesplot"
 
 
-def load_state() -> tuple[dict, str | None]:
-    """Return the remembered state (empty if none) and a note to log if it could not be read."""
-    path = state_path()
-    if not path.exists():
-        return {}, None
+def console_window() -> int:
+    """Return the handle of the command window this process runs in; 0 if none (or not on Windows)."""
+    if sys.platform != "win32":
+        return 0
+    try:
+        return int(ctypes.windll.kernel32.GetConsoleWindow() or 0)
+    except (AttributeError, OSError):
+        return 0
+
+
+def state_path() -> Path:
+    """Return where this window's settings are remembered: its command window's own file, else the shared one."""
+    console = console_window()
+    return _state_dir() / (f"{_STATE_STEM}_{console:x}.json" if console else f"{_STATE_STEM}.json")
+
+
+def _state_files() -> list[Path]:
+    """Every remembered-settings file, the shared one and each command window's."""
+    return [path for path in _state_dir().glob(f"{_STATE_STEM}*.json") if path.is_file()]
+
+
+def _remove_old_state_files(keep: Path) -> None:
+    """Remove the files of command windows not written for ``STATE_FILE_MAX_AGE_DAYS``, and their stray temporary files.
+
+    Never the shared file, nor ``keep`` (this window's own).
+    """
+    cutoff = time.time() - STATE_FILE_MAX_AGE_DAYS * 86400
+    stale = [path for path in _state_files() if path.name != f"{_STATE_STEM}.json"]
+    stale += list(_state_dir().glob(f"{_STATE_STEM}*.tmp"))
+    for path in stale:
+        try:
+            if path != keep and path.stat().st_mtime < cutoff:
+                path.unlink()
+        except OSError:
+            pass  # another window's, in use or already gone: tried again at the next start
+
+
+def load_state() -> tuple[dict, str | None, Path | None]:
+    """Return the remembered state (empty if none), a note to log if it could not be read, and the file read.
+
+    This window's own file (``state_path``) if it has one; otherwise the
+    file written last (a first run in a new command window).
+    """
+    own = state_path()
+    if own.parent.is_dir():
+        _remove_old_state_files(keep=own)
+    files = _state_files() if own.parent.is_dir() else []
+    path = own if own in files else max(files, key=lambda file: file.stat().st_mtime, default=None)
+    if path is None:
+        return {}, None, None
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        return {}, f"Remembered settings in {path} could not be read ({exc}); starting from defaults."
+        return {}, f"Remembered settings in {path} could not be read ({exc}); starting from defaults.", None
     if not isinstance(state, dict) or state.get("version") != STATE_VERSION:
-        return {}, f"Remembered settings in {path} are from another version; starting from defaults."
-    return state, None
+        return {}, f"Remembered settings in {path} are from another version; starting from defaults.", None
+    return state, None, path
 
 
 def save_state(state: dict) -> str | None:
-    """Write ``state`` atomically (temporary file, then replace); return an error message or None."""
+    """Write ``state`` to this window's file atomically; return an error message or None.
+
+    Through a temporary file of this process's own (two windows saving at
+    the same moment once shared one, ``gui_state.tmp``), then a replace,
+    tried once more after a moment if Windows refuses it (another window
+    reading the file).
+    """
     path = state_path()
+    temporary = path.with_name(f"{path.stem}.{os.getpid()}.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        os.replace(temporary, path)
+        try:
+            os.replace(temporary, path)
+        except PermissionError:
+            time.sleep(_REPLACE_RETRY_SECONDS)
+            os.replace(temporary, path)
     except OSError as exc:
+        with contextlib.suppress(OSError):
+            temporary.unlink()
         return f"Settings could not be remembered ({exc})."
     return None
 
@@ -152,12 +232,17 @@ def spread_to_nations(payloads: dict[str, str]) -> dict[str, str]:
 
 
 def starting_choices(
-    config: PlotConfig, cli_payloads: dict[str, str], cli_flags: dict[str, bool], state: dict
+    config: PlotConfig,
+    cli_payloads: dict[str, str],
+    cli_flags: dict[str, bool],
+    state: dict,
+    remembered_in: Path | None = None,
 ) -> tuple[Choices, list[str]]:
     """Combine defaults, remembered choices and the command line; return the choices and notes to log.
 
     ``config`` is what the command line alone describes; ``cli_payloads`` and
-    ``cli_flags`` are the options it named. If the combination is not valid
+    ``cli_flags`` are the options it named; ``remembered_in`` is the file
+    ``state`` was read from (``load_state``). If the combination is not valid
     (e.g. a remembered start date after a new command-line end date), the
     remembered choices are dropped and the reason logged.
     """
@@ -238,7 +323,7 @@ def starting_choices(
     if state:
         try:
             config_from_choices({k: v for k, v in choices[0].items() if v.strip()}, choices[1])
-            notes.append(f"Restored the settings remembered in {state_path()}.")
+            notes.append(f"Restored the settings remembered in {remembered_in or state_path()}.")
         except ValueError as exc:
             notes.append(f"Remembered settings not used ({exc}); starting from the command line and defaults.")
             choices = combine(use_state=False)

@@ -30,9 +30,10 @@ Controls
 Remembered settings
     The choices of the last successful drawing, the preview mode, the selected
     tab, and the window's size and place (on any monitor, or across several)
-    and whether it is maximized are saved to ``gui_state.json`` (see
-    ``frontend.state_path``) after every drawing and on closing, and restored at the
-    next start. Options given on the command line override the remembered ones
+    and whether it is maximized are saved after every drawing and on closing,
+    and restored at the next start: each command window has its own file,
+    so several windows can be open at once (``frontend.state_path``); a
+    first run in a new command window starts from the file written last. Options given on the command line override the remembered ones
     they name: a value option individually; the curves, the countries or the
     measure each as a group, because naming one curve on the command line
     means "only this one".
@@ -1665,8 +1666,8 @@ def run_gui(
     """
     _enable_windows_dpi_awareness()
     http.enable_download_cache()
-    state, note = load_state()
-    choices, notes = starting_choices(config, cli_payloads or {}, cli_flags or {}, state)
+    state, note, remembered_in = load_state()
+    choices, notes = starting_choices(config, cli_payloads or {}, cli_flags or {}, state, remembered_in)
     if note:
         notes.insert(0, note)
     root = tk.Tk()
