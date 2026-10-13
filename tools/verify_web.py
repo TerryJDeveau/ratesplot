@@ -272,6 +272,14 @@ def check_address_and_rules(check: Check) -> None:
         address(at),
     )
 
+    # Refresh (Terry, 2026-10-08: one button, not Redraw and Reload data) draws the same choices again.
+    labels = [b.label for b in at.button]
+    check("a Refresh button, no Redraw", "Refresh" in labels and "Redraw" not in labels, labels)
+    finished = at.session_state["drawing"].finished
+    button(at, "Refresh").click()
+    at.run()
+    check("Refresh draws again", at.session_state["drawing"].finished != finished)
+
     # Reset.
     button(at, "Reset").click()
     at.run()

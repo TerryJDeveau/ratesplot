@@ -99,6 +99,7 @@ from .cli import sort_tokens  # noqa: E402
 from .config import (  # noqa: E402
     COMPONENT_LETTERS,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
+    DOWNLOAD_MAX_AGE_SECONDS,
     EARLIEST_DATA_START,
     MARKET_TIMEZONE,
     NATIONS,
@@ -153,11 +154,6 @@ PAGE_SUMMARY = (
 _SCRIPT_NAME = "ratesplot.py"
 # The query parameter that holds the chart's command line.
 ADDRESS_KEY = "chart"
-# How long a download is kept for every visitor. The regular sources publish
-# at most once a day (yields in the afternoon, Debt to the Penny the next
-# morning), so an hour shows each new figure within an hour at most, and the
-# visitor who comes after a quiet hour waits for the downloads (about 10 s).
-DOWNLOAD_MAX_AGE_SECONDS = 3600
 # What a blank field means, shown in it. The other blank fields mean
 # "automatic" (the axis limits) or are filled with their default.
 _PLACEHOLDERS = {
@@ -829,7 +825,14 @@ def _controls() -> None:
     """The sidebar: two buttons, then one section per option group, all from the table."""
     bar = st.sidebar
     buttons = bar.columns(2)
-    buttons[0].button("Redraw", on_click=_force_redraw, help="Draw again, with fresh intraday quotes.", width="stretch")
+    # One button, as in the window (Terry, 2026-10-08: "Refresh", meaning
+    # reload data): a drawing after a change of the controls is automatic.
+    buttons[0].button(
+        "Refresh",
+        on_click=_force_redraw,
+        help="Draw again with the latest data: the intraday quotes of the moment, and anything downloaded over an hour ago.",
+        width="stretch",
+    )
     buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch")
     for group in GROUPS:
         members = [

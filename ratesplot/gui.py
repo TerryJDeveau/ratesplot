@@ -20,7 +20,7 @@ Controls
     (``frontend.NATION_OPTIONS``: its yield terms, spreads and mortgage terms
     as tick boxes, and its axis limits) are in a panel under its tab, keyed
     "NATION:OPTION". The controls scroll when the
-    window is too short for them; Redraw and Save sit in a bar under them
+    window is too short for them; Refresh and Save sit in a bar under them
     that does not, so they are always in sight.
 
 Remembered settings
@@ -64,7 +64,11 @@ Threading
     drawn, the newest choices are drawn as soon as the worker is free.
 
 Downloads are cached for the session (``http.enable_download_cache``), so only
-the first drawing waits for the network; "Reload data" clears the cache.
+the first drawing waits for the network. "Refresh" (F5) draws again with the
+intraday quotes of the moment (never kept) and fetches again anything
+downloaded over an hour ago (``config.DOWNLOAD_MAX_AGE_SECONDS``, the web
+page's rule). Terry, 2026-10-08: one button instead of Redraw and Reload data,
+a drawing after a change of the controls being automatic anyway.
 """
 
 from __future__ import annotations
@@ -84,7 +88,7 @@ import pandas as pd
 from PIL import Image, ImageTk
 
 from . import http
-from .config import COMPONENT_LETTERS, NATIONS, Nation, PlotConfig
+from .config import COMPONENT_LETTERS, DOWNLOAD_MAX_AGE_SECONDS, NATIONS, Nation, PlotConfig
 from .console import this_thread_output_to
 from .frontend import (
     LEVEL_BOXES,
@@ -549,6 +553,7 @@ class RatesPlotApp:
         self.rendering = False
         self.data_cached = False  # True once a drawing has filled the session download cache
         self.pending: tuple[PlotConfig, Choices] | None = None
+        self._pending_forced = False  # a Refresh came during a drawing: draw again after it, even the same choices
         self.shown_config: PlotConfig | None = None
         # The shown charts' config with the automatic start filled in (the
         # dates they were drawn for); shown_config keeps a blank start blank.
@@ -608,7 +613,7 @@ class RatesPlotApp:
         ttk.Button(bar, text="Copy", command=self._copy_command).grid(row=0, column=2)
         ttk.Label(bar, textvariable=self.status, anchor="w").grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 0))
 
-        self.root.bind("<F5>", lambda _event: self.request_redraw(force=True))
+        self.root.bind("<F5>", lambda _event: self._refresh())
         self.root.bind("<Control-s>", lambda _event: self._save_png())
         self.root.bind("<Alt-Left>", lambda _event: self._back())
 
@@ -617,12 +622,12 @@ class RatesPlotApp:
 
         On a laptop screen (a 972 px window) the controls filled the column
         exactly, with the log out of sight, and one more row would have hidden
-        the Redraw and Save buttons. So the column is a canvas holding the
+        the Redraw (now Refresh) and Save buttons. So the column is a canvas holding the
         controls' frame: when the window is taller than the controls need, the
         frame is stretched to the window and the log takes the rest, as
         before; when it is shorter, a scroll bar appears, and the mouse wheel
         scrolls the column while the pointer is over it (over the log, the log).
-        The bar under it does not scroll: Redraw and Save go there, so they
+        The bar under it does not scroll: Refresh and Save go there, so they
         are always in sight however many controls there are (Terry,
         2026-10-06; batch 1 added a panel, and the buttons fell below the
         fold at 1728x972).
@@ -852,7 +857,7 @@ class RatesPlotApp:
         _Tooltip(lock, "When ticked, changing one box changes the other to keep the current shape.")
 
     def _build_actions(self, panel: ttk.Frame, pinned: ttk.Frame) -> None:
-        """The Preview panel and the Reload and Reset buttons in the column; Redraw and Save in the ``pinned`` bar."""
+        """The Preview panel and the Reset button in the column; Refresh and Save in the ``pinned`` bar."""
         preview = ttk.LabelFrame(panel, text="Preview", padding=(8, 4))
         preview.pack(fill="x", pady=(0, 6))
         preview.columnconfigure((0, 1), weight=1)
@@ -869,14 +874,14 @@ class RatesPlotApp:
         )
 
         for frame, actions in (
-            (pinned, (("Redraw (F5)", lambda: self.request_redraw(force=True)), ("Save PNG… (Ctrl+S)", self._save_png))),
-            (panel, (("Reload data", self._reload_data), ("Reset to defaults", self._reset))),
+            (pinned, (("Refresh (F5)", self._refresh), ("Save PNG… (Ctrl+S)", self._save_png))),
+            (panel, (("Reset to defaults", self._reset),)),
         ):
             buttons = ttk.Frame(frame)
             buttons.pack(fill="x", pady=(0, 6) if frame is panel else 0)
             for column, (text, command) in enumerate(actions):
                 ttk.Button(buttons, text=text, command=command).grid(row=0, column=column, sticky="ew", padx=1, pady=1)
-            buttons.columnconfigure((0, 1), weight=1)
+            buttons.columnconfigure(tuple(range(len(actions))), weight=1)
 
     def _build_log(self, panel: ttk.Frame) -> None:
         frame = ttk.LabelFrame(panel, text="Log", padding=4)
@@ -1069,11 +1074,14 @@ class RatesPlotApp:
         if self.rendering:
             # Compare with what is being drawn, not what is on screen: going
             # back to the displayed view while a new one is being drawn must
-            # still queue a drawing, or the old view would replace it.
-            if config == self.target_config and not force:
+            # still queue a drawing, or the old view would replace it. A
+            # Refresh asked for meanwhile is kept: the drawing under way may
+            # be using the downloads it dropped.
+            if config == self.target_config and not force and not self._pending_forced:
                 self.pending = None
                 return
             self.pending = (config, snapshot)
+            self._pending_forced = self._pending_forced or force
             self.status.set("Will redraw with the new settings when the current drawing finishes …")
             return
         if config == self.shown_config:
@@ -1160,7 +1168,8 @@ class RatesPlotApp:
         else:
             self.status.set(f"Drawing failed: {error} (details in the log)")
         pending, self.pending = self.pending, None
-        if pending is not None and pending[0] != self.shown_config:
+        forced, self._pending_forced = self._pending_forced, False
+        if pending is not None and (pending[0] != self.shown_config or forced):
             self._start_render(*pending)
 
     # -- preview ------------------------------------------------------------
@@ -1421,10 +1430,18 @@ class RatesPlotApp:
             output.write(self.pngs[key])
         self.status.set(f"Saved {path}")
 
-    def _reload_data(self) -> None:
-        http.clear_download_cache()
-        self.data_cached = False
-        self._append_log("--- download cache cleared\n")
+    def _refresh(self) -> None:
+        """Draw again with the latest data: the quotes of the moment, and anything downloaded over an hour ago.
+
+        The intraday quotes are fetched for every drawing anyway; the rest
+        of the session's downloads are kept, and those older than
+        ``DOWNLOAD_MAX_AGE_SECONDS`` are dropped here so the drawing fetches
+        them again, as the web page does for every drawing.
+        """
+        dropped = http.forget_downloads_older_than(DOWNLOAD_MAX_AGE_SECONDS)
+        if dropped:
+            self.data_cached = False
+        self._append_log(f"--- refresh: the latest quotes, and {dropped} download(s) over an hour old fetched again\n")
         self.request_redraw(force=True)
 
     def _reset(self) -> None:

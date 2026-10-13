@@ -30,7 +30,8 @@ T = TypeVar("T")
 # ---------------------------------------------------------------------------
 # Off by default: a command-line run downloads everything fresh, as it always
 # has. The GUI turns it on so that redrawing after a change re-processes what
-# was already downloaded instead of fetching it again; "Reload data" clears it.
+# was already downloaded instead of fetching it again; its Refresh button drops
+# what is older than an hour (``forget_downloads_older_than``).
 # The command line turns it on for a run without --start, whose trial pass
 # (plotting.resolve_start) and drawing then share each download; it is still
 # fresh for every run.
@@ -55,11 +56,16 @@ def enable_download_cache(max_age_seconds: float | None = None) -> None:
         _download_cache_max_age = max_age_seconds
 
 
-def clear_download_cache() -> None:
-    """Forget cached downloads so the next fetch goes to the network again."""
+def forget_downloads_older_than(seconds: float) -> int:
+    """Forget the cached downloads fetched more than ``seconds`` ago; return how many (the window's Refresh)."""
     with _download_cache_lock:
-        if _download_cache is not None:
-            _download_cache.clear()
+        if _download_cache is None:
+            return 0
+        now = time.monotonic()
+        old = [key for key, (fetched_at, _result) in _download_cache.items() if now - fetched_at > seconds]
+        for key in old:
+            del _download_cache[key]
+        return len(old)
 
 
 def _cached(key: tuple, download: Callable[[], T]) -> T:

@@ -122,6 +122,14 @@ STATCAN_TIMEOUT_SECONDS = 30
 DEFAULT_GET_RETRIES = 4
 DEFAULT_FRED_RETRIES = 3
 RETRY_BACKOFF_BASE_SECONDS = 2
+# How old a kept download may be before it is fetched again: on the web page
+# for every drawing (it serves every visitor from one process for days), in
+# the window at Refresh (F5). The regular sources publish at most once a day
+# (yields in the afternoon, Debt to the Penny the next morning), so an hour
+# shows each new figure within an hour at most, and the visitor who comes
+# after a quiet hour waits for the downloads (about 10 s). Intraday quotes
+# are never kept (``http.latest_get(cached=False)``).
+DOWNLOAD_MAX_AGE_SECONDS = 3600
 
 FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 BOC_GROUP_URL = "https://www.bankofcanada.ca/valet/observations/group/{group}/csv"
