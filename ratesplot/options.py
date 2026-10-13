@@ -448,8 +448,13 @@ def check_macro_bound_units(payloads: Mapping[str, str], values: Mapping[str, ob
     """Require right-axis bounds as percentages under -r, and in dollars otherwise.
 
     Run once the flags are known: the same text means different things in
-    the two measures, so it is rejected rather than reinterpreted.
+    the two measures, so it is rejected rather than reinterpreted. Not with
+    no right-axis curve, where the bounds change nothing (``idle_options``):
+    -r has no effect then either, and its percentages were valid before -r
+    lost its effect there (2026-10-13).
     """
+    if "top" in idle_options(values["include_debt"], values["include_gdp"], values["include_interest"]):
+        return
     for name in ("top", "bottom"):
         if name not in payloads:
             continue
@@ -457,7 +462,7 @@ def check_macro_bound_units(payloads: Mapping[str, str], values: Mapping[str, ob
         if values["relative"] and not is_percent_bound(spec):
             raise ValueError(f"with -r the --{name} limit is a percentage of GDP, e.g. --{name}:150%")
         if not values["relative"] and is_percent_bound(spec):
-            raise ValueError(f"--{name}:{spec} is a percentage, which needs -r (debt and interest as % of GDP)")
+            raise ValueError(f"--{name}:{spec} is a percentage, which needs -r with debt or interest (as % of GDP)")
 
 
 # ---------------------------------------------------------------------------
@@ -700,7 +705,7 @@ OPTIONS: tuple[Option, ...] = (
     # countries.
     Option(
         "relative", Kind.SWITCH, ("relative",), "units", "--R / -r / --relative",
-        "debt and interest as % of TTM GDP (log\npercent axis); GDP itself is not drawn",
+        "debt and interest as % of TTM GDP (log\npercent axis); GDP itself is not drawn;\nno effect without debt or interest",
         names=("relative",), flag="--R", flag_help="debt and interest as a percentage of GDP", label="As % of GDP",
     ),
     Option(
@@ -980,7 +985,8 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
       for one nation (--us:sp:10-2) too, for both charts.
     * A value given for one nation (key "us:top") applies to its chart only
       (``_nation_settings``).
-    * Measure: -r and -p exclude each other (``check_single_measure``).
+    * Measure: -r and -p exclude each other (``check_single_measure``); -r
+      without debt or interest has no effect (``idle_options``).
     * Right-axis limits are percentages under -r and dollars otherwise
       (``check_macro_bound_units``, once the flags are known).
     """
@@ -1030,9 +1036,42 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
         values.update({nation.show_field: nation.shown_by_default for nation in NATIONS})
 
     check_single_measure(values)
+    # -r divides debt and interest by GDP. With neither drawn it has nothing
+    # to act on, and GDP, if chosen, is drawn in dollars, as without -r
+    # (before 2026-10-13 -r hid it, leaving the right axis empty). The window
+    # and the page grey -r out then (``idle_options``), and a greyed control
+    # changes nothing.
+    if values["relative"] and "relative" in idle_options(values["include_debt"], values["include_gdp"], values["include_interest"]):
+        values["relative"] = False
     check_macro_bound_units(payloads, values)
     values["nation_settings"] = _nation_settings(payloads, values)
     return PlotConfig(**values)
+
+
+def idle_options(debt: bool, gdp: bool, interest: bool) -> frozenset[str]:
+    """Return the options that change nothing on any chart while these right-axis curves are chosen.
+
+    Terry, 2026-10-08: grey out "Regression segments", "By level", "% of GDP"
+    and "Per capita" when none of the series they apply to is chosen. The
+    window and the web page grey these out, keeping their ticks and texts
+    (choosing a curve again brings the chart back as it was); a value among
+    them is ignored, as the regression tolerance is while --reg is off.
+
+    * -r and the levels of government apply to debt and interest (GDP is
+      only -r's divisor), so they need one of the two;
+    * -p, the regression segments and the right axis's Top and Bottom apply
+      to any right-axis curve, so they need debt, GDP or interest (under -r
+      GDP is not drawn, but -r then needs debt or interest, which draw).
+
+    Each was checked on 2026-10-13 to draw a byte-identical chart when idle,
+    -r excepted: it hid GDP, which ``config_from_choices`` now stops.
+    """
+    idle: set[str] = set()
+    if not (debt or interest):
+        idle |= {"relative", "debt-parts", "interest-parts"}
+    if not (debt or gdp or interest):
+        idle |= {"per-capita", "regression", "regression-tolerance", "top", "bottom"}
+    return frozenset(idle)
 
 
 def choices_from_config(config: PlotConfig) -> tuple[dict[str, str], dict[str, bool]]:

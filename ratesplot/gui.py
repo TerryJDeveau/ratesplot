@@ -98,10 +98,12 @@ from .frontend import (
     ChartGeometry,
     Choices,
     bound_keys,
+    bounds_in_other_units,
     choice_refusal,
     choice_rows,
     choice_values,
     choices_text,
+    idle_controls,
     level_letters,
     load_state,
     option_help_lines,
@@ -995,6 +997,15 @@ class RatesPlotApp:
                         self.payload_vars[bound].set("")
             finally:
                 self._loading = False
+        # A curve ticked or unticked can give -r its effect or take it away
+        # (it needs debt or interest): Top and Bottom in the other unit go.
+        payloads, flags = self._snapshot()
+        self._loading = True
+        try:
+            for bound in bounds_in_other_units(payloads, flags):
+                self.payload_vars[bound].set("")
+        finally:
+            self._loading = False
         self._update_dependent_controls()
         self.request_redraw()
 
@@ -1002,9 +1013,9 @@ class RatesPlotApp:
         """Grey out controls that have no effect: GDP under -r, where it is the
         denominator and is not drawn, and a value whose flag is off (the
         regression tolerance without --reg)."""
-        relative = "relative" in self.flag_vars and self.flag_vars["relative"].get()
+        idle = idle_controls({name: variable.get() for name, variable in self.flag_vars.items()})
         if "gdp" in self.flag_boxes:
-            self.flag_boxes["gdp"].state(["disabled"] if relative else ["!disabled"])
+            self.flag_boxes["gdp"].state(["disabled"] if "gdp" in idle else ["!disabled"])
         for key in self.payload_vars:
             option = option_of(key)
             if option.turns_on not in self.flag_vars:

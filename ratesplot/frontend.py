@@ -28,6 +28,7 @@ import io
 import json
 import math
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +48,8 @@ from .options import (
     choices_from_config,
     config_from_choices,
     format_dollar_bound,
+    idle_options,
+    is_percent_bound,
     list_switch,
     nation_choice,
     nation_view,
@@ -200,11 +203,13 @@ def starting_choices(
                     payloads[key] = cli_config_payloads[key]
         # Curves, and countries, are overridden as a group: on the command line
         # "--gdp" means "GDP only", which the resolved config already reflects.
+        # The measure as given: -r without debt or interest has no effect
+        # (``options.idle_options``), and stays ticked, greyed, as in the window.
         for group_name in GROUPS_CHOSEN_TOGETHER:
             group = [option.name for option in options_in(group_name) if option.name in flags]
             if any(name in cli_flags for name in group) or (group_name == "curves" and levels_given):
                 for name in group:
-                    flags[name] = cli_config_flags[name]
+                    flags[name] = bool(cli_flags.get(name, False)) if group_name == "units" else cli_config_flags[name]
         for option in OPTIONS:
             if option.group in GROUPS_CHOSEN_TOGETHER or option.kind is Kind.VALUE:
                 continue
@@ -243,6 +248,36 @@ def starting_choices(
 # ---------------------------------------------------------------------------
 # Levels, help text, and the drawn chart as a file
 # ---------------------------------------------------------------------------
+
+
+def idle_controls(flags: Mapping[str, bool]) -> frozenset[str]:
+    """Return the options greyed out for these choices, by name.
+
+    Those that change nothing on any chart (``options.idle_options``), and
+    GDP under -r, where it is the divisor and is not drawn. A blank flag is
+    its default (every curve on).
+    """
+    idle = set(idle_options(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True)))
+    if flags.get("relative", False) and "relative" not in idle:
+        idle.add("gdp")
+    return frozenset(idle)
+
+
+def bounds_in_other_units(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> list[str]:
+    """Return the Top and Bottom fields whose text is in the other unit from the measure in effect.
+
+    A percentage while -r has no effect, or dollars while it has. -r loses
+    its effect when debt and interest are both unticked, and regains it when
+    one is ticked again (``options.idle_options``), so GDP then changes from
+    dollars to nothing drawn or back; the window and the page clear such
+    fields, as a change of measure clears them. Not while no right-axis curve
+    is chosen: the fields are idle then, and kept for when one is chosen.
+    """
+    idle = idle_controls(flags)
+    if "top" in idle:
+        return []
+    relative = flags.get("relative", False) and "relative" not in idle
+    return [key for key in bound_keys() if payloads.get(key, "").strip() and is_percent_bound(payloads[key]) != relative]
 
 
 def bound_keys() -> list[str]:

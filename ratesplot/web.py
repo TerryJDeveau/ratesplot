@@ -114,10 +114,12 @@ from .frontend import (  # noqa: E402
     ChartGeometry,
     Choices,
     bound_keys,
+    bounds_in_other_units,
     choice_refusal,
     choice_rows,
     choice_values,
     choices_text,
+    idle_controls,
     level_letters,
     move_dates_updates,
     option_help_lines,
@@ -476,6 +478,12 @@ def _measure_changed(name: str) -> None:
         st.session_state[_VALUE + bound] = ""
 
 
+def _curve_changed(_name: str) -> None:
+    """A curve ticked or unticked can give -r its effect or take it away: clear Top and Bottom in the other unit."""
+    for bound in bounds_in_other_units(*_snapshot()):
+        st.session_state[_VALUE + bound] = ""
+
+
 def _remember_view(lock: bool = False) -> None:
     """Keep the controls' choices for Back and Unzoom (at most ``_HISTORY_LIMIT``, the first always kept).
 
@@ -602,9 +610,8 @@ def _help(option: Option, extra: str = "") -> str:
 
 
 def _flag_control(where, option: Option) -> None:
-    callbacks = {"country": _country_changed, "units": _measure_changed}
+    callbacks = {"country": _country_changed, "units": _measure_changed, "curves": _curve_changed}
     callback = callbacks.get(option.group)
-    relative = st.session_state.get(_FLAG + "relative", False)
     where.checkbox(
         option.label,
         key=_FLAG + option.name,
@@ -612,7 +619,7 @@ def _flag_control(where, option: Option) -> None:
         on_change=callback,
         args=(option.name,) if callback else None,
         # GDP is only the denominator under -r and is not drawn.
-        disabled=option.name == "gdp" and relative,
+        disabled=option.name == "gdp" and "gdp" in idle_controls(_snapshot()[1]),
     )
 
 
