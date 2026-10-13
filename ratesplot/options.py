@@ -1223,10 +1223,15 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     """Return the shortest command line (after the script name) that reproduces the GUI choices.
 
     Options left at their defaults are omitted. The GUI passes every option,
-    blanks included; blank values are omitted too.
+    blanks included; blank values are omitted too, and so are values that
+    change nothing on any chart (``idle_options``: Top and Bottom, the levels
+    and the tolerance with no curve to act on), whose fields the window and
+    the page grey out and keep for when a curve is chosen again.
     """
     defaults, default_flags = choices_from_config(PlotConfig())
     tokens: list[str] = []
+    idle = idle_options(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True))
+    payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle}
 
     # The nations' switches, unless the ones chosen are those drawn by default.
     countries = [option for option in options_in("country") if option.in_gui]

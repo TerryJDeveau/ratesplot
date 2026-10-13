@@ -602,9 +602,49 @@ def check_none_lists(check: Check) -> None:
     check("a list of none for every chart reported, naming --no-yield", any("--no-yield" in w for w in warnings), warnings)
 
 
+def check_greyed(check: Check) -> None:
+    """Batch 5 (Terry, 2026-10-08): what has no curve to act on is greyed, its tick or text kept, and left out of the address."""
+
+    def disabled(at: AppTest) -> set[str]:
+        widgets = [*at.checkbox, *at.text_input]
+        keys = {"flag:relative", "flag:per-capita", "flag:regression", "flag:gdp", "level:f", "value:regression-tolerance", "value:us:top"}
+        return {w.key for w in widgets if w.key in keys and w.disabled}
+
+    page = new_page("-u --yield --debt --reg:2 --d:fp --us:top:40t -s:2001 --e:2026-09-01")
+    check("no exception", not page.exception, page.exception)
+    check("debt drawn: nothing greyed", disabled(page) == set(), disabled(page))
+    first = address(page)
+    page.text_input(key="value:regression-tolerance").input("x")
+    page.run()
+    check("a bad tolerance stops the drawing", any("Not drawn" in e.value for e in page.error), [e.value for e in page.error])
+    page.checkbox(key="flag:debt").uncheck()
+    page.run()
+    every = {"flag:relative", "flag:per-capita", "flag:regression", "level:f", "value:regression-tolerance", "value:us:top"}
+    check("no right-axis curve: all greyed but GDP", disabled(page) == every, disabled(page))
+    check("a bad text in a greyed field stops nothing", not page.error and charts_shown(page) == 1, [e.value for e in page.error])
+    check("ticks and texts kept", flags(page)["regression"] and page.checkbox(key="level:f").value
+          and page.text_input(key="value:us:top").value == "40t" and page.text_input(key="value:regression-tolerance").value == "x")
+    check("left out of the address, --regression kept", address(page) == "--U --yield --regression --start:2001 --end:2026-09-01", address(page))
+    page.checkbox(key="flag:gdp").check()
+    page.run()
+    check("GDP: -p, --reg, its tolerance and Top active; -r and the levels greyed",
+          disabled(page) == {"flag:relative", "level:f"}, disabled(page))
+    page.text_input(key="value:regression-tolerance").input("2")
+    page.checkbox(key="flag:gdp").uncheck()
+    page.checkbox(key="flag:debt").check()
+    page.run()
+    check("debt again: the chart as at first", address(page) == first, (address(page), first))
+    rel = new_page("-u -r --gdp -s:2001 --e:2026-09-01")
+    check(
+        "-r with GDP only: -r greyed and ticked, GDP active (the tolerance greyed: --reg is off)",
+        flags(rel)["relative"] and disabled(rel) == {"flag:relative", "level:f", "value:regression-tolerance"},
+        (flags(rel)["relative"], disabled(rel)),
+    )
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
-    check_nation_sections, check_uk, check_de, check_none_lists,
+    check_nation_sections, check_uk, check_de, check_none_lists, check_greyed,
 )
 
 

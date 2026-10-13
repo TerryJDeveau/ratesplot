@@ -16,7 +16,11 @@ Controls
     switches (-r, -p) exclude each other: ticking one unticks the other.
     Changing the measure clears Top and Bottom, whose units it changes
     (dollars, percent, dollars per person), and under -r the GDP box is
-    greyed out, GDP being only the denominator. Each nation's own choices
+    greyed out, GDP being only the denominator. What has no curve to act on
+    is greyed out too, its tick or text kept (``frontend.idle_controls``):
+    % of GDP and By level without debt or interest; Per capita, Regression
+    segments and each chart's Top and Bottom without debt, GDP or interest.
+    A greyed field's text is ignored and left off the command line. Each nation's own choices
     (``frontend.NATION_OPTIONS``: its yield terms, spreads and mortgage terms
     as tick boxes, and its axis limits) are in a panel under its tab, keyed
     "NATION:OPTION". The controls scroll when the
@@ -91,6 +95,7 @@ from . import http
 from .config import COMPONENT_LETTERS, DOWNLOAD_MAX_AGE_SECONDS, NATIONS, Nation, PlotConfig
 from .console import this_thread_output_to
 from .frontend import (
+    GREYABLE_OPTIONS,
     LEVEL_BOXES,
     NATION_OPTIONS,
     STATE_VERSION,
@@ -103,6 +108,7 @@ from .frontend import (
     choice_rows,
     choice_values,
     choices_text,
+    drawn_payloads,
     idle_controls,
     level_letters,
     load_state,
@@ -313,8 +319,13 @@ class _LevelsEditor:
         self.payload = payload
         self.on_change = on_change
         self.boxes = {letter: tk.BooleanVar(value=False) for letter in COMPONENT_LETTERS}
+        self.widgets: list[ttk.Checkbutton] = []
         self.syncing = False
         self.payload.trace_add("write", lambda *_args: self._payload_changed())
+
+    def set_state(self, state: list[str]) -> None:
+        for widget in self.widgets:
+            widget.state(state)
 
     def box_changed(self) -> None:
         if self.syncing:
@@ -785,6 +796,7 @@ class RatesPlotApp:
         for index, (letter, text) in enumerate(LEVEL_BOXES):
             check = ttk.Checkbutton(box, text=text, variable=editor.boxes[letter], command=editor.box_changed)
             check.grid(row=index // 2, column=index % 2, sticky="w", padx=(0, 8))
+            editor.widgets.append(check)
             _Tooltip(check, tip)
         _Tooltip(label, tip)
 
@@ -1010,23 +1022,34 @@ class RatesPlotApp:
         self.request_redraw()
 
     def _update_dependent_controls(self) -> None:
-        """Grey out controls that have no effect: GDP under -r, where it is the
-        denominator and is not drawn, and a value whose flag is off (the
-        regression tolerance without --reg)."""
-        idle = idle_controls({name: variable.get() for name, variable in self.flag_vars.items()})
-        if "gdp" in self.flag_boxes:
-            self.flag_boxes["gdp"].state(["disabled"] if "gdp" in idle else ["!disabled"])
+        """Grey out controls that have no effect (Terry, 2026-10-08), keeping their ticks and texts.
+
+        GDP under -r, where it is the divisor and is not drawn; what has no
+        curve to act on (``frontend.idle_controls``): % of GDP and the levels
+        without debt or interest, Per capita, the regression segments and
+        each chart's Top and Bottom without debt, GDP or interest; and a
+        value whose flag is off (the regression tolerance without --reg, the
+        mortgage terms without mortgages).
+        """
+        flags = {name: variable.get() for name, variable in self.flag_vars.items()}
+        idle = idle_controls(flags)
+        for name, box in self.flag_boxes.items():
+            if name in GREYABLE_OPTIONS:
+                box.state(["disabled"] if name in idle else ["!disabled"])
         for key in self.payload_vars:
             option = option_of(key)
-            if option.turns_on not in self.flag_vars:
+            off = option.turns_on in flags and not flags[option.turns_on]
+            if option.turns_on not in flags and option.name not in GREYABLE_OPTIONS:
                 continue
-            state = ["!disabled"] if self.flag_vars[option.turns_on].get() else ["disabled"]
+            state = ["disabled"] if off or option.name in idle else ["!disabled"]
             if key in self.value_entries:
                 self.value_entries[key].state(state)
             if key in self.value_labels:
                 self.value_labels[key].state(state)
             if key in self.choice_editors:
                 self.choice_editors[key].set_state(state)
+            if key in self.level_editors:
+                self.level_editors[key].set_state(state)
 
     def _text_changed(self) -> None:
         if self._loading:
@@ -1064,13 +1087,8 @@ class RatesPlotApp:
         self._update_command_line()
         self._update_view_buttons()
         snapshot = self._snapshot()
-        payloads = {name: text.strip() for name, text in snapshot[0].items() if text.strip()}
-        # A value whose flag is off has no effect and its field is greyed:
-        # a bad one left there must not stop the drawing.
-        for key in list(payloads):
-            option = option_of(key)
-            if option.turns_on in snapshot[1] and not snapshot[1][option.turns_on]:
-                payloads.pop(key, None)
+        # A greyed field has no effect: a bad text left there must not stop the drawing.
+        payloads = drawn_payloads(*snapshot)
         problems = self._mark_invalid_fields(payloads)
         try:
             config = config_from_choices(payloads, snapshot[1])

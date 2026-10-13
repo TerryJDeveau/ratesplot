@@ -11,7 +11,10 @@ What it is
     are generated from ``options.OPTIONS`` as the window's are (options with
     ``in_gui=False`` are left out), grouped as in ``--help``, and follow the
     window's rules: at least one country stays ticked; one measure at a time,
-    and changing it clears Top and Bottom; GDP greyed out under -r; each
+    and changing it clears Top and Bottom; GDP greyed out under -r, and what
+    has no curve to act on (``frontend.idle_controls``: % of GDP, By level,
+    Per capita, the regression segments, Top and Bottom), ticks and texts
+    kept, greyed texts ignored and left out of the address; each
     nation's own choices (``frontend.NATION_OPTIONS``: its yield terms,
     spreads and mortgage terms, only those its chart can draw, and its axis
     limits) in a sidebar section of its own; a value
@@ -119,6 +122,7 @@ from .frontend import (  # noqa: E402
     choice_rows,
     choice_values,
     choices_text,
+    drawn_payloads,
     idle_controls,
     level_letters,
     move_dates_updates,
@@ -434,13 +438,9 @@ def _snapshot() -> Choices:
 
 def _config_for(choices: Choices) -> tuple[PlotConfig | None, list[str]]:
     """Return the PlotConfig the controls describe, or None and the problems, one per bad field first."""
-    payloads = {name: text.strip() for name, text in choices[0].items() if text.strip()}
     flags = choices[1]
-    # A value whose flag is off has no effect and its field is greyed: a bad
-    # one left there must not stop the drawing (as in the window).
-    for key in list(payloads):
-        if option_of(key).turns_on in flags and not flags[option_of(key).turns_on]:
-            payloads.pop(key, None)
+    # A greyed field has no effect: a bad text left there must not stop the drawing (as in the window).
+    payloads = drawn_payloads(*choices)
     problems: list[str] = []
     for key, option, nation in _value_keys():
         if key in payloads:
@@ -618,9 +618,16 @@ def _flag_control(where, option: Option) -> None:
         help=_help(option),
         on_change=callback,
         args=(option.name,) if callback else None,
-        # GDP is only the denominator under -r and is not drawn.
-        disabled=option.name == "gdp" and "gdp" in idle_controls(_snapshot()[1]),
+        # What has no effect is greyed, its tick kept (frontend.idle_controls):
+        # GDP under -r, where it is the divisor; % of GDP, Per capita and the
+        # regression segments with no curve to act on.
+        disabled=option.name in _idle(),
     )
+
+
+def _idle() -> frozenset[str]:
+    """The options greyed out for the check boxes' state now (``frontend.idle_controls``), as in the window."""
+    return idle_controls({option.name: bool(st.session_state.get(_FLAG + option.name, False)) for option in _gui_options(False)})
 
 
 def _value_control(where, option: Option, placeholder: str | None = None, key: str | None = None) -> None:
@@ -631,7 +638,7 @@ def _value_control(where, option: Option, placeholder: str | None = None, key: s
         key=_VALUE + (key or option.name),
         help=_help(option, "Blank = default."),
         placeholder=placeholder or _PLACEHOLDERS.get(option.name, _DEFAULT_PLACEHOLDER),
-        disabled=flag_off,
+        disabled=flag_off or option.name in _idle(),
     )
 
 
@@ -785,8 +792,9 @@ def _size_control(where, option: Option) -> None:
 def _levels_control(where, option: Option) -> None:
     where.markdown(f"**{option.label}**", help=_help(option, "None ticked = debt and interest in total."))
     columns = where.columns(2)
+    idle = option.name in _idle()  # greyed without debt or interest, as in the window
     for index, (letter, caption) in enumerate(LEVEL_BOXES):
-        columns[index % 2].checkbox(caption, key=_LEVEL + letter)
+        columns[index % 2].checkbox(caption, key=_LEVEL + letter, disabled=idle)
 
 
 def _choices_control(where, option: Option, nation: Nation | None = None) -> None:

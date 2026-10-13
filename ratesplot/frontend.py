@@ -263,6 +263,31 @@ def idle_controls(flags: Mapping[str, bool]) -> frozenset[str]:
     return frozenset(idle)
 
 
+# Every option ``idle_controls`` can grey out: those idle with no right-axis
+# curve chosen, and GDP (under -r).
+GREYABLE_OPTIONS = idle_options(False, False, False) | {"gdp"}
+
+
+def drawn_payloads(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
+    """Return the field texts a drawing takes: blanks left out, and every greyed field's text.
+
+    A greyed field changes nothing, so a bad text left in it must not stop
+    the drawing: a value whose flag is off (the tolerance without --reg), and
+    one with no curve to act on (``idle_controls``: Top and Bottom, the
+    levels, the tolerance). The field keeps its text for when it applies
+    again, and the written command line leaves it out
+    (``options.command_line_tokens``).
+    """
+    idle = idle_controls(flags)
+    drawn: dict[str, str] = {}
+    for key, text in payloads.items():
+        option = option_of(key)
+        off = option.turns_on in flags and not flags[option.turns_on]
+        if text.strip() and not off and option.name not in idle:
+            drawn[key] = text.strip()
+    return drawn
+
+
 def bounds_in_other_units(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> list[str]:
     """Return the Top and Bottom fields whose text is in the other unit from the measure in effect.
 
