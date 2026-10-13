@@ -211,6 +211,12 @@ _CHANGED = "changed"     # the text fields changed by hand, oldest first (fronte
 _WRONG = "wrong"         # the fields in the wrong now, by key: their labels are red
 # The calendar's first day: no series starts earlier (config.EARLIEST_DATA_START).
 _CALENDAR_FIRST = EARLIEST_DATA_START.date()
+# A date field with its calendar button: room for a whole YYYY-MM-DD.
+_DATE_ROW_PX = 230
+# The blocks whose check boxes share rows (Terry, 2026-10-08: the nations,
+# the yields, spreads, policy and mortgages, the measure; Start and End are
+# on one row anyway), as in the window at its default width.
+_TWO_COLUMN_BLOCKS = ("country", "rates", "units")
 
 
 @dataclass(frozen=True)
@@ -714,8 +720,10 @@ def _date_control(where, option: Option) -> None:
     run, before it is drawn.
     """
     # One row that never wraps (st.columns would put the button under the
-    # field on a phone); the field takes the room the button leaves.
-    row = where.container(horizontal=True, wrap=False, vertical_alignment="bottom")
+    # field on a phone); the field takes the room the button leaves. Its
+    # width is a date's and the button's, so two such rows share a line
+    # only when both fit (``_controls``).
+    row = where.container(horizontal=True, wrap=False, vertical_alignment="bottom", width=_DATE_ROW_PX)
     _value_control(row, option)
     with row.popover("📅", help="Pick a date from a calendar"):
         st.session_state[_CALENDAR + option.name] = _field_date(option)
@@ -842,6 +850,11 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     One that belongs to a flag (mortgage terms, spreads) is greyed while
     the flag is off, as its field was. A nation's own list has its label
     always, and only the boxes its chart can draw (``frontend.choice_rows``).
+    The boxes of a row flow, wrapping when the sidebar is narrow, and the
+    help is on the list's label alone: a column per box, each with its "?",
+    left no room for the text at the sidebar's narrow default width
+    (2026-10-13: Canada's yield terms showed only their "?", the spreads
+    "10…").
     """
     key = nation_choice(nation, option) if nation else option.name
     disabled = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
@@ -851,16 +864,14 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     rows = [row for row in choice_rows(option, "", nation)]
     if others:
         rows.append(("other", [(value, value.replace("-", "–")) for value in others]))
-    width = max(len(boxes) for _caption, boxes in rows)  # boxes line up from row to row
     for caption, boxes in rows:
         if caption:
             where.caption(caption)
-        columns = where.columns(width)
-        for column, (value, text) in zip(columns, boxes):
-            column.checkbox(
+        row = where.container(horizontal=True, wrap=True)
+        for value, text in boxes:
+            row.checkbox(
                 text,
                 key=_CHOICE + key + ":" + value,
-                help=_help(option),
                 disabled=disabled,
                 on_change=_choice_changed,
                 args=(key, value),
@@ -894,7 +905,7 @@ def _controls() -> None:
     )
     buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch")
     st.session_state[_HINTS] = _field_hints()
-    for _key, title, members in control_blocks():
+    for key, title, members in control_blocks():
         if title:
             bar.subheader(title, divider="gray")
         else:
@@ -903,20 +914,31 @@ def _controls() -> None:
         # under "Regression segments"), as on the window's row.
         attached = {option.turns_on: option for option in members if option.kind is Kind.VALUE and option.turns_on}
         values = [option for option in members if option.kind is Kind.VALUE and option not in attached.values()]
-        for option in members:
-            if option.kind is Kind.VALUE:
-                continue
+        flags = [option for option in members if option.kind is not Kind.VALUE]
+        if key in _TWO_COLUMN_BLOCKS and not attached:
+            # As many to a row as fit, as in the window (Terry, 2026-10-08):
+            # two at the sidebar's default width, more when it is dragged
+            # wider, one on a phone. A row that wraps, each box as wide as its
+            # text: fixed columns cut "United States" to "United Sta…" there.
+            row = bar.container(horizontal=True, wrap=True)
+            for option in flags:
+                _flag_control(row, option)
+            flags = []
+        for option in flags:
             _flag_control(bar, option)
             if option.name in attached and attached[option.name].editor == "choices":
                 # Straight in the sidebar: Streamlit allows no columns inside its columns there.
                 _choices_control(bar, attached[option.name])
             elif option.name in attached:
                 _value_control(bar.columns([1, 12])[1], attached[option.name])
-        # Dates one to a row (the Start field's hint names the date found);
-        # other text fields two to a row (Min and Max, Top and Bottom).
-        for option in values:
-            if option.editor == "date":
-                _date_control(bar, option)
+        # Start and End side by side when the sidebar is wide enough for
+        # both to show a whole date, else one under the other (two columns
+        # of the default sidebar left "2000-01-01" showing "200"); other text
+        # fields two to a row (Max and Min, Top and Bottom).
+        dates = [option for option in values if option.editor == "date"]
+        row = bar.container(horizontal=True, wrap=True) if dates else None
+        for option in dates:
+            _date_control(row, option)
         paired = [option for option in values if option.editor not in ("date", "levels", "size", "choices")]
         for index in range(0, len(paired), 2):
             for column, option in zip(bar.columns(2), paired[index:index + 2]):

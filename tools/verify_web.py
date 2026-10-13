@@ -740,6 +740,10 @@ def check_layout(check: Check) -> None:
         fields == ["value:cdn:max", "value:cdn:top", "value:cdn:min", "value:cdn:bottom"],
         fields,
     )
+    # 2026-10-13: at the sidebar's narrow default width each list box's own
+    # "?" left no room for its text (Canada's terms showed only the "?").
+    helped = [box.key for box in at.checkbox if box.key and box.key.startswith("choice:") and box.help]
+    check("a list's tick boxes carry no help of their own (it is on the list's label)", not helped, helped[:3])
 
 
 PAGE_CHECKS = (
