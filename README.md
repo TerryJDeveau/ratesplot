@@ -17,7 +17,8 @@ national debt and GDP, to 1956 for Germany's 10-year yield) is built into the co
   sent.
   To run it on your own machine: `streamlit run streamlit_app.py`.
 - **The desktop window** (`ratesplot/gui.py`): `python ratesplot.py`. It adds the
-  mouse wheel and a right-drag pan, and remembers your last settings.
+  mouse wheel and a right-drag pan, and remembers your last settings: each command window
+  its own, so several windows can be open at once.
 - **The command line**: `python ratesplot.py --no-gui [options]`, or any options with the
   window. `python ratesplot.py --help` lists them all; the web page shows the same list.
 
@@ -52,5 +53,6 @@ provisional, and drawn as such.
 ## Layout
 
 `ratesplot/` is the program (its `__init__.py` has the module map); `tools/` holds the checks
-used when it is changed (`regress_charts.py`, `verify_cli.py`, `verify_web.py`, `check_sources.py`)
+used when it is changed (`regress_charts.py`, `verify_cli.py`, `verify_web.py`, `check_sources.py`,
+and `check_drawn_values.py`, every curve on the yield axis against its sources)
 and the bake of the historical data (`bake_archives.py`).
