@@ -29,7 +29,8 @@ Controls
 
 Remembered settings
     The choices of the last successful drawing, the preview mode, the selected
-    tab and the window size are saved to ``gui_state.json`` (see
+    tab, and the window's size and place (on any monitor, or across several)
+    and whether it is maximized are saved to ``gui_state.json`` (see
     ``frontend.state_path``) after every drawing and on closing, and restored at the
     next start. Options given on the command line override the remembered ones
     they name: a value option individually; the curves, the countries or the
@@ -160,6 +161,11 @@ _DEFAULT_PREVIEW = "fit"
 _SCREEN_FRACTION = 0.9
 _ERROR_FOREGROUND = "#b00020"
 _GEOMETRY_PATTERN = re.compile(r"^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$")
+# A remembered window is put back where it was if this much of its title bar
+# (the band this tall below its top edge) is on a monitor: enough to grab
+# and drag it. Wherever that is: another monitor, across several.
+_TITLE_BAR_PX = 30
+_MIN_TITLE_ON_SCREEN_PX = 100
 _ZOOM_HINT = "Drag: zoom to box · right/middle-drag: pan · wheel: zoom dates"
 
 
@@ -536,10 +542,24 @@ class RatesPlotApp:
     notes to show in the log, and the remembered window state.
     """
 
-    def __init__(self, root: tk.Tk, choices: Choices, notes: list[str] | None = None, state: dict | None = None) -> None:
+    def __init__(
+        self,
+        root: tk.Tk,
+        choices: Choices,
+        notes: list[str] | None = None,
+        state: dict | None = None,
+        normal_geometry: str | None = None,
+    ) -> None:
         self.root = root
         self.messages: queue.Queue = queue.Queue()
         state = state or {}
+        # The window's size and place when neither maximized nor minimized,
+        # remembered with whether it is maximized (``_window_configured``);
+        # ``normal_geometry`` is the one it was given, for a window that
+        # starts maximized.
+        self._normal_geometry = normal_geometry
+        self._maximized = root.state() == "zoomed"
+        root.bind("<Configure>", self._window_configured, add="+")
 
         # Controls, keyed by option name.
         self.payload_vars: dict[str, tk.StringVar] = {}
@@ -1504,6 +1524,23 @@ class RatesPlotApp:
         self.root.clipboard_append(self.command.get())
         self.status.set("Command line copied.")
 
+    def _window_configured(self, event: tk.Event) -> None:
+        """Keep the window's size and place while it is neither maximized nor minimized, and whether it is maximized.
+
+        Windows reports a maximized window's own geometry as the monitor's
+        size, its corner just off the screen; remembered as that, it came
+        back as a huge plain window. So the size before maximizing is kept,
+        and the window is maximized again at the next start.
+        """
+        if event.widget is not self.root:
+            return  # the toplevel's binding also sees every child's events
+        state = self.root.state()
+        if state == "normal":
+            self._normal_geometry = self.root.geometry()
+            self._maximized = False
+        elif state == "zoomed":
+            self._maximized = True
+
     def _remember(self) -> None:
         """Save the last drawn choices and the window layout for the next session."""
         if self.drawn_choices is None:
@@ -1516,7 +1553,9 @@ class RatesPlotApp:
                 "flags": flags,
                 "zoom": self.zoom.get(),
                 "tab": self._current_tab_key(),
-                "geometry": self.root.geometry(),
+                # The size and place before maximizing, and whether it is maximized.
+                "geometry": self._normal_geometry or self.root.geometry(),
+                "maximized": self._maximized,
                 "keep_ratio": {name: editor.keep_ratio.get() for name, editor in self.size_editors.items()},
             }
         )
@@ -1537,13 +1576,71 @@ class RatesPlotApp:
         self.root.destroy()
 
 
+def _monitor_work_areas() -> list[tuple[int, int, int, int]]:
+    """Return each monitor's work area (left, top, right, bottom, without the taskbar) in the window's coordinates.
+
+    Windows only (``EnumDisplayMonitors``), and in the same pixels as Tk's
+    geometry, the process being DPI-aware (``_enable_windows_dpi_awareness``).
+    Empty elsewhere, or if the call fails.
+    """
+    if sys.platform != "win32":
+        return []
+    import ctypes
+    from ctypes import wintypes
+
+    class MonitorInfo(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+    areas: list[tuple[int, int, int, int]] = []
+    user32 = ctypes.windll.user32
+
+    def found(monitor, _dc, _rect, _data) -> int:
+        info = MonitorInfo()
+        info.cbSize = ctypes.sizeof(MonitorInfo)
+        if user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+            work = info.rcWork
+            areas.append((work.left, work.top, work.right, work.bottom))
+        return 1  # go on to the next monitor
+
+    callback = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.LPARAM)
+    try:
+        user32.EnumDisplayMonitors(None, None, callback(found), 0)
+    except (AttributeError, OSError):
+        return []
+    return areas
+
+
+def _title_bar_on_screen(width: int, x: int, y: int, areas: list[tuple[int, int, int, int]]) -> bool:
+    """True when enough of a window's title bar (``_MIN_TITLE_ON_SCREEN_PX`` of it, half its height) is on one monitor."""
+    for left, top, right, bottom in areas:
+        across = min(x + width, right) - max(x, left)
+        down = min(y + _TITLE_BAR_PX, bottom) - max(y, top)
+        if across >= min(_MIN_TITLE_ON_SCREEN_PX, width) and down >= _TITLE_BAR_PX // 2:
+            return True
+    return False
+
+
 def _initial_geometry(root: tk.Tk, state: dict) -> str:
-    """Return the remembered window geometry if it still fits on screen, else 90 % of the screen."""
+    """Return the remembered window geometry if the window can still be reached, else 90 % of the main screen.
+
+    Terry, 2026-10-12: a window made larger than the default, moved to another
+    monitor or stretched across several came back at the default size on the
+    main screen. The check was against the main screen alone; his remembered
+    window, 3456x1944 at (1115, -2149), sat across two of the three monitors
+    above it. Now any size and place is kept while enough of the title bar
+    is on some monitor to drag the window by (``_title_bar_on_screen``); a
+    monitor since unplugged gives the default. Without the monitors' list
+    (not Windows), the main screen's old test.
+    """
     screen_width, screen_height = root.winfo_screenwidth(), root.winfo_screenheight()
     match = _GEOMETRY_PATTERN.match(str(state.get("geometry", "")))
     if match:
         width, height, x, y = map(int, match.groups())
-        if width <= screen_width and height <= screen_height and 0 <= x < screen_width - 100 and 0 <= y < screen_height - 100:
+        areas = _monitor_work_areas()
+        if areas:
+            if _title_bar_on_screen(width, x, y, areas):
+                return f"{width}x{height}+{x}+{y}"
+        elif width <= screen_width and height <= screen_height and 0 <= x < screen_width - 100 and 0 <= y < screen_height - 100:
             return f"{width}x{height}+{x}+{y}"
     return f"{round(screen_width * _SCREEN_FRACTION)}x{round(screen_height * _SCREEN_FRACTION)}+20+20"
 
@@ -1565,6 +1662,10 @@ def run_gui(
         notes.insert(0, note)
     root = tk.Tk()
     root.title(WINDOW_TITLE)
-    root.geometry(_initial_geometry(root, state))
-    RatesPlotApp(root, choices, notes, state)
+    geometry = _initial_geometry(root, state)
+    root.geometry(geometry)
+    if state.get("maximized") is True:
+        # Maximized on the monitor its remembered size and place are on.
+        root.state("zoomed")
+    RatesPlotApp(root, choices, notes, state, normal_geometry=geometry)
     root.mainloop()
