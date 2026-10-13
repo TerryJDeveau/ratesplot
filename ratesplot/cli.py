@@ -29,7 +29,7 @@ from .options import (
     spells,
     switch_of,
 )
-from .http import enable_download_cache
+from .http import drawing_downloads, enable_download_cache
 from .plotting import resolve_start, run_cdn, run_de, run_uk, run_us
 
 
@@ -267,18 +267,21 @@ def main(argv: list[str] | None = None) -> None:
         run_gui(config, payloads, flags)
         return
 
-    if config.start is None:
-        # The start is found from the data (plotting.resolve_start), which are
-        # then prepared again from it: keep each download for this run, so no
-        # source is fetched twice.
-        enable_download_cache()
-        config = resolve_start(config)
-    if config.show_cdn:
-        run_cdn(config)
-    if config.show_us:
-        run_us(config)
-    if config.show_uk:
-        run_uk(config)
-    if config.show_de:
-        run_de(config)
+    # One drawing for the message log: a line for each real download, the
+    # trial pass's included (http.drawing_downloads).
+    with drawing_downloads():
+        if config.start is None:
+            # The start is found from the data (plotting.resolve_start), which are
+            # then prepared again from it: keep each download for this run, so no
+            # source is fetched twice.
+            enable_download_cache()
+            config = resolve_start(config)
+        if config.show_cdn:
+            run_cdn(config)
+        if config.show_us:
+            run_us(config)
+        if config.show_uk:
+            run_uk(config)
+        if config.show_de:
+            run_de(config)
     print("All requested charts finished.")

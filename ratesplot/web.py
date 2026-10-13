@@ -926,7 +926,8 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
     pngs: dict[str, bytes] = {}
     geometry: dict[str, ChartGeometry | None] = {}
     error: str | None = None
-    with this_thread_output_to(lines.append), _DRAWING_LOCK:
+    # Each real download logged, and those reused counted, once the lock is held (http.drawing_downloads).
+    with this_thread_output_to(lines.append), _DRAWING_LOCK, http.drawing_downloads():
         try:
             drawn = resolve_start(config)
             for country in COUNTRIES:

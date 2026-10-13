@@ -76,7 +76,7 @@ from .config import (
     PlotConfig,
     component_column,
 )
-from .http import canadian_get, fetch_fred_csv, parse_boc_csv
+from .http import canadian_get, downloads_of, fetch_fred_csv, log_download, parse_boc_csv
 from .joins import align_macro, chain, dated_by_quarter_end, embedded_frame
 
 # Bank of Canada Valet series codes -> chart column names. The 3-month T-bill
@@ -134,8 +134,8 @@ def statcan_zip_table_with_metadata(table_id: str) -> tuple[pd.DataFrame, str]:
     The archive holds the data CSV plus a ``*_MetaData.csv`` describing the
     table's dimensions and members; the latter is returned as raw text.
     """
-    print(f"Downloading StatCan table {table_id} (ZIP) …")
-    response = canadian_get(STATCAN_TABLE_URL.format(table_id=table_id), timeout=STATCAN_TIMEOUT_SECONDS)
+    with downloads_of(f"Statistics Canada table {table_id}"):
+        response = canadian_get(STATCAN_TABLE_URL.format(table_id=table_id), timeout=STATCAN_TIMEOUT_SECONDS)
 
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         names = [name for name in archive.namelist() if name.endswith(".csv")]
@@ -161,6 +161,7 @@ def statcan_wds_vectors(vector_ids: Iterable[str | int], *, latest_n: int = 250)
     payload = [
         {"vectorId": int(str(vector).lstrip("vV")), "latestN": latest_n} for vector in vector_ids
     ]
+    log_download("Statistics Canada vectors (WDS)")
     response = CANADIAN_SESSION.post(STATCAN_WDS_URL, json=payload, timeout=HTTP_POST_TIMEOUT_SECONDS)
     response.raise_for_status()
 
@@ -246,13 +247,12 @@ def fetch_cdn_yields(config: PlotConfig) -> pd.DataFrame:
     if not chosen:
         return pd.DataFrame()
 
-    print("Fetching Bank of Canada benchmark yields …")
-    yields = boc_valet_group(BOC_BENCHMARK_GROUP).rename(columns=BOC_BENCHMARK_COLUMNS)
-
-    try:
-        yields = yields.join(boc_valet_series(BOC_3M_TBILL_SERIES).rename("3-Month"), how="outer")
-    except Exception as exc:
-        print(f"  Warning: Bank of Canada 3-month T-bill ({BOC_3M_TBILL_SERIES}) unavailable ({exc}); drawn without it.")
+    with downloads_of("Bank of Canada benchmark yields"):
+        yields = boc_valet_group(BOC_BENCHMARK_GROUP).rename(columns=BOC_BENCHMARK_COLUMNS)
+        try:
+            yields = yields.join(boc_valet_series(BOC_3M_TBILL_SERIES).rename("3-Month"), how="outer")
+        except Exception as exc:
+            print(f"  Warning: Bank of Canada 3-month T-bill ({BOC_3M_TBILL_SERIES}) unavailable ({exc}); drawn without it.")
 
     available = [column for column in YIELD_COLUMNS if column in yields.columns]
     # Short forward-fill bridges holidays and single missing prints only.

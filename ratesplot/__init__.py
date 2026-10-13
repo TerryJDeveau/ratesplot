@@ -5,8 +5,9 @@ Package layout
 config            constants, per-country metadata, HTTP session, PlotConfig; the
                   nations (Nation, NATIONS) and the choices each may have its own of
 frames            small DataFrame helpers shared by the layers below
-http              retrying GET helper, FRED CSV reader, BoC CSV parser, session download cache
-console           printed output routed by thread (the window's log; the trial pass discarded)
+http              retrying GET helper, FRED CSV reader, BoC CSV parser, session download cache,
+                  the message log's line for each real download
+console           printed output routed by thread (the message log; the trial pass discarded)
 axes              y-axis configuration, limit padding, currency and percent formatters
 legend            legend auto-placement, title/subtitle/layout finishing
 occupancy         every drawn line sampled into a grid of the axes, for finding free room
@@ -51,7 +52,7 @@ plotting, http}; cli -> {options, plotting, http}; frontend -> {options,
 config}; plotting -> {axes, legend, endlabels, regression, measures, rates,
 cdn_data, us_data, uk_data, de_data, joins, latest} -> {frames, http} -> config;
 {cdn_data, uk_data, de_data} -> joins; rates -> {cdn_data, uk_data, de_data, http};
-plotting, gui, web -> console;
+plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
 regression -> occupancy; options -> config. Data modules never import
 plotting. Nothing imports web or gui, and cli imports gui only when the

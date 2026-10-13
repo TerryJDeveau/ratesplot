@@ -72,7 +72,7 @@ from .config import (
     component_column,
 )
 from .de_archive_data import EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY
-from .http import de_get
+from .http import de_get, downloads_of
 from .joins import embedded_frame, ttm_sum
 
 # Chart column -> the Bundesbank's code of that residual maturity in the
@@ -349,6 +349,7 @@ def _term_structure(column: str, frequency: str) -> pd.Series:
     return bundesbank_series(BUNDESBANK_TERM_STRUCTURE_FLOW, key)
 
 
+@downloads_of("Bundesbank Federal yields")
 def fetch_de_yields(config: PlotConfig) -> pd.DataFrame:
     """Return Germany's Federal yields: each term's monthly values, then its daily ones, date-indexed.
 
@@ -366,7 +367,6 @@ def fetch_de_yields(config: PlotConfig) -> pd.DataFrame:
     if not chosen:
         return pd.DataFrame()
 
-    print("Fetching Bundesbank Federal yields …")
     columns: dict[str, pd.Series] = {}
     history_through: dict[str, pd.Timestamp] = {}
     for column in chosen:
@@ -416,6 +416,7 @@ def _ttm_interest(sectors: tuple[str, ...]) -> pd.Series:
     return ttm_sum(pd.concat(parts, axis=1).sum(axis=1, min_count=len(parts)).dropna())
 
 
+@downloads_of("ECB and Eurostat government debt")
 def fetch_de_debt(config: PlotConfig) -> pd.DataFrame | None:
     """Return general government gross debt: year-end figures (ECB) until Eurostat's quarters begin, then the quarters.
 
@@ -438,6 +439,7 @@ def fetch_de_debt(config: PlotConfig) -> pd.DataFrame | None:
     return joined.rename(DE_DEBT_COLUMN).to_frame() if joined is not None else None
 
 
+@downloads_of("Eurostat GDP")
 def fetch_de_gdp(config: PlotConfig) -> pd.DataFrame | None:
     """Return trailing-twelve-month nominal GDP: four-quarter sums of Eurostat's quarters (from 1991); None, with a warning, if it fails."""
     if not config.needs_gdp:
@@ -449,6 +451,7 @@ def fetch_de_gdp(config: PlotConfig) -> pd.DataFrame | None:
         return None
 
 
+@downloads_of("Eurostat interest outlays")
 def fetch_de_interest(config: PlotConfig) -> pd.DataFrame | None:
     """Return trailing-twelve-month general government interest payable: the annual figures (1995-), then four-quarter sums (2002-).
 
@@ -470,6 +473,7 @@ def fetch_de_interest(config: PlotConfig) -> pd.DataFrame | None:
     return joined.rename(DE_INTEREST_COLUMN).to_frame() if joined is not None else None
 
 
+@downloads_of("Eurostat debt and interest by level of government")
 def fetch_de_components(config: PlotConfig) -> pd.DataFrame | None:
     """Return debt and TTM interest by level of government (--debt:LETTERS): federal, Länder, local, Länder and local.
 
@@ -494,6 +498,7 @@ def fetch_de_components(config: PlotConfig) -> pd.DataFrame | None:
     return pd.concat(columns, axis=1).sort_index() if columns else None
 
 
+@downloads_of("Eurostat population")
 def fetch_de_population() -> pd.Series | None:
     """Return Germany's population for -p: the 1 January counts (from 1960; West Germany to 1990) until the quarters begin (1991).
 

@@ -585,7 +585,6 @@ class RatesPlotApp:
 
         # Drawing state.
         self.rendering = False
-        self.data_cached = False  # True once a drawing has filled the session download cache
         self.pending: tuple[PlotConfig, Choices] | None = None
         self._pending_forced = False  # a Refresh came during a drawing: draw again after it, even the same choices
         self.shown_config: PlotConfig | None = None
@@ -1146,24 +1145,21 @@ class RatesPlotApp:
         for country in COUNTRIES:
             self.notebook.tab(self.tabs[country.key], state="normal" if country in countries else "hidden")
         self.status.set("Drawing …")
-        # The fetchers print "Downloading …" either way; say when the session
-        # cache means nothing is actually downloaded.
-        source = "reusing downloaded data" if self.data_cached else "downloading data"
+        # What is really downloaded is logged line by line, and what is
+        # reused counted at the end (http.drawing_downloads).
         start = "the automatic start" if config.start is None else f"{config.start:%Y-%m-%d}"
-        self._append_log(
-            f"--- drawing {config.width_px}x{config.height_px}, "
-            f"{start} to {config.end:%Y-%m-%d} ({source})\n"
-        )
+        self._append_log(f"--- drawing {config.width_px}x{config.height_px}, {start} to {config.end:%Y-%m-%d}\n")
         threading.Thread(target=self._render_worker, args=(config, countries), daemon=True).start()
 
     def _render_worker(self, config: PlotConfig, countries: list[Country]) -> None:
         """Worker thread: draw each country to PNG bytes and post them. Never touches Tk.
 
         A blank Start is found first, once for all the charts (``resolve_start``).
-        What this thread prints goes to the log pane (``console``); the main
+        What this thread prints goes to the message log (``console``), with a
+        line for each real download (``http.drawing_downloads``); the main
         thread's output goes to the console as before.
         """
-        with this_thread_output_to(lambda text: self.messages.put(("log", text))):
+        with this_thread_output_to(lambda text: self.messages.put(("log", text))), http.drawing_downloads():
             try:
                 drawn = resolve_start(config)
                 for country in countries:
@@ -1210,7 +1206,6 @@ class RatesPlotApp:
             self.shown_config = config
             self.drawn_config = drawn
             self.drawn_choices = self.rendering_choices
-            self.data_cached = True
             drawn = [TAB_TITLES.get(c.key, c.key) for c in COUNTRIES if getattr(config, c.show_field)]
             names = drawn[0] if len(drawn) == 1 else f"{', '.join(drawn[:-1])} and {drawn[-1]}"
             self.status.set(f"Drawn: {names} at {config.width_px} x {config.height_px} px.")
@@ -1504,8 +1499,6 @@ class RatesPlotApp:
         them again, as the web page does for every drawing.
         """
         dropped = http.forget_downloads_older_than(DOWNLOAD_MAX_AGE_SECONDS)
-        if dropped:
-            self.data_cached = False
         self._append_log(f"--- refresh: the latest quotes, and {dropped} download(s) over an hour old fetched again\n")
         self.request_redraw(force=True)
 

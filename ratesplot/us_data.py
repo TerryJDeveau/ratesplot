@@ -30,7 +30,7 @@ from .config import (
     component_column,
 )
 from .frames import at_quarter_end
-from .http import fetch_fred_csv
+from .http import downloads_of, fetch_fred_csv
 from .latest import extend_us_federal_debt, observed_through, project_to_now
 from .us_archive_data import EMBEDDED_US_DEBT_BY_LEVEL
 
@@ -105,6 +105,7 @@ def us_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
     return {**yields, **US_SERIES_EARLIEST}
 
 
+@downloads_of("FRED Treasury yields")
 def fetch_us_yields(config: PlotConfig) -> pd.DataFrame:
     """Return the chosen U.S. Treasury yield curves as a ``DATE``-column frame from ``config.start``.
 
@@ -115,7 +116,6 @@ def fetch_us_yields(config: PlotConfig) -> pd.DataFrame:
     if not config.fetched_yield_columns:
         return pd.DataFrame()
 
-    print("Fetching FRED Treasury yields …")
     frames = [
         fetch_fred_csv(US_YIELD_SERIES[label]).set_index(DATE_COLUMN).rename(columns={US_YIELD_SERIES[label]: label})
         for label in config.fetched_yield_columns
@@ -124,6 +124,7 @@ def fetch_us_yields(config: PlotConfig) -> pd.DataFrame:
     return data.loc[data[DATE_COLUMN] >= config.start]
 
 
+@downloads_of("FRED population")
 def fetch_us_population() -> pd.Series | None:
     """Return the U.S. population (persons, quarterly, from 1947) for -p, or None if FRED fails.
 
@@ -267,6 +268,7 @@ def _fetch_us_interest_levels(letters: str, config: PlotConfig) -> list[pd.DataF
     return frames
 
 
+@downloads_of("FRED debt, GDP, and interest")
 def fetch_us_macro(config: PlotConfig, last_yield_date: pd.Timestamp | None) -> pd.DataFrame:
     """Fetch the selected U.S. macro series and align them on one ``DATE`` column.
 
@@ -278,7 +280,6 @@ def fetch_us_macro(config: PlotConfig, last_yield_date: pd.Timestamp | None) -> 
     if not config.has_macro_series:
         return pd.DataFrame()
 
-    print("Fetching FRED macro series …")
     frames: list[pd.DataFrame] = []
 
     split = bool(config.components)  # draw federal and non-federal lines instead of the aggregates

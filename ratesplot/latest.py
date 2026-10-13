@@ -73,8 +73,9 @@ from .config import (
     YIELD_COLUMNS,
     PlotConfig,
     component_column,
+    nation_by_key,
 )
-from .http import latest_get, parse_boc_csv
+from .http import downloads_of, latest_get, parse_boc_csv
 
 # Where ``plotting.prepare_us`` / ``prepare_cdn`` record, in the yields frame's
 # ``attrs``, the time of the newest quote added (for the subtitle).
@@ -295,6 +296,7 @@ def _market_steered(
 # ---------------------------------------------------------------------------
 
 
+@downloads_of("U.S. Treasury daily yields (--cur)")
 def treasury_yields_after(
     last: pd.Timestamp, config: PlotConfig, columns: Iterable[str] = YIELD_COLUMNS
 ) -> pd.DataFrame:
@@ -319,6 +321,7 @@ def treasury_yields_after(
     return data.loc[(data[DATE_COLUMN] > last) & (data[DATE_COLUMN] <= config.end)].reset_index(drop=True)
 
 
+@downloads_of("U.S. Treasury daily debt, Debt to the Penny (--cur)")
 def treasury_debt_from(first: pd.Timestamp, config: PlotConfig) -> pd.Series:
     """Return total public debt outstanding (dollars) each business day from ``first`` to ``config.end``."""
     params = {
@@ -342,6 +345,7 @@ def treasury_debt_from(first: pd.Timestamp, config: PlotConfig) -> pd.Series:
 _PLAUSIBLE_CDN_MARKET_DEBT = (2e11, 2e13)
 
 
+@downloads_of("Government of Canada market debt (--cur)")
 def cdn_market_debt(first: pd.Timestamp) -> pd.Series:
     """Return Government of Canada market debt outstanding (dollars, date-indexed) from ``first``'s year to the latest day.
 
@@ -377,7 +381,6 @@ def market_debt_for_projection(observed: dict[str, pd.Timestamp | None], config:
     starts = [observed[column] for column in _MARKET_STEERED_COLUMNS if observed.get(column) is not None]
     if not config.current or not starts or not _quotes_can_reach(config):
         return None
-    print("Fetching Government of Canada market debt (--cur) …")
     try:
         return cdn_market_debt(min(starts) - pd.Timedelta(days=_PROJECTION_RATE_DAYS))
     except Exception as exc:
@@ -432,9 +435,10 @@ def fetch_quotes(country: str, columns: Iterable[str] | None = None) -> dict[str
         "output": "json",
         "events": "1",
     }
-    response = latest_get(
-        CNBC_QUOTE_URL, params, cached=False, max_retries=LATEST_QUOTE_RETRIES, timeout=LATEST_QUOTE_TIMEOUT_SECONDS
-    )
+    with downloads_of(f"{nation_by_key(country).adjective} yield quotes of the moment, CNBC (--cur)"):
+        response = latest_get(
+            CNBC_QUOTE_URL, params, cached=False, max_retries=LATEST_QUOTE_RETRIES, timeout=LATEST_QUOTE_TIMEOUT_SECONDS
+        )
     quotes = response.json()["FormattedQuoteResult"]["FormattedQuote"]
     if isinstance(quotes, dict):  # a single symbol comes back unlisted
         quotes = [quotes]
@@ -510,7 +514,6 @@ def extend_us_yields(yields: pd.DataFrame, config: PlotConfig) -> tuple[pd.DataF
     if config.end <= last:
         return yields, None
 
-    print("Fetching the latest U.S. yields (--cur) …")
     parts = [yields]
     official = yields.set_index(DATE_COLUMN).iloc[-1]
     try:
@@ -549,7 +552,6 @@ def extend_cdn_yields(
     if config.end <= last or not _quotes_can_reach(config):
         return yields, None
 
-    print(f"Fetching the latest {name} yields (--cur) …")
     try:
         quotes, quote_time = intraday_yields_after(country, yields.iloc[-1], last, config)
     except Exception as exc:
@@ -578,7 +580,6 @@ def extend_us_federal_debt(federal: pd.DataFrame, column: str, config: PlotConfi
     if config.end <= closes:
         return federal
 
-    print("Fetching the latest U.S. federal debt (--cur) …")
     try:
         daily = treasury_debt_from(closes, config)
     except Exception as exc:

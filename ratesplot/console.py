@@ -66,6 +66,27 @@ def _router() -> _Router:
         return sys.stdout
 
 
+def current_writer() -> Callable[[str], object]:
+    """Return a function that writes where the calling thread's output goes now, wherever it is routed later.
+
+    For a record that must reach the log even from code whose printing is
+    discarded later: the message log's download lines, which the trial pass
+    of ``plotting.resolve_start`` would otherwise swallow (``http.drawing_downloads``).
+    """
+    stream = sys.stdout
+    if isinstance(stream, _Router):
+        sink = stream.sinks.get(threading.get_ident(), _NOT_ROUTED)
+        if sink is _NOT_ROUTED:
+            stream = stream.original
+        else:
+            return sink if sink is not None else _discard
+    return stream.write if stream is not None else _discard  # None: pythonw, no console
+
+
+def _discard(text: str) -> int:
+    return len(text)
+
+
 @contextlib.contextmanager
 def this_thread_output_to(sink: Sink) -> Iterator[None]:
     """Send what the calling thread prints meanwhile to ``sink`` (None: discard it).

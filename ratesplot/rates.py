@@ -38,7 +38,7 @@ from .config import (
 )
 from .de_data import ecb_series
 from .de_data import YIELD_HISTORY_ATTR as DE_YIELD_HISTORY_ATTR
-from .http import fetch_fred_csv
+from .http import downloads_of, fetch_fred_csv
 from .uk_archive_data import EMBEDDED_UK_BANK_RATE_HISTORY, EMBEDDED_UK_MORTGAGE_HISTORY
 from .uk_data import YIELD_HISTORY_ATTR, iadb_series
 
@@ -413,17 +413,18 @@ def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[
     window when drawn, so the automatic start sees where it begins.
     """
     curves: list[RateCurve | None] = []
+    adjective = nation_by_key(country).adjective
     if config.policy_rates:
-        print("Fetching the policy rate …")
-        curves.append({"us": us_policy_rate, "cdn": cdn_policy_rate, "uk": uk_policy_rate, "de": de_policy_rate}[country]())
+        with downloads_of(f"{adjective} policy rate"):
+            curves.append({"us": us_policy_rate, "cdn": cdn_policy_rate, "uk": uk_policy_rate, "de": de_policy_rate}[country]())
     if config.mortgages:
         terms = [term for term in config.mortgage_terms if MORTGAGE_TERMS[term][0] == country]
         if not terms:
             own = ",".join(nation_by_key(country).mortgage_terms)
             warn_none_drawn(country, "mortgage rate", f"none of its mortgage terms ({own}) is chosen")
         else:
-            print("Fetching mortgage rates …")
-        curves += [mortgage_rate(term) for term in terms]
+            with downloads_of(f"{adjective} mortgage rates"):
+                curves += [mortgage_rate(term) for term in terms]
     if config.spreads:
         curves += yield_spreads(country, yields, config)
     chosen = []

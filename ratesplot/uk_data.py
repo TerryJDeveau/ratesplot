@@ -76,7 +76,7 @@ from .config import (
     PlotConfig,
     component_column,
 )
-from .http import uk_get
+from .http import downloads_of, uk_get
 from .joins import chain, embedded_frame, ttm_sum
 from .uk_archive_data import (
     EMBEDDED_UK_10Y_HISTORY,
@@ -276,6 +276,7 @@ def uk_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
     return {**earliest, **UK_SERIES_EARLIEST}
 
 
+@downloads_of("Bank of England gilt yields")
 def fetch_uk_yields(config: PlotConfig) -> pd.DataFrame:
     """Return the UK's gilt yields: each term's monthly history, then its daily par yield, date-indexed.
 
@@ -292,7 +293,6 @@ def fetch_uk_yields(config: PlotConfig) -> pd.DataFrame:
     if not chosen:
         return pd.DataFrame()
 
-    print("Fetching Bank of England gilt yields …")
     columns: dict[str, pd.Series] = {}
     history_through: dict[str, pd.Timestamp] = {}
     for column in chosen:
@@ -324,6 +324,7 @@ def fetch_uk_yields(config: PlotConfig) -> pd.DataFrame:
     return frame
 
 
+@downloads_of("ONS public sector debt")
 def fetch_uk_debt(config: PlotConfig) -> pd.DataFrame | None:
     """Return general government gross debt (BKPX), the national debt alone before it begins, and net debt (HF6W); monthly.
 
@@ -352,6 +353,7 @@ def fetch_uk_debt(config: PlotConfig) -> pd.DataFrame | None:
     return pd.concat(parts, axis=1).sort_index() if parts else None
 
 
+@downloads_of("ONS GDP")
 def fetch_uk_gdp(config: PlotConfig) -> pd.DataFrame | None:
     """Return trailing-twelve-month nominal GDP: the annual history joined to the four-quarter sums of YBHA."""
     if not config.needs_gdp:
@@ -365,6 +367,7 @@ def fetch_uk_gdp(config: PlotConfig) -> pd.DataFrame | None:
     return chain((history, live), GDP_COLUMN, annual_historical=False)
 
 
+@downloads_of("ONS interest outlays")
 def fetch_uk_interest(config: PlotConfig) -> pd.DataFrame | None:
     """Return trailing-twelve-month general government interest (NMYX, four-quarter sums); None, with a warning, if ONS fails."""
     if not config.include_interest:
@@ -376,6 +379,7 @@ def fetch_uk_interest(config: PlotConfig) -> pd.DataFrame | None:
         return None
 
 
+@downloads_of("ONS debt and interest by level of government")
 def fetch_uk_components(config: PlotConfig) -> pd.DataFrame | None:
     """Return debt and TTM interest by level of government (--debt:LETTERS): central "f", local "m" (or "n").
 
@@ -410,6 +414,7 @@ def fetch_uk_components(config: PlotConfig) -> pd.DataFrame | None:
     return pd.concat(columns, axis=1).sort_index() if columns else None
 
 
+@downloads_of("ONS population")
 def fetch_uk_population() -> pd.Series | None:
     """Return the UK population for -p: the baked annual estimates until EBAQ begins, then EBAQ (persons).
 

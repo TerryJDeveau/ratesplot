@@ -1,11 +1,14 @@
-"""HTTP and source-format helpers for FRED, Bank of Canada, Statistics Canada, the UK's and Germany's sources and the latest-value sources."""
+"""HTTP and source-format helpers for FRED, Bank of Canada, Statistics Canada, the UK's and Germany's sources and the latest-value sources; the message log's download lines."""
 
 from __future__ import annotations
 
+import contextlib
 import io
 import threading
 import time
-from typing import Callable, TypeVar
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Callable, Iterator, TypeVar
 
 import pandas as pd
 import requests
@@ -22,6 +25,7 @@ from .config import (
     RETRY_BACKOFF_BASE_SECONDS,
     UK_SESSION,
 )
+from .console import current_writer
 
 T = TypeVar("T")
 
@@ -38,13 +42,130 @@ T = TypeVar("T")
 # The web page (ratesplot.web) serves every visitor from one process and keeps
 # running for days, so there each download is kept for a limited time only
 # (``max_age_seconds``): visitors share the downloads, and still see new data
-# within that time. Entries are stored with the time they were fetched.
+# within that time. Entries are stored with the time they were fetched (by
+# the monotonic clock for their age, and by the wall clock for the message
+# log's "the oldest from …").
 # Keyed by URL (and query parameters). Only the two download helpers below use
 # it; the StatCan WDS fallback is rare and stays uncached.
 
-_download_cache: dict[tuple, tuple[float, object]] | None = None
+_download_cache: dict[tuple, tuple[float, float, object]] | None = None
 _download_cache_max_age: float | None = None  # seconds; None keeps each download for the session
 _download_cache_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# The message log's download lines
+# ---------------------------------------------------------------------------
+# Terry, 2026-10-12: a time stamp in UTC only for a real download from a
+# source. So each real download is logged with the time it began,
+# "2026-10-13 14:32:05 -> Bank of Canada benchmark yields", once for each
+# group of downloads named by ``downloads_of``, however many requests the
+# group makes. A download served again from the session's cache is not
+# logged by itself; a drawing ends with one line counting them ("Reused 14
+# earlier downloads, the oldest from 16:32:05 UTC"), since how old the data
+# are still matters. The built-in history (the baked and transcribed data)
+# is never logged: it is the same on every run.
+#
+# A drawing (``drawing_downloads``) writes its lines where its thread's
+# output went when it began. The trial pass of ``plotting.resolve_start``
+# discards everything it prints, but its downloads are real ones, and the
+# real pass then finds them in the cache: they are logged once, by the
+# trial pass, and are not counted as reused (they were fetched during
+# this drawing).
+
+
+@dataclass
+class _Group:
+    """A group of downloads named by ``downloads_of``; its line is written at its first real download."""
+
+    label: str
+    logged: bool = False
+
+
+@dataclass
+class _Drawing:
+    """One drawing's download log (``drawing_downloads``)."""
+
+    write: Callable[[str], object]
+    began: float  # time.monotonic() when the drawing began
+    reused: dict[tuple, float] = field(default_factory=dict)  # cache key -> when it was fetched (time.time())
+
+
+_log_state = threading.local()  # .groups: list[_Group]; .drawing: _Drawing | None
+
+
+def _groups() -> list[_Group]:
+    """The calling thread's open groups, innermost last."""
+    groups = getattr(_log_state, "groups", None)
+    if groups is None:
+        groups = _log_state.groups = []
+    return groups
+
+
+@contextlib.contextmanager
+def downloads_of(label: str) -> Iterator[None]:
+    """Name the downloads the calling thread makes meanwhile, for the message log: one line for the group.
+
+    The innermost group names a download. Usable as a decorator too.
+    """
+    groups = _groups()
+    groups.append(_Group(label))
+    try:
+        yield
+    finally:
+        groups.pop()
+
+
+def log_download(fallback: str) -> None:
+    """Log a real download about to begin, under its group's name, once per group.
+
+    ``fallback`` names a download made outside any group (a source a later
+    change forgot to name), so none goes unlogged.
+    """
+    groups = _groups()
+    if groups:
+        group = groups[-1]
+        if group.logged:
+            return
+        group.logged = True
+        label = group.label
+    else:
+        label = fallback
+    line = f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S} -> {label}\n"
+    drawing = getattr(_log_state, "drawing", None)
+    if drawing is not None:
+        drawing.write(line)
+    else:
+        print(line, end="")
+
+
+def _note_reused(key: tuple, fetched_at: float, fetched_wall: float) -> None:
+    """Count a cached download served again, if it was fetched before the calling thread's drawing began."""
+    drawing = getattr(_log_state, "drawing", None)
+    if drawing is not None and fetched_at < drawing.began:
+        drawing.reused[key] = fetched_wall
+
+
+@contextlib.contextmanager
+def drawing_downloads() -> Iterator[None]:
+    """Log the downloads of one drawing (see above), and end with how many earlier ones it reused.
+
+    The window's worker, a web visitor's drawing and the command line's
+    run each wrap their whole drawing in this, the trial pass included.
+    """
+    drawing = _Drawing(write=current_writer(), began=time.monotonic())
+    previous = getattr(_log_state, "drawing", None)
+    _log_state.drawing = drawing
+    try:
+        yield
+    finally:
+        _log_state.drawing = previous
+        if drawing.reused:
+            oldest = datetime.fromtimestamp(min(drawing.reused.values()), timezone.utc)
+            # The time alone on the day it is; a window left open overnight gets the date too.
+            when = f"{oldest:%H:%M:%S}" if oldest.date() == datetime.now(timezone.utc).date() else f"{oldest:%Y-%m-%d %H:%M:%S}"
+            count = len(drawing.reused)
+            drawing.write(f"Reused {count} earlier download{'' if count == 1 else 's'}, the oldest from {when} UTC\n")
 
 
 def enable_download_cache(max_age_seconds: float | None = None) -> None:
@@ -62,7 +183,7 @@ def forget_downloads_older_than(seconds: float) -> int:
         if _download_cache is None:
             return 0
         now = time.monotonic()
-        old = [key for key, (fetched_at, _result) in _download_cache.items() if now - fetched_at > seconds]
+        old = [key for key, (fetched_at, _wall, _result) in _download_cache.items() if now - fetched_at > seconds]
         for key in old:
             del _download_cache[key]
         return len(old)
@@ -74,16 +195,20 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     A result older than the cache's age limit is downloaded again. Two threads
     asking for the same missing key at once both download it; the later one's
     result is kept. That costs a duplicate download, never a wrong result.
+    A result served again is counted for the message log (``_note_reused``);
+    ``download`` logs a real one itself (``log_download``), so the harnesses'
+    stand-ins for this function log what they really download, and nothing else.
     """
     with _download_cache_lock:
         if _download_cache is not None and key in _download_cache:
-            fetched_at, result = _download_cache[key]
+            fetched_at, fetched_wall, result = _download_cache[key]
             if _download_cache_max_age is None or time.monotonic() - fetched_at <= _download_cache_max_age:
+                _note_reused(key, fetched_at, fetched_wall)
                 return result  # type: ignore[return-value]
     result = download()
     with _download_cache_lock:
         if _download_cache is not None:
-            _download_cache[key] = (time.monotonic(), result)
+            _download_cache[key] = (time.monotonic(), time.time(), result)
     return result
 
 
@@ -139,6 +264,7 @@ def _session_get(
         return response
 
     def download() -> requests.Response | None:
+        log_download(url)
         return _with_retries(f"{tag.capitalize()} request", attempt, max_retries=max_retries, retry_on=(requests.RequestException,))
 
     if not cached:
@@ -264,8 +390,12 @@ def fetch_fred_csv(series_id: str, *, max_retries: int = DEFAULT_FRED_RETRIES) -
         data[series_id] = pd.to_numeric(data[series_id], errors="coerce")
         return data
 
+    def download() -> pd.DataFrame:
+        log_download(f"FRED {series_id}")
+        return _with_retries(series_id, attempt, max_retries=max_retries)
+
     # Callers modify the frame they get, so each receives its own copy of the cached one.
-    return _cached(("fred", series_id), lambda: _with_retries(series_id, attempt, max_retries=max_retries)).copy()
+    return _cached(("fred", series_id), download).copy()
 
 
 def parse_boc_csv(response_text: str, key: str = "date") -> pd.DataFrame:
