@@ -743,8 +743,9 @@ class CountryMetadata:
         yields by a semicolon, since the qualifier does not apply to them:
         ``"CDN Benchmark Yields; Aggregate CDN Public Debt & Interest Outlays
         as % of TTM GDP"``. ``rate_titles`` name the yield axis's other
-        curves drawn (``ratesplot.rates``), after the yields: "U.S. Treasury
-        Yields, Policy Rate, Aggregate US Public Debt …".
+        curves drawn (``ratesplot.rates``), after the yields, in the order
+        given (the spreads first, ``plotting.draw_country``): "U.S. Treasury
+        Yields, Spreads, Policy Rate, Aggregate US Public Debt …".
         """
         drawn = set(macro_keys_drawn)
         if "debt" in drawn:

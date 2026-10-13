@@ -454,12 +454,14 @@ def draw_country(
         legend_macro.append(regression_legend_entry(config))
     # The title names only what is on the chart, and the subtitle only the
     # dates it covers; the legend keeps yields and macro curves as separate
-    # column groups.
+    # column groups. In the title the spreads come straight after the yields
+    # they are taken from (Terry, 2026-10-12), then the policy and mortgage
+    # rates in their drawing order (a stable sort).
     title = metadata.title_for(
         yields_drawn=bool(yield_lines),
         macro_keys_drawn=macro_keys_drawn,
         config=config,
-        rate_titles=[curve.title for _line, curve in rate_lines],
+        rate_titles=[curve.title for _line, curve in sorted(rate_lines, key=lambda item: not item[1].spread)],
     )
     finish_legend_and_title(
         ax_yield,
