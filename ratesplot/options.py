@@ -406,10 +406,15 @@ def check_yield_bounds(values: Mapping[str, object]) -> None:
 
 
 def check_macro_bounds(values: Mapping[str, object]) -> None:
-    """Require bottom < top when both right-axis bounds are given."""
+    """Require bottom < top when both right-axis bounds are given.
+
+    The message gives no numbers: parsed, they are dollars (5e+12 for "5t")
+    or percentages, which is known only once the flags are; the fields and
+    the command line show what was typed.
+    """
     top, bottom = values["macro_top"], values["macro_bottom"]
     if top is not None and bottom is not None and bottom >= top:
-        raise ValueError(f"bottom limit ({bottom}) must be less than top limit ({top})")
+        raise ValueError("bottom limit must be less than top limit")
 
 
 def parse_components(spec: str, *, kind: str) -> str:

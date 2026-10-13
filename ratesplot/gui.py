@@ -110,6 +110,7 @@ from .frontend import (
     choice_values,
     choices_text,
     drawn_payloads,
+    field_problems,
     idle_controls,
     level_letters,
     load_state,
@@ -117,9 +118,11 @@ from .frontend import (
     option_of,
     pan_updates,
     png_bytes,
+    problem_text,
     save_state,
     saved_png_name,
     scale_dates_updates,
+    size_boxes_at_fault,
     starting_choices,
     zoom_updates,
 )
@@ -569,6 +572,7 @@ class RatesPlotApp:
         self.value_labels: dict[str, ttk.Label] = {}
         self.value_entries: dict[str, ttk.Entry] = {}
         self.size_editors: dict[str, _SizeEditor] = {}
+        self.size_entries: dict[str, tuple[ttk.Entry, ttk.Entry]] = {}  # the width and height boxes
         self.level_editors: dict[str, _LevelsEditor] = {}
         self.choice_editors: dict[str, _ChoicesEditor] = {}
 
@@ -597,6 +601,9 @@ class RatesPlotApp:
         self._text_after_id: str | None = None
         self._resize_after_ids: dict[str, str] = {}
         self._loading = False
+        # The text fields changed by hand, oldest first: a problem between two
+        # (Min not below Max) is put on the one changed last (field_problems).
+        self._changed: list[str] = []
 
         # Mouse state.
         # Each step Back can undo: the choices before it, and for a Reset the
@@ -712,6 +719,7 @@ class RatesPlotApp:
         """One labelled frame per option group, one control per GUI option, all from the table."""
         style = ttk.Style(self.root)
         style.configure("Error.TLabel", foreground=_ERROR_FOREGROUND)
+        style.configure("Error.TEntry", foreground=_ERROR_FOREGROUND)
 
         for group in GROUPS:
             members = [
@@ -784,7 +792,7 @@ class RatesPlotApp:
         entry = ttk.Entry(frame, textvariable=variable, width=entry_width)
         entry.grid(row=row, column=1, sticky="ew", pady=pady)
         entry.bind("<Return>", lambda _event: self.request_redraw())
-        variable.trace_add("write", lambda *_args: self._text_changed())
+        variable.trace_add("write", lambda *_args: self._text_changed(key))
         self.value_labels[key] = label
         self.value_entries[key] = entry
         for widget in (label, entry):
@@ -882,7 +890,8 @@ class RatesPlotApp:
         lock = ttk.Checkbutton(box, text="Preserve aspect ratio", variable=editor.keep_ratio, command=editor.lock_changed)
         lock.grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 0))
 
-        payload.trace_add("write", lambda *_args: self._text_changed())
+        payload.trace_add("write", lambda *_args: self._text_changed(option.name))
+        self.size_entries[option.name] = (width_entry, height_entry)
         for entry in (width_entry, height_entry):
             entry.bind("<Return>", lambda _event: self.request_redraw())
         tip = _tooltip_text(option) + "\nWidth x height in pixels. Blank = default."
@@ -1071,9 +1080,12 @@ class RatesPlotApp:
             if key in self.level_editors:
                 self.level_editors[key].set_state(state)
 
-    def _text_changed(self) -> None:
+    def _text_changed(self, key: str) -> None:
         if self._loading:
             return
+        if key in self._changed:
+            self._changed.remove(key)
+        self._changed.append(key)
         if self._text_after_id is not None:
             self.root.after_cancel(self._text_after_id)
         self._text_after_id = self.root.after(_TEXT_REDRAW_DELAY_MS, self.request_redraw)
@@ -1082,20 +1094,23 @@ class RatesPlotApp:
         tokens = command_line_tokens(*self._snapshot())
         self.command.set(subprocess.list2cmdline(["python", _SCRIPT_NAME, *tokens]))
 
-    def _mark_invalid_fields(self, payloads: dict[str, str]) -> list[str]:
-        """Colour the label of every text field whose value its parser rejects; return the messages."""
-        problems: list[str] = []
+    def _mark_invalid_fields(self, payloads: dict[str, str], flags: dict[str, bool]) -> list[str]:
+        """Colour the label and the text of every field in the wrong (``frontend.field_problems``); return the messages.
+
+        Terry, 2026-10-12: the text red as well as the label, since he was
+        not sure at once which of the width and height boxes was wrong; and
+        crossed or equal limits marked too, on the box changed last.
+        """
+        problems = field_problems(payloads, flags, self._changed)
         for key, label in self.value_labels.items():
-            option = option_of(key)
-            style = "TLabel"
-            if key in payloads:
-                try:
-                    option.parse(payloads[key])
-                except ValueError as exc:
-                    style = "Error.TLabel"
-                    problems.append(str(exc))
-            label.configure(style=style)
-        return problems
+            label.configure(style="Error.TLabel" if key in problems else "TLabel")
+        for key, entry in self.value_entries.items():
+            entry.configure(style="Error.TEntry" if key in problems else "TEntry")
+        for name, entries in self.size_entries.items():
+            faults = size_boxes_at_fault(payloads[name]) if name in problems else (False, False)
+            for entry, fault in zip(entries, faults):
+                entry.configure(style="Error.TEntry" if fault else "TEntry")
+        return [problem_text(key, message) for key, message in problems.items()]
 
     # -- drawing ------------------------------------------------------------
 
@@ -1109,12 +1124,12 @@ class RatesPlotApp:
         snapshot = self._snapshot()
         # A greyed field has no effect: a bad text left there must not stop the drawing.
         payloads = drawn_payloads(*snapshot)
-        problems = self._mark_invalid_fields(payloads)
+        problems = self._mark_invalid_fields(payloads, snapshot[1])
         try:
             config = config_from_choices(payloads, snapshot[1])
         except ValueError as exc:
-            # Field-level problems are listed first; a cross-field one (e.g.
-            # end before start) has no single field to colour.
+            # A field's problem first (a problem between fields is on the one
+            # changed last); one no field is involved in (-r with -p) alone.
             self.status.set(f"Not drawn: {problems[0] if problems else exc}")
             return
 

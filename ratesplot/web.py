@@ -123,13 +123,16 @@ from .frontend import (  # noqa: E402
     choice_values,
     choices_text,
     drawn_payloads,
+    field_problems,
     idle_controls,
     level_letters,
     move_dates_updates,
     option_help_lines,
     option_of,
     png_bytes,
+    problem_text,
     saved_png_name,
+    size_boxes_at_fault,
     starting_choices,
     zoom_updates,
 )
@@ -197,6 +200,8 @@ _HISTORY = "history"  # the choices before each zoom, pan or Reset, for Back and
 _CHART = "chart:"     # + country key + drawing number: a chart (its dragged box)
 _CALENDAR = "calendar:"  # + option name: a date field's calendar
 _SIZE = "size:"          # + "width", "height", "lock", "ratio": the Size boxes, their lock and kept shape
+_CHANGED = "changed"     # the text fields changed by hand, oldest first (frontend.field_problems)
+_WRONG = "wrong"         # the fields in the wrong now, by key: their labels are red
 # The calendar's first day: no series starts earlier (config.EARLIEST_DATA_START).
 _CALENDAR_FIRST = EARLIEST_DATA_START.date()
 
@@ -438,17 +443,19 @@ def _snapshot() -> Choices:
 
 
 def _config_for(choices: Choices) -> tuple[PlotConfig | None, list[str]]:
-    """Return the PlotConfig the controls describe, or None and the problems, one per bad field first."""
+    """Return the PlotConfig the controls describe, or None and the problems, each naming its field.
+
+    The fields in the wrong are those of the window (``frontend.field_problems``):
+    a problem between two (Min not below Max) is on the one changed last.
+    They are kept for the labels (``_WRONG``); a problem no field is
+    involved in (-r with -p) is reported alone.
+    """
     flags = choices[1]
     # A greyed field has no effect: a bad text left there must not stop the drawing (as in the window).
     payloads = drawn_payloads(*choices)
-    problems: list[str] = []
-    for key, option, nation in _value_keys():
-        if key in payloads:
-            try:
-                option.parse(payloads[key])
-            except ValueError as exc:
-                problems.append(f"{nation.name + ', ' if nation else ''}{option.label}: {exc}")
+    wrong = field_problems(payloads, flags, st.session_state.get(_CHANGED, []))
+    st.session_state[_WRONG] = wrong
+    problems = [problem_text(key, message) for key, message in wrong.items()]
     try:
         return config_from_choices(payloads, flags), problems
     except ValueError as exc:
@@ -631,12 +638,26 @@ def _idle() -> frozenset[str]:
     return idle_controls({option.name: bool(st.session_state.get(_FLAG + option.name, False)) for option in _gui_options(False)})
 
 
+def _field_changed(key: str) -> None:
+    """Record a field changed by hand, last (``_CHANGED``)."""
+    changed = [other for other in st.session_state.get(_CHANGED, []) if other != key]
+    st.session_state[_CHANGED] = [*changed, key]
+
+
+def _red_if_wrong(label: str, wrong: bool) -> str:
+    """A field's label, red while the field is in the wrong (Streamlit cannot colour the text in a box)."""
+    return f":red[{label}]" if wrong else label
+
+
 def _value_control(where, option: Option, placeholder: str | None = None, key: str | None = None) -> None:
     """A text field; ``key`` names a nation's own field ("us:max"), else the option's name."""
+    key = key or option.name
     flag_off = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
     where.text_input(
-        option.label,
-        key=_VALUE + (key or option.name),
+        _red_if_wrong(option.label, key in st.session_state.get(_WRONG, {})),
+        key=_VALUE + key,
+        on_change=_field_changed,
+        args=(key,),
         help=_help(option, "Blank = default."),
         placeholder=placeholder or _PLACEHOLDERS.get(option.name, _DEFAULT_PLACEHOLDER),
         disabled=flag_off or option.name in _idle(),
@@ -662,10 +683,12 @@ def _date_picked(name: str) -> None:
     picked = st.session_state.get(_CALENDAR + name)
     if picked is not None:
         st.session_state[_VALUE + name] = f"{picked:%Y-%m-%d}"
+        _field_changed(name)
 
 
 def _date_blanked(name: str) -> None:
     st.session_state[_VALUE + name] = ""
+    _field_changed(name)
 
 
 def _date_control(where, option: Option, placeholder: str | None) -> None:
@@ -748,6 +771,7 @@ def _size_box_changed(name: str, which: str) -> None:
         _remember_ratio()
     width, height = state[_SIZE + "width"].strip(), state[_SIZE + "height"].strip()
     state[_VALUE + name] = f"{width}x{height}" if width and height else width or (f"x{height}" if height else "")
+    _field_changed(name)
 
 
 def _size_lock_changed() -> None:
@@ -773,9 +797,12 @@ def _size_control(where, option: Option) -> None:
     st.session_state.setdefault(_SIZE + "lock", True)
     tip = _help(option, "Width and height in pixels. Blank = default.")
     row = where.container(horizontal=True, wrap=False)
-    for which, placeholder in (("width", PlotConfig().width_px), ("height", PlotConfig().height_px)):
+    wrong = st.session_state.get(_WRONG, {})
+    # Which box is wrong, red alone (Terry, 2026-10-12: he was not sure at once which was).
+    faults = size_boxes_at_fault(st.session_state.get(_VALUE + option.name, "")) if option.name in wrong else (False, False)
+    for (which, placeholder), fault in zip((("width", PlotConfig().width_px), ("height", PlotConfig().height_px)), faults):
         row.text_input(
-            f"{which.capitalize()} (px)",
+            _red_if_wrong(f"{which.capitalize()} (px)", fault),
             key=_SIZE + which,
             help=tip,
             placeholder=str(placeholder),
@@ -1028,6 +1055,9 @@ def main() -> None:
         state[_ADDRESS_PROBLEMS] = problems
         state[_READY] = True
 
+    # Judged before the controls are laid out, so a wrong field's label is red (_WRONG).
+    choices = _snapshot()
+    config, problems = _config_for(choices)
     _controls()
     st.header(PAGE_TITLE)
     st.caption(PAGE_SUMMARY)
@@ -1040,8 +1070,6 @@ def main() -> None:
     if state.get(_NOTICE):
         st.info(state.pop(_NOTICE))
 
-    choices = _snapshot()
-    config, problems = _config_for(choices)
     previous: Drawing | None = state.get(_DRAWING)
     forced = state.pop(_FORCE, False)
     if config is None:

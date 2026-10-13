@@ -642,9 +642,58 @@ def check_greyed(check: Check) -> None:
     )
 
 
+def check_wrong_fields(check: Check) -> None:
+    """Batch 6: a wrong field's label red; of crossed limits, the box changed last; the "Not drawn" line naming it."""
+
+    def red(at: AppTest, key: str) -> bool:
+        return at.text_input(key=key).label.startswith(":red[")
+
+    def errors(at: AppTest) -> list[str]:
+        return [e.value for e in at.error]
+
+    page = new_page("--e:2026-09-01 -c --cdn:max:3")
+    check("no exception", not page.exception, page.exception)
+    page.text_input(key="value:cdn:min").input("5")
+    page.run()
+    check(
+        "Min typed above Max: not drawn, the line names Canada's Min",
+        any("Canada, Min %: yield min (5.0) must be less than max (3.0)" in e for e in errors(page)), errors(page),
+    )
+    check("Min's label red, Max's not", red(page, "value:cdn:min") and not red(page, "value:cdn:max"),
+          (page.text_input(key="value:cdn:min").label, page.text_input(key="value:cdn:max").label))
+    check("Min keeps its text while red", page.text_input(key="value:cdn:min").value == "5", page.text_input(key="value:cdn:min").value)
+    page.text_input(key="value:cdn:max").input("5")
+    page.run()
+    check("Max then typed equal: Max is the one red (changed last)", red(page, "value:cdn:max") and not red(page, "value:cdn:min"), errors(page))
+    page.text_input(key="value:cdn:max").input("6")
+    page.run()
+    check(
+        "Max fixed: drawn, no label red",
+        not page.error and charts_shown(page) == 1 and not any(box.label.startswith(":red[") for box in page.text_input),
+        errors(page),
+    )
+    page.text_input(key="value:start").input("2026-09-20")
+    page.run()
+    check("Start typed after End: Start red, End not", red(page, "value:start") and not red(page, "value:end"), errors(page))
+    page.text_input(key="value:start").input("")
+    page.text_input(key="value:us:top").input("-5")  # the U.S. chart is not shown: its field is still judged
+    page.run()
+    check("a Top at or below zero: red by itself", red(page, "value:us:top") and any("United States, Top" in e for e in errors(page)), errors(page))
+    page.text_input(key="value:us:top").input("")
+    page.checkbox(key="size:lock").uncheck()
+    page.run()
+    page.text_input(key="size:width").input("600")
+    page.run()
+    check(
+        "the width alone too small (lock off): only Width red",
+        red(page, "size:width") and not red(page, "size:height") and any("Size" in e for e in errors(page)),
+        (page.text_input(key="size:width").label, page.text_input(key="size:height").label, errors(page)),
+    )
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
-    check_nation_sections, check_uk, check_de, check_none_lists, check_greyed,
+    check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields,
 )
 
 

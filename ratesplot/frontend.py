@@ -28,7 +28,7 @@ import io
 import json
 import math
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,7 +36,7 @@ import matplotlib.dates as mdates
 import pandas as pd
 from matplotlib.figure import Figure
 
-from .config import COMPONENT_SYNONYMS, EARLIEST_DATA_START, MIN_WINDOW_DAYS, NATIONS, Nation, PlotConfig
+from .config import COMPONENT_SYNONYMS, EARLIEST_DATA_START, MIN_CANVAS_PX, MIN_WINDOW_DAYS, NATIONS, Nation, PlotConfig
 from .options import (
     GROUPS,
     GROUPS_CHOSEN_TOGETHER,
@@ -308,6 +308,71 @@ def bounds_in_other_units(payloads: Mapping[str, str], flags: Mapping[str, bool]
 def bound_keys() -> list[str]:
     """Return the keys of the right-axis limits, whose units the measure sets: each nation's Top and Bottom."""
     return [nation_choice(nation, by_name(bound)) for bound in ("top", "bottom") for nation in NATIONS]
+
+
+def field_problems(payloads: Mapping[str, str], flags: Mapping[str, bool], changed: Sequence[str] = ()) -> dict[str, str]:
+    """Return the message for each field to be marked wrong (its label and its text red), by key.
+
+    ``payloads`` are the texts a drawing takes (``drawn_payloads``: a greyed
+    field is never wrong). A text its option's parser rejects is wrong by
+    itself (a Top or Bottom at or below zero among them). Otherwise a
+    problem between fields (Min not below Max, Bottom not below Top, a
+    limit in the other unit from the measure, End before Start) is put on
+    the field changed last among those it involves (``changed``, oldest
+    first): Terry, 2026-10-12, "the last box to be altered would be
+    considered the offending box". The fields involved are those whose
+    removal makes it go away; when none of them was changed by hand (all
+    came from the command line, the remembered settings or a zoom), each is
+    marked. A problem no field is involved in (-r with -p) marks none, and
+    the caller reports it alone.
+    """
+    problems: dict[str, str] = {}
+    for key, text in payloads.items():
+        try:
+            option_of(key).parse(text)
+        except ValueError as exc:
+            problems[key] = str(exc)
+    if problems:
+        return problems
+    message = _problem(payloads, flags)
+    if message is None:
+        return {}
+    involved = [key for key in payloads if _problem({k: v for k, v in payloads.items() if k != key}, flags) != message]
+    order = {key: index for index, key in enumerate(changed)}
+    latest = max((key for key in involved if key in order), key=order.__getitem__, default=None)
+    return {key: message for key in ([latest] if latest is not None else involved)}
+
+
+def problem_text(key: str, message: str) -> str:
+    """Name the field a problem is in, for the "Not drawn" line: "Canada, Max %: ..."."""
+    nation = nation_of(key)
+    return f"{nation.name + ', ' if nation else ''}{option_of(key).label}: {message}"
+
+
+def _problem(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> str | None:
+    """The message of the first problem the choices have (``config_from_choices``), or None."""
+    try:
+        config_from_choices(payloads, flags)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def size_boxes_at_fault(text: str) -> tuple[bool, bool]:
+    """Return which of the width and height boxes a wrong ``WxH`` text is wrong in: (width, height).
+
+    A box is wrong when it holds something other than digits, or a size
+    below the minimum; if neither is wrong by itself (a text the boxes do
+    not show), both are marked.
+    """
+    width, _x, height = text.strip().lower().partition("x")
+
+    def wrong(part: str) -> bool:
+        part = part.strip()
+        return bool(part) and (not part.isdigit() or int(part) < MIN_CANVAS_PX)
+
+    faults = (wrong(width), wrong(height))
+    return faults if any(faults) else (True, True)
 
 
 def option_of(key: str) -> Option:
