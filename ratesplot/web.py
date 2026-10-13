@@ -151,7 +151,7 @@ from .plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 
 PAGE_TITLE = "Bond Yields and Public Debt"
 PAGE_SUMMARY = (
-    "Government bond yields against public debt, GDP and interest outlays, for Canada and the "
+    "Government bond yields against public debt, GDP, and interest outlays, for Canada and the "
     "United States, from Statistics Canada, the Bank of Canada, FRED, the U.S. Treasury and the "
     "U.S. Census Bureau; and, when ticked, for the United Kingdom, from the Bank of England and the "
     "Office for National Statistics, and for Germany, from the Deutsche Bundesbank, the ECB and Eurostat. Choose the charts in the panel on the left (the » button on a phone); "
@@ -175,9 +175,10 @@ _HISTORY_LIMIT = 50
 # The buttons move the dates by this fraction of the window, or scale it by this factor.
 _DATE_STEP_FRACTION = 0.5
 _ZOOM_OUT_FACTOR = 2.0
+# The window's words and bars (Terry, 2026-10-08); the page has no pan or wheel.
 _ZOOM_HINT = (
-    "Drag a box on a chart with the mouse to zoom to it: its width sets the dates, its height the "
-    "axes' limits. The buttons move the dates, and Back undoes a zoom."
+    "Drag pointer: zoom to box (its width sets the dates, its height the axes' limits) | "
+    "buttons: move the dates | Back: undo a zoom"
 )
 
 # Session-state keys: one per control, and the page's own records.
@@ -986,7 +987,7 @@ def _view_buttons(drawing: Drawing) -> None:
 def _show(drawing: Drawing) -> None:
     """The charts, one tab per country, each with its download button; then the command line and log."""
     if drawing.error is not None:
-        st.error(f"Drawing failed: {drawing.error} (details in the log below)")
+        st.error(f"Drawing failed: {drawing.error} (details in the message log below)")
     if drawing.pngs:
         _view_buttons(drawing)
         show_chart = _chart_component()
@@ -1012,7 +1013,7 @@ def _show(drawing: Drawing) -> None:
         )
     st.markdown("**The same chart from the command line**")
     st.code(" ".join(["python", _SCRIPT_NAME, *drawing.tokens]), language=None, wrap_lines=True)
-    with st.expander("Log"):
+    with st.expander("Message log"):
         st.code(drawing.log.rstrip() or "(nothing printed)", language=None, wrap_lines=True)
 
 

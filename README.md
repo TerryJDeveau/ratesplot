@@ -1,6 +1,6 @@
 # ratesplot: bond yields and public debt
 
-Government bond yields against public debt, TTM GDP and interest outlays, for Canada and the
+Government bond yields against public debt, TTM GDP, and interest outlays, for Canada and the
 United States, and when asked for the United Kingdom and Germany, on one two-axis chart per
 country. The data come from their sources each time: Statistics Canada, the Bank of Canada, FRED,
 the U.S. Treasury and the U.S. Census Bureau; the Bank of England and the Office for National

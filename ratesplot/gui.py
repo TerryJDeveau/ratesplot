@@ -166,7 +166,8 @@ _GEOMETRY_PATTERN = re.compile(r"^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$")
 # and drag it. Wherever that is: another monitor, across several.
 _TITLE_BAR_PX = 30
 _MIN_TITLE_ON_SCREEN_PX = 100
-_ZOOM_HINT = "Drag: zoom to box · right/middle-drag: pan · wheel: zoom dates"
+# Terry's wording, 2026-10-08: "Drag pointer", "right/middle click", bars between.
+_ZOOM_HINT = "Drag pointer: zoom to box | right/middle click-drag: pan | wheel: zoom dates"
 
 
 # ---------------------------------------------------------------------------
@@ -918,7 +919,7 @@ class RatesPlotApp:
             buttons.columnconfigure(tuple(range(len(actions))), weight=1)
 
     def _build_log(self, panel: ttk.Frame) -> None:
-        frame = ttk.LabelFrame(panel, text="Log", padding=4)
+        frame = ttk.LabelFrame(panel, text="Message log", padding=4)
         frame.pack(fill="both", expand=True)
         self.log = tk.Text(frame, width=44, height=8, wrap="word", state="disabled", font=("Consolas", 9))
         scroll = ttk.Scrollbar(frame, orient="vertical", command=self.log.yview)
@@ -1215,7 +1216,7 @@ class RatesPlotApp:
             self.status.set(f"Drawn: {names} at {config.width_px} x {config.height_px} px.")
             self._remember()
         else:
-            self.status.set(f"Drawing failed: {error} (details in the log)")
+            self.status.set(f"Drawing failed: {error} (details in the message log)")
         pending, self.pending = self.pending, None
         forced, self._pending_forced = self._pending_forced, False
         if pending is not None and (pending[0] != self.shown_config or forced):

@@ -562,11 +562,11 @@ GROUPS: dict[str, str] = {
         'Rates on the yield axis (policy, mortgages, spreads; each only when asked\n'
         'for, hiding nothing; at least "po", "mo", "sp"):'
     ),
-    "units": "Measure of debt, GDP and interest:",
+    "units": "Measure of debt, GDP, and interest:",
     "labels": "Line labels and regression segments (--reg needs at least \"reg\"):",
     "dates": "Date window (YYYY, YYYY-MM or YYYY-MM-DD; '/' also accepted):",
     "latest": "Latest data (at least \"cur\"):",
-    "canvas": "Canvas size in pixels (4:3 assumed when only one dimension is given):",
+    "canvas": "Final canvas size in pixels (4:3 assumed when only one dimension is given):",
     "yield": "Yield-axis limits (percent):",
     "dollar": (
         "Right-axis limits (suffixes k/m/b/t; unsuffixed values are billions;\n"
