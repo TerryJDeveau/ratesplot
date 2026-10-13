@@ -528,9 +528,12 @@ class Option:
     # box of its own (``frontend.choice_rows``). Terry, 2026-10-06: tick boxes
     # show what can be chosen.
     choices: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = ()
-    # GUI: the panel (a key of GROUPS) the control is shown in, when not its
-    # help group. The yield spreads are listed under "rates" in --help, as an
-    # additive option, but shown with the yield terms (Terry, 2026-10-06).
+    # GUI: the block of the control column the control is shown in (a key of
+    # ``frontend.CONTROL_BLOCKS``), when not its help group's. --help keeps
+    # its sections; the window and the page arrange the blocks as Terry
+    # asked on 2026-10-08 (batch 7): the yields, spreads, policy rate and
+    # mortgages ticked in one block, the regression segments in a block of
+    # their own under the measure, the latest data with the line labels.
     panel: str | None = None
 
 
@@ -649,7 +652,7 @@ OPTIONS: tuple[Option, ...] = (
     ),
     Option(
         "yield", Kind.TOGGLE, ("include_yield",), "curves", "--yield / --no-yield", "bond yields",
-        names=("yield", "yields"), label="Bond yields",
+        names=("yield", "yields"), label="Bond yields", panel="rates",
     ),
     # The yield terms (config.YIELD_TERMS): named, or dropped from the default
     # five. They choose which yield lines the curve draws; they do not name a
@@ -697,14 +700,14 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "spreads", Kind.FLAG, ("spreads",), "rates", "--spreads / --no-spreads",
         "yield spreads in percentage points, drawn\nthick, their inverted stretches shaded",
-        names=("spreads",), shortest=2, label="Yield spreads", panel="curves",
+        names=("spreads",), shortest=2, label="Yield spreads", panel="rates",
     ),
     Option(
         "spread-pairs", Kind.VALUE, ("spread_pairs",), "rates", "--spreads:LIST / --sp:LIST",
         "pairs of yield terms, the first less the\nsecond (default "
         f"{format_spreads((DEFAULT_SPREADS,), PlotConfig())};\nthe UK's: 10y-5y,20y-10y; Germany's:\n10y-2y,30y-10y); turns --spreads on",
         names=("spreads",), shortest=2, parse=parse_spreads, turns_on="spreads",
-        label="Spreads", format=format_spreads, editor="choices", choices=_SPREAD_CHOICES, panel="curves",
+        label="Spreads", format=format_spreads, editor="choices", choices=_SPREAD_CHOICES, panel="rates",
     ),
     # Measure of the right-axis curves: argparse store_true flags, like the
     # countries.
@@ -734,7 +737,7 @@ OPTIONS: tuple[Option, ...] = (
         "each right-axis curve fitted by the fewest\nstraight pieces on its log axis, each\n"
         "labelled with its growth in %/yr:\ncompounded on a piece of a year or more,\n"
         "the log slope on a shorter one",
-        names=("regression",), shortest=3, label="Regression segments",
+        names=("regression",), shortest=3, label="Regression segments", panel="regression",
     ),
     # Its tolerance. Giving it turns --reg on, as --debt:LETTERS names the
     # debt curve (``config_from_choices``); in the window the field is greyed
@@ -745,7 +748,7 @@ OPTIONS: tuple[Option, ...] = (
         f"(default {DEFAULT_REGRESSION_TOLERANCE_PCT:g}; never less than {MIN_REGRESSION_TOLERANCE_PCT:g} % of the\n"
         "value); turns --reg on",
         names=("regression",), shortest=3, parse=parse_regression_tolerance, turns_on="regression",
-        label="tolerance, % of axis", format=format_regression_tolerance,
+        label="tolerance, % of axis", format=format_regression_tolerance, panel="regression",
     ),
     # Values. Table order is parse order, so it decides which error is reported
     # first when several values are bad; each ``check`` runs once both of its
@@ -791,7 +794,7 @@ OPTIONS: tuple[Option, ...] = (
         "current", Kind.FLAG, ("current",), "latest", "--cur / --current / --no-cur",
         "on by default: U.S. Treasury daily yields\nand debt, and the day's intraday yield\n"
         "quotes (CNBC), past the regular sources",
-        names=("current",), shortest=3, label="Latest values, with intraday quotes",
+        names=("current",), shortest=3, label="Latest values, with intraday quotes", panel="labels",
     ),
     # Interface. Spelled in full (Terry, 2026-09-24): "--g" is the GDP curve,
     # and "--gu" nothing.

@@ -8,7 +8,10 @@ Controls
     button; ``editor="size"`` gives width and height boxes with an
     aspect-ratio lock; ``editor="levels"`` gives one check box per level of
     government, the single "By level" control for ``--debt:`` and
-    ``--interest:``), grouped as in ``--help``, each with the option's
+    ``--interest:``), in the blocks of ``frontend.control_blocks`` (Terry's
+    order of 2026-10-08: the measure under "By level", the regression
+    segments under the measure, the four rates on the yield axis together,
+    the line labels with the latest data; --help keeps its sections), each with the option's
     help text and command-line spelling as a tooltip. A new option in the table
     appears here with no change to this module (``in_gui=False`` opts out). The
     choices become a ``PlotConfig`` through ``options.config_from_choices``, the
@@ -102,6 +105,7 @@ from .console import this_thread_output_to
 from .frontend import (
     GREYABLE_OPTIONS,
     LEVEL_BOXES,
+    LIMIT_COLUMNS,
     NATION_OPTIONS,
     STATE_VERSION,
     TAB_TITLES,
@@ -113,6 +117,7 @@ from .frontend import (
     choice_rows,
     choice_values,
     choices_text,
+    control_blocks,
     drawn_payloads,
     field_hints,
     field_problems,
@@ -132,15 +137,12 @@ from .frontend import (
     zoom_updates,
 )
 from .options import (
-    GROUPS,
-    OPTIONS,
     Kind,
     Option,
     by_name,
     choices_from_config,
     command_line_tokens,
     config_from_choices,
-    group_title,
     nation_choice,
     options_in,
     parse_date_spec,
@@ -781,20 +783,17 @@ class RatesPlotApp:
         return panel, pinned
 
     def _build_option_controls(self, panel: ttk.Frame) -> None:
-        """One labelled frame per option group, one control per GUI option, all from the table."""
+        """One frame per block of the column (``frontend.control_blocks``), one control per GUI option, all from the table.
+
+        A block with no title (the regression segments; the line labels with
+        the latest data) is a frame like the others, its border unlabelled.
+        """
         style = ttk.Style(self.root)
         style.configure("Error.TLabel", foreground=_ERROR_FOREGROUND)
         style.configure("Error.TEntry", foreground=_ERROR_FOREGROUND)
 
-        for group in GROUPS:
-            members = [
-                option
-                for option in OPTIONS
-                if (option.panel or option.group) == group and option.in_gui and option not in NATION_OPTIONS
-            ]
-            if not members:
-                continue
-            frame = ttk.LabelFrame(panel, text=group_title(group), padding=(8, 4))
+        for title, members in control_blocks():
+            frame = ttk.LabelFrame(panel, text=title or "", padding=(8, 4))
             frame.pack(fill="x", pady=(0, 6))
             frame.columnconfigure(1, weight=1)
             # A value that belongs to a flag (the regression tolerance) goes on
@@ -830,32 +829,56 @@ class RatesPlotApp:
                     self._add_flag_control(frame, row, option, attached.get(option.name))
 
     def _add_flag_control(self, frame: ttk.LabelFrame, row: int, option: Option, value: Option | None = None) -> None:
-        """A check box; with ``value``, that option's field at the right of the same row."""
+        """A check box; with ``value``, that option's field on the same row, after it.
+
+        The regression tolerance reads as one phrase with its box (Terry,
+        2026-10-08: the box between the words): "Regression segments,
+        tolerance [1] % of axis". Its label, "tolerance, % of axis", stays
+        whole in messages and on the page, where a box cannot sit inside a
+        caption; here the box goes where its comma was.
+        """
         variable = tk.BooleanVar(value=False)
         self.flag_vars[option.name] = variable
         box = ttk.Checkbutton(
-            frame, text=option.label, variable=variable, command=lambda name=option.name: self._flag_changed(name)
+            frame,
+            text=option.label if value is None else f"{option.label},",
+            variable=variable,
+            command=lambda name=option.name: self._flag_changed(name),
         )
         box.grid(row=row, column=0, columnspan=3 if value is None else 1, sticky="w")
         self.flag_boxes[option.name] = box
         _Tooltip(box, _tooltip_text(option))
         if value is not None:
             field = ttk.Frame(frame)
-            field.grid(row=row, column=1, columnspan=2, sticky="e")
+            field.grid(row=row, column=1, columnspan=2, sticky="w")
+            before, _comma, after = value.label.partition(", ")
             # No padding: the row stays as tall as a check box.
-            self._add_value_control(field, 0, value, entry_width=5, pady=0)
+            self._add_value_control(field, 0, value, entry_width=5, pady=0, text=before, after=after)
 
     def _add_value_control(
-        self, frame: ttk.Frame, row: int, option: Option, entry_width: int = 16, pady: int = 1, key: str | None = None
+        self,
+        frame: ttk.Frame,
+        row: int,
+        option: Option,
+        entry_width: int = 16,
+        pady: int = 1,
+        key: str | None = None,
+        text: str | None = None,
+        after: str = "",
     ) -> None:
-        """A label and a text field; ``key`` names a nation's own field ("us:max"), else the option's name."""
+        """A label and a text field; ``key`` names a nation's own field ("us:max"), else the option's name.
+
+        ``text`` replaces the option's label before the field; ``after`` is put after it ("% of axis").
+        """
         key = key or option.name
         variable = tk.StringVar()
         self.payload_vars[key] = variable
-        label = ttk.Label(frame, text=option.label)
+        label = ttk.Label(frame, text=option.label if text is None else text)
         label.grid(row=row, column=0, sticky="w", padx=(0, 6), pady=pady)
         entry = ttk.Entry(frame, textvariable=variable, width=entry_width)
         entry.grid(row=row, column=1, sticky="ew", pady=pady)
+        if after:
+            ttk.Label(frame, text=after).grid(row=row, column=2, sticky="w", padx=(4, 0), pady=pady)
         entry.bind("<Return>", lambda _event: self.request_redraw())
         variable.trace_add("write", lambda *_args: self._text_changed(key))
         self.value_labels[key] = label
@@ -1057,10 +1080,13 @@ class RatesPlotApp:
             self._add_choices_control(frame, column, option, nation)
             column += 1
         limits.grid(row=0, column=column, rowspan=2, sticky="nw")
-        for index, option in enumerate(option for option in NATION_OPTIONS if option.editor != "choices"):
-            cell = ttk.Frame(limits)
-            cell.grid(row=index % 2, column=index // 2, sticky="e", padx=(0, 10))
-            self._add_value_control(cell, 0, option, entry_width=7, pady=1, key=nation_choice(nation, option))
+        # A column per axis, Max above Min, Top above Bottom (LIMIT_COLUMNS).
+        for axis, names in enumerate(LIMIT_COLUMNS):
+            for place, name in enumerate(names):
+                cell = ttk.Frame(limits)
+                cell.grid(row=place, column=axis, sticky="e", padx=(0, 10))
+                option = by_name(name)
+                self._add_value_control(cell, 0, option, entry_width=7, pady=1, key=nation_choice(nation, option))
 
     # -- choices ------------------------------------------------------------
 

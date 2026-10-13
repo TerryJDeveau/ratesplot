@@ -9,7 +9,8 @@ What it is
     ``plotting.build_figure`` rendered to PNG (``frontend.png_bytes``): on the
     same machine, byte for byte what the window shows and saves. The controls
     are generated from ``options.OPTIONS`` as the window's are (options with
-    ``in_gui=False`` are left out), grouped as in ``--help``, and follow the
+    ``in_gui=False`` are left out), in the window's blocks and order
+    (``frontend.control_blocks``), and follow the
     window's rules: at least one country stays ticked; one measure at a time,
     and changing it clears Top and Bottom; GDP greyed out under -r, and what
     has no curve to act on (``frontend.idle_controls``: % of GDP, By level,
@@ -114,6 +115,7 @@ from .config import (  # noqa: E402
 from .console import this_thread_output_to  # noqa: E402
 from .frontend import (  # noqa: E402
     LEVEL_BOXES,
+    LIMIT_COLUMNS,
     NATION_OPTIONS,
     TAB_TITLES,
     ChartGeometry,
@@ -124,6 +126,7 @@ from .frontend import (  # noqa: E402
     choice_rows,
     choice_values,
     choices_text,
+    control_blocks,
     drawn_payloads,
     field_hints,
     field_problems,
@@ -140,14 +143,13 @@ from .frontend import (  # noqa: E402
     zoom_updates,
 )
 from .options import (  # noqa: E402
-    GROUPS,
     OPTIONS,
     Kind,
     Option,
+    by_name,
     choices_from_config,
     command_line_tokens,
     config_from_choices,
-    group_title,
     help_epilog,
     nation_choice,
     options_in,
@@ -874,7 +876,12 @@ def _field_hints() -> dict[str, str]:
 
 
 def _controls() -> None:
-    """The sidebar: two buttons, then one section per option group, all from the table."""
+    """The sidebar: two buttons, then the column's blocks (``frontend.control_blocks``), all from the table.
+
+    In the window's order (Terry, 2026-10-08, batch 7). A block with no
+    title (the regression segments; the line labels with the latest data)
+    is set off by a line alone.
+    """
     bar = st.sidebar
     buttons = bar.columns(2)
     # One button, as in the window (Terry, 2026-10-08: "Refresh", meaning
@@ -887,15 +894,11 @@ def _controls() -> None:
     )
     buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch")
     st.session_state[_HINTS] = _field_hints()
-    for group in GROUPS:
-        members = [
-            option
-            for option in OPTIONS
-            if (option.panel or option.group) == group and option.in_gui and option not in NATION_OPTIONS
-        ]
-        if not members:
-            continue
-        bar.subheader(group_title(group), divider="gray")
+    for title, members in control_blocks():
+        if title:
+            bar.subheader(title, divider="gray")
+        else:
+            bar.divider()
         # A value that belongs to a flag goes right under it (the tolerance
         # under "Regression segments"), as on the window's row.
         attached = {option.turns_on: option for option in members if option.kind is Kind.VALUE and option.turns_on}
@@ -933,15 +936,17 @@ def _nation_controls(bar, nation: Nation) -> None:
     """A nation's own section (``frontend.NATION_OPTIONS``), as the panel under its tab in the window.
 
     Its yield terms, spreads and mortgage terms (only those its chart can
-    draw), then its yield-axis Min and Max and right-axis Top and Bottom.
+    draw), then its axis limits as in the window: the yield axis's Max above
+    its Min, beside the right axis's Top above its Bottom (Terry, 2026-10-12;
+    ``LIMIT_COLUMNS``).
     """
     bar.subheader(f"{nation.name} only", divider="gray")
     order = ("yield_terms", "spread_pairs", "mortgage_terms")
     for option in sorted((o for o in NATION_OPTIONS if o.editor == "choices"), key=lambda o: order.index(o.fields[0])):
         _choices_control(bar, option, nation)
-    limits = [option for option in NATION_OPTIONS if option.editor != "choices"]
-    for index in range(0, len(limits), 2):
-        for column, option in zip(bar.columns(2), limits[index:index + 2]):
+    for row in zip(*LIMIT_COLUMNS):  # (max, top), then (min, bottom)
+        for column, name in zip(bar.columns(2), row):
+            option = by_name(name)
             _value_control(column, option, key=nation_choice(nation, option))
 
 

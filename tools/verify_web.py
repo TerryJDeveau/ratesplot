@@ -713,9 +713,38 @@ def check_wrong_fields(check: Check) -> None:
     )
 
 
+def check_layout(check: Check) -> None:
+    """Batch 7 (Terry, 2026-10-08 and 2026-10-12): the sidebar's blocks in the window's order; Max above Min."""
+    at = new_page("--e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    titles = [header.value for header in at.subheader]
+    wanted = [
+        "Country selection", "Curve selection", "Measure of debt, GDP, and interest", "Rates on the yield axis",
+        "Date window", "Final canvas size in pixels",
+    ]
+    check("the titled blocks in order", titles[: len(wanted)] == wanted, titles)
+    order = [box.key.split(":", 1)[1] for box in at.checkbox if box.key and box.key.startswith("flag:")]
+    wanted = ["by level", "relative", "per-capita", "regression", "yield", "spreads", "policy", "mortgages", "label", "current"]
+    keys = [box.key for box in at.checkbox if box.key]
+    levels = keys.index("level:f")
+    placed = order[: order.index("relative")] + ["by level"] + order[order.index("relative"):]
+    check(
+        "By level, then the measure, the regression segments, the four rates, the line labels and the latest data",
+        keys.index("flag:interest") < levels < keys.index("flag:relative")
+        and [name for name in placed if name in wanted] == wanted,
+        order,
+    )
+    fields = [field.key for field in at.text_input if field.key and field.key.startswith("value:cdn:")]
+    check(
+        "Canada's limits row by row: Max beside Top, then Min beside Bottom",
+        fields == ["value:cdn:max", "value:cdn:top", "value:cdn:min", "value:cdn:bottom"],
+        fields,
+    )
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
-    check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields,
+    check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
 )
 
 

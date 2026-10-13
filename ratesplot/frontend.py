@@ -62,6 +62,7 @@ from .options import (
     choices_from_config,
     config_from_choices,
     format_dollar_bound,
+    group_title,
     idle_options,
     is_percent_bound,
     list_switch,
@@ -90,6 +91,49 @@ Choices = tuple[dict[str, str], dict[str, bool]]
 # the tick boxes of a nation's terms, and its axis limits, under its tab). The
 # window and the page show none of them for both charts at once.
 NATION_OPTIONS = tuple(option for option in OPTIONS if per_nation(option) and option.in_gui)
+# The control column's blocks, top to bottom: key (an option's ``panel``, or
+# its help group), title (None: no title) and the options to put first, in
+# that order (the rest follow in table order). Terry, 2026-10-08 (batch 7):
+# the measure just under "By level", the regression segments just under the
+# measure, the yields, spreads, policy rate and mortgages ticked in one
+# block, "Line labels" and "Latest data" one block without a title. --help
+# keeps its sections (``options.GROUPS``), which say what each option is.
+CONTROL_BLOCKS: tuple[tuple[str, str | None, tuple[str, ...]], ...] = (
+    ("country", group_title("country"), ()),
+    ("curves", group_title("curves"), ()),
+    ("units", group_title("units"), ()),
+    ("regression", None, ()),
+    ("rates", group_title("rates"), ("yield", "spreads", "policy", "mortgages")),
+    ("labels", None, ()),
+    ("dates", group_title("dates"), ()),
+    ("canvas", group_title("canvas"), ()),
+)
+# Each nation's axis limits as laid out under its tab: a column per axis,
+# Max above Min, Top above Bottom (Terry, 2026-10-12).
+LIMIT_COLUMNS = (("max", "min"), ("top", "bottom"))
+
+
+def control_blocks() -> list[tuple[str | None, list[Option]]]:
+    """Return the control column's blocks in order: each title and its options (a nation's own left out).
+
+    An option is in the block of its ``panel``, or of its help group. A
+    group with no block of its own (an option added later) gets one after
+    the others, titled as in --help, so a new option still gets a control
+    with no change here.
+    """
+    shown = [option for option in OPTIONS if option.in_gui and option not in NATION_OPTIONS]
+    blocks: list[tuple[str | None, list[Option]]] = []
+    keys = [key for key, _title, _first in CONTROL_BLOCKS]
+    for key, title, first in CONTROL_BLOCKS:
+        members = [option for option in shown if (option.panel or option.group) == key]
+        members.sort(key=lambda option: first.index(option.name) if option.name in first else len(first))
+        if members:
+            blocks.append((title, members))
+    for group in GROUPS:
+        members = [option for option in shown if (option.panel or option.group) == group and group not in keys]
+        if members:
+            blocks.append((group_title(group), members))
+    return blocks
 
 
 # ---------------------------------------------------------------------------
