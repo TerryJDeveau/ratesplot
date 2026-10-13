@@ -190,7 +190,7 @@ _NOTICE = "notice"   # a message from a control's callback, shown once
 _DRAWING = "drawing"  # the last Drawing
 _FORCE = "force_redraw"
 _START_HINT = "start_hint"  # what the Start field's hint says now
-_HISTORY = "history"  # the choices before each zoom or pan, for Back and Unzoom
+_HISTORY = "history"  # the choices before each zoom, pan or Reset, for Back and Unzoom
 _CHART = "chart:"     # + country key + drawing number: a chart (its dragged box)
 _CALENDAR = "calendar:"  # + option name: a date field's calendar
 _SIZE = "size:"          # + "width", "height", "lock", "ratio": the Size boxes, their lock and kept shape
@@ -480,10 +480,14 @@ def _measure_changed(name: str) -> None:
         st.session_state[_VALUE + bound] = ""
 
 
-def _remember_view() -> None:
-    """Keep the controls' choices for Back and Unzoom (at most ``_HISTORY_LIMIT``, the first always kept)."""
+def _remember_view(lock: bool = False) -> None:
+    """Keep the controls' choices for Back and Unzoom (at most ``_HISTORY_LIMIT``, the first always kept).
+
+    ``lock``: keep the aspect-ratio lock too (a Reset changes it); each step
+    is ``(choices, lock or None)``.
+    """
     history = st.session_state.setdefault(_HISTORY, [])
-    history.append(_snapshot())
+    history.append((_snapshot(), st.session_state.get(_SIZE + "lock", True) if lock else None))
     if len(history) > _HISTORY_LIMIT:
         del history[1 : len(history) - _HISTORY_LIMIT + 1]
 
@@ -491,7 +495,14 @@ def _remember_view() -> None:
 def _unzoomed() -> bool:
     """True when there is no view before the first zoom to return to, or it is the one shown (as in the window)."""
     history = st.session_state.get(_HISTORY)
-    return not history or history[0] == _snapshot()
+    return not history or history[0][0] == _snapshot()
+
+
+def _set_lock(lock: bool) -> None:
+    """Tick or untick the aspect-ratio lock; ticked, it keeps the boxes' shape now."""
+    st.session_state[_SIZE + "lock"] = lock
+    if lock:
+        _remember_ratio()
 
 
 def _choice_values_offered(key: str) -> list[str]:
@@ -509,8 +520,10 @@ def _choice_changed(key: str, value: str) -> None:
 
 
 def _reset() -> None:
-    _remember_view()  # as in the window, Back undoes a Reset
+    """The default charts, and the aspect-ratio lock ticked, as in the window (Back undoes both)."""
+    _remember_view(lock=True)
     _load_choices(choices_from_config(PlotConfig()))
+    _set_lock(True)
     st.query_params.clear()
 
 
@@ -568,13 +581,16 @@ def _move_dates(shift: float, scale: float) -> None:
 def _back() -> None:
     history = st.session_state.get(_HISTORY)
     if history:
-        _load_choices(history.pop())
+        choices, lock = history.pop()
+        _load_choices(choices)
+        if lock is not None:
+            _set_lock(lock)
 
 
 def _unzoom() -> None:
     """Return to the charts before the first zoom: one more step, so Back returns to the zoom."""
     if not _unzoomed():
-        first = st.session_state[_HISTORY][0]
+        first = st.session_state[_HISTORY][0][0]
         _remember_view()
         _load_choices(first)
 

@@ -412,18 +412,22 @@ def check_size_boxes(check: Check) -> None:
     size.text_input(key="size:height").input("900")
     size.run()
     check("locked again: the shape of when it was ticked (2:1)", boxes(size) == ("1800", "900"), boxes(size))
+    size.checkbox(key="size:lock").uncheck()
+    size.run()
     button(size, "Reset").click()
     size.run()
     check(
-        "Reset: the default size in the boxes",
-        boxes(size) == ("2048", "1536") and "dimensions" not in address(size),
+        "Reset: the default size in the boxes, the lock ticked again (Terry, 2026-10-12)",
+        boxes(size) == ("2048", "1536") and "dimensions" not in address(size) and size.checkbox(key="size:lock").value,
         (boxes(size), address(size)),
     )
     button(size, "◀ Back").click()
     size.run()
     check(
-        "Back: the boxes follow",
-        boxes(size) == ("1800", "900") and "--dimensions:1800x900" in address(size),
+        "Back: the boxes follow, and the lock as it was",
+        boxes(size) == ("1800", "900")
+        and "--dimensions:1800x900" in address(size)
+        and not size.checkbox(key="size:lock").value,
         (boxes(size), address(size)),
     )
     one = new_page("-c -s:2015 --e:2026-09-01 -dim:1100")

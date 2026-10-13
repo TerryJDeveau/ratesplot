@@ -142,6 +142,8 @@ _WHEEL_ZOOM_FACTOR = 0.8
 # How many zoom/pan steps "Back" can undo. The view before the first one is
 # always kept, for Unzoom.
 _HISTORY_LIMIT = 50
+# The preview's mode at first and after Reset: the chart fitted to its tab.
+_DEFAULT_PREVIEW = "fit"
 # Initial window size as a fraction of the screen (when nothing is remembered).
 _SCREEN_FRACTION = 0.9
 _ERROR_FOREGROUND = "#b00020"
@@ -559,11 +561,13 @@ class RatesPlotApp:
         self._loading = False
 
         # Mouse state.
-        self.history: list[Choices] = []
+        # Each step Back can undo: the choices before it, and for a Reset the
+        # preview's settings before it too (``_preview_settings``).
+        self.history: list[tuple[Choices, tuple[str, dict[str, bool]] | None]] = []
         self._drag: dict | None = None
         self._wheel: dict | None = None
 
-        self.zoom = tk.StringVar(value=state.get("zoom") if state.get("zoom") in ("fit", "actual") else "fit")
+        self.zoom = tk.StringVar(value=state.get("zoom") if state.get("zoom") in ("fit", "actual") else _DEFAULT_PREVIEW)
         self.command = tk.StringVar()
         self.status = tk.StringVar(value="Starting …")
 
@@ -1327,19 +1331,34 @@ class RatesPlotApp:
         self._append_log(f"--- {verb.lower()}: {changed}\n")
         self.request_redraw()
 
-    def _remember_step(self) -> None:
+    def _remember_step(self, preview: bool = False) -> None:
         """Keep the controls' choices for Back and Unzoom, before a zoom, pan, Unzoom or Reset changes them.
 
+        ``preview``: keep the preview's settings too (a Reset changes them).
         At most ``_HISTORY_LIMIT`` steps; the oldest after the first go, so
         Unzoom still returns to the view before the first zoom.
         """
-        self.history.append(self._snapshot())
+        self.history.append((self._snapshot(), self._preview_settings() if preview else None))
         if len(self.history) > _HISTORY_LIMIT:
             del self.history[1 : len(self.history) - _HISTORY_LIMIT + 1]
 
+    def _preview_settings(self) -> tuple[str, dict[str, bool]]:
+        """The preview's mode ("fit" or "actual") and each size's aspect-ratio lock."""
+        return self.zoom.get(), {name: editor.keep_ratio.get() for name, editor in self.size_editors.items()}
+
+    def _set_preview(self, zoom: str, keep_ratio: dict[str, bool]) -> None:
+        """Set the preview's mode and the aspect-ratio locks (Reset, and Back after it)."""
+        if self.zoom.get() != zoom:
+            self.zoom.set(zoom)
+            self._refresh_all_views()
+        for name, keep in keep_ratio.items():
+            editor = self.size_editors[name]
+            editor.keep_ratio.set(keep)
+            editor.lock_changed()
+
     def _unzoomed(self) -> bool:
         """True when there is no view before the first zoom to return to, or it is the one shown."""
-        return not self.history or self.history[0] == self._snapshot()
+        return not self.history or self.history[0][0] == self._snapshot()
 
     def _update_view_buttons(self) -> None:
         """Grey Back and Unzoom while they would do nothing (Terry, 2026-10-08), as the web page does."""
@@ -1350,7 +1369,10 @@ class RatesPlotApp:
         if not self.history:
             self.status.set("Nothing to go back to.")
             return
-        self._load_choices(self.history.pop())
+        choices, preview = self.history.pop()
+        self._load_choices(choices)
+        if preview is not None:
+            self._set_preview(*preview)
         self.request_redraw()
 
     def _unzoom(self) -> None:
@@ -1358,7 +1380,7 @@ class RatesPlotApp:
         if self._unzoomed():
             self.status.set("Not zoomed.")
             return
-        first = self.history[0]
+        first = self.history[0][0]
         self._remember_step()
         self._load_choices(first)
         self.request_redraw()
@@ -1406,8 +1428,14 @@ class RatesPlotApp:
         self.request_redraw(force=True)
 
     def _reset(self) -> None:
-        self._remember_step()
+        """Back to the default charts, and the preview's defaults: "Fit to window", aspect ratio preserved.
+
+        Terry, 2026-10-12: Reset left the preview's two settings as they were.
+        Back undoes all of it.
+        """
+        self._remember_step(preview=True)
         self._load_choices(choices_from_config(PlotConfig()))
+        self._set_preview(_DEFAULT_PREVIEW, {name: True for name in self.size_editors})
         self.request_redraw()
 
     def _copy_command(self) -> None:
