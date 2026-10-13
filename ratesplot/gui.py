@@ -38,8 +38,10 @@ Zoom and pan
     and "Save PNG" all follow). Left-drag a box to zoom to it: its width sets
     Start/End, its height sets the yield Min/Max and the right-axis Top/Bottom of
     whichever axes are drawn. Right- or middle-drag pans. The wheel zooms the
-    dates about the pointer. "Back" undoes one zoom or pan; "Unzoom" returns to
-    the view before the first one. The axis limits are each nation's own (the
+    dates about the pointer. "Back" undoes one zoom, pan, Unzoom or Reset;
+    "Unzoom" returns to the view before the first zoom, as one more step that
+    Back undoes (Terry, 2026-10-08: Back after Unzoom did nothing). Each is
+    greyed while it would do nothing. The axis limits are each nation's own (the
     panel under its tab), so zooming one chart's axes leaves the other's; the
     dates are shared, as on the command line.
 
@@ -137,7 +139,8 @@ _RESIZE_DELAY_MS = 150
 _WHEEL_DELAY_MS = 350
 # Date range multiplier per wheel notch (towards the pointer).
 _WHEEL_ZOOM_FACTOR = 0.8
-# How many zoom/pan steps "Back" can undo.
+# How many zoom/pan steps "Back" can undo. The view before the first one is
+# always kept, for Unzoom.
 _HISTORY_LIMIT = 50
 # Initial window size as a fraction of the screen (when nothing is remembered).
 _SCREEN_FRACTION = 0.9
@@ -853,8 +856,10 @@ class RatesPlotApp:
             ttk.Radiobutton(preview, text=text, value=value, variable=self.zoom, command=self._refresh_all_views).grid(
                 row=0, column=column, sticky="w"
             )
-        ttk.Button(preview, text="◀ Back (Alt+←)", command=self._back).grid(row=1, column=0, sticky="ew", padx=1, pady=1)
-        ttk.Button(preview, text="Unzoom", command=self._unzoom).grid(row=1, column=1, sticky="ew", padx=1, pady=1)
+        self.back_button = ttk.Button(preview, text="◀ Back (Alt+←)", command=self._back)
+        self.back_button.grid(row=1, column=0, sticky="ew", padx=1, pady=1)
+        self.unzoom_button = ttk.Button(preview, text="Unzoom", command=self._unzoom)
+        self.unzoom_button.grid(row=1, column=1, sticky="ew", padx=1, pady=1)
         ttk.Label(preview, text=_ZOOM_HINT, wraplength=300, foreground="#555555").grid(
             row=2, column=0, columnspan=2, sticky="w", pady=(2, 0)
         )
@@ -1037,6 +1042,7 @@ class RatesPlotApp:
             self.root.after_cancel(self._text_after_id)
         self._text_after_id = None
         self._update_command_line()
+        self._update_view_buttons()
         snapshot = self._snapshot()
         payloads = {name: text.strip() for name, text in snapshot[0].items() if text.strip()}
         # A value whose flag is off has no effect and its field is greyed:
@@ -1309,8 +1315,7 @@ class RatesPlotApp:
         updates = {
             nation_choice(nation, by_name(name)) if nation and name in own else name: text for name, text in updates.items()
         }
-        self.history.append(self._snapshot())
-        del self.history[:-_HISTORY_LIMIT]
+        self._remember_step()
         self._loading = True
         try:
             for name, text in updates.items():
@@ -1322,6 +1327,25 @@ class RatesPlotApp:
         self._append_log(f"--- {verb.lower()}: {changed}\n")
         self.request_redraw()
 
+    def _remember_step(self) -> None:
+        """Keep the controls' choices for Back and Unzoom, before a zoom, pan, Unzoom or Reset changes them.
+
+        At most ``_HISTORY_LIMIT`` steps; the oldest after the first go, so
+        Unzoom still returns to the view before the first zoom.
+        """
+        self.history.append(self._snapshot())
+        if len(self.history) > _HISTORY_LIMIT:
+            del self.history[1 : len(self.history) - _HISTORY_LIMIT + 1]
+
+    def _unzoomed(self) -> bool:
+        """True when there is no view before the first zoom to return to, or it is the one shown."""
+        return not self.history or self.history[0] == self._snapshot()
+
+    def _update_view_buttons(self) -> None:
+        """Grey Back and Unzoom while they would do nothing (Terry, 2026-10-08), as the web page does."""
+        self.back_button.state(["!disabled"] if self.history else ["disabled"])
+        self.unzoom_button.state(["disabled"] if self._unzoomed() else ["!disabled"])
+
     def _back(self) -> None:
         if not self.history:
             self.status.set("Nothing to go back to.")
@@ -1330,11 +1354,12 @@ class RatesPlotApp:
         self.request_redraw()
 
     def _unzoom(self) -> None:
-        if not self.history:
+        """Return to the view before the first zoom: one more step, so Back returns to the zoom."""
+        if self._unzoomed():
             self.status.set("Not zoomed.")
             return
         first = self.history[0]
-        self.history.clear()
+        self._remember_step()
         self._load_choices(first)
         self.request_redraw()
 
@@ -1381,7 +1406,7 @@ class RatesPlotApp:
         self.request_redraw(force=True)
 
     def _reset(self) -> None:
-        self.history.append(self._snapshot())
+        self._remember_step()
         self._load_choices(choices_from_config(PlotConfig()))
         self.request_redraw()
 

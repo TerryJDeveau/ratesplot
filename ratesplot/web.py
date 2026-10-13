@@ -52,8 +52,10 @@ Zoom and dates
     (``_chart_component``) because ``st.image`` reports no mouse events.
     "◀ Earlier" and "Later ▶" move the dates by half the window, "Zoom out"
     doubles their span (``frontend.move_dates_updates``: between 1680 and
-    today, keeping the span). "Back" undoes one zoom, move or Reset;
-    "Unzoom" returns to the charts before the first. The axis limits are
+    today, keeping the span). "Back" undoes one zoom, move, Unzoom or Reset;
+    "Unzoom" returns to the charts before the first zoom or move, as one
+    more step that Back undoes; each is greyed while it would do nothing (as
+    in the window). The axis limits are
     each nation's own, so zooming one chart's axes leaves the other's; the
     dates are shared, as on the command line.
 
@@ -165,7 +167,8 @@ _PLACEHOLDERS = {
 }
 _DEFAULT_PLACEHOLDER = "automatic"
 _DRAWING_LOCK = threading.Lock()
-# How many zoom and pan steps "Back" can undo (as in the window).
+# How many zoom and pan steps "Back" can undo (as in the window); the view
+# before the first one is always kept, for Unzoom.
 _HISTORY_LIMIT = 50
 # The buttons move the dates by this fraction of the window, or scale it by this factor.
 _DATE_STEP_FRACTION = 0.5
@@ -478,10 +481,17 @@ def _measure_changed(name: str) -> None:
 
 
 def _remember_view() -> None:
-    """Keep the controls' choices for Back and Unzoom (the last ``_HISTORY_LIMIT``)."""
+    """Keep the controls' choices for Back and Unzoom (at most ``_HISTORY_LIMIT``, the first always kept)."""
     history = st.session_state.setdefault(_HISTORY, [])
     history.append(_snapshot())
-    del history[:-_HISTORY_LIMIT]
+    if len(history) > _HISTORY_LIMIT:
+        del history[1 : len(history) - _HISTORY_LIMIT + 1]
+
+
+def _unzoomed() -> bool:
+    """True when there is no view before the first zoom to return to, or it is the one shown (as in the window)."""
+    history = st.session_state.get(_HISTORY)
+    return not history or history[0] == _snapshot()
 
 
 def _choice_values_offered(key: str) -> list[str]:
@@ -562,10 +572,10 @@ def _back() -> None:
 
 
 def _unzoom() -> None:
-    history = st.session_state.get(_HISTORY)
-    if history:
-        first = history[0]
-        history.clear()
+    """Return to the charts before the first zoom: one more step, so Back returns to the zoom."""
+    if not _unzoomed():
+        first = st.session_state[_HISTORY][0]
+        _remember_view()
         _load_choices(first)
 
 
@@ -925,8 +935,8 @@ def _view_buttons(drawing: Drawing) -> None:
     at_first = drawn is None or drawn.start <= EARLIEST_DATA_START
     at_today = drawn is None or drawn.end >= pd.Timestamp.today().normalize()
     buttons = (
-        ("◀ Back", _back, (), not history, "Undo the last zoom or move of the dates."),
-        ("Unzoom", _unzoom, (), not history, "Back to the charts before the first zoom or move."),
+        ("◀ Back", _back, (), not history, "Undo the last zoom, move of the dates, Unzoom or Reset."),
+        ("Unzoom", _unzoom, (), _unzoomed(), "Back to the charts before the first zoom or move (Back undoes it)."),
         ("◀ Earlier", _move_dates, (-_DATE_STEP_FRACTION, 1.0), at_first, "Move the dates back by half the window."),
         ("Later ▶", _move_dates, (_DATE_STEP_FRACTION, 1.0), at_today, "Move the dates on by half the window, up to today."),
         ("Zoom out", _move_dates, (0.0, _ZOOM_OUT_FACTOR), at_first and at_today, "Twice the span of dates, about its middle."),

@@ -320,26 +320,31 @@ def check_view_buttons(check: Check) -> None:
     button(view, "◀ Back").click()
     view.run()
     check("Back: one step", address(view) == e1, address(view))
-    e3, _s3, _n3 = expect(s1, n1, shift=0.5)
+    e3, s3, n3 = expect(s1, n1, shift=0.5)
     button(view, "Later ▶").click()
     view.run()
     check("Later: half a window on", address(view) == e3, (address(view), e3))
     button(view, "Unzoom").click()
     view.run()
     # Earlier then Later came back to the same dates, so the fields as first
-    # typed are the same chart: nothing is redrawn and the address keeps "2001".
+    # typed are the same chart: nothing is redrawn and the address keeps e3.
     fields = (view.text_input(key="value:start").value, view.text_input(key="value:end").value)
     check(
-        "Unzoom: the fields as first typed, nothing left to undo",
-        fields == ("2001", "2019") and not enabled(view)["◀ Back"],
+        "Unzoom: the fields as first typed; Unzoom greyed, Back possible",
+        fields == ("2001", "2019") and not enabled(view)["Unzoom"] and enabled(view)["◀ Back"],
         (fields, enabled(view)),
     )
+    # Unzoom is one more step (Terry, 2026-10-08: Back after Unzoom did nothing).
+    button(view, "◀ Back").click()
+    view.run()
+    fields = (view.text_input(key="value:start").value, view.text_input(key="value:end").value)
+    check("Back after Unzoom: the view before it", fields == (s3, n3) and enabled(view)["Unzoom"], (fields, enabled(view)))
     button(view, "Reset").click()
     view.run()
     check("Reset draws the defaults", address(view) == "" and charts_shown(view) == 2, address(view))
     button(view, "◀ Back").click()
     view.run()
-    check("Back undoes Reset", address(view) == "--C --start:2001 --end:2019", address(view))
+    check("Back undoes Reset", address(view) == e3, (address(view), e3))
     today = new_page()
     check("at today, Later is off", not enabled(today)["Later ▶"] and enabled(today)["◀ Earlier"], enabled(today))
 
