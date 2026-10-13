@@ -1214,8 +1214,23 @@ class RatesPlotApp:
             self._refresh_view(key)
 
     def _refresh_view(self, key: str) -> None:
-        """Show the chart scaled to fit its tab (never enlarged), or at actual size with scroll bars."""
-        self._resize_after_ids.pop(key, None)
+        """Show the chart scaled to fit its tab, or at actual size with scroll bars.
+
+        Fitted, it is shrunk or enlarged to fill the tab, keeping its shape
+        (Terry, 2026-10-12: it only ever shrank, leaving a small chart in a
+        sea of white). An enlarged preview is the PNG's own pixels scaled up,
+        so slightly soft, as in any image viewer; the saved file is the PNG
+        itself, and "Actual size" shows it pixel for pixel. Drawing the chart
+        again at the tab's size would be sharp, but the ticks, the legend's
+        place and the labels are chosen in pixels, so it could differ from
+        the file saved.
+        """
+        # A refresh after a resize may still be waiting (this call came from
+        # a new chart, or the preview's mode): cancel it, or once forgotten it
+        # could fire after the window is closed ("invalid command name").
+        waiting = self._resize_after_ids.pop(key, None)
+        if waiting is not None:
+            self.root.after_cancel(waiting)
         image = self.images.get(key)
         canvas = self.canvases[key]
         if image is None:
@@ -1230,10 +1245,10 @@ class RatesPlotApp:
         view_width, view_height = max(canvas.winfo_width(), 1), max(canvas.winfo_height(), 1)
         canvas.delete("all")
         if self.zoom.get() == "fit":
-            scale = min(view_width / image.width, view_height / image.height, 1.0)
+            scale = min(view_width / image.width, view_height / image.height)
             shown = image
-            if scale < 1.0:
-                size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+            size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+            if size != (image.width, image.height):
                 shown = image.resize(size, Image.Resampling.LANCZOS)
                 scale = shown.width / image.width
             left, top = (view_width - shown.width) // 2, (view_height - shown.height) // 2
