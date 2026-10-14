@@ -39,6 +39,13 @@ How the pieces are chosen
   ``config``).
 - The curve is covered by the fewest acceptable pieces; among equally few,
   the least total squared error decides where they break (``fit_pieces``).
+- A circuit breaker (Terry, 2026-10-13): where the tolerance is so tight that
+  the pieces follow the data's own noise (monthly debt's seasons), it is
+  loosened there. Every run of pieces in a row each spanning less than a
+  year (an eighth of the window, on a window under eight years) is fitted
+  again on its own, with the least tolerance at which each of its pieces
+  is that long; a lone short piece is a jump and stays. The message log
+  names each stretch so loosened (``loosen_short_runs``).
 - The pieces are separate regressions and do not join: a jump in the data
   (debt in 2020) falls between two of them.
 
@@ -89,6 +96,16 @@ _DAYS_PER_YEAR = 365.25
 # ones, span a year: 365 days, or 366 across a 29 February. Counted in whole
 # days, since 365 days is only 0.9993 of the 365.25-day years of ``x``.
 _COMPOUND_MIN_DAYS = 365
+# The circuit breaker (batch 8.3): a piece is short when its observations
+# span fewer days than this (a year, as for the compound rate: a shorter
+# piece measures little more than monthly figures' seasons), or than this
+# fraction of the window on a window under eight years; a run of at least
+# this many short pieces in a row is fitted again with a looser tolerance,
+# found to within 2**-_LOOSEN_STEPS of the range searched.
+_MIN_PIECE_DAYS = _COMPOUND_MIN_DAYS
+_MIN_PIECE_WINDOW_FRACTION = 1 / 8
+_SHORT_RUN = 2
+_LOOSEN_STEPS = 14
 
 # The pieces: the curve's colour this far towards white, at this opacity and
 # width (points, before PlotConfig.line_scale; the curves are 2.5), under the
@@ -307,6 +324,83 @@ def _fitted(x: np.ndarray, z: np.ndarray, w: np.ndarray, first: int, last: int) 
     return Piece(first, last, slope, float(mean_z - slope * mean_x))
 
 
+@dataclass(frozen=True)
+class Loosened:
+    """A stretch fitted again by the circuit breaker: observations ``first`` to ``last``, and the tolerance used."""
+
+    first: int
+    last: int
+    tolerance: float  # ln units
+
+
+def min_piece_days(config: PlotConfig) -> float:
+    """The span below which a piece is short: a year, or an eighth of a window under eight years."""
+    window_days = (config.end - config.start).days
+    return min(_MIN_PIECE_DAYS, window_days * _MIN_PIECE_WINDOW_FRACTION)
+
+
+def loosen_short_runs(
+    x: np.ndarray, z: np.ndarray, w: np.ndarray, pieces: Sequence[Piece], tolerance: float, min_days: float
+) -> tuple[list[Piece], list[Loosened]]:
+    """Fit every run of ``_SHORT_RUN`` or more short pieces again, as loosely as its pieces need to be long.
+
+    ``pieces`` are ``fit_pieces(x, z, w, tolerance)``. A piece is short when
+    its observations span fewer than ``min_days`` days. Each run of short
+    pieces in a row is fitted again on its own with the least tolerance at
+    which every piece in it spans ``min_days`` or more (or the run is one
+    piece); the other pieces are kept. Returns the pieces, and the stretches
+    loosened.
+    """
+    days = np.rint((x - x[0]) * _DAYS_PER_YEAR)
+    short = [days[piece.last] - days[piece.first] < min_days for piece in pieces]
+    kept: list[Piece] = []
+    loosened: list[Loosened] = []
+    index = 0
+    while index < len(pieces):
+        end = index
+        while end < len(pieces) and short[end]:
+            end += 1
+        if end - index < _SHORT_RUN:
+            kept.append(pieces[index])  # a long piece, or a lone short one (a jump)
+            index += 1
+            continue
+        first, last = pieces[index].first, pieces[end - 1].last
+        loose, refitted = _least_tolerance(x[first : last + 1], z[first : last + 1], w[first : last + 1], tolerance, min_days)
+        # The refitted pieces count from the stretch's first observation; their lines use the same x.
+        kept.extend(Piece(piece.first + first, piece.last + first, piece.slope, piece.intercept) for piece in refitted)
+        loosened.append(Loosened(first, last, loose))
+        index = end
+    return kept, loosened
+
+
+def _least_tolerance(x: np.ndarray, z: np.ndarray, w: np.ndarray, tolerance: float, min_days: float) -> tuple[float, list[Piece]]:
+    """The least tolerance above ``tolerance`` at which ``fit_pieces`` gives no piece shorter than ``min_days``, and those pieces.
+
+    Found by growing the tolerance half again at a time until the pieces are
+    long enough (one piece always is), then halving the last step
+    ``_LOOSEN_STEPS`` times.
+    """
+    days = np.rint((x - x[0]) * _DAYS_PER_YEAR)
+
+    def fitted(trial: float) -> tuple[list[Piece], bool]:
+        pieces = fit_pieces(x, z, w, trial)
+        return pieces, len(pieces) == 1 or all(days[piece.last] - days[piece.first] >= min_days for piece in pieces)
+
+    low = high = tolerance
+    best, long_enough = fitted(high)
+    while not long_enough:
+        low, high = high, high * 1.5
+        best, long_enough = fitted(high)
+    for _ in range(_LOOSEN_STEPS):
+        middle = (low + high) / 2
+        pieces, long_enough = fitted(middle)
+        if long_enough:
+            high, best = middle, pieces
+        else:
+            low = middle
+    return high, best
+
+
 def tolerance_for(ax: Axes, config: PlotConfig) -> float:
     """Return the fitting tolerance in ln units for curves on ``ax`` (a log axis with its limits set).
 
@@ -317,6 +411,19 @@ def tolerance_for(ax: Axes, config: PlotConfig) -> float:
     span = abs(math.log(high / low)) if low > 0 and high > 0 else 0.0
     percent = DEFAULT_REGRESSION_TOLERANCE_PCT if config.regression_tolerance is None else config.regression_tolerance
     return max(percent / 100 * span, _MIN_TOLERANCE)
+
+
+def _percent(tolerance: float) -> str:
+    """A tolerance in ln units as a percentage of the value: ``"1.7 %"``."""
+    return f"{100.0 * math.expm1(tolerance):.1f} %"
+
+
+def _span_text(days: float) -> str:
+    """The circuit breaker's least span in words: "a year", "6 months", "12 days"."""
+    if days >= _MIN_PIECE_DAYS:
+        return "a year"
+    months = round(days / (_DAYS_PER_YEAR / 12))
+    return f"{months} month{'s' if months != 1 else ''}" if months >= 1 else f"{round(days)} days"
 
 
 def rate_text(slope: float, span_days: int) -> str:
@@ -373,6 +480,7 @@ def add_regression_segments(
     ``projected`` maps a column to the date its data end (--cur).
     """
     tolerance = tolerance_for(ax, config)
+    min_days = min_piece_days(config)
     labels: list[RateLabel] = []
     for line, column in curves:
         observed = observations(macro, column, config, projected.get(column))
@@ -381,7 +489,15 @@ def add_regression_segments(
         dates = observed.index
         x = ((dates - dates[0]) / pd.Timedelta(days=1)).to_numpy(dtype=float) / _DAYS_PER_YEAR
         z = np.log(observed.to_numpy())
-        for piece in fit_pieces(x, z, time_weights(x), tolerance):
+        weights = time_weights(x)
+        pieces, loosened = loosen_short_runs(x, z, weights, fit_pieces(x, z, weights, tolerance), tolerance, min_days)
+        for stretch in loosened:
+            print(
+                f"Regression segments: {line.get_label()}, {dates[stretch.first]:%Y-%m-%d} to "
+                f"{dates[stretch.last]:%Y-%m-%d}: tolerance ±{_percent(tolerance)} loosened to "
+                f"±{_percent(stretch.tolerance)} there, for pieces of {_span_text(min_days)} or more"
+            )
+        for piece in pieces:
             ends = [piece.first, piece.last]
             values = np.exp(piece.intercept + piece.slope * x[ends])
             (drawn,) = ax.plot(
