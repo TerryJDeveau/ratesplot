@@ -1947,6 +1947,7 @@ class RatesPlotApp:
         if self.drawn_choices is None:
             return
         payloads, flags = self.drawn_choices
+        geometry = self._normal_geometry or self.root.geometry()
         error = save_state(
             {
                 "version": STATE_VERSION,
@@ -1955,8 +1956,12 @@ class RatesPlotApp:
                 "zoom": self.zoom.get(),
                 "tab": self._current_tab_key(),
                 # The size and place before maximizing, and whether it is maximized.
-                "geometry": self._normal_geometry or self.root.geometry(),
+                "geometry": geometry,
                 "maximized": self._maximized,
+                # The work area of the monitor it is on, so that if that monitor
+                # is gone at the next start, the window keeps its place relative
+                # to another's corner (batch 15.4). None off Windows.
+                "monitor": _window_monitor(geometry),
                 "column_width": self._current_column_width(),
                 "keep_ratio": {name: editor.keep_ratio.get() for name, editor in self.size_editors.items()},
             }
@@ -2012,6 +2017,110 @@ def _monitor_work_areas() -> list[tuple[int, int, int, int]]:
     return areas
 
 
+Rect = tuple[int, int, int, int]  # left, top, right, bottom
+
+
+def _window_frame() -> Rect:
+    """Return how far a window's frame reaches beyond its inside: (left, top, right, bottom), in Tk's pixels.
+
+    Tk's geometry ``WxH+X+Y`` gives the inside's size and the frame's
+    outer corner (measured on Buddug at 125 %: the frame 9 px a side, its
+    title bar 38, of which 8 a side are Windows' invisible resizing
+    borders). Windows says how wide the frame is for the process's DPI
+    (``AdjustWindowRectEx``, the window's standard style), so it is known
+    before the window is shown. Nothing off Windows.
+    """
+    if sys.platform != "win32":
+        return (0, 0, 0, 0)
+    import ctypes
+    from ctypes import wintypes
+
+    ws_overlappedwindow = 0x00CF0000
+    rect = wintypes.RECT(0, 0, 0, 0)
+    try:
+        if not ctypes.windll.user32.AdjustWindowRectEx(ctypes.byref(rect), ws_overlappedwindow, False, 0):
+            return (0, 0, 0, 0)
+    except (AttributeError, OSError):
+        return (0, 0, 0, 0)
+    return (-rect.left, -rect.top, rect.right, rect.bottom)
+
+
+def _outer_rect(width: int, height: int, x: int, y: int, frame: Rect) -> Rect:
+    """The window's whole rectangle, its frame included, from Tk's geometry (``_window_frame``)."""
+    return (x, y, x + width + frame[0] + frame[2], y + height + frame[1] + frame[3])
+
+
+def _gap(a: Rect, b: Rect) -> float:
+    """How far apart two rectangles are (0 when they touch or overlap)."""
+    across = max(a[0] - b[2], b[0] - a[2], 0)
+    down = max(a[1] - b[3], b[1] - a[3], 0)
+    return (across * across + down * down) ** 0.5
+
+
+def _middle(rect: Rect) -> Rect:
+    """A rectangle's middle, as a rectangle of no size."""
+    across, down = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+    return (across, down, across, down)
+
+
+def _overlap(a: Rect, b: Rect) -> int:
+    """The area two rectangles share."""
+    return max(0, min(a[2], b[2]) - max(a[0], b[0])) * max(0, min(a[3], b[3]) - max(a[1], b[1]))
+
+
+def _monitor_of(rect: Rect, areas: list[Rect]) -> Rect:
+    """The work area holding most of ``rect``, else the nearest one (as Windows' ``MonitorFromRect`` chooses)."""
+    return max(areas, key=lambda area: (_overlap(rect, area), -_gap(rect, area)))
+
+
+def _moved_onto_a_monitor(width: int, height: int, x: int, y: int, areas: list[Rect], own: Rect | None, frame: Rect) -> str:
+    """Return a geometry for a window no monitor shows the title bar of, its size kept where it can be.
+
+    Terry, 2026-10-13 (batch 15.4): a window remembered on a monitor no
+    longer there came back at the default size and place; it should keep
+    its size and place on another monitor, shifted or shrunk only where
+    needed so that all of it shows. With its own monitor remembered
+    (``own``, a work area), it goes to the remaining one nearest to that,
+    at the same place relative to that one's top left corner; without it
+    (settings saved before batch 15), to the one nearest the window. Then
+    it is moved, and only then shrunk, as little as puts the whole window,
+    frame and all, on that monitor's work area (the screen less the
+    taskbar). Run on Buddug's three upper monitors unplugged, Terry's
+    3456x1944 window across two of them comes back 3456x1944 on the main
+    screen, 167 px from its left as it was from its own monitor's.
+    """
+    outer = _outer_rect(width, height, x, y, frame)
+    if own is not None:
+        # The nearest; of those touching it, the one whose middle is nearest its middle.
+        target = min(areas, key=lambda area: (_gap(area, own), _gap(_middle(area), _middle(own))))
+        x, y = target[0] + x - own[0], target[1] + y - own[1]
+    else:
+        target = _monitor_of(outer, areas)
+    left, top, right, bottom = target
+    outer_width = min(outer[2] - outer[0], right - left)
+    outer_height = min(outer[3] - outer[1], bottom - top)
+    x = min(max(x, left), right - outer_width)
+    y = min(max(y, top), bottom - outer_height)
+    return f"{outer_width - frame[0] - frame[2]}x{outer_height - frame[1] - frame[3]}+{x}+{y}"
+
+
+def _window_monitor(geometry: str) -> list[int] | None:
+    """The work area of the monitor holding most of a window with this geometry, for the remembered settings."""
+    match = _GEOMETRY_PATTERN.match(geometry)
+    areas = _monitor_work_areas()
+    if not match or not areas:
+        return None
+    return list(_monitor_of(_outer_rect(*map(int, match.groups()), _window_frame()), areas))
+
+
+def _remembered_monitor(state: dict) -> Rect | None:
+    """The work area of the monitor the window was on when its settings were saved, if they say (since batch 15)."""
+    monitor = state.get("monitor")
+    if isinstance(monitor, list) and len(monitor) == 4 and all(isinstance(value, int) for value in monitor):
+        return tuple(monitor)
+    return None
+
+
 def _title_bar_on_screen(width: int, x: int, y: int, areas: list[tuple[int, int, int, int]]) -> bool:
     """True when enough of a window's title bar (``_MIN_TITLE_ON_SCREEN_PX`` of it, half its height) is on one monitor."""
     for left, top, right, bottom in areas:
@@ -2030,9 +2139,12 @@ def _initial_geometry(root: tk.Tk, state: dict) -> str:
     main screen. The check was against the main screen alone; his remembered
     window, 3456x1944 at (1115, -2149), sat across two of the three monitors
     above it. Now any size and place is kept while enough of the title bar
-    is on some monitor to drag the window by (``_title_bar_on_screen``); a
-    monitor since unplugged gives the default. Without the monitors' list
-    (not Windows), the main screen's old test.
+    is on some monitor to drag the window by (``_title_bar_on_screen``),
+    even with part of the window off the screens. Otherwise (its monitor
+    since unplugged) it keeps its size on another monitor, moved and
+    shrunk as little as shows all of it (``_moved_onto_a_monitor``, batch
+    15.4); it was given the default size. Without the monitors' list (not
+    Windows), the main screen's old test.
     """
     screen_width, screen_height = root.winfo_screenwidth(), root.winfo_screenheight()
     match = _GEOMETRY_PATTERN.match(str(state.get("geometry", "")))
@@ -2042,6 +2154,7 @@ def _initial_geometry(root: tk.Tk, state: dict) -> str:
         if areas:
             if _title_bar_on_screen(width, x, y, areas):
                 return f"{width}x{height}+{x}+{y}"
+            return _moved_onto_a_monitor(width, height, x, y, areas, _remembered_monitor(state), _window_frame())
         elif width <= screen_width and height <= screen_height and 0 <= x < screen_width - 100 and 0 <= y < screen_height - 100:
             return f"{width}x{height}+{x}+{y}"
     return f"{round(screen_width * _SCREEN_FRACTION)}x{round(screen_height * _SCREEN_FRACTION)}+20+20"
