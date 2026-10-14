@@ -5,7 +5,7 @@ Each case is drawn as ``regress_charts.py`` draws it (``--e:2026-09-01`` first,
 the regression download cache), through ``plotting.build_figure``. Then each
 rate label ("+5.3%/yr") is found among the drawn texts and its area rebuilt
 from the text itself: the rectangle beside its anchor, turned to lie along its
-piece, halo included, as ``regression.add_slope_labels`` scores it. In the
+piece, halo included, as ``regression.add_rate_labels`` scores it. In the
 occupancy raster's 4 px cells it counts, for every label:
 
     lines    cells of a curve under the label (the curves only, not the bands)
@@ -48,7 +48,7 @@ import regress_charts  # noqa: E402  (this tool's own copy: the cases and the ca
 
 RATE_TEXT = re.compile(r"^(?:[+\N{MINUS SIGN}]\d+(?:\.\d)?|0\.0)%/yr$")
 BAND_LABEL = "_regression"
-# The label's area is sampled this finely (display pixels), as add_slope_labels samples it.
+# The label's area is sampled this finely (display pixels), as add_rate_labels samples it.
 SAMPLE_PX = 2.0
 
 
@@ -57,7 +57,7 @@ def label_area(text, renderer) -> np.ndarray:
     angle = math.radians(text.get_rotation())
     along = np.array([math.cos(angle), math.sin(angle)])
     normal = np.array([-along[1], along[0]])
-    # The text's own width and height, measured unturned (as add_slope_labels measures it).
+    # The text's own width and height, measured unturned (as add_rate_labels measures it).
     rotation = text.get_rotation()
     text.set_rotation(0)
     size = text.get_window_extent(renderer)

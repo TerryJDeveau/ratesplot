@@ -89,7 +89,7 @@ from .latest import (
 from .legend import finish_legend_and_title
 from .measures import express
 from .rates import RateCurve, in_window, rate_curves, warn_none_drawn
-from .regression import SlopeLabel, add_regression_segments
+from .regression import RateLabel, add_regression_segments
 from .regression import legend_entry as regression_legend_entry
 from .de_data import (
     fetch_de_components,
@@ -425,10 +425,10 @@ def draw_country(
     warn_macro_limits_coverage(macro_in_range, macro_columns_drawn, config)
     # --reg: each right-axis curve fitted by straight pieces on its log axis,
     # drawn now that the axis limits (which set the tolerance) are known; their
-    # slope labels wait for the final layout (ratesplot.regression).
-    slope_labels: list[SlopeLabel] = []
+    # rate labels wait for the final layout (ratesplot.regression).
+    rate_labels: list[RateLabel] = []
     if config.regression:
-        slope_labels = add_regression_segments(ax_macro, macro, zip(macro_lines, macro_columns_drawn), projected, config)
+        rate_labels = add_regression_segments(ax_macro, macro, zip(macro_lines, macro_columns_drawn), projected, config)
     # -l: every drawn curve gets its last value at its end, written as its
     # axis writes values: yields in percent, right-axis curves as the tick
     # labels there (dollars, or percent of GDP under -r); a projected value
@@ -450,7 +450,7 @@ def draw_country(
         steered = set(macro.attrs.get(STEERED_ATTR, [])) & set(macro_columns_drawn)
         label = PROJECTION_LABEL_STEERED if steered else PROJECTION_LABEL
         legend_macro.append(Line2D([], [], color=PROJECTION_KEY_COLOR, linewidth=width, alpha=PROJECTION_ALPHA, label=label))
-    if slope_labels:
+    if rate_labels:
         legend_macro.append(regression_legend_entry(config))
     # The title names only what is on the chart, and the subtitle only the
     # dates it covers; the legend keeps yields and macro curves as separate
@@ -471,7 +471,7 @@ def draw_country(
         drawn_date_span((ax_yield, ax_macro)),
         end_labels,
         quote_time if yield_lines else None,
-        slope_labels,
+        rate_labels,
     )
 
 

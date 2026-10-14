@@ -1,6 +1,6 @@
 """Where the chart already has ink: every drawn line sampled into a coarse grid of the axes area.
 
-Shared by the legend placement (``legend``) and the slope labels of the
+Shared by the legend placement (``legend``) and the rate labels of the
 regression segments (``regression``), which both look for room where they
 cover as few lines as possible:
 

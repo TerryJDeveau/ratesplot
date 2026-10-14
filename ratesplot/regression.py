@@ -48,7 +48,7 @@ How they are drawn
   under the curves, from its first observation to its last.
 - Its rate is written above it, turned to lie along it, in the curve's own
   colour, after the layout, the date limits and the -l labels are final
-  (``add_slope_labels``, called by ``legend.finish_legend_and_title``). It
+  (``add_rate_labels``, called by ``legend.finish_legend_and_title``). It
   goes where it covers the fewest other lines and labels, nearest the
   piece's middle; below the piece only if above would leave the axes. The
   legend then avoids the labels, and the pieces, as it avoids everything drawn.
@@ -132,7 +132,7 @@ class Piece:
 
 
 @dataclass(frozen=True)
-class SlopeLabel:
+class RateLabel:
     """A drawn piece waiting for its label (placed once the layout is final)."""
 
     piece: Line2D  # the pale line; its two points are the piece's ends
@@ -340,7 +340,7 @@ def add_regression_segments(
     curves: Iterable[tuple[Line2D, str]],
     projected: dict[str, pd.Timestamp],
     config: PlotConfig,
-) -> list[SlopeLabel]:
+) -> list[RateLabel]:
     """Fit and draw the pieces of each drawn right-axis curve; return their labels, to be placed later.
 
     ``ax`` is the right axis, with its limits already set (they give the
@@ -349,7 +349,7 @@ def add_regression_segments(
     ``projected`` maps a column to the date its data end (--cur).
     """
     tolerance = tolerance_for(ax, config)
-    labels: list[SlopeLabel] = []
+    labels: list[RateLabel] = []
     for line, column in curves:
         observed = observations(macro, column, config, projected.get(column))
         if len(observed) < _MIN_OBSERVATIONS:
@@ -365,7 +365,7 @@ def add_regression_segments(
                 **_piece_style(line.get_color(), config),
             )
             span_days = (dates[piece.last] - dates[piece.first]).days
-            labels.append(SlopeLabel(drawn, rate_text(piece.slope, span_days), line.get_color()))
+            labels.append(RateLabel(drawn, rate_text(piece.slope, span_days), line.get_color()))
     return labels
 
 
@@ -387,8 +387,8 @@ def _label_area(anchors: np.ndarray, along: np.ndarray, up: np.ndarray, width: f
     return anchors[:, None, :] + offsets[None, :, :]
 
 
-def add_slope_labels(ax: Axes, labels: Sequence[SlopeLabel], config: PlotConfig, obstacles: Sequence[Bbox] = ()) -> list[Bbox]:
-    """Write each piece's slope along it, where it covers the least; return the labels' display extents.
+def add_rate_labels(ax: Axes, labels: Sequence[RateLabel], config: PlotConfig, obstacles: Sequence[Bbox] = ()) -> list[Bbox]:
+    """Write each piece's rate along it, where it covers the least; return the labels' display extents.
 
     ``ax`` is the chart's main axes (its twin has the same frame). The
     layout and both axes' limits must be final. ``obstacles`` (the -l
@@ -415,7 +415,7 @@ def add_slope_labels(ax: Axes, labels: Sequence[SlopeLabel], config: PlotConfig,
     # From the piece's centre line to the text: half the piece's width, then the gap.
     offset_px = (_LINE_WIDTH_PT * config.line_scale / 2 + _LABEL_GAP_PT * config.font_scale) * px_per_pt
 
-    def ends_px(label: SlopeLabel) -> np.ndarray:
+    def ends_px(label: RateLabel) -> np.ndarray:
         return label.piece.axes.transData.transform(np.asarray(label.piece.get_xydata(), dtype=float))
 
     extents: list[Bbox] = []
