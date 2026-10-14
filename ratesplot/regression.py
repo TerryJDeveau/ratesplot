@@ -588,9 +588,17 @@ class _Layers:
         self._own = np.zeros(len(self.lines), dtype=bool)
 
     def flat(self, points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Each point's cell as a flat index (0 where outside the axes), and a mask of those inside."""
-        cells, inside = self.raster.cells_at(points.reshape(-1, 2))
-        return np.where(inside, cells[:, 0] * self.raster.cols + cells[:, 1], 0), inside
+        """Each point's cell as a flat index (0 where outside the axes), and a mask of those inside.
+
+        The cells of ``Raster.cells_at``, computed here without building its
+        (row, column) pairs: this runs for every sample of every candidate.
+        """
+        points = points.reshape(-1, 2)
+        raster = self.raster
+        col = np.floor((points[:, 0] - raster.x0) / CELL_PX).astype(np.intp)
+        row = np.floor((points[:, 1] - raster.y0) / CELL_PX).astype(np.intp)
+        inside = (col >= 0) & (col < raster.cols) & (row >= 0) & (row < raster.rows)
+        return np.where(inside, row * raster.cols + col, 0), inside
 
     def cells_of(self, points: np.ndarray) -> np.ndarray:
         """The distinct cells ``points`` fall in, as flat indices (those inside the axes)."""
@@ -604,13 +612,13 @@ class _Layers:
         whose band it may touch.
         """
         flat, inside = self.flat(area)
+        count = area.shape[0]
         self._own[self.band_cells[own_band]] = True
-        lines = (self.lines[flat] + (self.leaders[flat] > 0)) * inside
-        bands = (self.bands[flat] - self._own[flat]) * inside
-        labels = (self.labels[flat] > 0) * inside
+        lines = ((self.lines[flat] + (self.leaders[flat] > 0)) * inside).reshape(count, -1).sum(axis=1)
+        bands = ((self.bands[flat] - self._own[flat]) * inside).reshape(count, -1).sum(axis=1)
+        labels = ((self.labels[flat] > 0) & inside).reshape(count, -1).sum(axis=1)
         self._own[self.band_cells[own_band]] = False
-        counts = np.stack([lines, bands, labels], axis=1).reshape(area.shape[0], -1, 3).sum(axis=1)
-        return counts / _SAMPLES_PER_CELL
+        return np.stack([lines, bands, labels], axis=1) / _SAMPLES_PER_CELL
 
     def add(self, spot: _Spot, sign: int = 1) -> None:
         """Mark a placed label, and its leader, as covering their cells (``sign`` -1 takes them away)."""
@@ -714,10 +722,11 @@ def add_rate_labels(ax: Axes, labels: Sequence[RateLabel], config: PlotConfig, o
         sides = np.repeat([1.0, -1.0], len(centre_grid))
         centre_all, lift_all, stand_all = np.tile(centre_grid, 2), np.tile(lift_grid, 2), np.tile(stand_off, 2)
         anchors = start + centre_all[:, None] * along + (sides * stand_all)[:, None] * normal
-        area = _label_area(anchors, along, normal, width, height)
         # Below the piece the label's far side is downwards.
         below = sides < 0
-        area[below] = _label_area(anchors[below], along, -normal, width, height)
+        area = np.concatenate(
+            [_label_area(anchors[~below], along, normal, width, height), _label_area(anchors[below], along, -normal, width, height)]
+        )
         inside = np.all(
             (area[..., 0] >= frame.x0) & (area[..., 0] <= frame.x1) & (area[..., 1] >= frame.y0) & (area[..., 1] <= frame.y1),
             axis=1,
