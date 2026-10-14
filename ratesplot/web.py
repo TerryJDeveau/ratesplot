@@ -837,11 +837,31 @@ def _size_control(where, option: Option) -> None:
 
 
 def _levels_control(where, option: Option) -> None:
+    """"By level" over its four boxes: four across when the sidebar is wide enough, two by two until then (``_paired_places``)."""
     where.markdown(f"**{option.label}**", help=_help(option, "None ticked = debt and interest in total."))
-    columns = where.columns(2)
     idle = option.name in _idle()  # greyed without debt or interest, as in the window
-    for index, (letter, caption) in enumerate(LEVEL_BOXES):
-        columns[index % 2].checkbox(caption, key=_LEVEL + letter, disabled=idle)
+    for (letter, caption), place in zip(LEVEL_BOXES, _paired_places(where, len(LEVEL_BOXES))):
+        place.checkbox(caption, key=_LEVEL + letter, disabled=idle)
+
+
+def _paired_places(where, count: int) -> list:
+    """Return where each of ``count`` check boxes goes: all on one row once they fit, two by two until then.
+
+    The window's rule (``gui._Flow``; Terry, 2026-10-13, batch 15.2): four
+    boxes four across or in two rows of two, never three and one. The page
+    cannot measure the sidebar, so the boxes go in pairs, each pair a row
+    of its own as wide as its two boxes, and the pairs in a row that wraps:
+    side by side when the sidebar is wide enough, one under the other when
+    it is not. A pair wraps too, so on a phone each box has a row. Each box
+    is as wide as its text: fixed columns cut "United States" to "United
+    Sta…" (2026-10-13).
+    """
+    row = where.container(horizontal=True, wrap=True)
+    places = []
+    for first in range(0, count, 2):
+        pair = row.container(horizontal=True, wrap=True, width="content")
+        places += [pair] * min(2, count - first)
+    return places
 
 
 def _choices_control(where, option: Option, nation: Nation | None = None) -> None:
@@ -916,13 +936,11 @@ def _controls() -> None:
         values = [option for option in members if option.kind is Kind.VALUE and option not in attached.values()]
         flags = [option for option in members if option.kind is not Kind.VALUE]
         if key in _TWO_COLUMN_BLOCKS and not attached:
-            # As many to a row as fit, as in the window (Terry, 2026-10-08):
-            # two at the sidebar's default width, more when it is dragged
-            # wider, one on a phone. A row that wraps, each box as wide as its
-            # text: fixed columns cut "United States" to "United Sta…" there.
-            row = bar.container(horizontal=True, wrap=True)
-            for option in flags:
-                _flag_control(row, option)
+            # As in the window (Terry, 2026-10-08): two to a row at the
+            # sidebar's default width, all four on one row when it is dragged
+            # wide enough, one on a phone; never three and one (batch 15.2).
+            for option, place in zip(flags, _paired_places(bar, len(flags))):
+                _flag_control(place, option)
             flags = []
         for option in flags:
             _flag_control(bar, option)

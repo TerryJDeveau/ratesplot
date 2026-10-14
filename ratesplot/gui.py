@@ -34,7 +34,8 @@ Controls
     that does not, so they are always in sight. A handle between the
     controls and the charts sets the column's width, remembered with the
     window's; each block lays its controls out in as many columns as fit,
-    one to three (``_Flow``): two at the default width, one when narrow.
+    one to four (``_Flow``): two at the default width, one when narrow,
+    four boxes four across or two by two, never three and one.
 
 Remembered settings
     The choices of the last successful drawing, the preview mode, the selected
@@ -188,8 +189,10 @@ _SASH_PX = 6
 _MIN_CHARTS_PX = 300
 # The controls' frame's padding in the column.
 _PANEL_PAD_PX = 8
-# A block's controls in up to this many columns, this far apart (``_Flow``).
-_MAX_COLUMNS = 3
+# A block's controls in up to this many columns, this far apart (``_Flow``):
+# four, so that four boxes go four across once they fit (Terry, 2026-10-13,
+# batch 15.2: the nations and the four rates stayed two by two at any width).
+_MAX_COLUMNS = 4
 _CELL_GAP_PX = 12
 # The blocks in two columns at the column's default width (Terry, 2026-10-08:
 # the nations, the yields, spreads, policy and mortgages, Start and End on one
@@ -597,17 +600,19 @@ class _SizeEditor:
 
 
 class _Flow:
-    """A block's controls in as many columns as fit, one to three, laid out again whenever the block's width changes.
+    """A block's controls in as many columns as fit, one to four, laid out again whenever the block's width changes.
 
     Terry, 2026-10-08: the column's width adjustable, its controls in two
-    columns at the default width, in one when it is made narrow, in three
+    columns at the default width, in one when it is made narrow, in more
     when it is made wide. Each control is a cell (``add``), placed row by
     row; a cell added ``wide`` (a caption such as "By level") takes a row
     of its own and starts a new run of cells. Each run is spread over as
     few columns as give it as few rows as the most columns that fit would:
-    four boxes in two rows of two, not three and one; three in one row when
-    they fit. Each column is as wide as its widest cell, so the cells line
-    up from row to row.
+    four boxes in two rows of two, never three and one, and in one row once
+    four columns fit (Terry, 2026-10-13: the nations and the rates stayed in
+    two columns while the curves took three); three in one row when they
+    fit. Each column is as wide as its widest cell, so the cells line up
+    from row to row.
     """
 
     def __init__(self, frame: ttk.Frame) -> None:
