@@ -46,12 +46,16 @@ How they are drawn
 ------------------
 - Each piece is a thick, paler, translucent line in its curve's colour,
   under the curves, from its first observation to its last.
-- Its rate is written above it, turned to lie along it, in the curve's own
+- Its rate is written beside it, turned to lie along it, in the curve's own
   colour, after the layout, the date limits and the -l labels are final
   (``add_rate_labels``, called by ``legend.finish_legend_and_title``). It
-  goes where it covers the fewest other lines and labels, nearest the
-  piece's middle; below the piece only if above would leave the axes. The
-  legend then avoids the labels, and the pieces, as it avoids everything drawn.
+  goes where it covers the least: curves, other pieces, other labels; above
+  the piece unless a spot below is clearly better; nearest the piece's
+  middle. Where every such spot is crowded it is tried at 90 % and 80 % of
+  its size, then further off with a thin leader line to the piece (Terry,
+  2026-10-12). Once all are placed, those still crowded are placed again
+  against all the others. The legend then avoids the labels, the leaders
+  and the pieces, as it avoids everything drawn.
 
 Sizes are multiplied by ``PlotConfig.font_scale`` and line widths by
 ``PlotConfig.line_scale`` like everything else.
@@ -106,17 +110,37 @@ _HALO_PT = 2.5
 _STEP_PX = CELL_PX
 _AREA_SAMPLE_PX = CELL_PX / 2
 _SAMPLES_PER_CELL = (CELL_PX / _AREA_SAMPLE_PX) ** 2
-# What covering a cell costs: a line's 1 (the halo keeps the digits readable
-# across it), another label's this much (text over text is not readable).
+# What covering a cell costs, counted in cells of a curve (1: the halo keeps
+# the digits readable across a curve): another piece's band this much (the
+# label would seem to be that piece's; batch 8), another label this much
+# (text over text is not readable).
+_BAND_CELL_COST = 4
 _LABEL_CELL_COST = 10
 # A label may stand further off its piece, by up to this many steps of half
 # its height, where that uncovers something; each step costs as much as
-# covering this many cells of a line.
+# covering this many cells of a curve.
 _LIFT_STEPS = 3
 _LIFT_COST_CELLS = 4
-# A label goes below its piece only where above it would cover this many
-# more cells (lines) than below: "above" is asked for, "if possible".
-_BELOW_COST_CELLS = 40
+# Below its piece a label costs this much more: "above" is asked for, "if
+# possible" (Terry, 2026-09-29), but a clear spot below now beats one above
+# that covers another label (2026-10-12; it was 40, four cells of a label).
+_BELOW_COST_CELLS = 8
+# A spot is crowded where it covers another label, more than this many cells
+# of other pieces' bands, or more than this many cells of curves. A label
+# whose best spot is crowded is tried smaller, then further off with a
+# leader (Terry, 2026-10-12: "a slightly smaller font would sometimes help;
+# in extreme cases a call-out line may be needed").
+_CROWDED_BAND_CELLS = 2
+_CROWDED_LINE_CELLS = 12
+# The smaller sizes, as fractions of _LABEL_FS, and what each step down costs.
+_SMALLER_SIZES = (0.9, 0.8)
+_SMALLER_COST_CELLS = 6
+# Further off: up to this many half heights, with a leader line in the
+# curve's colour (this wide, in points before line_scale) from the piece's
+# edge to the label; a leader costs this much, as well as the steps off.
+_LEADER_LIFT_STEPS = 8
+_LEADER_WIDTH_PT = 0.8
+_LEADER_COST_CELLS = 20
 # A label keeps this far inside the axes frame, in points.
 _FRAME_GAP_PT = 2.0
 
@@ -387,6 +411,102 @@ def _label_area(anchors: np.ndarray, along: np.ndarray, up: np.ndarray, width: f
     return anchors[:, None, :] + offsets[None, :, :]
 
 
+def _piece_points(piece: Line2D, width_px: float) -> np.ndarray:
+    """Return points filling a drawn piece, a thick straight line ``width_px`` wide, in display coordinates."""
+    start, end = piece.axes.transData.transform(np.asarray(piece.get_xydata(), dtype=float))
+    length = float(np.hypot(*(end - start)))
+    along = (end - start) / length if length > 0 else np.array([1.0, 0.0])
+    normal = np.array([-along[1], along[0]])
+    s = np.linspace(0.0, length, max(2, math.ceil(length / _AREA_SAMPLE_PX) + 1))
+    t = np.linspace(-width_px / 2, width_px / 2, max(2, math.ceil(width_px / _AREA_SAMPLE_PX) + 1))
+    return (start + s[:, None, None] * along + t[None, :, None] * normal).reshape(-1, 2)
+
+
+class _Layers:
+    """What a label would cover, cell by cell over the axes: curves, regression bands, labels.
+
+    Three counts on the occupancy raster's cells: the curves (1 where one
+    runs) with the leaders drawn so far; how many pieces (bands) cover each
+    cell; and how many labels do, the rate labels placed so far and the -l
+    labels. Labels and leaders are added and taken away again, so that a
+    label can be placed a second time.
+    """
+
+    def __init__(self, ax: Axes, curves: np.ndarray, bands: Sequence[np.ndarray], obstacles: Sequence[Bbox]) -> None:
+        self.raster = Raster.from_axes(ax, curves)
+        self.lines = (self.raster.cells > 0).astype(np.int32).ravel()
+        self.leaders = np.zeros_like(self.lines)
+        self.bands = np.zeros_like(self.lines)
+        self.band_cells = [self.cells_of(points) for points in bands]
+        for cells in self.band_cells:
+            self.bands[cells] += 1
+        self.labels = np.zeros_like(self.lines)
+        for obstacle in obstacles:
+            box = Raster(self.raster.x0, self.raster.y0, self.raster.rows, self.raster.cols, 0, np.zeros_like(self.raster.cells))
+            box.mark_box(obstacle)
+            self.labels += box.cells.ravel()
+        self._own = np.zeros(len(self.lines), dtype=bool)
+
+    def flat(self, points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Each point's cell as a flat index (0 where outside the axes), and a mask of those inside."""
+        cells, inside = self.raster.cells_at(points.reshape(-1, 2))
+        return np.where(inside, cells[:, 0] * self.raster.cols + cells[:, 1], 0), inside
+
+    def cells_of(self, points: np.ndarray) -> np.ndarray:
+        """The distinct cells ``points`` fall in, as flat indices (those inside the axes)."""
+        flat, inside = self.flat(points)
+        return np.unique(flat[inside])
+
+    def covered(self, area: np.ndarray, own_band: int) -> np.ndarray:
+        """Cells of curves, of other bands and of labels under each candidate area, shape (N, 3).
+
+        ``area`` has shape (N, P, 2); ``own_band`` is the label's own piece,
+        whose band it may touch.
+        """
+        flat, inside = self.flat(area)
+        self._own[self.band_cells[own_band]] = True
+        lines = (self.lines[flat] + (self.leaders[flat] > 0)) * inside
+        bands = (self.bands[flat] - self._own[flat]) * inside
+        labels = (self.labels[flat] > 0) * inside
+        self._own[self.band_cells[own_band]] = False
+        counts = np.stack([lines, bands, labels], axis=1).reshape(area.shape[0], -1, 3).sum(axis=1)
+        return counts / _SAMPLES_PER_CELL
+
+    def add(self, spot: _Spot, sign: int = 1) -> None:
+        """Mark a placed label, and its leader, as covering their cells (``sign`` -1 takes them away)."""
+        self.labels[self.cells_of(spot.area)] += sign
+        if spot.leader is not None:
+            self.leaders[self.cells_of(spot.leader)] += sign
+
+
+@dataclass
+class _Spot:
+    """A place for a label: the points it covers, what they cover, and how the text is set there."""
+
+    area: np.ndarray  # (P, 2) display points of the label's rectangle
+    covered: np.ndarray  # cells of curves, other bands, labels
+    fixed: float  # its cost apart from what it covers: steps off, below, smaller, leader
+    centre: float  # display pixels along the piece from its start
+    off_middle: float  # how far ``centre`` is from the piece's middle
+    side: float  # 1 above the piece, -1 below
+    stand_off: float  # display pixels from the piece's centre line to the text
+    size: float  # of _LABEL_FS
+    leader: np.ndarray | None  # display points along its leader line, if it has one
+
+    @property
+    def score(self) -> float:
+        return float(self.covered @ _COVER_COSTS) + self.fixed
+
+    @property
+    def crowded(self) -> bool:
+        lines, bands, labels = self.covered
+        return labels > 0 or bands > _CROWDED_BAND_CELLS or lines > _CROWDED_LINE_CELLS
+
+
+# What each covered cell costs: a curve's, another band's, another label's.
+_COVER_COSTS = np.array([1.0, _BAND_CELL_COST, _LABEL_CELL_COST])
+
+
 def add_rate_labels(ax: Axes, labels: Sequence[RateLabel], config: PlotConfig, obstacles: Sequence[Bbox] = ()) -> list[Bbox]:
     """Write each piece's rate along it, where it covers the least; return the labels' display extents.
 
@@ -399,54 +519,60 @@ def add_rate_labels(ax: Axes, labels: Sequence[RateLabel], config: PlotConfig, o
     within the piece's length where it fits in it, and anywhere over the
     piece where it does not; and the label may stand up to ``_LIFT_STEPS``
     half heights further off, above the piece or below it. Each is scored
-    by what it covers (a line's cell 1, a label's ``_LABEL_CELL_COST``), plus
-    ``_LIFT_COST_CELLS`` per step off and ``_BELOW_COST_CELLS`` below; the
-    lowest wins, then the one nearest the piece's middle. A label that would
-    leave the axes is not a candidate.
+    by what it covers (``_COVER_COSTS``: a curve, another piece's band,
+    another label), plus ``_LIFT_COST_CELLS`` per step off and
+    ``_BELOW_COST_CELLS`` below; the lowest wins, then the one nearest the
+    piece's middle. A label that would leave the axes is not a candidate.
+
+    Where the winner is crowded (``_Spot.crowded``), the label is tried at
+    each of ``_SMALLER_SIZES``, then at full size further off, up to
+    ``_LEADER_LIFT_STEPS`` half heights, with a leader line to the piece's
+    edge, each at its cost; the lowest of all wins. Once every label is
+    placed, each still crowded is placed again, worst first, against all
+    the others.
     """
     figure = ax.figure
     renderer = figure.canvas.get_renderer()
     px_per_pt = figure.dpi / 72.0
-    raster = Raster.from_axes(ax, collect_display_samples(ax, exclude=[label.piece for label in labels]))
-    for obstacle in obstacles:
-        raster.mark_box(obstacle, _LABEL_CELL_COST)
+    pieces = [label.piece for label in labels]
+    band_px = _LINE_WIDTH_PT * config.line_scale * px_per_pt
+    layers = _Layers(
+        ax, collect_display_samples(ax, exclude=pieces), [_piece_points(piece, band_px) for piece in pieces], obstacles
+    )
     frame = ax.get_window_extent(renderer).padded(-_FRAME_GAP_PT * config.font_scale * px_per_pt)
     halo_px = _HALO_PT * config.font_scale * px_per_pt / 2
     # From the piece's centre line to the text: half the piece's width, then the gap.
-    offset_px = (_LINE_WIDTH_PT * config.line_scale / 2 + _LABEL_GAP_PT * config.font_scale) * px_per_pt
+    edge_px = band_px / 2
+    offset_px = edge_px + _LABEL_GAP_PT * config.font_scale * px_per_pt
 
     def ends_px(label: RateLabel) -> np.ndarray:
         return label.piece.axes.transData.transform(np.asarray(label.piece.get_xydata(), dtype=float))
 
-    extents: list[Bbox] = []
-    for label in sorted(labels, key=lambda item: float(np.hypot(*np.diff(ends_px(item), axis=0)[0]))):
-        start, end = ends_px(label)
-        length = float(np.hypot(*(end - start)))
-        along = (end - start) / length if length > 0 else np.array([1.0, 0.0])
-        normal = np.array([-along[1], along[0]])  # upwards: the dates increase along the piece
-        text = label.piece.axes.annotate(
-            label.text, xy=(0, 0), xycoords="data", xytext=(0, 0), textcoords="offset points",
-            fontsize=_LABEL_FS * config.font_scale, color=label.color, ha="center", va="bottom",
-            rotation_mode="anchor", annotation_clip=False,
-            path_effects=[patheffects.withStroke(linewidth=_HALO_PT * config.font_scale, foreground="white")],
-        )
-        # Measured before it is turned to lie along the piece: the text's own width and height.
-        size = text.get_window_extent(renderer)
-        text.set_rotation(math.degrees(math.atan2(along[1], along[0])))
-        width, height = size.width + 2 * halo_px, size.height + 2 * halo_px
+    def sizes_of(label: RateLabel) -> dict[float, tuple[float, float]]:
+        """The label's width and height with its halo, at each size tried, measured unturned."""
+        probe = label.piece.axes.annotate(label.text, xy=(0, 0), xycoords="data", annotation_clip=False)
+        measured = {}
+        for size in (1.0, *_SMALLER_SIZES):
+            probe.set_fontsize(_LABEL_FS * config.font_scale * size)
+            box = probe.get_window_extent(renderer)
+            measured[size] = (box.width + 2 * halo_px, box.height + 2 * halo_px)
+        probe.remove()
+        return measured
 
+    def candidates(index: int, size: float, lifts: np.ndarray, fixed: float, leader: bool) -> _Spot | None:
+        """The best spot for label ``index`` at ``size``, standing off by each of ``lifts`` half heights."""
+        start, end = geometry[index]["ends"]
+        length, along, normal = geometry[index]["length"], geometry[index]["along"], geometry[index]["normal"]
+        width, height = geometry[index]["sizes"][size]
         if length > width:
             centres = np.arange(width / 2, length - width / 2 + 1e-9, _STEP_PX)
         else:
             centres = np.linspace(0.0, length, max(2, math.ceil(length / _STEP_PX) + 1))
-        lifts = np.arange(_LIFT_STEPS + 1)
         centre_grid, lift_grid = (grid.ravel() for grid in np.meshgrid(centres, lifts, indexing="ij"))
         stand_off = offset_px + lift_grid * height / 2
-
         # Every candidate above the piece, then every one below it.
         sides = np.repeat([1.0, -1.0], len(centre_grid))
-        centre_all, lift_all = np.tile(centre_grid, 2), np.tile(lift_grid, 2)
-        stand_all = np.tile(stand_off, 2)
+        centre_all, lift_all, stand_all = np.tile(centre_grid, 2), np.tile(lift_grid, 2), np.tile(stand_off, 2)
         anchors = start + centre_all[:, None] * along + (sides * stand_all)[:, None] * normal
         area = _label_area(anchors, along, normal, width, height)
         # Below the piece the label's far side is downwards.
@@ -457,20 +583,91 @@ def add_rate_labels(ax: Axes, labels: Sequence[RateLabel], config: PlotConfig, o
             axis=1,
         )
         if not inside.any():
-            text.remove()  # the piece lies outside the axes (explicit --top/--bottom)
-            continue
-        cells, within = raster.cells_at(area.reshape(-1, 2))
-        cost = np.zeros(len(cells))
-        cost[within] = raster.cells[cells[within, 0] + raster.pad, cells[within, 1] + raster.pad]
-        score = cost.reshape(area.shape[:2]).sum(axis=1) / _SAMPLES_PER_CELL + _LIFT_COST_CELLS * lift_all + _BELOW_COST_CELLS * below
+            return None
+        covered = layers.covered(area, index)
+        costs = fixed + _LIFT_COST_CELLS * lift_all + _BELOW_COST_CELLS * below
+        score = covered @ _COVER_COSTS + costs
         score[~inside] = np.inf
-        best = int(np.lexsort((np.abs(centre_all - length / 2), score))[0])
-        side = sides[best]
-        point = start + centre_all[best] * along
-        text.xy = tuple(label.piece.axes.transData.inverted().transform(point))
-        shift_pt = side * stand_all[best] / px_per_pt * normal
-        text.xyann = (float(shift_pt[0]), float(shift_pt[1]))
-        text.set_va("bottom" if side > 0 else "top")
-        raster.mark_points(area[best], _LABEL_CELL_COST)
+        off_middle = np.abs(centre_all - length / 2)
+        best = int(np.lexsort((off_middle, score))[0])
+        on_piece = start + centre_all[best] * along
+        return _Spot(
+            area=area[best], covered=covered[best], fixed=float(costs[best]), centre=float(centre_all[best]),
+            off_middle=float(off_middle[best]), side=float(sides[best]), stand_off=float(stand_all[best]), size=size,
+            leader=_leader_points(on_piece, sides[best] * normal, edge_px, stand_all[best]) if leader else None,
+        )
+
+    def search(index: int) -> _Spot | None:
+        """The best spot for label ``index``: at full size, close to its piece; failing that, the fallbacks."""
+        near = np.arange(_LIFT_STEPS + 1)
+        spot = candidates(index, 1.0, near, 0.0, leader=False)
+        if spot is None or not spot.crowded:
+            return spot
+        tried = [spot]
+        for step, size in enumerate(_SMALLER_SIZES, start=1):
+            tried.append(candidates(index, size, near, _SMALLER_COST_CELLS * step, leader=False))
+        far = np.arange(_LIFT_STEPS + 1, _LEADER_LIFT_STEPS + 1)
+        tried.append(candidates(index, 1.0, far, _LEADER_COST_CELLS, leader=True))
+        return min((item for item in tried if item is not None), key=lambda item: (item.score, item.off_middle))
+
+    def rescore(index: int, spot: _Spot) -> _Spot:
+        """``spot`` with what it covers counted again, against the labels placed since."""
+        spot.covered = layers.covered(spot.area[None, :, :], index)[0]
+        return spot
+
+    geometry = []
+    for label in labels:
+        start, end = ends_px(label)
+        length = float(np.hypot(*(end - start)))
+        along = (end - start) / length if length > 0 else np.array([1.0, 0.0])
+        normal = np.array([-along[1], along[0]])  # upwards: the dates increase along the piece
+        geometry.append({"ends": (start, end), "length": length, "along": along, "normal": normal, "sizes": sizes_of(label)})
+
+    spots: dict[int, _Spot] = {}
+    for index in sorted(range(len(labels)), key=lambda item: geometry[item]["length"]):
+        spot = search(index)
+        if spot is None:
+            continue  # the piece lies outside the axes (explicit --top/--bottom)
+        spots[index] = spot
+        layers.add(spot)
+    # The second pass: each label still crowded, against all the others, worst first.
+    for index in list(spots):
+        layers.add(spots[index], -1)
+        rescore(index, spots[index])
+        layers.add(spots[index])
+    for index in sorted((item for item in spots if spots[item].crowded), key=lambda item: -spots[item].score):
+        layers.add(spots[index], -1)
+        again = search(index)
+        if again is not None and (again.score, again.off_middle) < (rescore(index, spots[index]).score, spots[index].off_middle):
+            spots[index] = again
+        layers.add(spots[index])
+
+    extents: list[Bbox] = []
+    for index, spot in spots.items():
+        label = labels[index]
+        along, normal = geometry[index]["along"], geometry[index]["normal"]
+        point = geometry[index]["ends"][0] + spot.centre * along
+        to_data = label.piece.axes.transData.inverted()
+        shift_pt = spot.side * spot.stand_off / px_per_pt * normal
+        text = label.piece.axes.annotate(
+            label.text, xy=tuple(to_data.transform(point)), xycoords="data",
+            xytext=(float(shift_pt[0]), float(shift_pt[1])), textcoords="offset points",
+            fontsize=_LABEL_FS * config.font_scale * spot.size, color=label.color, ha="center",
+            va="bottom" if spot.side > 0 else "top", rotation=math.degrees(math.atan2(along[1], along[0])),
+            rotation_mode="anchor", annotation_clip=False,
+            path_effects=[patheffects.withStroke(linewidth=_HALO_PT * config.font_scale, foreground="white")],
+        )
         extents.append(text.get_window_extent(renderer).padded(halo_px))
+        if spot.leader is not None:
+            ends = to_data.transform(spot.leader[[0, -1]])
+            (leader,) = label.piece.axes.plot(
+                ends[:, 0], ends[:, 1], color=label.color, linewidth=_LEADER_WIDTH_PT * config.line_scale,
+                label="_leader", zorder=_ZORDER + 0.1, scalex=False, scaley=False,
+            )
+            extents.append(leader.get_window_extent(renderer))
     return extents
+
+
+def _leader_points(on_piece: np.ndarray, outwards: np.ndarray, edge_px: float, stand_off: float) -> np.ndarray:
+    """Points along a leader: from the piece's edge straight out to the label's near side."""
+    return on_piece + np.linspace(edge_px, stand_off, max(2, math.ceil((stand_off - edge_px) / _AREA_SAMPLE_PX) + 1))[:, None] * outwards

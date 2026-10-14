@@ -8,11 +8,12 @@ from the text itself: the rectangle beside its anchor, turned to lie along its
 piece, halo included, as ``regression.add_rate_labels`` scores it. In the
 occupancy raster's 4 px cells it counts, for every label:
 
-    lines    cells of a curve under the label (the curves only, not the bands)
+    lines    cells of a curve under the label (the curves only, not the bands or leaders)
     bands    cells of another curve's regression band under the label (the band's whole width)
     labels   cells it shares with another label: a rate label, or an -l value label
 
-and for every chart the pairs of labels that touch. Because the areas are
+and for every chart the pairs of labels that touch, and the labels set below their
+piece, set smaller than the chart's largest, or given a leader line. Because the areas are
 rebuilt from the drawn texts, any version of the placement is measured the
 same way (``--commit`` and ``--root`` as in ``regress_charts.py``).
 
@@ -48,6 +49,7 @@ import regress_charts  # noqa: E402  (this tool's own copy: the cases and the ca
 
 RATE_TEXT = re.compile(r"^(?:[+\N{MINUS SIGN}]\d+(?:\.\d)?|0\.0)%/yr$")
 BAND_LABEL = "_regression"
+LEADER_LABEL = "_leader"
 # The label's area is sampled this finely (display pixels), as add_rate_labels samples it.
 SAMPLE_PX = 2.0
 
@@ -97,7 +99,8 @@ def measure(figure, occupancy) -> dict:
     renderer = figure.canvas.get_renderer()
     ax = figure.axes[0]
     bands = [(line, axis) for axis in figure.axes for line in axis.get_lines() if line.get_label() == BAND_LABEL]
-    curves = occupancy.collect_display_samples(ax, exclude=[line for line, _axis in bands])
+    leaders = [line for axis in figure.axes for line in axis.get_lines() if line.get_label() == LEADER_LABEL]
+    curves = occupancy.collect_display_samples(ax, exclude=[line for line, _axis in bands] + leaders)
     raster = occupancy.Raster.from_axes(ax, curves)
     curve_cells = {(int(r), int(c)) for r, c in zip(*np.nonzero(raster.cells))}
     band_cells = [cell_set(raster, band_area(line, axis)) for line, axis in bands]
@@ -113,6 +116,7 @@ def measure(figure, occupancy) -> dict:
             else:
                 others.append(cell_set(raster, _box_points(text.get_window_extent(renderer))))
     labels = []
+    full_size = max((text.get_fontsize() for text in rates), default=0.0)
     for text in rates:
         cells = cell_set(raster, label_area(text, renderer))
         point = text.axes.transData.transform(text.xy)
@@ -138,6 +142,9 @@ def measure(figure, occupancy) -> dict:
         "touching_pairs": pairs,
         "on_band": sum(1 for item in labels if item["bands"] > 0),
         "on_label": sum(1 for item in labels if item["labels"] > 0),
+        "below": sum(1 for text in rates if text.get_va() == "top"),
+        "smaller": sum(1 for text in rates if text.get_fontsize() < full_size - 1e-6),
+        "leaders": sum(1 for axis in figure.axes for line in axis.get_lines() if line.get_label() == LEADER_LABEL),
     }
 
 
@@ -160,7 +167,7 @@ def _own_band(point: np.ndarray, band_ends: list[np.ndarray]) -> int:
     return best
 
 
-KEYS = ("labels", "lines", "bands", "label_cells", "touching_pairs", "on_band", "on_label")
+KEYS = ("labels", "lines", "bands", "label_cells", "touching_pairs", "on_band", "on_label", "below", "smaller", "leaders")
 
 
 def main(argv: list[str]) -> int:
@@ -209,8 +216,9 @@ def main(argv: list[str]) -> int:
                 totals[item] += counts[item]
                 cell = f"{counts[item]}"
                 if chart in earlier:
-                    before_totals[item] += earlier[chart][item]
-                    cell = f"{earlier[chart][item]}->{counts[item]}"
+                    before = earlier[chart].get(item, 0)
+                    before_totals[item] += before
+                    cell = f"{before}->{counts[item]}"
                 row.append(f"{cell:>14}")
             print(f"{chart:22} " + " ".join(row))
     if earlier:
