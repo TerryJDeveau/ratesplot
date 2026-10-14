@@ -32,10 +32,10 @@ How the pieces are chosen
 - A piece is acceptable when its fitted line lies within the tolerance of
   every observation in it, so at its ends too. The tolerance is a vertical
   distance on the log axis: a percentage of the axis height (what the eye
-  sees as "close", whatever the span), 1 % unless --reg:TOL gives another
-  (``PlotConfig.regression_tolerance``), but never less than 1 % of the
-  value, below which a zoomed-in window would be cut up by
-  quarter-to-quarter noise (``tolerance_for``; the constants are in
+  sees as "close", whatever the span), 0.3 % (1 % before batch 8) unless
+  --reg:TOL gives another (``PlotConfig.regression_tolerance``), but never
+  less than 1 % of the value, below which a zoomed-in window would be cut
+  up by quarter-to-quarter noise (``tolerance_for``; the constants are in
   ``config``).
 - The curve is covered by the fewest acceptable pieces; among equally few,
   the least total squared error decides where they break (``fit_pieces``).

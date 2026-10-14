@@ -236,7 +236,7 @@ def check_address_and_rules(check: Check) -> None:
     placeholder = at.text_input(key="value:end").placeholder
     check("end placeholder: the date drawn to", placeholder == "2026-09-01", placeholder)
     placeholder = at.text_input(key="value:regression-tolerance").placeholder
-    check("tolerance placeholder: the default", placeholder == "1", placeholder)
+    check("tolerance placeholder: the default", placeholder == "0.3", placeholder)
     limits = {name: at.text_input(key=f"value:cdn:{name}").placeholder for name in ("min", "max", "top", "bottom")}
     check(
         "Canada's limits as drawn (yields in percent, -r in % of GDP)",

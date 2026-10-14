@@ -96,11 +96,11 @@ MIN_FONT_SCALE = 0.5
 
 # Regression segments (--reg, ratesplot.regression): how far a piece's line
 # may lie from any observation it covers, as a percentage of the right axis's
-# height (in log terms, so the same distance on the picture everywhere). 1 %
-# is about 12 px on the default canvas, a gap the eye still reads as "on the
-# curve" next to a line this thick. --reg:TOL sets it
-# (PlotConfig.regression_tolerance).
-DEFAULT_REGRESSION_TOLERANCE_PCT = 1.0
+# height (in log terms, so the same distance on the picture everywhere).
+# 0.3 % (Terry, 2026-10-12, "after some testing", decision 30; 1 % until
+# batch 8) is about 4 px on the default canvas, within the piece's own
+# width. --reg:TOL sets it (PlotConfig.regression_tolerance).
+DEFAULT_REGRESSION_TOLERANCE_PCT = 0.3
 # ...but never less than this percentage of the value (ln 1.01 for 1 %), with
 # --reg:TOL too: below it, on a window of a year or two, the pieces would
 # follow each quarter's noise.
