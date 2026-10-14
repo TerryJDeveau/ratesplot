@@ -35,8 +35,8 @@ Controls
     button under the other two when the column is narrow). A handle between the
     controls and the charts sets the column's width, remembered with the
     window's; each block lays its controls out in as many columns as fit,
-    one to four (``_Flow``): two at the default width, one when narrow,
-    four boxes four across or two by two, never three and one.
+    (``_Flow``): two at the default width, one when narrow, each row
+    filled before the next, so four boxes go three and one where three fit.
 
 Remembered settings
     The choices of the last successful drawing, the preview mode, the selected
@@ -191,10 +191,7 @@ _SASH_PX = 6
 _MIN_CHARTS_PX = 300
 # The controls' frame's padding in the column.
 _PANEL_PAD_PX = 8
-# A block's controls in up to this many columns, this far apart (``_Flow``):
-# four, so that four boxes go four across once they fit (Terry, 2026-10-13,
-# batch 15.2: the nations and the four rates stayed two by two at any width).
-_MAX_COLUMNS = 4
+# The columns of a block's controls this far apart (``_Flow``).
 _CELL_GAP_PX = 12
 # The blocks in two columns at the column's default width (Terry, 2026-10-08:
 # the nations, the yields, spreads, policy and mortgages, Start and End on one
@@ -602,19 +599,20 @@ class _SizeEditor:
 
 
 class _Flow:
-    """A block's controls in as many columns as fit, one to four, laid out again whenever the block's width changes.
+    """A block's controls in as many columns as fit, laid out again whenever the block's width changes.
 
     Terry, 2026-10-08: the column's width adjustable, its controls in two
     columns at the default width, in one when it is made narrow, in more
     when it is made wide. Each control is a cell (``add``), placed row by
     row; a cell added ``wide`` (a caption such as "By level") takes a row
-    of its own and starts a new run of cells. Each run is spread over as
-    few columns as give it as few rows as the most columns that fit would:
-    four boxes in two rows of two, never three and one, and in one row once
-    four columns fit (Terry, 2026-10-13: the nations and the rates stayed in
-    two columns while the curves took three); three in one row when they
-    fit. Each column is as wide as its widest cell, so the cells line up
-    from row to row.
+    of its own and starts a new run of cells. Each run fills its rows in
+    turn with as many cells as fit, the rest wrapping (Terry, 2026-10-14,
+    batch 15.2: "three across, where possible, and if that leaves one down
+    to make a total of four, so be it", with many more nations to come).
+    Until then four boxes had gone two by two at any width, never three
+    and one, so the nations and the rates stayed in two columns while the
+    curves took three. Each column is as wide as its widest cell, so the
+    cells line up from row to row.
     """
 
     def __init__(self, frame: ttk.Frame) -> None:
@@ -626,8 +624,8 @@ class _Flow:
         self.cells.append((cell, wide))
 
     def most_columns(self) -> int:
-        """The most columns any run of cells can use (at most ``_MAX_COLUMNS``)."""
-        return max(1, min(_MAX_COLUMNS, max((len(run) for run in self._runs()), default=1)))
+        """The most columns any run of cells can use: as many as its cells."""
+        return max(1, max((len(run) for run in self._runs()), default=1))
 
     def _runs(self) -> list[list[tk.Widget]]:
         """The runs of cells between the wide ones."""
@@ -649,8 +647,8 @@ class _Flow:
             nonlocal row
             if not run:
                 return
-            rows = -(-len(run) // columns)
-            across = min(n for n in range(1, columns + 1) if -(-len(run) // n) == rows)
+            across = min(columns, len(run))  # each row full before the next
+            rows = -(-len(run) // across)
             for index, cell in enumerate(run):
                 places.append((cell, row + index // across, index % across, False))
             row += rows
