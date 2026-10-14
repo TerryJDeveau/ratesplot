@@ -205,6 +205,14 @@ CASES: dict[str, list[str]] = {
     # Batch 6: the U.S. 20-year was not published 1987-1993, a gap in its line
     # (drawn flat at its last value until 2026-10-13; tools/check_drawn_values.py).
     "u_20y_gap": ["-u", "-s:1984", "--e:1996", "--y:2,10,20,30", "--policy"],
+    # Batch 8: Terry's charts of 2026-10-10 (us_rates_1950-01-01_2026-10-10a, b
+    # and c.png), where the rate labels crowded, and his UK chart of 2026-10-13,
+    # where monthly debt broke into pieces of a few months; the tolerance there
+    # given, so the case stays as it is when the default changes.
+    "u_reg_rates1950": ["-u", "-l", "--reg", "--policy", "--mo", "--sp", "-dim:4096x2048", "-s:1950"],
+    "u_reg_fed1950": ["-u", "-l", "--reg", "--y", "--gdp", "--d:f", "-i", "-s:1950"],
+    "u_reg_lv1950": ["-u", "-l", "--reg", "--y", "--gdp", "--d:fnpm", "-i", "-dim:4096x3072", "-s:1950"],
+    "uk_reg_tol03": ["--na:gb", "-l", "--reg:.3", "--policy", "--mo:2f,3f,5f,svr", "-dim:2048x1950", "-s:1990"],
 }
 
 
