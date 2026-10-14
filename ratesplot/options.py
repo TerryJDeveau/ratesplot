@@ -722,12 +722,13 @@ OPTIONS: tuple[Option, ...] = (
         names=("per-capita",), flag="--P", flag_help="GDP, debt and interest per person", label="Per capita",
     ),
     # Value labels at the line ends: a switch like the measures, but in a
-    # group of its own, since it combines with either.
+    # group of its own, since it combines with either. The tick's wording is
+    # Terry's (2026-10-13, batch 15.1); --help keeps its own.
     Option(
         "label", Kind.SWITCH, ("end_labels",), "labels", "--L / -l / --label",
         "each line's last value at its end, in\nthe line's colour; the date axis is\nwidened to make room",
         names=("label", "labels"), flag="--L", flag_help="label each line's end with its last value",
-        label="Last value at each line's end",
+        label="Show latest value for each line",
     ),
     # Regression segments on the right-axis curves (ratesplot.regression), in
     # the same group, so the window keeps one panel for both. At least "reg",
@@ -789,12 +790,14 @@ OPTIONS: tuple[Option, ...] = (
         label="Bottom", format=format_macro_bound,
     ),
     # The latest values (ratesplot.latest), on by default. At least "cur", so
-    # it is never Canada ("-c", "--ca", "--cdn").
+    # it is never Canada ("-c", "--ca", "--cdn"). The tick's wording is
+    # Terry's (2026-10-14, batch 15.1): it was "Latest values, with intraday
+    # quotes", which read like the -l tick above it once that said "latest".
     Option(
         "current", Kind.FLAG, ("current",), "latest", "--cur / --current / --no-cur",
         "on by default: U.S. Treasury daily yields\nand debt, and the day's intraday yield\n"
         "quotes (CNBC), past the regular sources",
-        names=("current",), shortest=3, label="Latest values, with intraday quotes", panel="labels",
+        names=("current",), shortest=3, label="Intraday quotes on end date", panel="labels",
     ),
     # Interface. Spelled in full (Terry, 2026-09-24): "--g" is the GDP curve,
     # and "--gu" nothing.
