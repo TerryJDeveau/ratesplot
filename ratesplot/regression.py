@@ -41,11 +41,12 @@ How the pieces are chosen
   the least total squared error decides where they break (``fit_pieces``).
 - A circuit breaker (Terry, 2026-10-13): where the tolerance is so tight that
   the pieces follow the data's own noise (monthly debt's seasons), it is
-  loosened there. Every run of pieces in a row each spanning less than a
-  year (an eighth of the window, on a window under eight years) is fitted
-  again on its own, with the least tolerance at which each of its pieces
-  is that long; a lone short piece is a jump and stays. The message log
-  names each stretch so loosened (``loosen_short_runs``).
+  loosened there. Every run of three or more pieces in a row, each spanning
+  less than a year (an eighth of the window, on a window under eight
+  years), is fitted again on its own, with the least tolerance at which
+  each of its pieces is that long, but at most three times the tolerance;
+  one or two short pieces are mostly a jump and stay. The message log names
+  each stretch so loosened (``loosen_short_runs``).
 - The pieces are separate regressions and do not join: a jump in the data
   (debt in 2020) falls between two of them.
 
@@ -101,10 +102,18 @@ _COMPOUND_MIN_DAYS = 365
 # piece measures little more than monthly figures' seasons), or than this
 # fraction of the window on a window under eight years; a run of at least
 # this many short pieces in a row is fitted again with a looser tolerance,
-# found to within 2**-_LOOSEN_STEPS of the range searched.
+# at most this many times the tolerance, found to within 2**-_LOOSEN_STEPS
+# of the range searched. Two short pieces, and a stretch that would need
+# more, are mostly a real change, not noise: a jump and the way back (U.S.
+# debt over GDP in 2020 needed ±7.0 %, against ±1.2; Canada's municipal
+# interest in 2007-2008, ±27.9 against ±2.3), while monthly debt's seasons
+# needed about three times the tolerance (UK net debt 1993-2010, ±4.9 %
+# against ±1.7). Decision 32 named two pieces; three and the cap were found
+# when built, on the regression set.
 _MIN_PIECE_DAYS = _COMPOUND_MIN_DAYS
 _MIN_PIECE_WINDOW_FRACTION = 1 / 8
-_SHORT_RUN = 2
+_SHORT_RUN = 3
+_MAX_LOOSENING = 3.0
 _LOOSEN_STEPS = 14
 
 # The pieces: the curve's colour this far towards white, at this opacity and
@@ -331,6 +340,7 @@ class Loosened:
     first: int
     last: int
     tolerance: float  # ln units
+    capped: bool  # the most allowed (``_MAX_LOOSENING``), and still some pieces short
 
 
 def min_piece_days(config: PlotConfig) -> float:
@@ -348,8 +358,8 @@ def loosen_short_runs(
     its observations span fewer than ``min_days`` days. Each run of short
     pieces in a row is fitted again on its own with the least tolerance at
     which every piece in it spans ``min_days`` or more (or the run is one
-    piece); the other pieces are kept. Returns the pieces, and the stretches
-    loosened.
+    piece), up to ``_MAX_LOOSENING`` times ``tolerance``; the other pieces
+    are kept. Returns the pieces, and the stretches loosened.
     """
     days = np.rint((x - x[0]) * _DAYS_PER_YEAR)
     short = [days[piece.last] - days[piece.first] < min_days for piece in pieces]
@@ -365,21 +375,28 @@ def loosen_short_runs(
             index += 1
             continue
         first, last = pieces[index].first, pieces[end - 1].last
-        loose, refitted = _least_tolerance(x[first : last + 1], z[first : last + 1], w[first : last + 1], tolerance, min_days)
+        loose, refitted, capped = _least_tolerance(
+            x[first : last + 1], z[first : last + 1], w[first : last + 1], tolerance, min_days
+        )
         # The refitted pieces count from the stretch's first observation; their lines use the same x.
         kept.extend(Piece(piece.first + first, piece.last + first, piece.slope, piece.intercept) for piece in refitted)
-        loosened.append(Loosened(first, last, loose))
+        loosened.append(Loosened(first, last, loose, capped))
         index = end
     return kept, loosened
 
 
-def _least_tolerance(x: np.ndarray, z: np.ndarray, w: np.ndarray, tolerance: float, min_days: float) -> tuple[float, list[Piece]]:
+def _least_tolerance(
+    x: np.ndarray, z: np.ndarray, w: np.ndarray, tolerance: float, min_days: float
+) -> tuple[float, list[Piece], bool]:
     """The least tolerance above ``tolerance`` at which ``fit_pieces`` gives no piece shorter than ``min_days``, and those pieces.
 
     Found by growing the tolerance half again at a time until the pieces are
     long enough (one piece always is), then halving the last step
-    ``_LOOSEN_STEPS`` times.
+    ``_LOOSEN_STEPS`` times. It is never more than ``_MAX_LOOSENING`` times
+    ``tolerance``: where that is not enough, the pieces at that tolerance,
+    and True.
     """
+    most = tolerance * _MAX_LOOSENING
     days = np.rint((x - x[0]) * _DAYS_PER_YEAR)
 
     def fitted(trial: float) -> tuple[list[Piece], bool]:
@@ -389,7 +406,9 @@ def _least_tolerance(x: np.ndarray, z: np.ndarray, w: np.ndarray, tolerance: flo
     low = high = tolerance
     best, long_enough = fitted(high)
     while not long_enough:
-        low, high = high, high * 1.5
+        if high >= most:
+            return most, best, True
+        low, high = high, min(high * 1.5, most)
         best, long_enough = fitted(high)
     for _ in range(_LOOSEN_STEPS):
         middle = (low + high) / 2
@@ -398,7 +417,7 @@ def _least_tolerance(x: np.ndarray, z: np.ndarray, w: np.ndarray, tolerance: flo
             high, best = middle, pieces
         else:
             low = middle
-    return high, best
+    return high, best, False
 
 
 def tolerance_for(ax: Axes, config: PlotConfig) -> float:
@@ -492,10 +511,15 @@ def add_regression_segments(
         weights = time_weights(x)
         pieces, loosened = loosen_short_runs(x, z, weights, fit_pieces(x, z, weights, tolerance), tolerance, min_days)
         for stretch in loosened:
+            why = (
+                f"the most allowed; some pieces still under {_span_text(min_days)}"
+                if stretch.capped
+                else f"for pieces of {_span_text(min_days)} or more"
+            )
             print(
                 f"Regression segments: {line.get_label()}, {dates[stretch.first]:%Y-%m-%d} to "
                 f"{dates[stretch.last]:%Y-%m-%d}: tolerance ±{_percent(tolerance)} loosened to "
-                f"±{_percent(stretch.tolerance)} there, for pieces of {_span_text(min_days)} or more"
+                f"±{_percent(stretch.tolerance)} there, {why}"
             )
         for piece in pieces:
             ends = [piece.first, piece.last]
