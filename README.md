@@ -18,15 +18,18 @@ national debt and GDP, to 1956 for Germany's 10-year yield) is built into the co
   To run it on your own machine: `streamlit run streamlit_app.py`.
 - **The desktop window** (`ratesplot/gui.py`): `python ratesplot.py`. It adds the
   mouse wheel and a right-drag pan, and remembers your last settings: each command window
-  its own, so several windows can be open at once. The handle between the controls and the
-  charts sets the controls' width, and the controls take one to three columns to fit it.
+  its own, so several windows can be open at once; a window whose monitor has gone comes back
+  at its size on another. The handle between the controls and the charts sets the controls'
+  width, and each row of controls takes as many as fit it. "Save log file" saves the
+  message log as text (on the page, a button under the log).
 - **The command line**: `python ratesplot.py --no-gui [options]`, or any options with the
   window. `python ratesplot.py --help` lists them all; the web page shows the same list.
 
 All three draw the same charts from the same code (`plotting.build_figure`).
 
 In the window and on the page a blank field shows in grey the value it stands for (the
-automatic start, today's end, each chart's axis limits as drawn); a value typed in is black.
+automatic start, today's end, each chart's axis limits as drawn); a value typed in is black,
+and a number typed without the 0 before its point (`.3`) gets it (`0.3`).
 
 ## Setting up
 
