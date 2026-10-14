@@ -62,8 +62,10 @@ sys.path[:0] = [str(ROOT), str(ROOT / "tools")]
 
 import verify_charts  # noqa: E402  (first: it sets the Agg backend before pyplot is imported)
 import pandas as pd  # noqa: E402
+import streamlit.testing.v1.app_test as app_test_module  # noqa: E402
 import synthetic_sources  # noqa: E402
 from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
+from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 from ratesplot import http, web  # noqa: E402
@@ -82,6 +84,24 @@ logging.getLogger("streamlit.runtime.scriptrunner_utils.script_run_context").add
 
 APP = str(ROOT / "streamlit_app.py")
 TIMEOUT_SECONDS = 180  # per AppTest run: a drawing whose downloads are not cached yet takes about 15 s
+
+
+class _KeptMediaStorage(MemoryMediaFileStorage):
+    """AppTest's store of a run's files (the download buttons' data), kept for reading after the run.
+
+    AppTest makes a new store for each run and drops the runtime that holds
+    it when the run ends, so a download button's file could not be read
+    afterwards (Streamlit 1.64): each new store is remembered here instead.
+    """
+
+    last: MemoryMediaFileStorage | None = None
+
+    def __init__(self, media_endpoint: str) -> None:
+        super().__init__(media_endpoint)
+        _KeptMediaStorage.last = self
+
+
+app_test_module.MemoryMediaFileStorage = _KeptMediaStorage
 
 # Regression cases drawn both ways: the defaults, each measure, levels, -l,
 # --reg with and without a tolerance, the history to 1867, a small canvas.
@@ -183,6 +203,13 @@ def charts_shown(at: AppTest) -> int:
 
 def button(at: AppTest, label: str):
     return next(b for b in at.button if b.label == label)
+
+
+def downloaded(at: AppTest, label: str) -> tuple[str, str, bytes]:
+    """The file a download button gives, from the page's last run: (file name, type, bytes)."""
+    found = next(b for b in at.get("download_button") if b.proto.label == label)
+    file = _KeptMediaStorage.last.get_file(found.proto.url.rsplit("/", 1)[1])
+    return file.filename, file.mimetype, file.content
 
 
 def enabled(at: AppTest) -> dict[str, bool]:
@@ -746,9 +773,31 @@ def check_layout(check: Check) -> None:
     check("a list's tick boxes carry no help of their own (it is on the list's label)", not helped, helped[:3])
 
 
+def check_batch15(check: Check) -> None:
+    """Batch 15 (Terry, 2026-10-13 and 2026-10-14): the two ticks' wording; Save log file."""
+    at = new_page("--e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    labels = {box.key: box.label for box in at.checkbox if box.key in ("flag:label", "flag:current")}
+    check(
+        "-l reads 'Show latest value for each line', --cur 'Intraday quotes on end date'",
+        labels == {"flag:label": "Show latest value for each line", "flag:current": "Intraday quotes on end date"},
+        labels,
+    )
+    name, kind, data = downloaded(at, "Save log file")
+    log = next((c.value for c in at.code if c.value.startswith("--- drawing")), None)
+    check(
+        "Save log file: ratesplot_log_DATE_HHMM.txt, plain text",
+        name.startswith("ratesplot_log_") and name.endswith(".txt") and len(name) == len("ratesplot_log_2026-10-14_1015.txt")
+        and kind == "text/plain",
+        (name, kind),
+    )
+    check("Save log file: the log as shown", log is not None and data.decode("utf-8") == log + "\n", (len(data), log and len(log)))
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
+    check_batch15,
 )
 
 

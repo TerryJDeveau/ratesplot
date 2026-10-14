@@ -30,8 +30,9 @@ Controls
     (``frontend.NATION_OPTIONS``: its yield terms, spreads and mortgage terms
     as tick boxes, and its axis limits) are in a panel under its tab, keyed
     "NATION:OPTION". The controls scroll when the
-    window is too short for them; Refresh and Save sit in a bar under them
-    that does not, so they are always in sight. A handle between the
+    window is too short for them; Refresh, Save PNG and Save log file sit in
+    a bar under them that does not, so they are always in sight (the log's
+    button under the other two when the column is narrow). A handle between the
     controls and the charts sets the column's width, remembered with the
     window's; each block lays its controls out in as many columns as fit,
     one to four (``_Flow``): two at the default width, one when narrow,
@@ -134,6 +135,7 @@ from .frontend import (
     png_bytes,
     problem_text,
     save_state,
+    saved_log_name,
     saved_png_name,
     scale_dates_updates,
     size_boxes_at_fault,
@@ -897,9 +899,10 @@ class RatesPlotApp:
         The bar under it does not scroll: Refresh and Save go there, so they
         are always in sight however many controls there are (Terry,
         2026-10-06; batch 1 added a panel, and the buttons fell below the
-        fold at 1728x972). The column's width is the handle's (batch 7): the
-        controls' frame takes the canvas's width, and each block lays its
-        controls out to fit it (``_Flow``).
+        fold at 1728x972); Save log file joined them in batch 15. The
+        column's width is the handle's (batch 7): the controls' frame takes
+        the canvas's width, and each block lays its controls out to fit it
+        (``_Flow``).
         """
         outer = ttk.Frame(master)
         outer.rowconfigure(0, weight=1)
@@ -1188,7 +1191,7 @@ class RatesPlotApp:
         on 2026-10-08 (the nations, the four rates, Start and End, the size
         with its lock, the measure: ``_TWO_COLUMN_BLOCKS``), and never
         narrower than the narrowest. The narrowest is what every block needs
-        in one column, the Preview panel and the Refresh and Save bar; the
+        in one column, the Preview panel and the pinned bar in two rows; the
         handle stops there, and the charts keep at least ``_MIN_CHARTS_PX``.
         A remembered width outside those bounds (another screen) is not used.
         """
@@ -1199,7 +1202,8 @@ class RatesPlotApp:
         around = 2 * _PANEL_PAD_PX + self._scroll.winfo_reqwidth()  # the panel's padding, and room for its scroll bar
         one = [flow.width_for(1) + _block_overhead(flow.frame) for _key, flow in self.flows]
         two = [flow.width_for(2) + _block_overhead(flow.frame) for key, flow in self.flows if key in _TWO_COLUMN_BLOCKS]
-        narrowest = max(max(one) + around, self._preview.winfo_reqwidth() + around, self._pinned.winfo_reqwidth())
+        bar = self._pinned.winfo_reqwidth() - self._bar.winfo_reqwidth() + self._bar_width(2)  # its padding, and two rows
+        narrowest = max(max(one) + around, self._preview.winfo_reqwidth() + around, bar)
         default = max([narrowest, *(width + around for width in two)])
         widest = self.root.winfo_screenwidth() - _MIN_CHARTS_PX
         width = remembered if isinstance(remembered, int) and narrowest <= remembered <= widest else default
@@ -1213,7 +1217,7 @@ class RatesPlotApp:
         return self._column_width
 
     def _build_actions(self, panel: ttk.Frame, pinned: ttk.Frame) -> None:
-        """The Preview panel and the Reset button in the column; Refresh and Save in the ``pinned`` bar."""
+        """The Preview panel and the Reset button in the column; Refresh, Save PNG and Save log file in the ``pinned`` bar."""
         preview = ttk.LabelFrame(panel, text="Preview", padding=(8, 4))
         preview.pack(fill="x", pady=(0, 6))
         self._preview, self._pinned = preview, pinned
@@ -1232,15 +1236,51 @@ class RatesPlotApp:
         preview.bind("<Configure>", lambda event: hint.configure(wraplength=max(_NOTE_WRAP_PX, event.width - 24)), add="+")
         self._zoom_note = hint
 
-        for frame, actions in (
-            (pinned, (("Refresh (F5)", self._refresh), ("Save PNG… (Ctrl+S)", self._save_png))),
-            (panel, (("Reset to defaults", self._reset),)),
-        ):
-            buttons = ttk.Frame(frame)
-            buttons.pack(fill="x", pady=(0, 6) if frame is panel else 0)
-            for column, (text, command) in enumerate(actions):
-                ttk.Button(buttons, text=text, command=command).grid(row=0, column=column, sticky="ew", padx=1, pady=1)
-            buttons.columnconfigure(tuple(range(len(actions))), weight=1)
+        # The pinned bar: Refresh, Save PNG and Save log file (Terry,
+        # 2026-10-14, batch 15.3: the third button beside the other two). In
+        # one row when the column is wide enough (at the default width), else
+        # the log's button under the other two (``_arrange_bar``): the bar
+        # takes two rows, as the blocks do, rather than making the column's
+        # narrowest width larger.
+        self._bar = ttk.Frame(pinned)
+        self._bar.pack(fill="x")
+        self._bar_buttons = [
+            ttk.Button(self._bar, text=text, command=command)
+            for text, command in (
+                ("Refresh (F5)", self._refresh),
+                ("Save PNG… (Ctrl+S)", self._save_png),
+                ("Save log file…", self._save_log),
+            )
+        ]
+        _Tooltip(self._bar_buttons[2], "Save the whole message log as a text file.")
+        self._bar_rows = 0
+        self._arrange_bar(1)
+        self._bar.bind("<Configure>", lambda event: self._arrange_bar(1 if event.width >= self._bar_width(1) else 2), add="+")
+
+        buttons = ttk.Frame(panel)
+        buttons.pack(fill="x", pady=(0, 6))
+        ttk.Button(buttons, text="Reset to defaults", command=self._reset).grid(row=0, column=0, sticky="ew", padx=1, pady=1)
+        buttons.columnconfigure(0, weight=1)
+
+    def _bar_width(self, rows: int) -> int:
+        """The width the pinned bar's buttons need in one row, or in two (the log's button under the other two)."""
+        widths = [button.winfo_reqwidth() + 2 for button in self._bar_buttons]  # each with its padx of 1 a side
+        return sum(widths) if rows == 1 else max(widths[0] + widths[1], widths[2])
+
+    def _arrange_bar(self, rows: int) -> None:
+        """Put the pinned bar's buttons in one row, or the log's button under the other two."""
+        if rows == self._bar_rows:
+            return
+        self._bar_rows = rows
+        refresh, save, log = self._bar_buttons
+        refresh.grid(row=0, column=0, sticky="ew", padx=1, pady=1)
+        save.grid(row=0, column=1, sticky="ew", padx=1, pady=1)
+        if rows == 1:
+            log.grid(row=0, column=2, columnspan=1, sticky="ew", padx=1, pady=1)
+        else:
+            log.grid(row=1, column=0, columnspan=2, sticky="ew", padx=1, pady=1)
+        self._bar.columnconfigure((0, 1), weight=1)
+        self._bar.columnconfigure(2, weight=1 if rows == 1 else 0)
 
     def _build_log(self, panel: ttk.Frame) -> None:
         frame = ttk.LabelFrame(panel, text="Message log", padding=4)
@@ -1835,6 +1875,29 @@ class RatesPlotApp:
         with open(path, "wb") as output:
             output.write(self.pngs[key])
         self.status.set(f"Saved {path}")
+
+    def _save_log(self) -> None:
+        """Save the whole message log, as shown, to a text file (Terry, 2026-10-13, batch 15.3).
+
+        Named by the minute of saving (``frontend.saved_log_name``); written
+        as UTF-8, with Windows line endings on Windows (text mode).
+        """
+        path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Save message log",
+            defaultextension=".txt",
+            filetypes=[("Text file", "*.txt"), ("All files", "*.*")],
+            initialfile=saved_log_name(pd.Timestamp.now()),
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as output:
+                output.write(self.log.get("1.0", "end-1c"))
+        except OSError as exc:
+            self.status.set(f"Message log not saved: {exc}")
+            return
+        self.status.set(f"Saved the message log to {path}")
 
     def _refresh(self) -> None:
         """Draw again with the latest data: the quotes of the moment, and anything downloaded over an hour ago.

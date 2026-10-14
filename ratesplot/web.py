@@ -137,6 +137,7 @@ from .frontend import (  # noqa: E402
     option_of,
     png_bytes,
     problem_text,
+    saved_log_name,
     saved_png_name,
     size_boxes_at_fault,
     starting_choices,
@@ -1094,7 +1095,19 @@ def _show(drawing: Drawing) -> None:
     st.markdown("**The same chart from the command line**")
     st.code(" ".join(["python", _SCRIPT_NAME, *drawing.tokens]), language=None, wrap_lines=True)
     with st.expander("Message log"):
-        st.code(drawing.log.rstrip() or "(nothing printed)", language=None, wrap_lines=True)
+        log = drawing.log.rstrip() or "(nothing printed)"
+        st.code(log, language=None, wrap_lines=True)
+        # Under the log, as the window's third button (Terry, 2026-10-13,
+        # batch 15.3): the log as shown, named by the drawing's time.
+        st.download_button(
+            "Save log file",
+            data=log + "\n",
+            file_name=saved_log_name(drawing.finished),
+            mime="text/plain",
+            on_click="ignore",
+            key="download:log",
+            help="Save this drawing's message log as a text file.",
+        )
 
 
 def main() -> None:

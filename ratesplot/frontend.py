@@ -14,7 +14,8 @@ may not have it) and the two cannot drift apart:
   and in its own sidebar section on the page), keyed "NATION:OPTION";
 * each option's help as the controls show it (``option_help_lines``);
 * the drawn chart as PNG bytes (``png_bytes``) and the file name it is saved
-  under (``saved_png_name``); the tab titles;
+  under (``saved_png_name``), and the message log's (``saved_log_name``);
+  the tab titles;
 * zoom and pan: where the axes sit in a chart image (``ChartGeometry``) and
   the field texts a zoom to a box, a pan or a change of the dates' scale
   gives (``zoom_updates``, ``pan_updates``, ``scale_dates_updates``). The
@@ -637,6 +638,16 @@ def saved_png_name(key: str, drawn: PlotConfig | None) -> str:
     """
     dates = "" if drawn is None else f"_{drawn.start:%Y-%m-%d}_{drawn.end:%Y-%m-%d}"
     return f"{key}_rates{dates}.png"
+
+
+def saved_log_name(when: pd.Timestamp) -> str:
+    """Return the file name the message log is saved under: ``ratesplot_log_2026-10-14_1015.txt``.
+
+    Named by the minute ``when`` (Terry, 2026-10-14, batch 15.3): the
+    window's time of saving, the page's time of its drawing, whose log it
+    is. The window's log runs over many drawings, so no chart's dates.
+    """
+    return f"ratesplot_log_{when:%Y-%m-%d_%H%M}.txt"
 
 
 # ---------------------------------------------------------------------------
