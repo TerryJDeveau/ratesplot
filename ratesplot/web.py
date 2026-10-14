@@ -141,6 +141,7 @@ from .frontend import (  # noqa: E402
     saved_png_name,
     size_boxes_at_fault,
     starting_choices,
+    with_leading_zero,
     zoom_updates,
 )
 from .options import (  # noqa: E402
@@ -658,6 +659,16 @@ def _field_changed(key: str) -> None:
     st.session_state[_CHANGED] = [*changed, key]
 
 
+def _field_typed(key: str) -> None:
+    """A text field changed by hand (Enter, or the box left): a number typed without its 0 gets it, then it is recorded.
+
+    ".3" becomes "0.3" in the box, and so in the address and the command
+    line (Terry, 2026-10-13, batch 15.5; ``frontend.with_leading_zero``).
+    """
+    st.session_state[_VALUE + key] = with_leading_zero(st.session_state.get(_VALUE + key, ""))
+    _field_changed(key)
+
+
 def _red_if_wrong(label: str, wrong: bool) -> str:
     """A field's label, red while the field is in the wrong (Streamlit cannot colour the text in a box)."""
     return f":red[{label}]" if wrong else label
@@ -674,7 +685,7 @@ def _value_control(where, option: Option, key: str | None = None) -> None:
     where.text_input(
         _red_if_wrong(option.label, key in st.session_state.get(_WRONG, {})),
         key=_VALUE + key,
-        on_change=_field_changed,
+        on_change=_field_typed,
         args=(key,),
         help=_help(option, "Blank = default (shown in grey)."),
         placeholder=st.session_state.get(_HINTS, {}).get(key) or _PLACEHOLDERS.get(option.name, _DEFAULT_PLACEHOLDER),

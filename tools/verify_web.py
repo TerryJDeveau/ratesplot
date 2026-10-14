@@ -792,6 +792,15 @@ def check_batch15(check: Check) -> None:
         (name, kind),
     )
     check("Save log file: the log as shown", log is not None and data.decode("utf-8") == log + "\n", (len(data), log and len(log)))
+    # 15.5: a number typed without its 0 gets it, and the address follows.
+    at = new_page("--reg --e:2026-09-01")
+    at.text_input(key="value:regression-tolerance").input(".3")
+    at.run()
+    at.text_input(key="value:cdn:min").input("-.5")
+    at.run()
+    shown = (at.text_input(key="value:regression-tolerance").value, at.text_input(key="value:cdn:min").value)
+    check("'.3' and '-.5' typed: '0.3' and '-0.5' in their boxes", shown == ("0.3", "-0.5"), shown)
+    check("... and in the address", "0.3" in address(at) and "-0.5" in address(at) and ":.3" not in address(at), address(at))
 
 
 PAGE_CHECKS = (

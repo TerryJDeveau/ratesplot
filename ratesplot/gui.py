@@ -140,6 +140,7 @@ from .frontend import (
     scale_dates_updates,
     size_boxes_at_fault,
     starting_choices,
+    with_leading_zero,
     zoom_updates,
 )
 from .options import (
@@ -1063,7 +1064,9 @@ class RatesPlotApp:
         entry.grid(row=row, column=1, sticky="ew", pady=pady)
         if after:
             ttk.Label(frame, text=after).grid(row=row, column=2, sticky="w", padx=(4, 0), pady=pady)
-        entry.bind("<Return>", lambda _event: self.request_redraw())
+        # A number typed without its 0 gets it on Enter or on leaving the field (batch 15.5).
+        entry.bind("<Return>", lambda _event: (self._add_leading_zero(key), self.request_redraw()))
+        entry.bind("<FocusOut>", lambda _event: self._add_leading_zero(key), add="+")
         variable.trace_add("write", lambda *_args: self._text_changed(key))
         self.value_labels[key] = label
         self.value_entries[key] = entry
@@ -1447,6 +1450,18 @@ class RatesPlotApp:
         hints = field_hints(drawn, {key: self.geometry.get(key) for key in keys})
         for key, hint in self.hints.items():
             hint.set(hints.get(key, ""))
+
+    def _add_leading_zero(self, key: str) -> None:
+        """Rewrite a number typed without the 0 before its point with it: ".3" → "0.3" (Terry, 2026-10-13, batch 15.5).
+
+        The command line follows (``--reg:0.3``); the value is the same, so
+        nothing is drawn again for it (``frontend.with_leading_zero``).
+        """
+        variable = self.payload_vars[key]
+        text = variable.get()
+        fixed = with_leading_zero(text)
+        if fixed != text:
+            variable.set(fixed)
 
     def _text_changed(self, key: str) -> None:
         if self._loading:

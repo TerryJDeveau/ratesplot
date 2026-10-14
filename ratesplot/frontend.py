@@ -21,7 +21,8 @@ may not have it) and the two cannot drift apart:
   gives (``zoom_updates``, ``pan_updates``, ``scale_dates_updates``). The
   window's mouse and the web page's drag use the same rules; the page's
   buttons move the dates by ``move_dates_updates``;
-* what a blank field shows in grey: the value in effect (``field_hints``).
+* what a blank field shows in grey: the value in effect (``field_hints``);
+  a typed number's 0 before its point (``with_leading_zero``).
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ import io
 import json
 import math
 import os
+import re
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -406,6 +408,22 @@ def idle_controls(flags: Mapping[str, bool]) -> frozenset[str]:
 # Every option ``idle_controls`` can grey out: those idle with no right-axis
 # curve chosen, and GDP (under -r).
 GREYABLE_OPTIONS = idle_options(False, False, False) | {"gdp"}
+
+# A number typed without the 0 before its point: ".3", "-.25", "+.5t".
+_BARE_POINT = re.compile(r"^(\s*[+-]?)\.(?=\d)")
+
+
+def with_leading_zero(text: str) -> str:
+    """Return a field's text with a 0 before the point of a number typed without one: ".3" → "0.3", "-.25%" → "-0.25%".
+
+    Terry, 2026-10-13 (batch 15.5): every value the program writes has its
+    0, but a typed one was kept as typed, and so written on the command
+    line (``--reg:.3``). Both front ends rewrite a field this way when
+    Enter is pressed in it or it is left; the command line still accepts
+    ``.3``, which parses as ``0.3`` does, so no chart changes. Any other
+    text is returned as it is.
+    """
+    return _BARE_POINT.sub(r"\g<1>0.", text)
 
 
 def drawn_payloads(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
