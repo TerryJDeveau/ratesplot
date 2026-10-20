@@ -73,6 +73,7 @@ from .config import (
     STATCAN_TIMEOUT_SECONDS,
     STATCAN_WDS_URL,
     YIELD_COLUMNS,
+    YIELD_TERMS,
     PlotConfig,
     component_column,
 )
@@ -81,13 +82,28 @@ from .joins import align_macro, chain, dated_by_quarter_end, embedded_frame
 
 # Bank of Canada Valet series codes -> chart column names. The 3-month T-bill
 # is not part of the benchmark group, so it is fetched as a separate series.
+# The group's 3- and 7-year (batch 9.3) begin on 2001-01-02, as the others'
+# daily values do; the group's real return bond is not a yield term.
 BOC_BENCHMARK_GROUP = "bond_yields_benchmark"
 BOC_BENCHMARK_COLUMNS = {
     "BD.CDN.2YR.DQ.YLD": "2-Year",
+    "BD.CDN.3YR.DQ.YLD": "3-Year",
     "BD.CDN.5YR.DQ.YLD": "5-Year",
+    "BD.CDN.7YR.DQ.YLD": "7-Year",
     "BD.CDN.10YR.DQ.YLD": "10-Year",
     "BD.CDN.LONG.DQ.YLD": "30-Year",
 }
+# The other treasury bills (batch 9.3; Terry, 2026-10-12: "a big gap" between
+# 3 months and 2 years): daily mid-market yields from 2001-01-02, each its own
+# series, so each is fetched only when chosen. Measured 2026-10-20.
+BOC_BILL_SERIES = {
+    "1-Month": "TB.CDN.30D.MID",
+    "6-Month": "TB.CDN.180D.MID",
+    "1-Year": "TB.CDN.1Y.MID",
+}
+# Where the terms with no history before the daily series begin (the PDF
+# tables of 1919-2000 have the five of YIELD_COLUMNS only).
+CDN_NEW_TERMS_START = pd.Timestamp("2001-01-02")
 # The 3-month after the PDF history (batch 9.2): the daily mid-market yield
 # of the 3-month treasury bill, from 2001-01-02, as the benchmarks are. It
 # replaces the bi-weekly auction average, which is kept only before the
@@ -100,6 +116,11 @@ BOC_3M_AUCTION_SERIES = "V80691303"
 # Baked term-band yields standing in for a benchmark before it begins.
 _YIELD_STAND_INS = {"2-Year": EMBEDDED_CDN_2Y_STAND_IN, "5-Year": EMBEDDED_CDN_5Y_STAND_IN}
 FRED_CDN_GDP_SERIES = "NGDPSAXDCCAQ"  # fallback if the StatCan GDP table fails
+# Canada's yield columns, in term order (config.YIELD_TERMS): all but the 20-year.
+CDN_YIELD_COLUMNS = tuple(
+    column for column in YIELD_TERMS.values()
+    if column in YIELD_COLUMNS or column in BOC_BENCHMARK_COLUMNS.values() or column in BOC_BILL_SERIES
+)
 
 # First observation of each Canadian input, used to warn when ``--start`` is earlier.
 CANADIAN_SERIES_EARLIEST = {
@@ -116,6 +137,23 @@ CANADIAN_SERIES_EARLIEST = {
     "TTM Nominal GDP": pd.Timestamp(EMBEDDED_CDN_GDP_HISTORY[0][0]),
     "TTM Interest Payable": pd.Timestamp(EMBEDDED_CDN_EARLY_INTEREST_HISTORY[0][0]),
 }
+
+
+def cdn_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
+    """Return the first observation of the Canadian inputs, by name, for the coverage warning.
+
+    The five default terms and the macro series always, as before the terms
+    could be chosen (``CANADIAN_SERIES_EARLIEST``); then each chosen term
+    without the PDF history (batch 9.3), and those the spreads are taken
+    from, from 2001.
+    """
+    terms = set(config.yield_terms) | ({term for pair in config.spread_pairs for term in pair} if config.spreads else set())
+    newer = {
+        f"{column} Yield (Bank of Canada, daily)": CDN_NEW_TERMS_START
+        for term, column in YIELD_TERMS.items()
+        if term in terms and column in CDN_YIELD_COLUMNS and column not in YIELD_COLUMNS
+    }
+    return {**CANADIAN_SERIES_EARLIEST, **newer}
 
 
 # ---------------------------------------------------------------------------
@@ -268,14 +306,15 @@ def fetch_cdn_yields(config: PlotConfig) -> pd.DataFrame:
 
     The 2- and 5-year history is extended back by stand-ins (see
     ``with_yield_stand_ins``). The result is date-indexed with the chosen
-    yield columns (``config.yield_columns``) that Canada has, the
-    ``YIELD_COLUMNS``, and those the spreads are taken from
-    (``config.fetched_yield_columns``), trimmed to the configured window. A
-    chosen term it does not have (--yields:7) is named, and the chart drawn
+    yield columns (``config.yield_columns``) that Canada has
+    (``CDN_YIELD_COLUMNS``), and those the spreads are taken from
+    (``config.fetched_yield_columns``), trimmed to the configured window.
+    The terms outside the default five begin in 2001 (batch 9.3). A chosen
+    term it does not have (--yields:20) is named, and the chart drawn
     without it.
     """
-    chosen = [column for column in config.fetched_yield_columns if column in YIELD_COLUMNS]
-    absent = [column for column in config.yield_columns if column not in YIELD_COLUMNS]
+    chosen = [column for column in config.fetched_yield_columns if column in CDN_YIELD_COLUMNS]
+    absent = [column for column in config.yield_columns if column not in CDN_YIELD_COLUMNS]
     if absent and len(absent) < len(config.yield_columns):  # none left: plotting._warn_no_yields
         print(f"  Note: no Canadian {', '.join(absent)} yield; the Canadian chart is drawn without it.")
     if not chosen:
@@ -286,8 +325,14 @@ def fetch_cdn_yields(config: PlotConfig) -> pd.DataFrame:
         three_month = _cdn_3_month()
         if three_month is not None:
             yields = yields.join(three_month.rename("3-Month"), how="outer")
+        for column in (column for column in chosen if column in BOC_BILL_SERIES):
+            code = BOC_BILL_SERIES[column]
+            try:
+                yields = yields.join(boc_valet_series(code).rename(column), how="outer")
+            except Exception as exc:
+                print(f"  Warning: Bank of Canada {column} T-bill yield ({code}) unavailable ({exc}); drawn without it.")
 
-    available = [column for column in YIELD_COLUMNS if column in yields.columns]
+    available = [column for column in CDN_YIELD_COLUMNS if column in yields.columns]
     # Short forward-fill bridges holidays and single missing prints only.
     yields = yields[available].dropna(how="all").ffill(limit=3)
 

@@ -108,7 +108,7 @@ def us_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
     those the spreads are taken from.
     """
     terms = set(config.yield_terms) | ({term for pair in config.spread_pairs for term in pair} if config.spreads else set())
-    columns = [column for term, column in YIELD_TERMS.items() if term in terms]
+    columns = [column for term, column in YIELD_TERMS.items() if term in terms and column in US_YIELD_SERIES]
     yields = {f"{column} Yield ({US_YIELD_SERIES[column]})": US_YIELD_EARLIEST[column] for column in columns}
     return {**yields, **US_SERIES_EARLIEST}
 
@@ -121,14 +121,19 @@ def fetch_us_yields(config: PlotConfig) -> pd.DataFrame:
     (``config.fetched_yield_columns``). Series are outer-joined on date and
     forward-filled over a few rows (``_US_YIELD_FILL_ROWS``) so holidays in
     one tenor do not create gaps in the others; a longer gap in a source is
-    left a gap, drawn as a break in its line.
+    left a gap, drawn as a break in its line. A chosen term the U.S. does not
+    have (the 3-year, batch 9.3) is named, as the other nations' are.
     """
-    if not config.fetched_yield_columns:
+    chosen = [column for column in config.fetched_yield_columns if column in US_YIELD_SERIES]
+    absent = [column for column in config.yield_columns if column not in US_YIELD_SERIES]
+    if absent and len(absent) < len(config.yield_columns):  # none left: plotting._warn_no_yields
+        print(f"  Note: no U.S. {', '.join(absent)} yield; the U.S. chart is drawn without it.")
+    if not chosen:
         return pd.DataFrame()
 
     frames = [
         fetch_fred_csv(US_YIELD_SERIES[label]).set_index(DATE_COLUMN).rename(columns={US_YIELD_SERIES[label]: label})
-        for label in config.fetched_yield_columns
+        for label in chosen
     ]
     data = pd.concat(frames, axis=1).sort_index().ffill(limit=_US_YIELD_FILL_ROWS).reset_index()
     return data.loc[data[DATE_COLUMN] >= config.start]

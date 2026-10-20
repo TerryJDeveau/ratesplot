@@ -90,7 +90,12 @@ _QUOTE_SYMBOLS = {
         "1-Month": "US1M", "3-Month": "US3M", "6-Month": "US6M", "1-Year": "US1Y", "2-Year": "US2Y",
         "5-Year": "US5Y", "7-Year": "US7Y", "10-Year": "US10Y", "20-Year": "US20Y", "30-Year": "US30Y",
     },
-    "cdn": {"3-Month": "CA3M", "2-Year": "CA2Y", "5-Year": "CA5Y", "10-Year": "CA10Y", "30-Year": "CA30Y"},
+    # Canada's (batch 9.3: CA1M, CA6M, CA1Y and CA3Y seen answering
+    # 2026-10-20; CA7Y answers empty, so the 7-year ends on its last official day).
+    "cdn": {
+        "1-Month": "CA1M", "3-Month": "CA3M", "6-Month": "CA6M", "1-Year": "CA1Y", "2-Year": "CA2Y",
+        "3-Year": "CA3Y", "5-Year": "CA5Y", "10-Year": "CA10Y", "30-Year": "CA30Y",
+    },
     # The UK's three terms (batch 3; seen answering from the laptop 2026-10-06,
     # tools/uk_fixtures). Not GB3M-GB: that is a gilt repo rate, not a yield.
     "uk": {"5-Year": "GB5Y-GB", "10-Year": "GB10Y-GB", "20-Year": "GB20Y-GB"},

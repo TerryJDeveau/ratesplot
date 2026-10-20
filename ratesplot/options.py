@@ -538,12 +538,13 @@ class Option:
 
 
 # The tick boxes of the list options (Option.choices). Yield terms: the five
-# both countries have, then those only the U.S. has. Mortgage terms by
-# country. Spreads: the usual pairs (the defaults first); any other pair
+# drawn by default, then the others in term order (each nation's panel offers
+# those it has: Canada all but the 20-year since batch 9.3, the U.S. all but
+# the 3-year). Mortgage terms by country. Spreads: the usual pairs (the defaults first); any other pair
 # named on the command line gets a box of its own.
 _YIELD_CHOICES = (
     ("", tuple((term, term) for term in DEFAULT_YIELD_TERMS)),
-    ("not Canada", tuple((term, term) for term in YIELD_TERMS if term not in DEFAULT_YIELD_TERMS)),
+    ("more", tuple((term, term) for term in YIELD_TERMS if term not in DEFAULT_YIELD_TERMS)),
 )
 _MORTGAGE_CHOICES = (
     ("U.S.", (("30", "30y"), ("15", "15y"))),
@@ -662,8 +663,9 @@ OPTIONS: tuple[Option, ...] = (
     # 2026-10-06: drop a few defaults rather than list all the wanted ones).
     Option(
         "yields", Kind.VALUE, ("yield_terms",), "curves", "--yields:LIST / --y:LIST",
-        "the yield terms drawn: 1m 3m 6m 1 2 5 7\n10 20 30 (years unless m; default\n"
-        f"{','.join(DEFAULT_YIELD_TERMS)}); Canada has the\ndefault five only, the UK 5 10 20 (its\ndefault), Germany 1 2 5 7 10 20 30\n(its default 2 5 10 30)",
+        "the yield terms drawn: 1m 3m 6m 1 2 3 5\n7 10 20 30 (years unless m; default\n"
+        f"{','.join(DEFAULT_YIELD_TERMS)}); Canada has all but 20\n(1m 6m 1 3 7 from 2001), the U.S. all but\n3, "
+        "the UK 5 10 20 (its default),\nGermany 1 2 5 7 10 20 30 (its default\n2 5 10 30)",
         names=("yields",), parse=partial(parse_terms, kind="--yields"), label="Yield terms", format=format_terms,
         editor="choices", choices=_YIELD_CHOICES,
     ),

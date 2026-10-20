@@ -183,6 +183,9 @@ _CDN_OFFSET = 0.3
 _VALET_SERIES = {
     "V80691303": ("2000-12-01", "B", 0.25, 0.0),
     "TB.CDN.90D.MID": ("2001-01-02", "B", 0.25, 0.0),
+    "TB.CDN.30D.MID": ("2001-01-02", "B", 1 / 12, 0.0),
+    "TB.CDN.180D.MID": ("2001-01-02", "B", 0.5, 0.0),
+    "TB.CDN.1Y.MID": ("2001-01-02", "B", 1, 0.0),
     "V122530": ("1935-03-01", "MS", 0.0, 0.25),
     "AVG.INTWO": ("1997-01-02", "B", 0.0, 0.0),
     "V80691335": ("1975-01-01", "W-WED", 10, 2.4),
@@ -200,7 +203,10 @@ def valet(url: str, params: tuple) -> bytes:
         dates = pd.bdate_range(start or "2000-12-01", "2026-08-31")
         columns = {
             code: _yield_path("cdn" + code, dates, years, _CDN_OFFSET)
-            for code, years in (("BD.CDN.2YR.DQ.YLD", 2), ("BD.CDN.5YR.DQ.YLD", 5), ("BD.CDN.10YR.DQ.YLD", 10), ("BD.CDN.LONG.DQ.YLD", 30))
+            for code, years in (
+                ("BD.CDN.2YR.DQ.YLD", 2), ("BD.CDN.3YR.DQ.YLD", 3), ("BD.CDN.5YR.DQ.YLD", 5), ("BD.CDN.7YR.DQ.YLD", 7),
+                ("BD.CDN.10YR.DQ.YLD", 10), ("BD.CDN.LONG.DQ.YLD", 30),
+            )
         }
         return _valet_csv(columns, dates)
     code = url.rstrip("/").split("/")[-2]

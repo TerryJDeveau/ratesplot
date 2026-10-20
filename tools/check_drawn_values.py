@@ -91,6 +91,9 @@ CASES: dict[str, list[str]] = {
     "ca_1960": ["-c", "-s:1960", "--e:1985", "--policy", "--mo:5"],
     "ca_1995": ["-c", "-s:1995", "--e:2005", "--policy", "--mo:5,3,1,prime"],
     "ca_2015": ["-c", "-s:2015", "--policy", "--mo:5,3,1,5v,prime", "--sp"],
+    # Batch 9.3: every Canadian term across the start of the five new ones
+    # (2001-01-02), and spreads of them.
+    "ca_terms": ["-c", "-s:2000-06-01", "--y:1m,3m,6m,1,2,3,5,7,10,30", "--sp:7y-1m,3y-6m"],
     "us_1985": ["-u", "-s:1985", "--e:1995", "--y:3m,6m,1,2,5,7,10,20,30", "--policy", "--mo:30,15"],
     "us_2000": ["-u", "-s:2000", "--e:2008", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--sp:30y-10y,30y-2y"],
     "us_2015": ["-u", "-s:2015", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy", "--mo:30,15", "--sp"],
@@ -178,6 +181,8 @@ def yield_sources(nation: str, column: str) -> list[Source]:
     if nation == "cdn":
         if column == "3-Month":
             live = [valet(cdn_data.BOC_3M_TBILL_SERIES), valet(cdn_data.BOC_3M_AUCTION_SERIES)]
+        elif column in cdn_data.BOC_BILL_SERIES:
+            live = [valet(cdn_data.BOC_BILL_SERIES[column])]
         else:
             code = next(code for code, name in cdn_data.BOC_BENCHMARK_COLUMNS.items() if name == column)
             live = [valet_group(cdn_data.BOC_BENCHMARK_GROUP, code)]

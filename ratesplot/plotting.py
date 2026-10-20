@@ -35,8 +35,8 @@ from matplotlib.lines import Line2D
 
 from .axes import apply_axes_formatting, format_currency, format_percent, format_spread, format_yield
 from .cdn_data import (
-    CANADIAN_SERIES_EARLIEST,
     align_cdn_macro,
+    cdn_series_earliest,
     fetch_cdn_components,
     fetch_cdn_debt,
     fetch_cdn_gdp,
@@ -205,9 +205,9 @@ def _yield_style(column: str, config: PlotConfig, nation_key: str) -> dict:
     unchanged; the cycle's colours are the default terms' ``TERM_COLORS``
     when all five are drawn. With terms chosen, each term has its own
     colour, so the 10-year is red however few are drawn. The terms are
-    those the nation has (Canada's chart of ``--yields:3m,2,5,7,10,30`` draws
-    the default five), so a chart is coloured alike whether its terms were
-    chosen for both charts or for it alone (``options.nation_view``).
+    those the nation has (Canada's chart of ``--yields:3m,2,5,10,20,30``
+    draws the default five), so a chart is coloured alike whether its terms
+    were chosen for both charts or for it alone (``options.nation_view``).
     """
     own = next(nation.yield_terms for nation in NATIONS if nation.key == nation_key)
     if tuple(term for term in config.yield_terms if term in own) == DEFAULT_YIELD_TERMS:
@@ -504,7 +504,7 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
     """
     _require_start(config)
     _warn_no_yields("cdn", config)
-    warn_series_coverage(config.start, CANADIAN_SERIES_EARLIEST)
+    warn_series_coverage(config.start, cdn_series_earliest(config))
     yields, quote_time = extend_cdn_yields(fetch_cdn_yields(config), config)
     rates = rate_curves("cdn", yields, config)
     # A spread is cut where its yields are (from the start): their own coverage is the one warned about.

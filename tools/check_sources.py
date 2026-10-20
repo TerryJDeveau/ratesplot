@@ -130,8 +130,11 @@ def _fred(series_id: str, *, quarterly: bool) -> Callable[[PlotConfig], tuple[pd
     return run
 
 
-# The U.S. terms outside the default five (--yields:LIST).
-EXTRA_US_COLUMNS = tuple(column for column in YIELD_TERMS.values() if column not in YIELD_COLUMNS)
+# The terms outside the default five (--yields:LIST): the U.S.' (it has no
+# 3-year), and Canada's (batch 9.3), of which CNBC quotes all but the 7-year.
+EXTRA_US_COLUMNS = tuple(column for column in us_data.US_YIELD_SERIES if column not in YIELD_COLUMNS)
+EXTRA_CDN_COLUMNS = tuple(column for column in cdn_data.CDN_YIELD_COLUMNS if column not in YIELD_COLUMNS)
+EXTRA_CDN_QUOTED = tuple(column for column in EXTRA_CDN_COLUMNS if column in latest._QUOTE_SYMBOLS["cdn"])
 
 
 def _all_yields(frame: pd.DataFrame, columns: tuple[str, ...] = YIELD_COLUMNS) -> pd.DataFrame:
@@ -144,6 +147,12 @@ def _all_yields(frame: pd.DataFrame, columns: tuple[str, ...] = YIELD_COLUMNS) -
 
 def _cdn_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     return _last(_all_yields(cdn_data.fetch_cdn_yields(config))), ""
+
+
+def _cdn_extra_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    every = replace(config, yield_terms=tuple(term for term, column in YIELD_TERMS.items() if column in EXTRA_CDN_COLUMNS))
+    frame = _all_yields(cdn_data.fetch_cdn_yields(every), EXTRA_CDN_COLUMNS)
+    return _last(frame), ", ".join(f"{column} {frame[column].dropna().iloc[-1]:.2f}" for column in EXTRA_CDN_COLUMNS)
 
 
 def _cdn_column(fetch: Callable[[PlotConfig], pd.DataFrame | None], column: str) -> Callable[[PlotConfig], tuple[pd.Timestamp | None, str]]:
@@ -174,12 +183,12 @@ def _us_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
 
 
 def _us_extra_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
-    every = replace(config, yield_terms=tuple(YIELD_TERMS))
+    every = replace(config, yield_terms=tuple(term for term, column in YIELD_TERMS.items() if column in us_data.US_YIELD_SERIES))
     return _last(_all_yields(us_data.fetch_us_yields(every).set_index("DATE"), EXTRA_US_COLUMNS)), ""
 
 
 def _treasury_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
-    columns = tuple(YIELD_TERMS.values())
+    columns = tuple(us_data.US_YIELD_SERIES)
     return _last(_all_yields(latest.treasury_yields_after(RECENT, config, columns).set_index("DATE"), columns)), ""
 
 
@@ -421,6 +430,7 @@ def _census(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
 
 CHECKS: tuple[Check, ...] = (
     Check("boc", "Bank of Canada benchmark yields and daily 3-month bill (Valet)", DAILY, _cdn_yields),
+    Check("boc_more", "Bank of Canada 1m 6m 1y bills, 3y 7y benchmarks (Valet; --yields:LIST)", DAILY, _cdn_extra_yields),
     Check("boc_debt", "Bank of Canada: GoC market debt outstanding (Valet)", DAILY, _market_debt),
     Check("statcan_debt", "StatCan 36-10-0467 general government gross debt", QUARTERLY, _cdn_column(cdn_data.fetch_cdn_debt, CDN_DEBT_COLUMN)),
     Check("statcan_gdp", "StatCan 36-10-0104 GDP", QUARTERLY, _cdn_column(cdn_data.fetch_cdn_gdp, GDP_COLUMN)),
@@ -453,6 +463,7 @@ CHECKS: tuple[Check, ...] = (
     Check("treasury_yields", "U.S. Treasury daily par yield curve (all ten terms)", DAILY, _treasury_yields),
     Check("debt_to_penny", "U.S. Treasury Debt to the Penny", DAILY, _debt_to_penny),
     Check("cnbc_cdn", "CNBC quote feed, Canadian yields (unofficial)", QUOTES, _quotes("cdn")),
+    Check("cnbc_cdn_more", "CNBC quote feed, Canadian 1m 6m 1y 3y (unofficial)", QUOTES, _quotes("cdn", EXTRA_CDN_QUOTED)),
     Check("cnbc_us", "CNBC quote feed, U.S. yields (unofficial)", QUOTES, _quotes("us")),
     Check("cnbc_us_more", "CNBC quote feed, U.S. 1m 6m 1y 7y 20y (unofficial)", QUOTES, _quotes("us", EXTRA_US_COLUMNS)),
     Check("census", "U.S. Census state and local finances: a year newer than baked?", None, _census),

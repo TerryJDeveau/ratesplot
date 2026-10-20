@@ -515,7 +515,9 @@ def check_choice_boxes(check: Check) -> None:
     )
     page.checkbox(key="choice:us:yields:7y").check()
     page.run()
-    check("ticking 7y adds it to the address", "--yields:3m,2y,5y,7y,10y" in address(page), address(page))
+    # Written for the U.S. alone since batch 9.3: Canada has a 7-year now, so
+    # one list for both would add it to Canada's chart too.
+    check("ticking 7y adds it to the address", "--us:yields:3m,2y,5y,7y,10y" in address(page), address(page))
     page.checkbox(key="choice:us:mortgage-terms:15").uncheck()
     page.run()
     check(
@@ -538,8 +540,8 @@ def check_nation_sections(check: Check) -> None:
     check("no exception", not page.exception, page.exception)
     keys = {box.key for box in page.checkbox if box.key}
     check(
-        "Canada offers its five terms and its mortgage terms only",
-        "choice:cdn:yields:30y" in keys and "choice:cdn:yields:7y" not in keys
+        "Canada offers its terms (all but 20y since batch 9.3) and its mortgage terms only",
+        "choice:cdn:yields:30y" in keys and "choice:cdn:yields:7y" in keys and "choice:cdn:yields:20y" not in keys
         and "choice:cdn:mortgage-terms:5" in keys and "choice:cdn:mortgage-terms:30" not in keys,
         sorted(key for key in keys if key.startswith("choice:cdn:")),
     )
@@ -627,11 +629,12 @@ def check_none_lists(check: Check) -> None:
         prefix = f"choice:{name}:"
         return [box.key[len(prefix):] for box in at.checkbox if box.key and box.key.startswith(prefix) and box.value]
 
-    page = new_page("-c --y:7,20 --e:2026-09-01")
+    # Canada lacks only the 20-year since batch 9.3 (until then, -c --y:7,20).
+    page = new_page("-c --y:20 --e:2026-09-01")
     check("no exception", not page.exception, page.exception)
-    check("Canada's yield boxes all unticked (it has neither 7y nor 20y)", ticked(page, "cdn:yields") == [], ticked(page, "cdn:yields"))
+    check("Canada's yield boxes all unticked (it has no 20y)", ticked(page, "cdn:yields") == [], ticked(page, "cdn:yields"))
     check("no box 'none'", "choice:cdn:yields:none" not in {box.key for box in page.checkbox}, "")
-    check("address kept", address(page) == "--C --yields:7y,20y --end:2026-09-01", address(page))
+    check("address kept", address(page) == "--C --yields:20y --end:2026-09-01", address(page))
     check("one chart drawn", charts_shown(page) == 1, charts_shown(page))
     warned = [line.strip() for c in page.code for line in c.value.splitlines() if "Warning: no yield" in line]
     check("the warning in the log", any("on the Canadian chart" in line for line in warned), warned)
@@ -803,10 +806,29 @@ def check_batch15(check: Check) -> None:
     check("... and in the address", "0.3" in address(at) and "-0.5" in address(at) and ":.3" not in address(at), address(at))
 
 
+def check_batch9(check: Check) -> None:
+    """Batch 9.3: Canada's section offers its ten terms (all but the 20-year), the U.S.' all but the 3-year."""
+    at = new_page("--e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    keys = {box.key for box in at.checkbox if box.key}
+    canada = {key for key in keys if key.startswith("choice:cdn:yields:")}
+    united = {key for key in keys if key.startswith("choice:us:yields:")}
+    wanted = {f"choice:cdn:yields:{term}" for term in ("1m", "3m", "6m", "1y", "2y", "3y", "5y", "7y", "10y", "30y")}
+    check("Canada offers 1m 3m 6m 1y 2y 3y 5y 7y 10y 30y, not 20y", canada == wanted, sorted(canada))
+    check("the U.S. offers all but 3y", "choice:us:yields:3y" not in united and len(united) == 10, sorted(united))
+    ticked = {key.rsplit(":", 1)[1] for key in canada if at.checkbox(key=key).value}
+    check("Canada's default five ticked, the new terms not", ticked == {"3m", "2y", "5y", "10y", "30y"}, sorted(ticked))
+    at.checkbox(key="choice:cdn:yields:3y").check()
+    at.run()
+    tokens = address(at).split()
+    drawn = drawn_config(config_from_choices(*sort_tokens(tokens)[:2]), "cdn").yield_terms
+    check("3y ticked: the address draws Canada's 3-year with the five", drawn == ("3m", "2y", "3y", "5y", "10y", "30y"), (address(at), drawn))
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
-    check_batch15,
+    check_batch15, check_batch9,
 )
 
 

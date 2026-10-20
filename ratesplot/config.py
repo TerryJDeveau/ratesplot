@@ -317,14 +317,17 @@ YIELD_COLUMNS = ("3-Month", "2-Year", "5-Year", "10-Year", "30-Year")
 
 # Yield terms (--yields:LIST): the short form a term is written in -> its
 # column. Shortest first, which is the drawing and legend order. The five of
-# YIELD_COLUMNS are drawn by default and are the only Canadian ones; the U.S.
-# has all ten (FRED's DGS series; see us_data.US_YIELD_SERIES).
+# YIELD_COLUMNS are drawn by default and are the only ones with Canada's
+# history before 2001. Canada has all but the 20-year (batch 9.3: the 1- and
+# 6-month, 1-, 3- and 7-year from 2001; see cdn_data.CDN_YIELD_COLUMNS); the
+# U.S. all but the 3-year (FRED's DGS series; see us_data.US_YIELD_SERIES).
 YIELD_TERMS = {
     "1m": "1-Month",
     "3m": "3-Month",
     "6m": "6-Month",
     "1y": "1-Year",
     "2y": "2-Year",
+    "3y": "3-Year",
     "5y": "5-Year",
     "7y": "7-Year",
     "10y": "10-Year",
@@ -378,7 +381,9 @@ MORTGAGE_TERMS = {
     "30": ("us", "30y"),
     "15": ("us", None),
     "5": ("cdn", "5y"),
-    "3": ("cdn", None),
+    # The 3-year yield's colour (batch 9.3), which is the colour the 3-year
+    # mortgage had as its own before Canada had a 3-year yield.
+    "3": ("cdn", "3y"),
     "1": ("cdn", "1y"),
     "5v": ("cdn", "5y"),
     "prime": ("cdn", None),
@@ -387,7 +392,7 @@ MORTGAGE_TERMS = {
     # variable rate (SVR) a fixed rate reverts to. Written with an "f" so
     # they are not Canada's 5 and 3 (posted rates of other lenders).
     "2f": ("uk", "2y"),
-    "3f": ("uk", None),
+    "3f": ("uk", "3y"),
     "5f": ("uk", "5y"),
     "svr": ("uk", None),
     # Germany (batch 4): the MFI interest rates on new housing loans to
@@ -399,9 +404,11 @@ MORTGAGE_TERMS = {
     "over10": ("de", "20y"),
 }
 DEFAULT_MORTGAGE_TERMS = ("30", "5")
-# The 3-year fixed has Canada's 3-year's colour (the same kind of loan, on
-# another chart); the SVR the prime rate's, a variable base rate as it is.
-MORTGAGE_OWN_COLORS = {"15": "#556b2f", "3": "#2f4f4f", "prime": "#696969", "3f": "#2f4f4f", "svr": "#696969"}
+# The SVR has the prime rate's colour, a variable base rate as it is. (The
+# 3-year mortgages, Canada's and the UK's, had dark slate here, #2f4f4f,
+# until the 3-year yield took that colour in batch 9.3; they take the
+# 3-year's colour now, as the other terms take theirs.)
+MORTGAGE_OWN_COLORS = {"15": "#556b2f", "prime": "#696969", "svr": "#696969"}
 # Dashed steps (a posted or surveyed rate holds until the next), thinner than
 # the policy rate; the variable rate dash-dotted, as it shares the 5-year's colour.
 MORTGAGE_STYLE = {"linewidth": 1.5, "linestyle": "--", "drawstyle": "steps-post"}
@@ -501,8 +508,16 @@ class Nation:
 # London (GMT, BST in summer) and Frankfurt (CET, CEST; the time-zone
 # database's Europe/Berlin).
 NATIONS: tuple[Nation, ...] = (
-    Nation("cdn", "Canada", ("ca", "cdn"), DEFAULT_YIELD_TERMS, "Canadian", market_timezone="America/Toronto"),
-    Nation("us", "United States", ("us",), tuple(YIELD_TERMS), "U.S.", market_timezone="America/New_York"),
+    # Canada: all terms but the 20-year (the Bank of Canada has none); the
+    # U.S.: all but the 3-year (FRED's DGS3 exists, but was not asked for).
+    Nation(
+        "cdn", "Canada", ("ca", "cdn"), tuple(term for term in YIELD_TERMS if term != "20y"), "Canadian",
+        market_timezone="America/Toronto",
+    ),
+    Nation(
+        "us", "United States", ("us",), tuple(term for term in YIELD_TERMS if term != "3y"), "U.S.",
+        market_timezone="America/New_York",
+    ),
     # Batch 3: drawn only when asked for, so every existing command line
     # draws what it drew. Its own defaults, since the defaults for every
     # chart would draw two of its three yield terms, none of its mortgage
@@ -581,6 +596,9 @@ TERM_COLORS = {
     "1y": "#7f7f7f",
     "7y": "#bcbd22",
     "20y": "#17becf",
+    # The 11th term (batch 9.3), past the palette's ten: dark slate, which the
+    # 3-year mortgages had as their own colour before (MORTGAGE_TERMS).
+    "3y": "#2f4f4f",
 }
 
 # The same three semantic macro curves are drawn on both country charts, plus
@@ -953,7 +971,8 @@ class PlotConfig:
     spread_pairs: tuple[tuple[str, str], ...] = DEFAULT_SPREADS
     # --yields:LIST / --no-yields:LIST: the yield terms drawn, as keys of
     # YIELD_TERMS in that order. A term a country has no series for is
-    # simply not drawn on its chart (Canada has the five default terms).
+    # simply not drawn on its chart, with a note (Canada has no 20-year, the
+    # U.S. no 3-year: Nation.yield_terms).
     yield_terms: tuple[str, ...] = DEFAULT_YIELD_TERMS
     include_debt: bool = True
     include_gdp: bool = True

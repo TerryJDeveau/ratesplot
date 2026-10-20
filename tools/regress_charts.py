@@ -157,16 +157,18 @@ CASES: dict[str, list[str]] = {
     "all_rates": ["--policy", "--mo", "--sp:10-2", "-l", "-s:2015"],
     # Batch 2: values for one nation's chart (--us:..., --cdn:...).
     "nat_limits": ["--us:top:40t", "--us:bottom:5t", "--cdn:max:12", "--min:0", "-s:2010"],
-    # Canada's chart of terms both charts were given, with one only the U.S.
-    # has: its five drawn as the default five (the 30-year purple, before the
-    # 10-year begins).
+    # Canada's chart of terms both charts were given, with one Canada has had
+    # only since 2001 (batch 9.3; before it, only the U.S. had it): coloured
+    # by term, as chosen terms are, though the 7-year draws nothing before 2001.
     "c_y_us_terms": ["-c", "--y:3m,2,5,7,10,30", "-s:1936", "--e:1948"],
-    # Canada's chart of spreads given for both charts, the first with a term
-    # only the U.S. has: the 10y-2y takes the first spread colour.
+    # Canada's chart of spreads given for both charts: the 7y-1m (only the
+    # U.S. had both terms until batch 9.3) and the 10y-2y, coloured by place.
     "c_sp_us_pair": ["-c", "--sp:7-1m,10-2", "-s:2015", "--no-gdp", "--no-debt", "--no-interest", "--no-yield"],
     # The prime rate (batch 2), with the variable mortgage it prices and the policy rate.
     "c_prime": ["-c", "--mo:5,5v,prime", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:2005", "-l"],
     "nat_terms": ["--us:y:7,20", "--cdn:y:2,10", "--us:sp:10-2", "--cdn:sp:30-10", "--cdn:mo:5,3", "-s:2015", "-l"],
+    # Batch 9.3: every Canadian term (the 1- and 6-month, 1-, 3- and 7-year from 2001).
+    "c_all_terms": ["-c", "--y:1m,3m,6m,1,2,3,5,7,10,30", "--no-gdp", "--no-debt", "--no-interest", "-s:2001"],
     # Batch 3: the UK. Its defaults (the automatic start; its own yield terms);
     # the long history (the 10-year's monthly averages from 1935, debt and GDP
     # from the millennium dataset); the yield axis's other curves with its
