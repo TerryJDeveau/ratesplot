@@ -371,37 +371,41 @@ RATE_AXIS_LABEL = "Rate (%)"
 # Terry chose dark brown, 2026-10-06.)
 POLICY_RATE_STYLE = {"color": "#5c4033", "linewidth": 1.8, "drawstyle": "steps-post"}
 # --mortgages (ratesplot.rates): the terms, as written on the command line ->
-# the country that has them and the yield term whose colour they take (None:
+# the countries that have them and the yield term whose colour they take (None:
 # no yield of that term, so a colour of their own, MORTGAGE_OWN_COLORS). In
-# this order on the chart. "5v" is Canada's 5-year variable rate; "prime" the
-# chartered banks' prime rate, which Canadian variable-rate mortgages are
-# priced from (Terry, 2026-10-06: the 3-year and 6-month variable mortgages
-# are popular in Canada, and have no series of their own; prime in their place).
+# this order on the chart. "5v" is Canada's 5-year variable rate; "prime" each
+# country's banks' prime rate: Canada's chartered banks', which Canadian
+# variable-rate mortgages are priced from (Terry, 2026-10-06: the 3-year and
+# 6-month variable mortgages are popular in Canada, and have no series of
+# their own; prime in their place), and since batch 9.4 the U.S. banks' prime
+# loan rate, which prices home-equity lines (Terry, 2026-10-08). One term for
+# both, as "10" is each country's 10-year yield: --mo:prime draws each chart's
+# own prime rate.
 MORTGAGE_TERMS = {
-    "30": ("us", "30y"),
-    "15": ("us", None),
-    "5": ("cdn", "5y"),
+    "30": (("us",), "30y"),
+    "15": (("us",), None),
+    "5": (("cdn",), "5y"),
     # The 3-year yield's colour (batch 9.3), which is the colour the 3-year
     # mortgage had as its own before Canada had a 3-year yield.
-    "3": ("cdn", "3y"),
-    "1": ("cdn", "1y"),
-    "5v": ("cdn", "5y"),
-    "prime": ("cdn", None),
+    "3": (("cdn",), "3y"),
+    "1": (("cdn",), "1y"),
+    "5v": (("cdn",), "5y"),
+    "prime": (("cdn", "us"), None),
     # The UK (batch 3): the Bank of England's quoted rates for new loans at
     # 75 % loan to value, fixed for 2, 3 or 5 years, and the standard
     # variable rate (SVR) a fixed rate reverts to. Written with an "f" so
     # they are not Canada's 5 and 3 (posted rates of other lenders).
-    "2f": ("uk", "2y"),
-    "3f": ("uk", "3y"),
-    "5f": ("uk", "5y"),
-    "svr": ("uk", None),
+    "2f": (("uk",), "2y"),
+    "3f": (("uk",), "3y"),
+    "5f": (("uk",), "5y"),
+    "svr": (("uk",), None),
     # Germany (batch 4): the MFI interest rates on new housing loans to
     # households (ECB), by initial rate fixation: over 1 and up to 5 years,
     # over 5 and up to 10, over 10. Named by the band, as the statistics
     # are; coloured as the yield of the band's top (the 20-year for over 10).
-    "1-5": ("de", "5y"),
-    "5-10": ("de", "10y"),
-    "over10": ("de", "20y"),
+    "1-5": (("de",), "5y"),
+    "5-10": (("de",), "10y"),
+    "over10": (("de",), "20y"),
 }
 DEFAULT_MORTGAGE_TERMS = ("30", "5")
 # The SVR has the prime rate's colour, a variable base rate as it is. (The
@@ -474,7 +478,7 @@ class Nation:
     @property
     def mortgage_terms(self) -> tuple[str, ...]:
         """The MORTGAGE_TERMS keys it has, in their order."""
-        return tuple(term for term, (country, _yield) in MORTGAGE_TERMS.items() if country == self.key)
+        return tuple(term for term, (countries, _yield) in MORTGAGE_TERMS.items() if self.key in countries)
 
     @property
     def show_field(self) -> str:
@@ -572,6 +576,7 @@ def nation_by_key(key: str) -> Nation | None:
 # currency, so a limit right for one is wrong for the other).
 PER_NATION_FIELDS = (
     "yield_terms", "mortgage_terms", "spread_pairs", "yield_ymin", "yield_ymax", "macro_bottom", "macro_top",
+    "prime_margin",
 )
 # The defaults of the lists a nation may have its own default of (Nation.own_defaults).
 _LIST_DEFAULTS = {
@@ -964,6 +969,10 @@ class PlotConfig:
     # MORTGAGE_TERMS chosen (each drawn on the chart of its country); additive.
     mortgages: bool = False
     mortgage_terms: tuple[str, ...] = DEFAULT_MORTGAGE_TERMS
+    # --prime:MARGIN (batch 9.4): the prime rate drawn plus this many points
+    # (negative allowed), for the variable mortgages priced from it; 0 draws
+    # the prime rate itself, as before. Per nation (--cdn:prime:-0.25).
+    prime_margin: float = 0.0
     # --spreads[:LIST]: yield spreads on the yield axis, each a pair of
     # YIELD_TERMS keys (the first less the second); additive. Their terms are
     # fetched even when the yields are not drawn.

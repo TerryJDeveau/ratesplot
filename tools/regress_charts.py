@@ -166,6 +166,13 @@ CASES: dict[str, list[str]] = {
     "c_sp_us_pair": ["-c", "--sp:7-1m,10-2", "-s:2015", "--no-gdp", "--no-debt", "--no-interest", "--no-yield"],
     # The prime rate (batch 2), with the variable mortgage it prices and the policy rate.
     "c_prime": ["-c", "--mo:5,5v,prime", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:2005", "-l"],
+    # Batch 9.4: each nation's prime rate plus its own margin (the margin in
+    # the legend and in the -l labels), and the U.S. prime rate from 1955
+    # with the policy rate it is set from.
+    "prime_margin": [
+        "--mo:5v,30,prime", "--us:prime:0.5", "--cdn:prime:-0.25", "--no-gdp", "--no-debt", "--no-interest", "-s:2015", "-l",
+    ],
+    "u_prime": ["-u", "--mo:30,prime", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1955", "--e:1990"],
     "nat_terms": ["--us:y:7,20", "--cdn:y:2,10", "--us:sp:10-2", "--cdn:sp:30-10", "--cdn:mo:5,3", "-s:2015", "-l"],
     # Batch 9.3: every Canadian term (the 1- and 6-month, 1-, 3- and 7-year from 2001).
     "c_all_terms": ["-c", "--y:1m,3m,6m,1,2,3,5,7,10,30", "--no-gdp", "--no-debt", "--no-interest", "-s:2001"],

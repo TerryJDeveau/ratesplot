@@ -764,7 +764,11 @@ def check_layout(check: Check) -> None:
         and [name for name in placed if name in wanted] == wanted,
         order,
     )
-    fields = [field.key for field in at.text_input if field.key and field.key.startswith("value:cdn:")]
+    # The limits only: the prime margin's field sits with the mortgage boxes, above them (batch 9.4).
+    fields = [
+        field.key for field in at.text_input
+        if field.key and field.key.startswith("value:cdn:") and not field.key.endswith(":prime-margin")
+    ]
     check(
         "Canada's limits row by row: Max beside Top, then Min beside Bottom",
         fields == ["value:cdn:max", "value:cdn:top", "value:cdn:min", "value:cdn:bottom"],
@@ -825,10 +829,47 @@ def check_batch9(check: Check) -> None:
     check("3y ticked: the address draws Canada's 3-year with the five", drawn == ("3m", "2y", "3y", "5y", "10y", "30y"), (address(at), drawn))
 
 
+def check_batch94(check: Check) -> None:
+    """Batch 9.4: a prime margin field beside Canada's and the U.S.' prime box, greyed while that nation draws no prime rate."""
+    at = new_page("--e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    fields = {field.key for field in at.text_input if field.key and field.key.endswith(":prime-margin")}
+    check("a margin field for Canada and the U.S. only", fields == {"value:cdn:prime-margin", "value:us:prime-margin"}, sorted(fields))
+    boxes = {box.key for box in at.checkbox if box.key and box.key.endswith(":prime")}
+    check("a prime box for each of them", boxes == {"choice:cdn:mortgage-terms:prime", "choice:us:mortgage-terms:prime"}, sorted(boxes))
+
+    def greyed(page: AppTest) -> set[str]:
+        return {key.split(":")[1] for key in fields if page.text_input(key=key).disabled}
+
+    check("mortgages off: both greyed", greyed(at) == {"cdn", "us"}, greyed(at))
+    at.checkbox(key="flag:mortgages").check()
+    at.run()
+    check("mortgages on, prime unticked: both greyed", greyed(at) == {"cdn", "us"}, greyed(at))
+    at.checkbox(key="choice:cdn:mortgage-terms:prime").check()
+    at.run()
+    check("Canada's prime ticked: its field alone active", greyed(at) == {"us"}, greyed(at))
+    at.text_input(key="value:cdn:prime-margin").input("-.25")
+    at.run()
+    drawn = drawn_config(config_from_choices(*sort_tokens(address(at).split())[:2]), "cdn")
+    check("the address draws Canada's prime less 0.25",
+          drawn.mortgage_terms == ("5", "prime") and drawn.prime_margin == -0.25, (address(at), drawn.mortgage_terms, drawn.prime_margin))
+    check("no exception, one drawing per chart", not at.exception and charts_shown(at) == 2, at.exception)
+    at.checkbox(key="choice:cdn:mortgage-terms:prime").uncheck()
+    at.run()
+    check("prime unticked: the margin greyed, kept, out of the address",
+          greyed(at) == {"cdn", "us"} and at.text_input(key="value:cdn:prime-margin").value == "-0.25" and "prime" not in address(at),
+          (greyed(at), address(at)))
+    page = new_page("--prime:0.5 --e:2026-09-01")
+    ticked = {key for key in boxes if page.checkbox(key=key).value}
+    texts = {key: page.text_input(key=key).value for key in sorted(fields)}
+    check("--prime:0.5: both prime boxes ticked, both fields 0.5",
+          ticked == boxes and set(texts.values()) == {"0.5"} and flags(page)["mortgages"], (sorted(ticked), texts))
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
-    check_batch15, check_batch9,
+    check_batch15, check_batch9, check_batch94,
 )
 
 

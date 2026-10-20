@@ -97,6 +97,9 @@ CASES: dict[str, list[str]] = {
     "us_1985": ["-u", "-s:1985", "--e:1995", "--y:3m,6m,1,2,5,7,10,20,30", "--policy", "--mo:30,15"],
     "us_2000": ["-u", "-s:2000", "--e:2008", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--sp:30y-10y,30y-2y"],
     "us_2015": ["-u", "-s:2015", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy", "--mo:30,15", "--sp"],
+    # Batch 9.4: the prime rates plus a margin, each nation's own (the U.S.'
+    # from FRED DPRIME, daily from 1955-08; Canada's below its prime).
+    "prime_margin": ["-s:2005", "--mo:5v,30,prime", "--us:prime:0.5", "--cdn:prime:-0.25"],
     "uk_1970": ["--na:gb", "-s:1970", "--e:1990", "--policy", "--mo:svr"],
     "uk_2015": ["--na:gb", "-s:2015", "--policy", "--mo:2f,3f,5f,svr", "--sp"],
     "de_1965": ["--na:de", "-s:1965", "--e:1980"],
@@ -213,8 +216,9 @@ def policy_sources(nation: str) -> list[Source]:
     return [ecb(*rates.DE_POLICY_FIXED, carry_days=None), ecb(*rates.DE_POLICY_MINIMUM_BID, carry_days=None)]
 
 
-def mortgage_sources(term: str) -> list[Source]:
-    nation = rates.MORTGAGE_TERMS[term][0]
+def mortgage_sources(term: str, nation: str) -> list[Source]:
+    """A mortgage term's sources on ``nation``'s chart (the prime rate is Canada's and the U.S.')."""
+    assert nation in rates.MORTGAGE_TERMS[term][0], (term, nation)
     if nation == "us":
         return [fred(rates.US_MORTGAGE_SERIES[term])]
     if nation == "cdn":
@@ -357,7 +361,15 @@ def check_case(name: str, tokens: list[str]) -> bool:
             elif curve is not None and curve.key == "policy":
                 sources = policy_sources(key)
             elif curve is not None and curve.key.startswith("mortgage_"):
-                sources = mortgage_sources(curve.key.removeprefix("mortgage_"))
+                term = curve.key.removeprefix("mortgage_")
+                sources = mortgage_sources(term, key)
+                margin = config.for_nation(key).prime_margin if term == "prime" else 0.0
+                if margin:
+                    # The prime rate is drawn plus its margin (batch 9.4): its source so, too.
+                    sources = [
+                        Source(f"{source.name} {margin:+g}", lambda read=source.read: read() + margin, source.monthly, source.carry_days)
+                        for source in sources
+                    ]
             else:
                 print(f"  {key:4} {line.label[:44]:44} FAIL  not known to this tool: add its sources")
                 passed = False

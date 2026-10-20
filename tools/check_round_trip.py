@@ -58,6 +58,8 @@ VALUES = (
     # A nation's own list of none (2026-10-07), alone, with every nation's, and with a list for every chart.
     "--cdn:y:none", "--cdn:y:none --us:y:none", "--uk:y:none --y:7", "--ger:mo:none --mo", "--us:mo:none --mo:30,5",
     "--cdn:sp:none --sp:10-2", "--cdn:mo:none --us:mo:none --uk:mo:none --ger:mo:none --mo",
+    # The prime margin (batch 9.4): for every chart, for one nation, with a list that leaves prime out.
+    "--prime:0.5", "--cdn:prime:-0.25", "--us:prime:1 --mo:30,prime", "--mo:5 --prime:0.5", "--prime:0.5 --cdn:mo:5v",
 )
 
 

@@ -112,7 +112,7 @@ _DAILY_START = {
     "DGS1MO": "2001-07-31", "DGS3MO": "1981-09-01", "DGS6MO": "1981-09-01", "DGS1": "1962-01-02",
     "DGS2": "1976-06-01", "DGS5": "1962-01-02", "DGS7": "1969-07-01", "DGS10": "1962-01-02",
     "DGS20": "1962-01-02", "DGS30": "1977-02-15", "DFF": "1954-07-01", "T10Y2Y": "1976-06-01",
-    "T10Y3M": "1982-01-04",
+    "T10Y3M": "1982-01-04", "DPRIME": "1955-08-04",
 }
 _GROWTH = {  # id -> (start, freq, first, last), FRED's units
     "GDP": ("1947-01-01", "QS", 243.0, 31_500.0),
@@ -145,6 +145,9 @@ def fred(series_id: str) -> pd.DataFrame:
             dates = pd.bdate_range(_DAILY_START[series_id], "2026-09-30")
             if series_id == "DFF":
                 values = np.round(np.maximum(_anchors(_SHORT, dates) + _noise("DFF", len(dates), 0.01), 0.04), 2)
+            elif series_id == "DPRIME":
+                # The banks' prime loan rate (batch 9.4): by convention the policy rate plus 3 points.
+                values = np.round(np.maximum(_anchors(_SHORT, dates), 0.0) + 3.0, 2)
             elif series_id in ("T10Y2Y", "T10Y3M"):
                 other = "DGS2" if series_id == "T10Y2Y" else "DGS3MO"
                 ten, short = fred("DGS10").set_index("DATE")["DGS10"], fred(other).set_index("DATE")[other]

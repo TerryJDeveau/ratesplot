@@ -199,6 +199,11 @@ CASES: list[list[str]] = [
     # Batch 9.3: Canada's new terms (1m 6m 1 3 7), the 3-year a new term that the U.S. does not have.
     ["--cdn:y:3"], ["-c", "--y:3"], ["-u", "--y:3"], ["--y:3"], ["--y:3y,7"], ["--cdn:y:1m,6m,1,3,7"],
     ["--cdn:sp:7-1m"], ["--us:y:3"], ["--mo:3", "--y:3"], ["-c", "--y:20"],
+    # Batch 9.4: the prime margin, for every chart and for one nation; it names
+    # the prime term unless a list is given; the UK has no prime rate.
+    ["--prime:0.5"], ["--pr:-0.25"], ["--prime:+0.5"], ["--prime:0.125"], ["--cdn:prime:-0.25"], ["--us:prime:1"],
+    ["--uk:prime:0.5"], ["--prime:x"], ["--prime:20"], ["--prime:"], ["--prime"], ["--pr"], ["--p:0.5"],
+    ["--mo:5", "--prime:0.5"], ["--prime:0.5", "--no-mo"], ["--na:gb", "--prime:0.5"], ["--mo:30,prime", "-u"],
 ]
 
 

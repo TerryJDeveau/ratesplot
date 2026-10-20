@@ -153,6 +153,7 @@ from .options import (  # noqa: E402
     command_line_tokens,
     config_from_choices,
     help_epilog,
+    idle_prime_margins,
     nation_choice,
     options_in,
     parse_date_spec,
@@ -178,8 +179,12 @@ _PLACEHOLDERS = {
     "start": "automatic",
     "end": "today",
     "regression-tolerance": f"{DEFAULT_REGRESSION_TOLERANCE_PCT:g}",
+    "prime-margin": "0",
 }
 _DEFAULT_PLACEHOLDER = "automatic"
+# The prime margin's field beside a nation's prime box (batch 9.4): narrow,
+# a number of points, so it stays on the box's row in the sidebar.
+_MARGIN_FIELD_PX = 110
 _DRAWING_LOCK = threading.Lock()
 # How many zoom and pan steps "Back" can undo (as in the window); the view
 # before the first one is always kept, for Unzoom.
@@ -674,22 +679,27 @@ def _red_if_wrong(label: str, wrong: bool) -> str:
     return f":red[{label}]" if wrong else label
 
 
-def _value_control(where, option: Option, key: str | None = None) -> None:
+def _value_control(where, option: Option, key: str | None = None, label: str | None = None, width: int | str = "stretch") -> None:
     """A text field; ``key`` names a nation's own field ("us:max"), else the option's name.
 
     Blank, it shows the value in effect in grey (the placeholder): the
     last drawing's (``_HINTS``), or before any drawing what blank means.
+    ``label`` replaces the option's label (the prime margin's "margin
+    (pts)" beside its box). Greyed while its flag is off, while it has no
+    curve to act on, and a nation's prime margin while its chart draws no
+    prime rate (``options.idle_prime_margins``), as in the window.
     """
     key = key or option.name
     flag_off = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
     where.text_input(
-        _red_if_wrong(option.label, key in st.session_state.get(_WRONG, {})),
+        _red_if_wrong(option.label if label is None else label, key in st.session_state.get(_WRONG, {})),
         key=_VALUE + key,
         on_change=_field_typed,
         args=(key,),
         help=_help(option, "Blank = default (shown in grey)."),
         placeholder=st.session_state.get(_HINTS, {}).get(key) or _PLACEHOLDERS.get(option.name, _DEFAULT_PLACEHOLDER),
-        disabled=flag_off or option.name in _idle(),
+        disabled=flag_off or option.name in _idle() or key in idle_prime_margins(*_snapshot()),
+        width=width,
     )
 
 
@@ -885,7 +895,9 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     for caption, boxes in rows:
         if caption:
             where.caption(caption)
-        row = where.container(horizontal=True, wrap=True)
+        # A nation's prime box has its margin's field beside it (batch 9.4), as in the window.
+        margin = nation is not None and option.fields == ("mortgage_terms",) and any(value == "prime" for value, _text in boxes)
+        row = where.container(horizontal=True, wrap=True, vertical_alignment="bottom" if margin else "top")
         for value, text in boxes:
             row.checkbox(
                 text,
@@ -894,6 +906,9 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
                 on_change=_choice_changed,
                 args=(key, value),
             )
+        if margin:
+            option_margin = by_name("prime-margin")
+            _value_control(row, option_margin, key=nation_choice(nation, option_margin), label="margin (pts)", width=_MARGIN_FIELD_PX)
 
 
 def _field_hints() -> dict[str, str]:

@@ -63,8 +63,11 @@ _VALET_FROM = "1900-01-01"
 # and the 5-year variable rate, the brokers' average, from 2011. Spans
 # measured by Terry 2026-10-06. The chartered banks' prime rate, weekly on
 # Valet from 1975: V80691311 (found by a web search; fetched by
-# tools/check_sources.py boc_prime on Terry's machine, 2026-10-06).
-US_MORTGAGE_SERIES = {"30": "MORTGAGE30US", "15": "MORTGAGE15US"}
+# tools/check_sources.py boc_prime on Terry's machine, 2026-10-06). The U.S.
+# banks' prime loan rate (batch 9.4): FRED DPRIME, the Federal Reserve's H.15,
+# daily from 1955-08 (7.00 % on 2026-10-02, measured 2026-10-13); by
+# convention the top of the fed funds target range plus 3 points.
+US_MORTGAGE_SERIES = {"30": "MORTGAGE30US", "15": "MORTGAGE15US", "prime": "DPRIME"}
 CDN_MORTGAGE_SERIES = {"5": "V80691335", "3": "V80691334", "1": "V80691333", "5v": "BROKER_AVERAGE_5YR_VRM", "prime": "V80691311"}
 CDN_MORTGAGE_HISTORY_TABLE = "34100145"
 # The UK (batch 3), from the Bank of England's database (IADB), measured from
@@ -94,7 +97,7 @@ _MORTGAGE_LABELS = {
     "3": "3-Year Mortgage (posted)",
     "1": "1-Year Mortgage (posted)",
     "5v": "5-Year Variable Mortgage (broker avg.)",
-    "prime": "Prime Rate (chartered banks)",
+    "prime": "Prime Rate (chartered banks)",  # Canada's; the U.S.' is _US_PRIME_LABEL
     # The UK's and Germany's (batch 10.1, Terry 2026-10-08): no "fixed", as
     # for Canada and the U.S., where it is implied; no "quoted". The UK's
     # "75% LTV" stays: the Bank quotes the same loans at 90 and 95 % too, and
@@ -107,6 +110,27 @@ _MORTGAGE_LABELS = {
     "5-10": "5–10-Year Mortgage (new loans, avg.)",
     "over10": "Over-10-Year Mortgage (new loans, avg.)",
 }
+# The U.S. prime rate by the name the Federal Reserve's H.15 gives it.
+_US_PRIME_LABEL = "Bank Prime Loan Rate"
+
+
+def _mortgage_label(term: str, country: str, margin: float) -> str:
+    """Return a mortgage term's legend label; the prime rate's with its margin when there is one.
+
+    "Prime Rate + 0.50 (chartered banks)", "Bank Prime Loan Rate – 0.25"
+    (batch 9.4, Terry 2026-10-08: the margin "shown in the legend"): two
+    decimals, three when the margin has a third (an eighth of a point).
+    Below the prime rate an en dash, as in the spreads' labels: the minus
+    sign (U+2212) is not in the Windows code page a redirected log is
+    written in, and the labels are printed in messages.
+    """
+    label = _US_PRIME_LABEL if (term, country) == ("prime", "us") else _MORTGAGE_LABELS[term]
+    if term != "prime" or margin == 0:
+        return label
+    size = abs(margin)
+    written = f"{size:.2f}" if round(size, 2) == size else f"{size:.3f}".rstrip("0")
+    name, _space, whose = label.partition(" (")
+    return f"{name} {'+' if margin > 0 else '–'} {written}" + (f" ({whose}" if whose else "")
 
 
 @dataclass(frozen=True)
@@ -310,14 +334,19 @@ def _mortgage_style(term: str) -> dict:
     return (VARIABLE_MORTGAGE_STYLE if term.endswith("v") else MORTGAGE_STYLE) | {"color": colour}
 
 
-def mortgage_rate(term: str) -> RateCurve | None:
-    """Return one mortgage term's rate (``config.MORTGAGE_TERMS``), or None with a warning if its source fails.
+def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) -> RateCurve | None:
+    """Return one mortgage term's rate (``config.MORTGAGE_TERMS``) for ``country``, or None with a warning if its source fails.
 
-    Canada's 5-year: the posted weekly rate, carried back before it begins by
-    the monthly CMHC rate (with a warning, and from 1975 only, if that fails).
+    ``country``: one of the term's countries, its only one when not given
+    (the prime rate is Canada's and the U.S.'). Canada's 5-year: the posted
+    weekly rate, carried back before it begins by the monthly CMHC rate
+    (with a warning, and from 1975 only, if that fails). The prime rate is
+    drawn plus ``margin`` points (``PlotConfig.prime_margin``, batch 9.4).
     """
-    country, yield_term = MORTGAGE_TERMS[term]
-    label = _MORTGAGE_LABELS[term]
+    countries, yield_term = MORTGAGE_TERMS[term]
+    if country is None:
+        (country,) = countries
+    label = _mortgage_label(term, country, margin)
     code = {"us": US_MORTGAGE_SERIES, "cdn": CDN_MORTGAGE_SERIES, "uk": UK_MORTGAGE_SERIES, "de": DE_MORTGAGE_SERIES}[country][term]
     try:
         if country == "uk":
@@ -339,6 +368,8 @@ def mortgage_rate(term: str) -> RateCurve | None:
             )
         else:
             values = pd.concat([history.loc[history.index < values.index[0]], values])
+    if term == "prime" and margin:
+        values = values + margin
     color_of = YIELD_TERMS[yield_term] if yield_term is not None else None
     return RateCurve(f"mortgage_{term}", label, values, _mortgage_style(term), title="Mortgage Rates", color_of=color_of)
 
@@ -423,13 +454,13 @@ def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[
         with downloads_of(f"{adjective} policy rate"):
             curves.append({"us": us_policy_rate, "cdn": cdn_policy_rate, "uk": uk_policy_rate, "de": de_policy_rate}[country]())
     if config.mortgages:
-        terms = [term for term in config.mortgage_terms if MORTGAGE_TERMS[term][0] == country]
+        terms = [term for term in config.mortgage_terms if country in MORTGAGE_TERMS[term][0]]
         if not terms:
             own = ",".join(nation_by_key(country).mortgage_terms)
             warn_none_drawn(country, "mortgage rate", f"none of its mortgage terms ({own}) is chosen")
         else:
             with downloads_of(f"{adjective} mortgage rates"):
-                curves += [mortgage_rate(term) for term in terms]
+                curves += [mortgage_rate(term, country, config.prime_margin if term == "prime" else 0.0) for term in terms]
     if config.spreads:
         curves += yield_spreads(country, yields, config)
     chosen = []
