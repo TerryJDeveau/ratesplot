@@ -95,13 +95,17 @@ _MORTGAGE_LABELS = {
     "1": "1-Year Mortgage (posted)",
     "5v": "5-Year Variable Mortgage (broker avg.)",
     "prime": "Prime Rate (chartered banks)",
-    "2f": "2-Year Fixed Mortgage (quoted, 75% LTV)",
-    "3f": "3-Year Fixed Mortgage (quoted, 75% LTV)",
-    "5f": "5-Year Fixed Mortgage (quoted, 75% LTV)",
-    "svr": "Standard Variable Rate (quoted)",
-    "1-5": "Mortgage, fixed 1–5 Years (new loans, avg.)",
-    "5-10": "Mortgage, fixed 5–10 Years (new loans, avg.)",
-    "over10": "Mortgage, fixed over 10 Years (new loans, avg.)",
+    # The UK's and Germany's (batch 10.1, Terry 2026-10-08): no "fixed", as
+    # for Canada and the U.S., where it is implied; no "quoted". The UK's
+    # "75% LTV" stays: the Bank quotes the same loans at 90 and 95 % too, and
+    # they differ (the 2-year 2.79 % at 75 % since 2015, 3.55 at 90, 4.37 at 95).
+    "2f": "2-Year Mortgage (75% LTV)",
+    "3f": "3-Year Mortgage (75% LTV)",
+    "5f": "5-Year Mortgage (75% LTV)",
+    "svr": "Standard Variable Rate (SVR)",
+    "1-5": "1–5-Year Mortgage (new loans, avg.)",
+    "5-10": "5–10-Year Mortgage (new loans, avg.)",
+    "over10": "Over-10-Year Mortgage (new loans, avg.)",
 }
 
 
@@ -224,20 +228,21 @@ def uk_policy_rate() -> RateCurve | None:
     return RateCurve("policy", "Official Bank Rate", values, POLICY_RATE_STYLE, title="Policy Rate")
 
 
-def _uk_mortgage(term: str) -> tuple[pd.Series, str]:
-    """Return one UK mortgage term's monthly rate, dated by each month's first day, and its label.
+def _uk_mortgage(term: str) -> pd.Series:
+    """Return one UK mortgage term's monthly rate, dated by each month's first day.
 
     The standard variable rate is carried back by the baked variable
-    mortgage rate (from 1939), and labelled so.
+    mortgage rate (from 1939). Its label says nothing of the join (Terry,
+    2026-10-08, batch 10.1: it read "Variable Mortgage Rate, quoted SVR from
+    1995-01"): before the 1990s nearly every UK mortgage was at a standard
+    variable rate, so "SVR" fits the whole line; --help says where it joins.
     """
     monthly = iadb_series(UK_MORTGAGE_SERIES[term])
     values = _clean(monthly.set_axis(monthly.index.to_period("M").start_time))
-    label = _MORTGAGE_LABELS[term]
     history = _baked(EMBEDDED_UK_MORTGAGE_HISTORY) if term == "svr" else values.iloc[:0]
     if not history.empty and not values.empty and history.index[0] < values.index[0]:
         values = _joined(history, values)
-        label = f"Variable Mortgage Rate, quoted SVR from {monthly.index[0]:%Y-%m}"
-    return values, label
+    return values
 
 
 def de_policy_rate() -> RateCurve | None:
@@ -316,7 +321,7 @@ def mortgage_rate(term: str) -> RateCurve | None:
     code = {"us": US_MORTGAGE_SERIES, "cdn": CDN_MORTGAGE_SERIES, "uk": UK_MORTGAGE_SERIES, "de": DE_MORTGAGE_SERIES}[country][term]
     try:
         if country == "uk":
-            values, label = _uk_mortgage(term)
+            values = _uk_mortgage(term)
         elif country == "de":
             values = _de_mortgage(term)
         else:

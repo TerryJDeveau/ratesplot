@@ -548,8 +548,9 @@ _YIELD_CHOICES = (
 _MORTGAGE_CHOICES = (
     ("U.S.", (("30", "30y"), ("15", "15y"))),
     ("Canada", (("5", "5y"), ("3", "3y"), ("1", "1y"), ("5v", "5y var."), ("prime", "prime"))),
-    ("UK", (("2f", "2y fixed"), ("3f", "3y fixed"), ("5f", "5y fixed"), ("svr", "SVR"))),
-    ("Germany", (("1-5", "1–5y fixed"), ("5-10", "5–10y fixed"), ("over10", "over 10y fixed"))),
+    # Without "fixed", as the legends are (batch 10.1).
+    ("UK", (("2f", "2y"), ("3f", "3y"), ("5f", "5y"), ("svr", "SVR"))),
+    ("Germany", (("1-5", "1–5y"), ("5-10", "5–10y"), ("over10", "over 10y"))),
 )
 _SPREAD_CHOICES = (
     ("", tuple((f"{a}-{b}", f"{a}–{b}") for a, b in DEFAULT_SPREADS)),
@@ -690,7 +691,7 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "mortgage-terms", Kind.VALUE, ("mortgage_terms",), "rates", "--mortgages:LIST / --mo:LIST",
         "the terms: 30 15 (U.S.), 5 3 1 5v prime\n(Canada; 5v variable, broker average;\nprime, the banks' prime rate),\n"
-        "2f 3f 5f svr (UK: fixed 2, 3, 5 years;\nthe standard variable rate),\n"
+        "2f 3f 5f svr (UK: fixed 2, 3, 5 years;\nsvr the standard variable rate, quoted\nfrom 1995, the millennium dataset's\nvariable mortgage rate from 1939),\n"
         "1-5 5-10 over10 (Germany: fixed over 1\nto 5, over 5 to 10, over 10 years);\n"
         f"default {','.join(DEFAULT_MORTGAGE_TERMS)} (the UK's: svr; Germany's:\n5-10); turns --mortgages on",
         names=("mortgages",), shortest=2, parse=parse_mortgage_terms, turns_on="mortgages",
