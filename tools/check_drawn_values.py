@@ -74,13 +74,10 @@ TOLERANCE = 1e-9
 DAILY_CARRY_DAYS = 7
 # A monthly value may be carried to the next when one month is missing.
 MONTHLY_CARRY_DAYS = 62
-# Canada's 3-month is the Bank of Canada's treasury-bill auction average,
-# one value every second week, which fetch_cdn_yields fills twice with
-# ffill(limit=3), before and after the join to the PDF history: each value
-# is carried up to six business days (found by this tool, 2026-10-13).
-# Batch 9 replaces it with the daily market yield; until then its carries
-# are allowed up to the auction cadence and shown in the report.
-AUCTION_CARRY_DAYS = 14
+# Canada's 3-month was the treasury-bill auction average, one value every
+# second week, its values carried up to six business days (found by this
+# tool, 2026-10-13); since batch 9.2 it is the daily market yield from 2001,
+# the auctions only in December 2000, so the daily limit holds for both.
 
 # Each case: a name and the command line drawn (the pinned end added).
 # Chosen to cross every join the yield axis has: Canada's PDF history to
@@ -180,11 +177,11 @@ def yield_sources(nation: str, column: str) -> list[Source]:
         return [fred(us_data.US_YIELD_SERIES[column])]
     if nation == "cdn":
         if column == "3-Month":
-            live = valet(cdn_data.BOC_3M_TBILL_SERIES, carry_days=AUCTION_CARRY_DAYS)
+            live = [valet(cdn_data.BOC_3M_TBILL_SERIES), valet(cdn_data.BOC_3M_AUCTION_SERIES)]
         else:
             code = next(code for code, name in cdn_data.BOC_BENCHMARK_COLUMNS.items() if name == column)
-            live = valet_group(cdn_data.BOC_BENCHMARK_GROUP, code)
-        sources = [live, built_in_cdn_yield(column)]
+            live = [valet_group(cdn_data.BOC_BENCHMARK_GROUP, code)]
+        sources = [*live, built_in_cdn_yield(column)]
         if column in cdn_data._YIELD_STAND_INS:
             sources.append(built_in(f"{column} stand-in (term-band average)", cdn_data._YIELD_STAND_INS[column], carry_days=MONTHLY_CARRY_DAYS))
         return sources

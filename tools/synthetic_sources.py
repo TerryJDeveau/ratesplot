@@ -182,6 +182,7 @@ def _valet_csv(columns: dict[str, np.ndarray], dates: pd.DatetimeIndex) -> bytes
 _CDN_OFFSET = 0.3
 _VALET_SERIES = {
     "V80691303": ("2000-12-01", "B", 0.25, 0.0),
+    "TB.CDN.90D.MID": ("2001-01-02", "B", 0.25, 0.0),
     "V122530": ("1935-03-01", "MS", 0.0, 0.25),
     "AVG.INTWO": ("1997-01-02", "B", 0.0, 0.0),
     "V80691335": ("1975-01-01", "W-WED", 10, 2.4),

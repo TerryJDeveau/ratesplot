@@ -420,7 +420,7 @@ def _census(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
 
 
 CHECKS: tuple[Check, ...] = (
-    Check("boc", "Bank of Canada benchmark yields and 3-month bill (Valet)", DAILY, _cdn_yields),
+    Check("boc", "Bank of Canada benchmark yields and daily 3-month bill (Valet)", DAILY, _cdn_yields),
     Check("boc_debt", "Bank of Canada: GoC market debt outstanding (Valet)", DAILY, _market_debt),
     Check("statcan_debt", "StatCan 36-10-0467 general government gross debt", QUARTERLY, _cdn_column(cdn_data.fetch_cdn_debt, CDN_DEBT_COLUMN)),
     Check("statcan_gdp", "StatCan 36-10-0104 GDP", QUARTERLY, _cdn_column(cdn_data.fetch_cdn_gdp, GDP_COLUMN)),

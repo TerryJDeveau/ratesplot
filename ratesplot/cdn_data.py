@@ -88,7 +88,15 @@ BOC_BENCHMARK_COLUMNS = {
     "BD.CDN.10YR.DQ.YLD": "10-Year",
     "BD.CDN.LONG.DQ.YLD": "30-Year",
 }
-BOC_3M_TBILL_SERIES = "V80691303"
+# The 3-month after the PDF history (batch 9.2): the daily mid-market yield
+# of the 3-month treasury bill, from 2001-01-02, as the benchmarks are. It
+# replaces the bi-weekly auction average, which is kept only before the
+# daily begins: its two auctions of December 2000, after the history's last
+# month. Measured 2026-10-20: on the 676 auction days since 2001 the two
+# differ by a median 0.01 points, at most 0.34. Each stands in for the
+# other, with a warning, if it fails (``_cdn_3_month``).
+BOC_3M_TBILL_SERIES = "TB.CDN.90D.MID"
+BOC_3M_AUCTION_SERIES = "V80691303"
 # Baked term-band yields standing in for a benchmark before it begins.
 _YIELD_STAND_INS = {"2-Year": EMBEDDED_CDN_2Y_STAND_IN, "5-Year": EMBEDDED_CDN_5Y_STAND_IN}
 FRED_CDN_GDP_SERIES = "NGDPSAXDCCAQ"  # fallback if the StatCan GDP table fails
@@ -229,6 +237,32 @@ def with_yield_stand_ins(historical: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _cdn_3_month() -> pd.Series | None:
+    """Return the 3-month yield after the PDF history: the auction average until the daily yield begins, then the daily.
+
+    See ``BOC_3M_TBILL_SERIES``. Either alone, with a warning, if the other
+    fails (or answers with no values); None, with a warning, if both do.
+    """
+    found: dict[str, pd.Series | None] = {}
+    for code, name in ((BOC_3M_TBILL_SERIES, "daily 3-month T-bill yield"), (BOC_3M_AUCTION_SERIES, "3-month T-bill auctions")):
+        try:
+            values = boc_valet_series(code).dropna()
+            if values.empty:
+                raise ValueError("no values")
+        except Exception as exc:
+            print(f"  Warning: Bank of Canada {name} ({code}) unavailable ({exc}).")
+            values = None
+        found[code] = values
+    daily, auctions = found[BOC_3M_TBILL_SERIES], found[BOC_3M_AUCTION_SERIES]
+    if daily is None:
+        print("  Warning: " + ("the 3-month auction averages instead, one every second week." if auctions is not None
+                               else "no Canadian 3-month yield after 2000; drawn without it."))
+        return auctions
+    if auctions is None:
+        return daily
+    return pd.concat([auctions.loc[auctions.index < daily.index[0]], daily])
+
+
 def fetch_cdn_yields(config: PlotConfig) -> pd.DataFrame:
     """Return Canadian benchmark yields: transcribed history through 2000, live after.
 
@@ -249,10 +283,9 @@ def fetch_cdn_yields(config: PlotConfig) -> pd.DataFrame:
 
     with downloads_of("Bank of Canada benchmark yields"):
         yields = boc_valet_group(BOC_BENCHMARK_GROUP).rename(columns=BOC_BENCHMARK_COLUMNS)
-        try:
-            yields = yields.join(boc_valet_series(BOC_3M_TBILL_SERIES).rename("3-Month"), how="outer")
-        except Exception as exc:
-            print(f"  Warning: Bank of Canada 3-month T-bill ({BOC_3M_TBILL_SERIES}) unavailable ({exc}); drawn without it.")
+        three_month = _cdn_3_month()
+        if three_month is not None:
+            yields = yields.join(three_month.rename("3-Month"), how="outer")
 
     available = [column for column in YIELD_COLUMNS if column in yields.columns]
     # Short forward-fill bridges holidays and single missing prints only.
