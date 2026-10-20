@@ -574,9 +574,9 @@ def check_uk(check: Check) -> None:
         sorted(key for key in keys if key.startswith("choice:uk:")),
     )
     check(
-        "its own defaults ticked: all three terms, the standard variable rate",
+        "its own defaults ticked: all three terms, all four mortgage terms (batch 10.2)",
         all(page.checkbox(key=f"choice:uk:yields:{term}").value for term in ("5y", "10y", "20y"))
-        and page.checkbox(key="choice:uk:mortgage-terms:svr").value and not page.checkbox(key="choice:uk:mortgage-terms:2f").value,
+        and all(page.checkbox(key=f"choice:uk:mortgage-terms:{term}").value for term in ("2f", "3f", "5f", "svr")),
     )
     check("its value in its own field", page.text_input(key="value:uk:max").value == "9", page.text_input(key="value:uk:max").value)
     check("address kept", address(page) == "--nations:gb --end:2026-09-01 --uk:max:9", address(page))
@@ -602,19 +602,19 @@ def check_de(check: Check) -> None:
         sorted(key for key in keys if key.startswith("choice:de:")),
     )
     check(
-        "its own defaults ticked: 2 5 10 30, the 5-10 year band",
+        "its own defaults ticked: 2 5 10 30, all three bands (batch 10.2)",
         all(page.checkbox(key=f"choice:de:yields:{term}").value for term in ("2y", "5y", "10y", "30y"))
         and not page.checkbox(key="choice:de:yields:7y").value
-        and page.checkbox(key="choice:de:mortgage-terms:5-10").value and not page.checkbox(key="choice:de:mortgage-terms:1-5").value,
+        and all(page.checkbox(key=f"choice:de:mortgage-terms:{term}").value for term in ("1-5", "5-10", "over10")),
     )
     check("its value in its own field", page.text_input(key="value:de:max").value == "6", page.text_input(key="value:de:max").value)
     check("address written with --ger:, not --de: (which is --debt:)",
           address(page) == "--nations:de --mortgages --end:2026-09-01 --ger:max:6", address(page))
-    page.checkbox(key="choice:de:mortgage-terms:over10").check()
+    page.checkbox(key="choice:de:mortgage-terms:1-5").uncheck()
     page.run()
     tokens = address(page).split()
     drawn = drawn_config(config_from_choices(*sort_tokens(tokens)[:2]), "de").mortgage_terms
-    check("a band ticked: the address draws Germany's two bands", drawn == ("5-10", "over10"), (address(page), drawn))
+    check("a band unticked: the address draws Germany's other two", drawn == ("5-10", "over10"), (address(page), drawn))
     page.checkbox(key="flag:uk").check()
     page.run()
     check("the UK ticked too: two charts", charts_shown(page) == 2, charts_shown(page))

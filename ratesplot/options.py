@@ -693,7 +693,7 @@ OPTIONS: tuple[Option, ...] = (
         "the terms: 30 15 (U.S.), 5 3 1 5v prime\n(Canada; 5v variable, broker average;\nprime, the banks' prime rate),\n"
         "2f 3f 5f svr (UK: fixed 2, 3, 5 years;\nsvr the standard variable rate, quoted\nfrom 1995, the millennium dataset's\nvariable mortgage rate from 1939),\n"
         "1-5 5-10 over10 (Germany: fixed over 1\nto 5, over 5 to 10, over 10 years);\n"
-        f"default {','.join(DEFAULT_MORTGAGE_TERMS)} (the UK's: svr; Germany's:\n5-10); turns --mortgages on",
+        f"default {','.join(DEFAULT_MORTGAGE_TERMS)} (the UK's and Germany's: all\ntheir terms); turns --mortgages on",
         names=("mortgages",), shortest=2, parse=parse_mortgage_terms, turns_on="mortgages",
         label="Mortgage terms", format=format_terms, editor="choices", choices=_MORTGAGE_CHOICES,
     ),

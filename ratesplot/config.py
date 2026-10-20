@@ -496,14 +496,15 @@ NATIONS: tuple[Nation, ...] = (
     # Batch 3: drawn only when asked for, so every existing command line
     # draws what it drew. Its own defaults, since the defaults for every
     # chart would draw two of its three yield terms, none of its mortgage
-    # terms and none of its spreads: all three terms, the standard variable
-    # rate (Terry, 2026-10-06: its history runs from 1939), the 10y-5y and
-    # 20y-10y spreads.
+    # terms and none of its spreads: all three terms, all its mortgage terms
+    # (Terry, 2026-10-08, batch 10.2: for nations other than Canada and the
+    # U.S., all ticked; the standard variable rate alone before), the 10y-5y
+    # and 20y-10y spreads.
     Nation(
         "uk", "United Kingdom", ("gb", "uk"), ("5y", "10y", "20y"), "UK", shown_by_default=False,
         own_defaults=(
             ("yield_terms", ("5y", "10y", "20y")),
-            ("mortgage_terms", ("svr",)),
+            ("mortgage_terms", ("2f", "3f", "5f", "svr")),
             ("spread_pairs", (("10y", "5y"), ("20y", "10y"))),
         ),
     ),
@@ -513,13 +514,14 @@ NATIONS: tuple[Nation, ...] = (
     # three-letter code; Terry, 2026-10-07: "--deu:max:6 is ok"). Its own defaults, which are
     # what the defaults for every chart draw on its chart (it has no 3-month
     # yield), given so that no default chart notes the 3-month's absence;
-    # and its usual fixation, 5 to 10 years, as its mortgage rate.
+    # and all three fixation bands as its mortgage rates (batch 10.2, as the
+    # UK's; its usual fixation, 5 to 10 years, alone before).
     Nation(
         "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "5y", "7y", "10y", "20y", "30y"), "German",
         shown_by_default=False, list_only_codes=("de",),
         own_defaults=(
             ("yield_terms", ("2y", "5y", "10y", "30y")),
-            ("mortgage_terms", ("5-10",)),
+            ("mortgage_terms", ("1-5", "5-10", "over10")),
             ("spread_pairs", (("10y", "2y"), ("30y", "10y"))),
         ),
     ),
