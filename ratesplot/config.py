@@ -290,7 +290,9 @@ TREASURY_DEBT_TO_PENNY_URL = "https://api.fiscaldata.treasury.gov/services/api/f
 # bond yields for both countries, a few minutes old. Unofficial, so it may
 # change without notice; the chart is then drawn without it, with a warning.
 CNBC_QUOTE_URL = "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol"
-# Quotes are timed in New York / Toronto time (both markets' hours).
+# Quotes are timed in New York / Toronto time (both markets' hours), and so
+# dated by Toronto's day, as the chart's end is; each chart's subtitle gives
+# their time in its own market's zone (Nation.market_timezone, batch 10.3).
 MARKET_TIMEZONE = "America/Toronto"
 # Bank of Canada: Government of Canada treasury bills and domestic marketable
 # bonds outstanding, the total (real return bonds with their inflation
@@ -450,6 +452,11 @@ class Nation:
     # Codes that name it in --nations:LIST only, never in front of a value:
     # there they would spell another option (batch 4: "--de:fp" is --debt:fp).
     list_only_codes: tuple[str, ...] = ()
+    # The time zone of its main financial centre, in which its chart's
+    # subtitle gives the time of the day's quotes (batch 10.3, Terry
+    # 2026-10-08: London time on the UK's chart, not EDT). The quotes are
+    # still dated by Toronto's day (MARKET_TIMEZONE), as the chart's end is.
+    market_timezone: str = MARKET_TIMEZONE
 
     @property
     def prefix(self) -> str:
@@ -490,9 +497,12 @@ class Nation:
 
 # In drawing order, as plotting.COUNTRIES. The codes are ISO 3166 two-letter
 # codes, plus the program's own "cdn".
+# Their market zones (batch 10.3): Toronto, New York (the same clock),
+# London (GMT, BST in summer) and Frankfurt (CET, CEST; the time-zone
+# database's Europe/Berlin).
 NATIONS: tuple[Nation, ...] = (
-    Nation("cdn", "Canada", ("ca", "cdn"), DEFAULT_YIELD_TERMS, "Canadian"),
-    Nation("us", "United States", ("us",), tuple(YIELD_TERMS), "U.S."),
+    Nation("cdn", "Canada", ("ca", "cdn"), DEFAULT_YIELD_TERMS, "Canadian", market_timezone="America/Toronto"),
+    Nation("us", "United States", ("us",), tuple(YIELD_TERMS), "U.S.", market_timezone="America/New_York"),
     # Batch 3: drawn only when asked for, so every existing command line
     # draws what it drew. Its own defaults, since the defaults for every
     # chart would draw two of its three yield terms, none of its mortgage
@@ -502,6 +512,7 @@ NATIONS: tuple[Nation, ...] = (
     # and 20y-10y spreads.
     Nation(
         "uk", "United Kingdom", ("gb", "uk"), ("5y", "10y", "20y"), "UK", shown_by_default=False,
+        market_timezone="Europe/London",
         own_defaults=(
             ("yield_terms", ("5y", "10y", "20y")),
             ("mortgage_terms", ("2f", "3f", "5f", "svr")),
@@ -518,7 +529,7 @@ NATIONS: tuple[Nation, ...] = (
     # UK's; its usual fixation, 5 to 10 years, alone before).
     Nation(
         "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "5y", "7y", "10y", "20y", "30y"), "German",
-        shown_by_default=False, list_only_codes=("de",),
+        shown_by_default=False, list_only_codes=("de",), market_timezone="Europe/Berlin",
         own_defaults=(
             ("yield_terms", ("2y", "5y", "10y", "30y")),
             ("mortgage_terms", ("1-5", "5-10", "over10")),

@@ -472,6 +472,7 @@ def draw_country(
         end_labels,
         quote_time if yield_lines else None,
         rate_labels,
+        nation_by_key(metadata.key).market_timezone,
     )
 
 

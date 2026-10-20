@@ -55,7 +55,8 @@ python -m pip install -r requirements.txt
 | `--no-cur` | without the latest daily and intraday values |
 
 Intraday yield quotes (from CNBC's quote feed) and the projection of each curve to today are
-provisional, and drawn as such.
+provisional, and drawn as such. The subtitle gives the quotes' time in each market's own zone
+(Toronto's, New York's, London's, Frankfurt's).
 
 ## Layout
 

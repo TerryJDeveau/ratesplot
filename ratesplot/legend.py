@@ -302,6 +302,25 @@ def auto_place_legend(
 # ---------------------------------------------------------------------------
 
 
+def _quote_time_text(quote_time: pd.Timestamp, last: pd.Timestamp, zone: str | None) -> str:
+    """Return the subtitle's words for the quotes' time: " 11:42 BST (intraday, provisional)".
+
+    The time is given in ``zone``, the chart's market (batch 10.3, Terry
+    2026-10-08: London time on the UK's chart, Frankfurt time on Germany's;
+    None: as ``quote_time`` is, Toronto's). The quotes are dated by Toronto's
+    day, the chart's ``last``. Where it is already the next day in the
+    market (between midnight there and midnight in Toronto) the date is
+    written too: " (quoted 2026-10-21 01:00 JST; intraday, provisional)".
+    Quotes from 17:00 in Toronto are not used (``latest._NEXT_SESSION_HOUR``),
+    so for London and Frankfurt, at most six hours ahead, that cannot happen
+    today; a nation further east (Tokyo, 13 hours) would meet it.
+    """
+    local = quote_time.tz_convert(zone) if zone is not None else quote_time
+    if local.tz_localize(None).normalize() == last:
+        return f" {local:%H:%M %Z} (intraday, provisional)"
+    return f" (quoted {local:%Y-%m-%d %H:%M %Z}; intraday, provisional)"
+
+
 def finish_legend_and_title(
     ax: Axes,
     legend_groups: Sequence[Sequence[Artist]],
@@ -311,6 +330,7 @@ def finish_legend_and_title(
     end_labels: Sequence[tuple[Line2D, ValueFormatter]] = (),
     quote_time: pd.Timestamp | None = None,
     rate_labels: Sequence[RateLabel] = (),
+    quote_zone: str | None = None,
 ) -> None:
     """Add title and date-range subtitle, fix the layout and x-limits, label line ends, then place the legend.
 
@@ -319,7 +339,8 @@ def finish_legend_and_title(
     ``config.end``). With nothing drawn it falls back to the axis range.
     When the drawing ends with intraday quotes (--cur), ``quote_time`` is when
     they were taken, and the subtitle says so: "… – 2026-09-28 13:50 EDT
-    (intraday, provisional)".
+    (intraday, provisional)", the time in ``quote_zone``, the chart's
+    market (``_quote_time_text``).
 
     ``end_labels`` (-l) are the curves to label at their ends, each with the
     formatter for its value. The labels widen the date axis to the right, so
@@ -358,8 +379,10 @@ def finish_legend_and_title(
     subtitle_fs = (TITLE_FS - _SUBTITLE_FS_REDUCTION_PT) * scale
     subtitle_y = _TITLE_TOP_Y - _SUBTITLE_DROP_TITLE_SIZES * title_artist.get_fontsize() / 72.0 / max(figure_height, 0.1)
     subtitle = f"{first:%Y-%m-%d} – {last:%Y-%m-%d}"
+    # The quotes are dated by Toronto's day (latest.intraday_yields_after),
+    # so they end the chart when that day is its last.
     if quote_time is not None and quote_time.tz_localize(None).normalize() == last:
-        subtitle += f" {quote_time:%H:%M %Z} (intraday, provisional)"
+        subtitle += _quote_time_text(quote_time, last, quote_zone)
     figure.text(
         0.5,
         subtitle_y,
