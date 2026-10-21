@@ -6,7 +6,7 @@ config            constants, per-country metadata, HTTP session, PlotConfig; the
                   nations (Nation, NATIONS) and the choices each may have its own of
 frames            small DataFrame helpers shared by the layers below
 http              retrying GET helper, FRED CSV reader, BoC CSV parser, session download cache,
-                  the message log's line for each real download
+                  the message log's line for each real download, one request at a time per host
 console           printed output routed by thread (the message log; the trial pass discarded)
 axes              y-axis configuration, limit padding, currency and percent formatters
 legend            legend auto-placement, title/subtitle/layout finishing

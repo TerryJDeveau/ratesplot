@@ -405,6 +405,28 @@ def raise_if_web_page(url: str, body: bytes) -> None:
     raise SourcePage(urlsplit(url).netloc, title or "untitled")
 
 
+# ---------------------------------------------------------------------------
+# One request at a time to each host (batch 19.1)
+# ---------------------------------------------------------------------------
+# The nations' sources may be fetched side by side, but each host still gets
+# one request at a time from the program, as when everything was fetched in
+# turn: decision 42, "each host's own requests still in turn", so that the
+# sources see one client asking, not several at once (Terry, 2026-10-21: the
+# program must not become a nuisance to them). A host is the address's
+# network location; a redirect to another host is not held apart.
+_host_locks: dict[str, threading.Lock] = {}
+_host_locks_lock = threading.Lock()
+
+
+@contextlib.contextmanager
+def host_turn(url: str) -> Iterator[None]:
+    """Hold ``url``'s host for one request: another thread's request to the same host waits until it ends."""
+    host = urlsplit(url).netloc
+    with _host_locks_lock:
+        lock = _host_locks.setdefault(host, threading.Lock())
+    with lock:
+        yield
+
 def _with_retries(
     describe: str,
     attempt_once: Callable[[], T],
@@ -454,7 +476,8 @@ def _session_get(
     """
 
     def attempt() -> requests.Response | None:
-        response = session.get(url, params=params, timeout=timeout)
+        with host_turn(url):
+            response = session.get(url, params=params, timeout=timeout)
         # Before the status: the check's own page may be a 400, which would be retried.
         if any(path in response.url for path in _BOT_CHECK_PATHS):
             raise BotCheck(urlsplit(url).netloc)
@@ -558,7 +581,8 @@ def get_if_published(
     """
 
     def attempt() -> requests.Response | None:
-        response = CANADIAN_SESSION.get(url, timeout=timeout)
+        with host_turn(url):
+            response = CANADIAN_SESSION.get(url, timeout=timeout)
         if response.status_code == 404:
             return None
         response.raise_for_status()
@@ -588,7 +612,7 @@ def fetch_fred_csv(series_id: str, *, max_retries: int = DEFAULT_FRED_RETRIES) -
     url = f"{FRED_CSV_URL}?id={series_id}"
 
     def attempt() -> pd.DataFrame:
-        with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:
+        with host_turn(url), urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:
             body = response.read()
             # As pandas does for a URL: a gzip-encoded answer is unpacked.
             if response.headers.get("Content-Encoding") == "gzip":
