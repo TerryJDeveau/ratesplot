@@ -1594,9 +1594,10 @@ class RatesPlotApp:
         line for each real download (``http.drawing_downloads``); the main
         thread's output goes to the console as before. A chart that cannot
         be drawn (its source down, 2026-10-21) is named, and the others are
-        drawn.
+        drawn; a source drawn from its last good copy (batch 20) is named in
+        the status line, once the drawing's log has its warning.
         """
-        with this_thread_output_to(lambda text: self.messages.put(("log", text))), http.drawing_downloads():
+        with this_thread_output_to(lambda text: self.messages.put(("log", text))), http.drawing_downloads() as downloads:
             try:
                 drawn = resolve_start(config)
             except Exception as exc:  # reported in the window and log, never swallowed
@@ -1614,7 +1615,7 @@ class RatesPlotApp:
                 # Measured after savefig, so the axes positions are the final rendered ones.
                 geometry = ChartGeometry.from_figure(figure, drawn)
                 self.messages.put(("chart", country.key, png, geometry))
-            self.messages.put(("done", config, drawn, not_drawn))
+        self.messages.put(("done", config, drawn, not_drawn, downloads.copies_used()))
 
     def _poll(self) -> None:
         """Handle every message the worker has posted, then check again shortly."""
@@ -1630,7 +1631,7 @@ class RatesPlotApp:
                     self._append_log(message[2])
                     self._clear_chart(message[1])
                 elif kind == "done":
-                    self._render_finished(message[1], None, message[2], message[3])
+                    self._render_finished(message[1], None, message[2], message[3], message[4])
                 elif kind == "failed":
                     self._append_log(message[3])
                     self._render_finished(message[1], message[2])
@@ -1657,7 +1658,12 @@ class RatesPlotApp:
         self.canvases[key].delete("all")
 
     def _render_finished(
-        self, config: PlotConfig, error: str | None, drawn: PlotConfig | None = None, not_drawn: dict[str, str] | None = None
+        self,
+        config: PlotConfig,
+        error: str | None,
+        drawn: PlotConfig | None = None,
+        not_drawn: dict[str, str] | None = None,
+        copies: list[str] | None = None,
     ) -> None:
         self.rendering = False
         if error is None:
@@ -1668,10 +1674,11 @@ class RatesPlotApp:
             drawn = [TAB_TITLES.get(c.key, c.key) for c in COUNTRIES if getattr(config, c.show_field) and c.key not in not_drawn]
             names = drawn[0] if len(drawn) == 1 else f"{', '.join(drawn[:-1])} and {drawn[-1]}"
             failures = "; ".join(f"{TAB_TITLES.get(key, key)} not drawn: {why}" for key, why in not_drawn.items())
-            if not drawn:
-                self.status.set(f"{failures} (details in the message log)")
-            elif failures:
-                self.status.set(f"Drawn: {names}. {failures} (details in the message log)")
+            # Sources that failed and were drawn from their last good copies (batch 20).
+            from_copies = f"From last good copies, their sources failing: {'; '.join(copies)}." if copies else ""
+            if failures or from_copies:
+                parts = [f"Drawn: {names}." if drawn else "", f"{failures}." if failures else "", from_copies]
+                self.status.set(" ".join(part for part in parts if part) + " (details in the message log)")
             else:
                 self.status.set(f"Drawn: {names} at {config.width_px} x {config.height_px} px.")
             self._show_hints()
@@ -2254,6 +2261,7 @@ def run_gui(
     """
     _enable_windows_dpi_awareness()
     http.enable_download_cache()
+    http.enable_last_good_copies()  # batch 20: drawn from when a source fails
     state, note, remembered_in = load_state()
     choices, notes = starting_choices(config, cli_payloads or {}, cli_flags or {}, state, remembered_in)
     if note:

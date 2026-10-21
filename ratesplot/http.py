@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import contextlib
 import gzip
+import hashlib
 import html
 import io
+import os
+import pickle
 import re
 import threading
 import time
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable, Iterator, TypeVar
 from urllib.parse import urlsplit
 
@@ -57,6 +61,106 @@ _download_cache: dict[tuple, tuple[float, float, object]] | None = None
 _download_cache_max_age: float | None = None  # seconds; None keeps each download for the session
 _download_cache_lock = threading.Lock()
 
+# ---------------------------------------------------------------------------
+# The last good copy of every download (batch 20)
+# ---------------------------------------------------------------------------
+# Terry, 2026-10-21, after FRED and Statistics Canada had answered for hours
+# with their outage pages: "It is nuts to discard data in hand one day and
+# then be unable to display it the next day because some site was down for
+# maintenance" (decision 48). So every download that succeeds through the
+# cache below is also kept on disk, one file per request, replaced at each
+# success; when a later request for it fails (an outage page, a bot check, a
+# timeout, an error status after the retries), the copy is used and the
+# drawing names the source and the copy's date (``drawing_downloads``). The
+# live request is always made first, so a copy never stands in for an answer
+# and revisions still arrive. Off by default; the window, the web page and
+# the command line turn it on (``enable_last_good_copies``); the harnesses,
+# which replace ``_cached``, and tools/check_sources.py, which must see a
+# source fail, do not. Intraday quotes are never cached, so never kept: a
+# quote of another moment is not the day's. On the web page's server the disk
+# lasts only while the app runs (a Reboot or a sleep starts it empty); the
+# baked history of batch 19.2 is what lasts there.
+
+_copies_folder: Path | None = None
+
+
+def last_good_folder() -> Path:
+    """``%LOCALAPPDATA%\\ratesplot\\last_good`` on Windows (``~/.cache/ratesplot/last_good`` elsewhere)."""
+    base = os.environ.get("LOCALAPPDATA")
+    return (Path(base) if base else Path.home() / ".cache") / "ratesplot" / "last_good"
+
+
+def enable_last_good_copies(folder: Path | None = None) -> None:
+    """Keep the last good copy of every cached download in ``folder`` (``last_good_folder``), and use it when its source fails.
+
+    A folder that cannot be made leaves the copies off, with a note.
+    """
+    global _copies_folder
+    folder = folder or last_good_folder()
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f"  Note: no copies of the downloads can be kept in {folder} ({exc}); a source that fails is not drawn.")
+        return
+    _copies_folder = folder
+
+
+def _copy_label(key: tuple) -> str:
+    """Name a download for the message log: its group's label (``downloads_of``), else its series or host."""
+    groups = _groups()
+    if groups:
+        return groups[-1].label
+    return f"FRED {key[1]}" if key[0] == "fred" else urlsplit(key[1]).netloc
+
+
+def _copy_path(key: tuple) -> Path:
+    assert _copies_folder is not None
+    return _copies_folder / (hashlib.sha256(repr(key).encode()).hexdigest() + ".pickle")
+
+
+def _keep_copy(key: tuple, result: object) -> None:
+    """Write ``result`` as ``key``'s last good copy, replacing the one before (atomically)."""
+    path = _copy_path(key)
+    temporary = path.with_name(f"{path.stem}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        temporary.write_bytes(pickle.dumps((key, time.time(), result)))
+        os.replace(temporary, path)
+    except OSError as exc:  # another window reading it on Windows, a full disk: the older copy stays
+        print(f"  Note: {_copy_label(key)}: no new copy kept ({exc}).")
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+
+
+def _last_good_copy(key: tuple) -> tuple[float, object] | None:
+    """Return ``(when it was downloaded, the copy)`` kept for ``key``; None if there is none."""
+    path = _copy_path(key)
+    try:
+        stored_key, fetched_wall, result = pickle.loads(path.read_bytes())
+    except FileNotFoundError:
+        return None
+    except Exception as exc:  # a damaged copy is no copy; said, not swallowed
+        print(f"  Note: {_copy_label(key)}: its kept copy could not be read ({exc}).")
+        return None
+    return (fetched_wall, result) if stored_key == key else None
+
+
+def _copy_used(key: tuple, fetched_wall: float, failure: Exception) -> None:
+    """Record that ``key``'s source failed and its copy was used: in the drawing's log at its end, else at once."""
+    label = _copy_label(key)
+    why = str(failure) or type(failure).__name__
+    drawing = getattr(_log_state, "drawing", None)
+    if drawing is None:
+        print(f"  Warning: {label}: {why}; drawn from its last good copy, downloaded {_utc_text(fetched_wall)}.")
+        return
+    earlier = drawing.copies.get(label)
+    if earlier is None or fetched_wall < earlier[0]:  # a group's oldest copy is the one named
+        drawing.copies[label] = (fetched_wall, why)
+
+
+def _utc_text(wall: float) -> str:
+    """``2026-10-21 18:30 UTC``."""
+    return f"{datetime.fromtimestamp(wall, timezone.utc):%Y-%m-%d %H:%M} UTC"
+
 
 # ---------------------------------------------------------------------------
 # The message log's download lines
@@ -94,6 +198,14 @@ class _Drawing:
     write: Callable[[str], object]
     began: float  # time.monotonic() when the drawing began
     reused: dict[tuple, float] = field(default_factory=dict)  # cache key -> when it was fetched (time.time())
+    # A group of downloads (its label) whose source failed and whose last good
+    # copy was drawn -> (when the oldest copy used was downloaded, time.time();
+    # why the source failed). Batch 20.
+    copies: dict[str, tuple[float, str]] = field(default_factory=dict)
+
+    def copies_used(self) -> list[str]:
+        """The sources drawn from their last good copies, each with the copy's date: "FRED Treasury yields (2026-10-21 18:30 UTC)"."""
+        return [f"{label} ({_utc_text(when)})" for label, (when, _why) in self.copies.items()]
 
 
 _log_state = threading.local()  # .groups: list[_Group]; .drawing: _Drawing | None
@@ -152,19 +264,26 @@ def _note_reused(key: tuple, fetched_at: float, fetched_wall: float) -> None:
 
 
 @contextlib.contextmanager
-def drawing_downloads() -> Iterator[None]:
+def drawing_downloads() -> Iterator[_Drawing]:
     """Log the downloads of one drawing (see above), and end with how many earlier ones it reused.
 
     The window's worker, a web visitor's drawing and the command line's
     run each wrap their whole drawing in this, the trial pass included.
+    It also ends with a warning for each source whose last good copy was
+    drawn (batch 20), once however many times the drawing asked for it:
+    written at the end, the trial pass's silence cannot swallow it. The
+    drawing is yielded, so the window and the page can say so too
+    (``_Drawing.copies_used``).
     """
     drawing = _Drawing(write=current_writer(), began=time.monotonic())
     previous = getattr(_log_state, "drawing", None)
     _log_state.drawing = drawing
     try:
-        yield
+        yield drawing
     finally:
         _log_state.drawing = previous
+        for label, (when, why) in drawing.copies.items():
+            drawing.write(f"  Warning: {label}: {why}; drawn from its last good copy, downloaded {_utc_text(when)}.\n")
         if drawing.reused:
             oldest = datetime.fromtimestamp(min(drawing.reused.values()), timezone.utc)
             # The time alone on the day it is; a window left open overnight gets the date too.
@@ -203,6 +322,10 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     A result served again is counted for the message log (``_note_reused``);
     ``download`` logs a real one itself (``log_download``), so the harnesses'
     stand-ins for this function log what they really download, and nothing else.
+    With the last good copies on (batch 20, above), each real download that
+    succeeds is kept on disk, and one that fails returns its kept copy, if
+    there is one, and is named in the drawing's log; a copy is not put in
+    the memory cache, so the next drawing asks the source again.
     """
     with _download_cache_lock:
         if _download_cache is not None and key in _download_cache:
@@ -210,7 +333,17 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
             if _download_cache_max_age is None or time.monotonic() - fetched_at <= _download_cache_max_age:
                 _note_reused(key, fetched_at, fetched_wall)
                 return result  # type: ignore[return-value]
-    result = download()
+    try:
+        result = download()
+    except Exception as failure:
+        kept = _last_good_copy(key) if _copies_folder is not None else None
+        if kept is None:
+            raise
+        fetched_wall, copy = kept
+        _copy_used(key, fetched_wall, failure)
+        return copy  # type: ignore[return-value]
+    if _copies_folder is not None and result is not None:  # None: a 404 asked for with missing_ok
+        _keep_copy(key, result)
     with _download_cache_lock:
         if _download_cache is not None:
             _download_cache[key] = (time.monotonic(), time.time(), result)

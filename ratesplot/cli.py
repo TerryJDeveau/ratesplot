@@ -30,7 +30,7 @@ from .options import (
     spells,
     switch_of,
 )
-from .http import drawing_downloads, enable_download_cache
+from .http import drawing_downloads, enable_download_cache, enable_last_good_copies
 from .plotting import resolve_start, run_cdn, run_de, run_uk, run_us
 
 
@@ -268,6 +268,10 @@ def main(argv: list[str] | None = None) -> None:
         run_gui(config, payloads, flags)
         return
 
+    # Each download's last good copy kept, and drawn when its source fails,
+    # with a warning at the end of the run (batch 20). The harnesses replace
+    # the cache the copies are kept in, so they never write or read one.
+    enable_last_good_copies()
     # One drawing for the message log: a line for each real download, the
     # trial pass's included (http.drawing_downloads).
     with drawing_downloads():

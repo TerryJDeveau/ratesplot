@@ -39,6 +39,10 @@ Visitors
     - Downloads are shared by every visitor and kept for
       ``DOWNLOAD_MAX_AGE_SECONDS`` (``http.enable_download_cache``); the
       intraday quotes are fetched for every drawing, as in the window.
+    - The last good copy of each download is kept on the server's disk and
+      drawn when its source fails, with a notice above the charts (batch 20,
+      ``http.enable_last_good_copies``). The disk lasts only while the app
+      runs: a Reboot or a sleep starts it empty.
     - Charts are drawn one at a time (``_DRAWING_LOCK``). Matplotlib does not
       promise that drawing in several threads at once is safe, and a free
       server has two processors; a visitor who asks during another's drawing
@@ -244,6 +248,9 @@ class Drawing:
     # Country.key -> why its chart alone was not drawn (a source down,
     # 2026-10-21): the other charts are drawn and shown.
     failed: dict[str, str]
+    # The sources drawn from their last good copies, their own having failed,
+    # each with its copy's date (batch 20, ``http._Drawing.copies_used``).
+    copies: tuple[str, ...]
     seconds: float
     finished: pd.Timestamp
 
@@ -386,6 +393,7 @@ def _use_market_time_zone() -> None:
 
 _use_market_time_zone()
 http.enable_download_cache(max_age_seconds=DOWNLOAD_MAX_AGE_SECONDS)
+http.enable_last_good_copies()
 
 
 # ---------------------------------------------------------------------------
@@ -1038,7 +1046,8 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
 
     A chart that cannot be drawn (its source down: FRED's maintenance page,
     2026-10-21, took every chart with it) is named in ``Drawing.failed`` and
-    the others are drawn.
+    the others are drawn. A source that fails but has a last good copy is
+    drawn from it, and named in ``Drawing.copies`` (batch 20).
     """
     lines: list[str] = []
     began = time.perf_counter()
@@ -1050,7 +1059,7 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
     error: str | None = None
     failed: dict[str, str] = {}
     # Each real download logged, and those reused counted, once the lock is held (http.drawing_downloads).
-    with this_thread_output_to(lines.append), _DRAWING_LOCK, http.drawing_downloads():
+    with this_thread_output_to(lines.append), _DRAWING_LOCK, http.drawing_downloads() as downloads:
         try:
             drawn = resolve_start(config)
         except Exception as exc:  # shown on the page and in the log, never swallowed
@@ -1078,6 +1087,7 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
         log="".join(lines),
         error=error,
         failed=failed,
+        copies=tuple(downloads.copies_used()),
         seconds=time.perf_counter() - began,
         finished=pd.Timestamp.now(tz=MARKET_TIMEZONE),
     )
@@ -1121,6 +1131,12 @@ def _show(drawing: Drawing) -> None:
         st.error(f"Drawing failed: {drawing.error} (details in the message log below)")
     for key, why in drawing.failed.items():
         st.error(f"{TAB_TITLES[key]}: chart not drawn. {why} (details in the message log below)")
+    if drawing.copies:
+        st.warning(
+            "Some sources did not answer, so their last good copies were drawn: "
+            + "; ".join(drawing.copies)
+            + " (details in the message log below)."
+        )
     if drawing.pngs:
         _view_buttons(drawing)
         show_chart = _chart_component()
