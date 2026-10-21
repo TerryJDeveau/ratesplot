@@ -24,6 +24,12 @@ import pandas as pd
 from .config import ARCHIVE_CALIBRATION_END_YEAR, ARCHIVE_SPLICE_YEARS, DATE_COLUMN, PlotConfig
 from .frames import at_quarter_end, normalize_date_column, rows_to_frame
 
+# How far past its last observation a right-axis value is carried onto the
+# chart's dates (``align_macro``): a year, longer than any source's period
+# (yearly at the longest) and its publication lag (months). A column whose
+# source has stopped ends a year after its last value instead of running on.
+MACRO_CARRY_LIMIT = pd.Timedelta(days=366)
+
 
 # ---------------------------------------------------------------------------
 # Archive splicing
@@ -169,6 +175,13 @@ def align_macro(
     that begins before any yield (federal debt from 1867, GDP from 1926; the
     oldest yield is 1919) is drawn from the window start, as it would be
     with yields deselected.
+
+    A value is carried at most ``MACRO_CARRY_LIMIT`` past its column's last
+    observation, and the line stops there: a figure holds until the next is
+    published, months later, but a column whose source stopped must not run
+    on flat (2026-10-21: with Statistics Canada down, Canada's debt, GDP and
+    interest, left with their baked history to 1994, were drawn flat from
+    1994 to the day on the web page).
     """
     if yields_all.empty:
         plot_index = pd.date_range(config.start, config.end, freq="D")
@@ -189,4 +202,10 @@ def align_macro(
         aligned = (
             macro.reindex(macro.index.union(plot_index)).sort_index().ffill().reindex(plot_index)
         )
+    for column in aligned.columns:
+        # The latest date, not the last row: concat with sort=False leaves the
+        # dates unsorted (a series' dates missing from the first come after it).
+        last = macro[column].dropna().index.max()
+        if not pd.isna(last):
+            aligned.loc[aligned.index > last + MACRO_CARRY_LIMIT, column] = float("nan")
     return normalize_date_column(aligned.rename_axis(DATE_COLUMN).reset_index())

@@ -13,7 +13,10 @@ charts are drawn three times:
    connection): each chart must come out byte for byte as in pass 1, and the drawing must
    name each source it drew from a copy; the web page's drawing (``web._draw``) too;
 3. the same failures without the copies: the program as it was before batch 20, which
-   cannot draw them all (the difference the copies make).
+   cannot draw them all (the difference the copies make). What it draws from the baked
+   history alone must stop: no curve on the right axis keeps its last value for more than
+   ``joins.MACRO_CARRY_LIMIT`` (Canada's debt, left with its history to 1994, ran on flat
+   to the day before 2026-10-21).
 
 Usage (from the project root)::
 
@@ -34,13 +37,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
+import matplotlib.dates as mdates  # noqa: E402
+import numpy as np  # noqa: E402
 import requests  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
 
 import synthetic_sources  # noqa: E402
 from ratesplot import cli, http  # noqa: E402
 from ratesplot import web  # noqa: E402  (imported first: it turns on the page's caches, undone below)
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.frontend import png_bytes  # noqa: E402
+from ratesplot.joins import MACRO_CARRY_LIMIT  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 
 # The charts: the defaults (automatic start); every nation with the rates on the yield axis;
@@ -129,21 +136,46 @@ def refused_post(*_args, **_kwargs):
     raise requests.ConnectionError("StatCan WDS: cut off by check_last_good")
 
 
-def draw(tokens: list[str]) -> tuple[dict[str, bytes], dict[str, str], list[str], str]:
-    """Draw a case's charts as the window does; return (PNGs, charts not drawn, copies used, log)."""
+def final_flat_days(figure: Figure) -> dict[str, float]:
+    """For each curve on the right axis, how many days its last value is drawn unchanged."""
+    days: dict[str, float] = {}
+    for ax in figure.axes:
+        if ax.yaxis.get_label_position() != "right":
+            continue
+        for line in ax.get_lines():
+            x = np.asarray(mdates.date2num(line.get_xdata()), dtype=float)
+            y = np.asarray(line.get_ydata(), dtype=float)
+            drawn = np.isfinite(y)
+            x, y = x[drawn], y[drawn]
+            if y.size:
+                changed = np.flatnonzero(y != y[-1])
+                days[line.get_label()] = x[-1] - x[changed[-1] + 1 if changed.size else 0]
+    return days
+
+
+def draw(tokens: list[str]) -> tuple[dict[str, bytes], dict[str, str], list[str], str, dict[str, float]]:
+    """Draw a case's charts as the window does.
+
+    Returns (PNGs, charts not drawn, copies used, log, the right axis's final flat days
+    by "nation: curve").
+    """
     config = cli.parse_args(["--no-gui", *tokens])
     lines: list[str] = []
     pngs: dict[str, bytes] = {}
     not_drawn: dict[str, str] = {}
+    flat: dict[str, float] = {}
     with this_thread_output_to(lines.append), http.drawing_downloads() as downloads:
         drawn = resolve_start(config)
         for country in COUNTRIES:
             if getattr(drawn, country.show_field):
                 try:
-                    pngs[country.key] = png_bytes(build_figure(country, drawn))
+                    figure = build_figure(country, drawn)
                 except Exception as exc:  # pass 3 expects some
                     not_drawn[country.key] = f"{type(exc).__name__}: {exc}"
-    return pngs, not_drawn, downloads.copies_used(), "".join(lines)
+                    continue
+                flat.update((f"{country.key}: {label}", days) for label, days in final_flat_days(figure).items())
+                pngs[country.key] = png_bytes(figure)
+    return pngs, not_drawn, downloads.copies_used(), "".join(lines), flat
 
 
 def main() -> int:
@@ -160,7 +192,7 @@ def main() -> int:
     urllib.request.urlopen = answering_urlopen  # type: ignore[assignment]
     first = {}
     for name, tokens in CASES.items():
-        pngs, not_drawn, copies, _log = draw(tokens)
+        pngs, not_drawn, copies, _log, _flat = draw(tokens)
         first[name] = pngs
         check(f"{name}: every chart drawn, no copy used", not not_drawn and not copies, (sorted(pngs), not_drawn, copies))
     kept = sorted(folder.glob("*.pickle"))
@@ -170,7 +202,7 @@ def main() -> int:
     requests.Session.get = failing_get  # type: ignore[assignment]
     urllib.request.urlopen = failing_urlopen  # type: ignore[assignment]
     for name, tokens in CASES.items():
-        pngs, not_drawn, copies, log = draw(tokens)
+        pngs, not_drawn, copies, log, _flat = draw(tokens)
         same = sorted(key for key in pngs if pngs[key] == first[name].get(key))
         check(f"{name}: every chart drawn as in pass 1, byte for byte", not not_drawn and same == sorted(first[name]),
               (same, sorted(first[name]), not_drawn))
@@ -192,10 +224,16 @@ def main() -> int:
 
     print("[last good] pass 3: the same failures without the copies (as before batch 20)")
     http._copies_folder = None
+    flat: dict[str, float] = {}
     for name, tokens in CASES.items():
-        pngs, not_drawn, copies, _log = draw(tokens)
+        pngs, not_drawn, copies, _log, case_flat = draw(tokens)
         differs = sorted(key for key in first[name] if pngs.get(key) != first[name][key])
         check(f"{name}: not drawn, or drawn otherwise, without them", bool(differs), f"differ or missing: {differs}")
+        flat.update((f"{name}, {curve}", days) for curve, days in case_flat.items())
+    held_on = {curve: round(days) for curve, days in flat.items() if days > MACRO_CARRY_LIMIT.days}
+    check(f"the baked history alone: no right-axis curve keeps its last value more than {MACRO_CARRY_LIMIT.days} days",
+          bool(flat) and not held_on,
+          held_on or "; ".join(f"{curve} {round(days)}" for curve, days in flat.items()))
 
     print(f"[last good] {'all checks passed' if not failures else f'{failures} FAILED'}")
     return 1 if failures else 0
