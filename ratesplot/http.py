@@ -203,6 +203,9 @@ class _Drawing:
     # copy was drawn -> (when the oldest copy used was downloaded, time.time();
     # why the source failed). Batch 20.
     copies: dict[str, tuple[float, str]] = field(default_factory=dict)
+    # A request (cache key) that failed in this drawing -> its failure: not asked
+    # again before the drawing ends (``_cached``).
+    failed: dict[tuple, Exception] = field(default_factory=dict)
     # Its tasks may run side by side (``in_parallel``): ``copies`` is read and then written.
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -367,6 +370,13 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     succeeds is kept on disk, and one that fails returns its kept copy, if
     there is one, and is named in the drawing's log; a copy is not put in
     the memory cache, so the next drawing asks the source again.
+
+    A request that failed is not made again in the same drawing (Terry,
+    2026-10-21: the program must not become a nuisance to the servers it
+    asks): its failure is raised again, or its copy returned, at once. The
+    trial pass of ``plotting.resolve_start`` and the real pass after it are
+    one drawing, so a source down was asked twice in a drawing before, each
+    time with its retries.
     """
     with _download_cache_lock:
         if _download_cache is not None and key in _download_cache:
@@ -374,9 +384,15 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
             if _download_cache_max_age is None or time.monotonic() - fetched_at <= _download_cache_max_age:
                 _note_reused(key, fetched_at, fetched_wall)
                 return result  # type: ignore[return-value]
+    drawing = getattr(_log_state, "drawing", None)
+    earlier = drawing.failed.get(key) if drawing is not None else None
     try:
+        if earlier is not None:
+            raise earlier
         result = download()
     except Exception as failure:
+        if drawing is not None:
+            drawing.failed[key] = failure
         kept = _last_good_copy(key) if _copies_folder is not None else None
         if kept is None:
             raise

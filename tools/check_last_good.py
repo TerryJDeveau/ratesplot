@@ -19,6 +19,11 @@ charts are drawn three times:
    to the day before 2026-10-21); and the UK's national debt, drawn to 2016 without the
    gross debt, is named without "(pre-1975)".
 
+In passes 2 and 3 every request is counted: within one drawing a request answered with
+an outage page or a bot check is made once, and one refused at most once with its retries
+(Terry, 2026-10-21: the program must not become a nuisance to the servers; the trial pass
+of an automatic start and the real pass asked each failing source again before).
+
 Usage (from the project root)::
 
     python tools/check_last_good.py
@@ -30,6 +35,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+from collections import Counter
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -119,18 +125,37 @@ def answering_urlopen(url, timeout=None) -> _Answer:
     return _Answer(synthetic_sources.fred(url.split("?id=", 1)[1]).to_csv(index=False).encode())
 
 
+# Requests made to failing sources, by (how it failed, address, parameters); reset per drawing.
+asked: Counter = Counter()
+
+
 def failing_get(_session, url, params=None, **_kwargs) -> requests.Response:
     """Every source fails, each as such sources were seen to."""
     host = urlsplit(url).netloc
+    request = (url, tuple(sorted((params or {}).items())))
     if host == "www150.statcan.gc.ca":
+        asked[("page", *request)] += 1
         return _page(url, STATCAN_PAGE)
     if host == "api.statistiken.bundesbank.de":
+        asked[("page", *request)] += 1
         return _page(url, b"<html>challenge</html>", at=f"https://{host}/.enodia/challenge?redirect=x")
+    asked[("refused", *request)] += 1
     raise requests.ConnectionError(f"{host}: cut off by check_last_good")
 
 
 def failing_urlopen(url, timeout=None) -> _Answer:
+    asked[("page", url, ())] += 1
     return _Answer(FRED_PAGE)
+
+
+def check_asked_once(name: str) -> None:
+    """A drawing's requests to failing sources: a page once each, a refused one once with its retries."""
+    again = {
+        request[1]: count for request, count in asked.items()
+        if count > (1 if request[0] == "page" else http.DEFAULT_GET_RETRIES)
+    }
+    check(f"{name}: each failing request made once in the drawing", bool(asked) and not again,
+          again or f"{len(asked)} requests, {sum(asked.values())} attempts")
 
 
 def refused_post(*_args, **_kwargs):
@@ -203,7 +228,9 @@ def main() -> int:
     requests.Session.get = failing_get  # type: ignore[assignment]
     urllib.request.urlopen = failing_urlopen  # type: ignore[assignment]
     for name, tokens in CASES.items():
+        asked.clear()
         pngs, not_drawn, copies, log, _flat = draw(tokens)
+        check_asked_once(name)
         same = sorted(key for key in pngs if pngs[key] == first[name].get(key))
         check(f"{name}: every chart drawn as in pass 1, byte for byte", not not_drawn and same == sorted(first[name]),
               (same, sorted(first[name]), not_drawn))
@@ -227,7 +254,9 @@ def main() -> int:
     http._copies_folder = None
     flat: dict[str, float] = {}
     for name, tokens in CASES.items():
+        asked.clear()
         pngs, not_drawn, copies, _log, case_flat = draw(tokens)
+        check_asked_once(name)
         differs = sorted(key for key in first[name] if pngs.get(key) != first[name][key])
         check(f"{name}: not drawn, or drawn otherwise, without them", bool(differs), f"differ or missing: {differs}")
         flat.update((f"{name}, {curve}", days) for curve, days in case_flat.items())
