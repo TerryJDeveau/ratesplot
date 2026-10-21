@@ -77,7 +77,7 @@ from .config import (
 from .console import this_thread_output_to
 from .endlabels import ValueFormatter
 from .frames import filter_to_date_range
-from .http import in_parallel
+from .http import download_cache_on, in_parallel
 from .joins import align_macro
 from .latest import (
     PROJECTION_ATTR,
@@ -820,9 +820,12 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
     The trial pass prepares the chosen nations side by side (batch 19.1,
     ``http.in_parallel``): it makes a drawing's first downloads, which
     mostly wait on the network, and the nations' sources are different
-    hosts. Each host still gets one request at a time.
+    hosts. Each host still gets one request at a time. With the start given
+    there is no trial pass, and the downloads are made side by side all the
+    same (``_download_side_by_side``).
     """
     if config.start is not None:
+        _download_side_by_side(config)
         return config
     trial = replace(config, start=EARLIEST_DATA_START, current=False)
     firsts: dict[tuple[str, str], pd.Timestamp] = {}  # (country, curve label) -> first date
@@ -867,6 +870,26 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
     last = [curve for curve, first in whole.items() if first == start]
     print(f"Start {start:%Y-%m-%d}, the first date on which every chosen curve has data{before_floor}; the last to begin: {named(last)}{left_out}.")
     return replace(config, start=start)
+
+
+def _download_side_by_side(config: PlotConfig) -> None:
+    """Make the chosen nations' downloads side by side, before their charts are drawn one after another (batch 19.1).
+
+    For a start given (-s, a shared link's address): without a trial pass,
+    each chart would wait on its own downloads in turn. So the nations are
+    prepared now, side by side and silently, as the trial pass does, and the
+    charts then find their downloads in the cache; a failure is not asked
+    for again in the same drawing (``http._cached``). Only with two nations
+    or more, and with the download cache on (the window, the web page): a
+    command line with -s keeps no downloads, and would make them all twice.
+    Without --cur, whose quotes of the moment are never cached.
+    """
+    chosen = [country for country in COUNTRIES if getattr(config, country.show_field)]
+    if len(chosen) < 2 or not download_cache_on():
+        return
+    quiet = replace(config, current=False)
+    with this_thread_output_to(None):
+        in_parallel([partial(country.prepare, quiet.for_nation(country.key)) for country in chosen])
 
 
 def build_figure(country: Country, config: PlotConfig) -> Figure:

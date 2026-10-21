@@ -345,6 +345,11 @@ def enable_download_cache(max_age_seconds: float | None = None) -> None:
         _download_cache_max_age = max_age_seconds
 
 
+def download_cache_on() -> bool:
+    """Whether downloads are being kept (``enable_download_cache``): the window, the web page, a command line without -s."""
+    return _download_cache is not None
+
+
 def forget_downloads_older_than(seconds: float) -> int:
     """Forget the cached downloads fetched more than ``seconds`` ago; return how many (the window's Refresh)."""
     with _download_cache_lock:
