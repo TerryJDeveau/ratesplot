@@ -59,22 +59,34 @@ def format_percent(value: float) -> str:
 
 
 def format_spread(value: float) -> str:
-    """Format a yield spread in basis points, signed and whole: 0.36 -> ``+36 pts``, -1.02 -> ``-102 pts``.
+    """Format a yield spread in basis points, signed, to a tenth: 0.36 -> ``+36 pts``, 0.365 -> ``+36.5 pts``.
 
     A spread is drawn in percent on the yield axis, but quoted, as the market
     quotes one, in hundredths of a percentage point (Terry, 2026-10-06: a
-    spread of 0.36 % is 36 pts, not 0.36). The yields are published to two
-    decimals, so a whole number loses nothing; ``int`` turns a ``-0.0`` from
-    ``round`` into 0, so a spread that rounds to nothing reads ``+0 pts``.
-    One point either way is ``+1 pt``.
+    spread of 0.36 % is 36 pts, not 0.36). To one decimal of a point, the
+    decimal dropped when it is 0 (Terry, 2026-10-15, batch 17.1): spreads
+    between two-decimal official yields stay whole, while one with an intraday
+    quote (three decimals) or a UK gilt (four) shows its tenth. Counted in
+    whole tenths, so float noise (0.36 * 1000 = 360.00000000000006) cannot
+    show, and a spread that rounds to nothing reads ``+0 pts``. One point
+    either way is ``+1 pt``.
     """
-    points = int(round(value * 100))
-    return f"{points:+d} {'pt' if abs(points) == 1 else 'pts'}"
+    tenths = int(round(value * 1000))
+    number = f"{tenths // 10:+d}" if tenths % 10 == 0 else f"{tenths / 10:+.1f}"
+    return f"{number} {'pt' if abs(tenths) == 10 else 'pts'}"
 
 
 def format_yield(value: float) -> str:
-    """Format a bond yield in percent with two decimals, as the sources publish them: ``4.12%``."""
-    return f"{value:.2f}%"
+    """Format a yield or rate in percent to three decimals, a third that is 0 dropped: ``4.12%``, ``3.263%``.
+
+    Terry, 2026-10-15 (batch 17.1): "since eighths are still common". The
+    official yields, policy and mortgage rates of Canada and the U.S. are
+    published to two decimals and read as before (3.70 stays ``3.70%``); an
+    intraday quote (CNBC's three decimals, added to the official close by
+    --cur) and the Bank of England's gilt yields (four) show a third.
+    """
+    text = f"{value:.3f}"
+    return (text[:-1] if text.endswith("0") else text) + "%"
 
 
 class LogNiceLocator(ticker.Locator):
