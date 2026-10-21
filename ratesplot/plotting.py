@@ -54,6 +54,7 @@ from .config import (
     EARLIEST_DATA_START,
     MACRO_PLOT_STYLES,
     MIN_WINDOW_DAYS,
+    MORTGAGE_LEGEND_ORDER,
     NATIONS,
     PROJECTION_ALPHA,
     PROJECTION_KEY_COLOR,
@@ -354,6 +355,29 @@ def add_rate_lines(
     return drawn
 
 
+def yield_axis_legend(yield_lines: list[Line2D], rate_lines: list[tuple[Line2D, RateCurve]]) -> list[Line2D]:
+    """Return the yield axis's legend entries: the yields longest term first, the policy rate, the mortgages, the spreads.
+
+    Batch 17.2 (Terry, 2026-10-15): the longer terms higher in the legend,
+    "sorting downward to the shorter terms. Most of the time, this would echo
+    the vertical placement of the curves in the plot". The mortgages likewise
+    (``config.MORTGAGE_LEGEND_ORDER``). The spreads keep their order, since
+    each one's colour goes by its place (``rates.yield_spreads``). Only the
+    legend is ordered: the lines are drawn as before, so where they cross,
+    the same one is on top.
+    """
+    longest_first = {f"{name} Yield": rank for rank, name in enumerate(reversed(YIELD_TERMS.values()))}
+    yields = sorted(yield_lines, key=lambda line: longest_first.get(line.get_label(), len(longest_first)))
+
+    def place(item: tuple[Line2D, RateCurve]) -> tuple[int, int]:
+        key = item[1].key
+        if key.startswith("mortgage_"):
+            return 1, MORTGAGE_LEGEND_ORDER.index(key.removeprefix("mortgage_"))
+        return (0 if key == "policy" else 2), 0
+
+    return yields + [line for line, _curve in sorted(rate_lines, key=place)]
+
+
 def drawn_date_span(axes: Iterable[Axes]) -> tuple[pd.Timestamp, pd.Timestamp] | None:
     """Return the first and last dates at which any line on ``axes`` has a value, or None if none does.
 
@@ -465,7 +489,7 @@ def draw_country(
     )
     finish_legend_and_title(
         ax_yield,
-        [yield_lines + [line for line, _curve in rate_lines], legend_macro],
+        [yield_axis_legend(yield_lines, rate_lines), legend_macro],
         title,
         config,
         drawn_date_span((ax_yield, ax_macro)),

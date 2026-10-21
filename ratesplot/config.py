@@ -408,6 +408,12 @@ MORTGAGE_TERMS = {
     "over10": (("de",), "20y"),
 }
 DEFAULT_MORTGAGE_TERMS = ("30", "5")
+# The legend lists each nation's mortgage terms longest first, then its
+# variable and prime rates, as it lists the yields longest first (batch 17.2,
+# Terry 2026-10-15: "this would echo the vertical placement of the curves");
+# they are drawn, and written on the command line, in MORTGAGE_TERMS' order.
+MORTGAGE_LEGEND_ORDER = ("30", "15", "5", "3", "1", "5v", "prime", "5f", "3f", "2f", "svr", "over10", "5-10", "1-5")
+assert sorted(MORTGAGE_LEGEND_ORDER) == sorted(MORTGAGE_TERMS)
 # The SVR has the prime rate's colour, a variable base rate as it is. (The
 # 3-year mortgages, Canada's and the UK's, had dark slate here, #2f4f4f,
 # until the 3-year yield took that colour in batch 9.3; they take the
