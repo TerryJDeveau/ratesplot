@@ -7,6 +7,7 @@ import gzip
 import hashlib
 import html
 import io
+import json
 import os
 import pickle
 import re
@@ -54,8 +55,9 @@ T = TypeVar("T")
 # within that time. Entries are stored with the time they were fetched (by
 # the monotonic clock for their age, and by the wall clock for the message
 # log's "the oldest from …").
-# Keyed by URL (and query parameters). Only the two download helpers below use
-# it; the StatCan WDS fallback is rare and stays uncached.
+# Keyed by URL (and query parameters, or a POST's JSON). The download helpers
+# below use it; the Statistics Canada WDS fallback (a POST) too, since 2026-10-21:
+# with Statistics Canada down it is asked in every drawing (``canadian_post``).
 
 _download_cache: dict[tuple, tuple[float, float, object]] | None = None
 _download_cache_max_age: float | None = None  # seconds; None keeps each download for the session
@@ -580,6 +582,26 @@ def canadian_get(
     response = _session_get(CANADIAN_SESSION, "canadian", url, params, max_retries=max_retries, timeout=timeout)
     assert response is not None  # only missing_ok returns None
     return response
+
+
+def canadian_post(url: str, payload: object, *, timeout: int) -> requests.Response:
+    """POST ``payload`` as JSON to a Statistics Canada service (its WDS), once; cached and kept as the GETs are.
+
+    One attempt, not retried: it is the fallback for a table that has just
+    failed. Through the cache, a drawing does not ask it twice (the trial or
+    side-by-side pass, then the chart), and its last good copy is kept.
+    """
+
+    def download() -> requests.Response:
+        log_download(url)
+        with host_turn(url):
+            response = CANADIAN_SESSION.post(url, json=payload, timeout=timeout)
+        response.raise_for_status()
+        # Its outage page arrives with status 200 too (2026-10-21; SourcePage).
+        raise_if_web_page(url, response.content)
+        return response
+
+    return _cached(("canadian-post", url, json.dumps(payload, sort_keys=True)), download)
 
 
 def uk_get(

@@ -20,7 +20,8 @@ charts are drawn three times:
    gross debt, is named without "(pre-1975)".
 
 In passes 2 and 3 every request is counted: within one drawing a request answered with
-an outage page or a bot check is made once, and one refused at most once with its retries
+an outage page or a bot check is made once, the Statistics Canada WDS post (not retried)
+once, and one refused at most once with its retries
 (Terry, 2026-10-21: the program must not become a nuisance to the servers; the trial pass
 of an automatic start and the real pass asked each failing source again before).
 
@@ -149,16 +150,17 @@ def failing_urlopen(url, timeout=None) -> _Answer:
 
 
 def check_asked_once(name: str) -> None:
-    """A drawing's requests to failing sources: a page once each, a refused one once with its retries."""
+    """A drawing's requests to failing sources: a page or a post once each, a refused one once with its retries."""
     again = {
         request[1]: count for request, count in asked.items()
-        if count > (1 if request[0] == "page" else http.DEFAULT_GET_RETRIES)
+        if count > (http.DEFAULT_GET_RETRIES if request[0] == "refused" else 1)
     }
     check(f"{name}: each failing request made once in the drawing", bool(asked) and not again,
           again or f"{len(asked)} requests, {sum(asked.values())} attempts")
 
 
-def refused_post(*_args, **_kwargs):
+def refused_post(_session, url, json=None, **_kwargs):
+    asked[("post", url, repr(json))] += 1
     raise requests.ConnectionError("StatCan WDS: cut off by check_last_good")
 
 

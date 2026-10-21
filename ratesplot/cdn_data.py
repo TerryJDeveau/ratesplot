@@ -55,7 +55,6 @@ from .config import (
     BOC_GROUP_URL,
     BOC_SERIES_URL,
     BOC_START_DATE,
-    CANADIAN_SESSION,
     CDN_DEBT_COLUMN,
     CDN_FEDERAL_DEBT_COLUMN,
     CDN_INTEREST_COLUMN,
@@ -77,7 +76,7 @@ from .config import (
     PlotConfig,
     component_column,
 )
-from .http import canadian_get, downloads_of, fetch_fred_csv, host_turn, log_download, parse_boc_csv, raise_if_web_page
+from .http import canadian_get, canadian_post, downloads_of, fetch_fred_csv, parse_boc_csv
 from .joins import align_macro, chain, dated_by_quarter_end, embedded_frame
 
 # Bank of Canada Valet series codes -> chart column names. The 3-month T-bill
@@ -207,12 +206,8 @@ def statcan_wds_vectors(vector_ids: Iterable[str | int], *, latest_n: int = 250)
     payload = [
         {"vectorId": int(str(vector).lstrip("vV")), "latestN": latest_n} for vector in vector_ids
     ]
-    log_download("Statistics Canada vectors (WDS)")
-    with host_turn(STATCAN_WDS_URL):
-        response = CANADIAN_SESSION.post(STATCAN_WDS_URL, json=payload, timeout=HTTP_POST_TIMEOUT_SECONDS)
-    response.raise_for_status()
-    # Its outage page arrives with status 200 too (2026-10-21; http.SourcePage).
-    raise_if_web_page(STATCAN_WDS_URL, response.content)
+    with downloads_of("Statistics Canada vectors (WDS)"):
+        response = canadian_post(STATCAN_WDS_URL, payload, timeout=HTTP_POST_TIMEOUT_SECONDS)
 
     frames: list[pd.DataFrame] = []
     for item in response.json():
