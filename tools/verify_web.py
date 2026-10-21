@@ -579,9 +579,9 @@ def check_uk(check: Check) -> None:
         sorted(key for key in keys if key.startswith("choice:uk:")),
     )
     check(
-        "its own defaults ticked: all three terms, all four mortgage terms (batch 10.2)",
+        "its own defaults ticked: all three terms, all five mortgage terms (batch 10.2; the tracker, 9.5)",
         all(page.checkbox(key=f"choice:uk:yields:{term}").value for term in ("5y", "10y", "20y"))
-        and all(page.checkbox(key=f"choice:uk:mortgage-terms:{term}").value for term in ("2f", "3f", "5f", "svr")),
+        and all(page.checkbox(key=f"choice:uk:mortgage-terms:{term}").value for term in ("2f", "3f", "5f", "svr", "tracker")),
     )
     check("its value in its own field", page.text_input(key="value:uk:max").value == "9", page.text_input(key="value:uk:max").value)
     check("address kept", address(page) == "--nations:gb --end:2026-09-01 --uk:max:9", address(page))
@@ -869,6 +869,31 @@ def check_batch94(check: Check) -> None:
           ticked == boxes and set(texts.values()) == {"0.5"} and flags(page)["mortgages"], (sorted(ticked), texts))
 
 
+def check_batch95(check: Check) -> None:
+    """Batch 9.5: the UK tracker's box, ticked by default, with its margin field beside it, greyed while the UK draws no tracker."""
+    at = new_page("--nations:gb --e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    fields = {field.key for field in at.text_input if field.key and field.key.endswith(":tracker-margin")}
+    check("a tracker margin field for the UK only", fields == {"value:uk:tracker-margin"}, sorted(fields))
+    box, field = "choice:uk:mortgage-terms:tracker", "value:uk:tracker-margin"
+    check("the tracker ticked by default (the UK's own list)", at.checkbox(key=box).value)
+    check("its grey value is the default margin, 1.75", at.text_input(key=field).placeholder == "1.75", at.text_input(key=field).placeholder)
+    check("mortgages off: greyed", at.text_input(key=field).disabled)
+    at.checkbox(key="flag:mortgages").check()
+    at.run()
+    check("mortgages on, the tracker ticked: active", not at.text_input(key=field).disabled)
+    at.text_input(key=field).input("2")
+    at.run()
+    drawn = drawn_config(config_from_choices(*sort_tokens(address(at).split())[:2]), "uk")
+    check("the address draws the UK's tracker at Bank Rate + 2",
+          "tracker" in drawn.mortgage_terms and drawn.tracker_margin == 2.0, (address(at), drawn.mortgage_terms, drawn.tracker_margin))
+    check("no exception, one drawing", not at.exception and charts_shown(at) == 1, at.exception)
+    at.checkbox(key=box).uncheck()
+    at.run()
+    check("the tracker unticked: the margin greyed, kept, out of the address",
+          at.text_input(key=field).disabled and at.text_input(key=field).value == "2" and "tracker" not in address(at), address(at))
+
+
 def check_batch91(check: Check) -> None:
     """Batch 9.1: each nation's policy terms, target and market, as boxes; the target ticked; greyed while the policy rate is off."""
     at = new_page("--e:2026-09-01")
@@ -943,7 +968,7 @@ def check_batch17(check: Check) -> None:
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
-    check_batch15, check_batch9, check_batch94, check_batch17, check_batch91,
+    check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95,
 )
 
 

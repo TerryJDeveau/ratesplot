@@ -115,6 +115,8 @@ CASES: dict[str, list[str]] = {
     "prime_margin": ["-s:2005", "--mo:5v,30,prime", "--us:prime:0.5", "--cdn:prime:-0.25"],
     "uk_1970": ["--na:gb", "-s:1970", "--e:1990", "--policy", "--mo:svr"],
     "uk_2015": ["--na:gb", "-s:2015", "--po:target,market", "--mo:2f,3f,5f,svr", "--sp"],
+    # Batch 9.5: the UK tracker, Bank Rate plus its margin, from where it begins (1997-01).
+    "uk_tracker": ["--na:gb", "-s:1996-06-01", "--policy", "--mo:svr,tracker", "--uk:tracker:1.25"],
     "de_1965": ["--na:de", "-s:1965", "--e:1980"],
     "de_1998": ["--na:de", "-s:1998", "--e:2010", "--po:target,market", "--mo:1-5,5-10,over10"],
     "de_2015": ["--na:de", "-s:2015", "--y:1,2,5,7,10,20,30", "--po:target,market", "--mo:1-5,5-10,over10", "--sp"],
@@ -266,9 +268,13 @@ def policy_sources(nation: str, key: str) -> list[Source]:
 
 
 def mortgage_sources(term: str, nation: str) -> list[Source]:
-    """A mortgage term's sources on ``nation``'s chart (the prime rate is Canada's and the U.S.')."""
+    """A mortgage term's sources on ``nation``'s chart (the prime rate is Canada's and the U.S.'; the tracker is Bank Rate)."""
     assert nation in rates.MORTGAGE_TERMS[term][0], (term, nation)
-    held = {"carry_days": None} if term == "prime" else {}  # announced: drawn on to the chart's end (batch 17.3)
+    # Announced: drawn on to the chart's end (batch 17.3). The prime rates,
+    # and the UK tracker, Bank Rate's own daily values (batch 9.5).
+    held = {"carry_days": None} if term in ("prime", "tracker") else {}
+    if term == "tracker":
+        return [iadb(rates.UK_POLICY_SERIES, **held)]
     if nation == "us":
         return [fred(rates.US_MORTGAGE_SERIES[term], **held)]
     if nation == "cdn":
@@ -413,9 +419,10 @@ def check_case(name: str, tokens: list[str]) -> bool:
             elif curve is not None and curve.key.startswith("mortgage_"):
                 term = curve.key.removeprefix("mortgage_")
                 sources = mortgage_sources(term, key)
-                margin = config.for_nation(key).prime_margin if term == "prime" else 0.0
+                field = rates.MORTGAGE_MARGINS.get(term)
+                margin = getattr(config.for_nation(key), field) if field else 0.0
                 if margin:
-                    # The prime rate is drawn plus its margin (batch 9.4): its source so, too.
+                    # The prime rate (batch 9.4) and the UK tracker (9.5) are drawn plus their margins: their sources so, too.
                     sources = [
                         Source(f"{source.name} {margin:+g}", lambda read=source.read: read() + margin, source.monthly, source.carry_days)
                         for source in sources

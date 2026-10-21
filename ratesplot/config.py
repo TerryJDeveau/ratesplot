@@ -415,6 +415,10 @@ MORTGAGE_TERMS = {
     "3f": (("uk",), "3y"),
     "5f": (("uk",), "5y"),
     "svr": (("uk",), None),
+    # The UK tracker (batch 9.5, Terry's decision 26): Bank Rate plus a
+    # margin (``MORTGAGE_MARGINS``), from 1997, when the Bank of England's
+    # quoted tracker rate begins (``rates.UK_TRACKER_FROM``).
+    "tracker": (("uk",), None),
     # Germany (batch 4): the MFI interest rates on new housing loans to
     # households (ECB), by initial rate fixation: over 1 and up to 5 years,
     # over 5 and up to 10, over 10. Named by the band, as the statistics
@@ -425,22 +429,32 @@ MORTGAGE_TERMS = {
 }
 DEFAULT_MORTGAGE_TERMS = ("30", "5")
 # The terms drawn plus a margin in points, each with a box beside its tick
-# (batch 9.4, the prime rate): term -> the PlotConfig field holding the
-# margin. The options, the controls and the drawing take them from here.
-MORTGAGE_MARGINS = {"prime": "prime_margin"}
+# (batch 9.4, the prime rate; batch 9.5, the UK tracker): term -> the
+# PlotConfig field holding the margin. The options, the controls and the
+# drawing take them from here.
+MORTGAGE_MARGINS = {"prime": "prime_margin", "tracker": "tracker_margin"}
+# The tracker's margin by default, in points over Bank Rate (Terry, decision
+# 26): about the Bank of England's quoted lifetime tracker less Bank Rate at
+# its end (IUMBV24, 1.71 in 2025-03, its last month; median 1.68 in
+# 2022-2025, 0.99 in 1997-2007, 2.44 in 2010-2019; measured 2026-10-21).
+DEFAULT_TRACKER_MARGIN = 1.75
 # The legend lists each nation's mortgage terms longest first, then its
 # variable and prime rates, as it lists the yields longest first (batch 17.2,
 # Terry 2026-10-15: "this would echo the vertical placement of the curves");
 # they are drawn, and written on the command line, in MORTGAGE_TERMS' order.
-MORTGAGE_LEGEND_ORDER = ("30", "15", "5", "3", "1", "5v", "prime", "5f", "3f", "2f", "svr", "over10", "5-10", "1-5")
+MORTGAGE_LEGEND_ORDER = (
+    "30", "15", "5", "3", "1", "5v", "prime", "5f", "3f", "2f", "svr", "tracker", "over10", "5-10", "1-5",
+)
 assert sorted(MORTGAGE_LEGEND_ORDER) == sorted(MORTGAGE_TERMS)
-# The SVR has the prime rate's colour, a variable base rate as it is. (The
+# The SVR has the prime rate's colour, a variable base rate as it is; the
+# tracker the policy rate's brown, Bank Rate plus a margin as it is. (The
 # 3-year mortgages, Canada's and the UK's, had dark slate here, #2f4f4f,
 # until the 3-year yield took that colour in batch 9.3; they take the
 # 3-year's colour now, as the other terms take theirs.)
-MORTGAGE_OWN_COLORS = {"15": "#556b2f", "prime": "#696969", "svr": "#696969"}
+MORTGAGE_OWN_COLORS = {"15": "#556b2f", "prime": "#696969", "svr": "#696969", "tracker": POLICY_RATE_STYLE["color"]}
 # Dashed steps (a posted or surveyed rate holds until the next), thinner than
-# the policy rate; the variable rate dash-dotted, as it shares the 5-year's colour.
+# the policy rate; the variable rates dash-dotted: Canada's, as it shares the
+# 5-year's colour, and the UK tracker, as it shares the policy rate's.
 MORTGAGE_STYLE = {"linewidth": 1.5, "linestyle": "--", "drawstyle": "steps-post"}
 VARIABLE_MORTGAGE_STYLE = MORTGAGE_STYLE | {"linestyle": "-."}
 # The prime rate: dotted, a base rate rather than a mortgage of a term.
@@ -553,14 +567,15 @@ NATIONS: tuple[Nation, ...] = (
     # chart would draw two of its three yield terms, none of its mortgage
     # terms and none of its spreads: all three terms, all its mortgage terms
     # (Terry, 2026-10-08, batch 10.2: for nations other than Canada and the
-    # U.S., all ticked; the standard variable rate alone before), the 10y-5y
-    # and 20y-10y spreads.
+    # U.S., all ticked; the standard variable rate alone before; the tracker
+    # with them since batch 9.5, as the plan said: "five UK mortgage lines
+    # when mortgages are ticked"), the 10y-5y and 20y-10y spreads.
     Nation(
         "uk", "United Kingdom", ("gb", "uk"), ("5y", "10y", "20y"), "UK", shown_by_default=False,
         market_timezone="Europe/London",
         own_defaults=(
             ("yield_terms", ("5y", "10y", "20y")),
-            ("mortgage_terms", ("2f", "3f", "5f", "svr")),
+            ("mortgage_terms", ("2f", "3f", "5f", "svr", "tracker")),
             ("spread_pairs", (("10y", "5y"), ("20y", "10y"))),
         ),
     ),
@@ -602,7 +617,7 @@ def nation_by_key(key: str) -> Nation | None:
 # currency, so a limit right for one is wrong for the other).
 PER_NATION_FIELDS = (
     "yield_terms", "mortgage_terms", "spread_pairs", "yield_ymin", "yield_ymax", "macro_bottom", "macro_top",
-    "prime_margin", "policy_terms",
+    "prime_margin", "policy_terms", "tracker_margin",
 )
 # The defaults of the lists a nation may have its own default of (Nation.own_defaults).
 _LIST_DEFAULTS = {
@@ -1016,6 +1031,10 @@ class PlotConfig:
     # (negative allowed), for the variable mortgages priced from it; 0 draws
     # the prime rate itself, as before. Per nation (--cdn:prime:-0.25).
     prime_margin: float = 0.0
+    # --tracker:MARGIN (batch 9.5): the UK tracker drawn at Bank Rate plus
+    # this many points (negative allowed). Per nation (--uk:tracker:2); only
+    # the UK has a tracker.
+    tracker_margin: float = DEFAULT_TRACKER_MARGIN
     # --spreads[:LIST]: yield spreads on the yield axis, each a pair of
     # YIELD_TERMS keys (the first less the second); additive. Their terms are
     # fetched even when the yields are not drawn.

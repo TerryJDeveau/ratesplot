@@ -62,6 +62,9 @@ VALUES = (
     "--prime:0.5", "--cdn:prime:-0.25", "--us:prime:1 --mo:30,prime", "--mo:5 --prime:0.5", "--prime:0.5 --cdn:mo:5v",
     # A margin for every chart names its term on the charts that have it only: the UK keeps its own default (2026-10-21).
     "--nations:ca,gb --prime:0.5",
+    # The UK tracker's margin (batch 9.5): for every chart, for the UK, with a list that leaves it out, beside --prime.
+    "--nations:gb --tracker:1.25", "--nations:gb --uk:mo:svr,tracker --uk:tracker:0.5", "--nations:gb --mo:svr --tracker:1",
+    "--nations:ca,gb --prime:0.5 --uk:tracker:2",
     # The policy terms (batch 9.1): for every chart, for one nation, a nation's own none.
     "--po", "--po:market", "--po:target,market", "--us:po:market", "--po:market --cdn:po:target,market",
     "--uk:po:none --po", "--po:target --ger:po:market --mo",

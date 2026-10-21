@@ -208,6 +208,11 @@ CASES: list[list[str]] = [
     ["--policy:target"], ["--policy:market"], ["--po:market,target"], ["--po:Market"], ["--po:target,target"],
     ["--policy-rates:market"], ["--po:none"], ["--us:po:market"], ["--cdn:po:none", "--po"], ["--ger:po:target,market"],
     ["--po:t"], ["--po:"], ["--po:market", "--no-po"], ["--p:market"], ["--pol:market"], ["--no-po:market"],
+    # Batch 9.5: the UK tracker and its margin, for every chart and for the UK; only the UK has one;
+    # "--t:" stays Top; a list without it; the prime margin beside it.
+    ["--tracker:1.5"], ["--tr:0.5"], ["--uk:tracker:2"], ["--gb:tr:-0.25"], ["--cdn:tracker:1"], ["--tracker:x"],
+    ["--tracker:11"], ["--tracker:"], ["--tracker"], ["--t:1"], ["--na:gb", "--tracker:1"], ["--na:gb", "--mo:svr", "--tracker:1"],
+    ["--na:gb", "--uk:mo:2f,tracker"], ["--mo:tracker"], ["--na:ca,gb", "--prime:0.5", "--tracker:1"], ["--mo:trackers"],
 ]
 
 

@@ -229,6 +229,11 @@ CASES: dict[str, list[str]] = {
     # the market rate alone, which draws what u_policy_y1990 drew before.
     "policy_both": ["--na:ca,us,gb,de", "--po:target,market", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-s:1978", "-l"],
     "u_policy_market": ["-u", "--po:market", "--yield", "-s:1990"],
+    # Batch 9.5: the UK tracker, Bank Rate plus its margin (in the legend and
+    # the -l label), with Bank Rate and the SVR, from before it begins (1997-01).
+    "uk_tracker": [
+        "--na:gb", "--mo:svr,tracker", "--uk:tracker:1.25", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1995", "-l",
+    ],
 }
 
 

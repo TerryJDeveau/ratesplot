@@ -64,6 +64,7 @@ from ratesplot.cli import parse_args  # noqa: E402
 from ratesplot.config import (  # noqa: E402
     CDN_DEBT_COLUMN,
     CDN_INTEREST_COLUMN,
+    DEFAULT_TRACKER_MARGIN,
     GDP_COLUMN,
     MARKET_TIMEZONE,
     UK_DEBT_COLUMN,
@@ -511,6 +512,9 @@ CHECKS: tuple[Check, ...] = (
     Check("boe_mortgage3f", "Bank of England IUMBV37 quoted 3-year fixed", MONTHLY, _rate(partial(rates.mortgage_rate, "3f"))),
     Check("boe_mortgage5f", "Bank of England IUMBV42 quoted 5-year fixed", MONTHLY, _rate(partial(rates.mortgage_rate, "5f"))),
     Check("boe_mortgage_svr", "Bank of England IUMTLMV standard variable rate", MONTHLY, _rate(partial(rates.mortgage_rate, "svr"))),
+    # Batch 9.5: the tracker, Bank Rate (IUDBEDR) from 1997 plus its default margin.
+    Check("boe_tracker", "Bank of England IUDBEDR Bank Rate as the UK tracker", DAILY,
+          _rate(partial(rates.mortgage_rate, "tracker", "uk", DEFAULT_TRACKER_MARGIN))),
     Check("ons_debt", "ONS BKPX general government gross debt (monthly)", QUARTERLY, _uk_ons(uk_data.fetch_uk_debt, UK_DEBT_COLUMN)),
     Check("ons_net_debt", "ONS HF6W public sector net debt ex banks (monthly)", QUARTERLY, _uk_ons(uk_data.fetch_uk_debt, UK_NET_DEBT_COLUMN)),
     Check("ons_gdp", "ONS YBHA GDP (four-quarter sums)", QUARTERLY, _uk_ons(uk_data.fetch_uk_gdp, GDP_COLUMN)),

@@ -106,7 +106,15 @@ CDN_MORTGAGE_HISTORY_TABLE = "34100145"
 # (SONIA), daily from 1997-01-02.
 UK_POLICY_SERIES = "IUDBEDR"
 UK_MARKET_SERIES = "IUDSOIA"
-UK_MORTGAGE_SERIES = {"2f": "IUMBV34", "3f": "IUMBV37", "5f": "IUMBV42", "svr": "IUMTLMV"}
+# The tracker (batch 9.5, Terry's decision 26) is Bank Rate itself, daily,
+# plus a margin (``PlotConfig.tracker_margin``), so no new source: its entry
+# here is Bank Rate's code, for messages and the checks (``_uk_tracker``).
+UK_MORTGAGE_SERIES = {"2f": "IUMBV34", "3f": "IUMBV37", "5f": "IUMBV42", "svr": "IUMTLMV", "tracker": UK_POLICY_SERIES}
+# It is drawn from the first month the Bank of England quoted a tracker
+# rate (its lifetime tracker, IUMBV24, 1997-01 to 2025-03, measured
+# 2026-10-21): before then a "tracker" would be Bank Rate under another name,
+# and Bank Rate is drawn back to 1833 (``uk_policy_target``).
+UK_TRACKER_FROM = pd.Timestamp("1997-01-01")
 # Germany (batch 4), from the ECB Data Portal, measured from Terry's laptop
 # 2026-10-06. Policy: the main refinancing rate, on the days it changed since
 # 1999: the fixed rate of the fixed-rate tenders, and from 2000-06-28 to
@@ -140,6 +148,7 @@ _MORTGAGE_LABELS = {
     "3f": "3-Year Mortgage (75% LTV)",
     "5f": "5-Year Mortgage (75% LTV)",
     "svr": "Standard Variable Rate (SVR)",
+    "tracker": "Tracker Mortgage (Bank Rate)",  # its margin inside the brackets (_mortgage_label)
     "1-5": "1–5-Year Mortgage (new loans, avg.)",
     "5-10": "5–10-Year Mortgage (new loans, avg.)",
     "over10": "Over-10-Year Mortgage (new loans, avg.)",
@@ -182,22 +191,26 @@ def holding(values: pd.Series, kind: str) -> pd.Series:
 
 
 def _mortgage_label(term: str, country: str, margin: float) -> str:
-    """Return a mortgage term's legend label; the prime rate's with its margin when there is one.
+    """Return a mortgage term's legend label; a term drawn plus a margin with it, when there is one.
 
     "Prime Rate + 0.50 (chartered banks)", "Bank Prime Loan Rate – 0.25"
-    (batch 9.4, Terry 2026-10-08: the margin "shown in the legend"): two
-    decimals, three when the margin has a third (an eighth of a point).
-    Below the prime rate an en dash, as in the spreads' labels: the minus
-    sign (U+2212) is not in the Windows code page a redirected log is
-    written in, and the labels are printed in messages.
+    (batch 9.4, Terry 2026-10-08: the margin "shown in the legend"); the
+    tracker's inside its brackets, "Tracker Mortgage (Bank Rate + 1.75)"
+    (batch 9.5). Two decimals, three when the margin has a third (an eighth
+    of a point). Below the base rate an en dash, as in the spreads' labels:
+    the minus sign (U+2212) is not in the Windows code page a redirected
+    log is written in, and the labels are printed in messages.
     """
     label = _US_PRIME_LABEL if (term, country) == ("prime", "us") else _MORTGAGE_LABELS[term]
-    if term != "prime" or margin == 0:
+    if margin == 0:
         return label
     size = abs(margin)
     written = f"{size:.2f}" if round(size, 2) == size else f"{size:.3f}".rstrip("0")
+    signed = f" {'+' if margin > 0 else '–'} {written}"
+    if term == "tracker":
+        return label.removesuffix(")") + signed + ")"
     name, _space, whose = label.partition(" (")
-    return f"{name} {'+' if margin > 0 else '–'} {written}" + (f" ({whose}" if whose else "")
+    return f"{name}{signed}" + (f" ({whose}" if whose else "")
 
 
 @dataclass(frozen=True)
@@ -489,13 +502,30 @@ def _uk_mortgage(term: str) -> pd.Series:
     2026-10-08, batch 10.1: it read "Variable Mortgage Rate, quoted SVR from
     1995-01"): before the 1990s nearly every UK mortgage was at a standard
     variable rate, so "SVR" fits the whole line; --help says where it joins.
+    The tracker is Bank Rate itself, daily (``_uk_tracker``).
     """
+    if term == "tracker":
+        return _uk_tracker()
     monthly = iadb_series(UK_MORTGAGE_SERIES[term])
     values = _clean(monthly.set_axis(monthly.index.to_period("M").start_time))
     history = _baked(EMBEDDED_UK_MORTGAGE_HISTORY) if term == "svr" else values.iloc[:0]
     if not history.empty and not values.empty and history.index[0] < values.index[0]:
         values = _joined(history, values)
     return values
+
+
+def _uk_tracker() -> pd.Series:
+    """Return Bank Rate from ``UK_TRACKER_FROM`` on, the rate a tracker follows (its margin is added by ``mortgage_rate``).
+
+    The Bank of England's daily Bank Rate (``UK_POLICY_SERIES``), the value
+    in effect on ``UK_TRACKER_FROM`` dated by it. From the database only, not
+    the baked changes (to 2017): a tracker drawn from them would be carried
+    on from 2017 as an announced rate is.
+    """
+    bank = _clean(iadb_series(UK_POLICY_SERIES))
+    before = bank.loc[bank.index <= UK_TRACKER_FROM]
+    first = before.iloc[-1:].set_axis(pd.DatetimeIndex([UK_TRACKER_FROM])) if not before.empty else before
+    return pd.concat([first, bank.loc[bank.index > UK_TRACKER_FROM]])
 
 
 def de_policy_target() -> RateCurve | None:
@@ -587,7 +617,8 @@ def _mortgage_style(term: str) -> dict:
     colour = TERM_COLORS[yield_term] if yield_term is not None else MORTGAGE_OWN_COLORS[term]
     if term == "prime":
         return PRIME_RATE_STYLE | {"color": colour}
-    return (VARIABLE_MORTGAGE_STYLE if term.endswith("v") else MORTGAGE_STYLE) | {"color": colour}
+    variable = term.endswith("v") or term == "tracker"
+    return (VARIABLE_MORTGAGE_STYLE if variable else MORTGAGE_STYLE) | {"color": colour}
 
 
 def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) -> RateCurve | None:
@@ -598,7 +629,8 @@ def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) ->
     weekly rate, carried back before it begins by the monthly CMHC rate
     (with a warning, and from 1975 only, if that fails). A term of
     ``config.MORTGAGE_MARGINS`` is drawn plus ``margin`` points (the prime
-    rate: ``PlotConfig.prime_margin``, batch 9.4); the others take none.
+    rate: ``PlotConfig.prime_margin``, batch 9.4; the UK tracker, Bank Rate
+    plus ``PlotConfig.tracker_margin``, batch 9.5); the others take none.
     """
     assert margin == 0 or term in MORTGAGE_MARGINS, (term, margin)
     countries, yield_term = MORTGAGE_TERMS[term]
@@ -616,9 +648,10 @@ def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) ->
     except Exception as exc:
         print(f"  Warning: {label} ({code}) unavailable ({exc}); not drawn.")
         return None
-    # The prime rates are announced; the mortgage rates are surveys and
-    # averages, observed weekly or monthly.
-    holds = holding(values, HELD if term == "prime" else _MORTGAGE_HOLDS[country])
+    # The prime rates are announced, and so is the tracker (Bank Rate's
+    # changes); the mortgage rates are surveys and averages, observed weekly
+    # or monthly.
+    holds = holding(values, HELD if term in ("prime", "tracker") else _MORTGAGE_HOLDS[country])
     if country == "cdn" and term == "5":
         try:
             history = cdn_mortgage_history()

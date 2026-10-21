@@ -59,6 +59,7 @@ from .config import (
     COMPONENT_SYNONYMS,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DEFAULT_MORTGAGE_TERMS,
+    DEFAULT_TRACKER_MARGIN,
     DEFAULT_SPREADS,
     DEFAULT_START_FLOOR,
     DEFAULT_YIELD_TERMS,
@@ -208,6 +209,8 @@ def parse_margin(spec: str, *, spelling: str, base: str, examples: tuple[str, st
 
 # The prime margin (batch 9.4), in points above or below the prime rate.
 parse_prime_margin = partial(parse_margin, spelling="--prime", base="the prime rate", examples=("0.5", "-0.25"))
+# The UK tracker's margin (batch 9.5), in points above (or below) Bank Rate.
+parse_tracker_margin = partial(parse_margin, spelling="--tracker", base="Bank Rate", examples=("1.75", "1"))
 
 
 _TERM_SPEC = re.compile(r"^(\d+)\s*([my]?)$")
@@ -256,7 +259,7 @@ def format_terms(values: tuple, _config: PlotConfig) -> str:
 
 
 def parse_mortgage_terms(spec: str) -> tuple[str, ...]:
-    """Parse ``--mortgages:LIST``: terms of ``MORTGAGE_TERMS`` (30 15 U.S.; 5 3 1 5v Canada; prime both; 2f 3f 5f svr UK; 1-5 5-10 over10 Germany), in that order.
+    """Parse ``--mortgages:LIST``: terms of ``MORTGAGE_TERMS`` (30 15 U.S.; 5 3 1 5v Canada; prime both; 2f 3f 5f svr tracker UK; 1-5 5-10 over10 Germany), in that order.
 
     A "y" after the years is accepted ("30y"), and repeats are harmless; "none" is none.
     """
@@ -271,8 +274,9 @@ def parse_mortgage_terms(spec: str) -> tuple[str, ...]:
         if term not in MORTGAGE_TERMS:
             raise ValueError(
                 f"invalid --mortgages term {item!r}: use 30 or 15 (U.S.), 5, 3, 1 or 5v (Canada, 5v the "
-                "5-year variable), prime (Canada and the U.S.: the banks' prime rate), 2f, 3f, 5f or svr "
-                "(UK, fixed for 2, 3 or 5 years; svr the standard variable rate), 1-5, 5-10 or over10 "
+                "5-year variable), prime (Canada and the U.S.: the banks' prime rate), 2f, 3f, 5f, svr or "
+                "tracker (UK, fixed for 2, 3 or 5 years; svr the standard variable rate; tracker Bank Rate "
+                "plus a margin), 1-5, 5-10 or over10 "
                 "(Germany, fixed for over 1 to 5, over 5 to 10, or over 10 years)"
             )
         chosen.add(term)
@@ -615,6 +619,8 @@ _MORTGAGE_CHOICES = (
     ("Canada and U.S.", (("prime", "prime"),)),
     # Without "fixed", as the legends are (batch 10.1).
     ("UK", (("2f", "2y"), ("3f", "3y"), ("5f", "5y"), ("svr", "SVR"))),
+    # On a row of its own, as the prime rate is, with its margin's field (batch 9.5).
+    ("UK, plus a margin", (("tracker", "tracker"),)),
     ("Germany", (("1-5", "1–5y"), ("5-10", "5–10y"), ("over10", "over 10y"))),
 )
 # Every nation has both policy terms (batch 9.1).
@@ -769,7 +775,8 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "mortgage-terms", Kind.VALUE, ("mortgage_terms",), "rates", "--mortgages:LIST / --mo:LIST",
         "the terms: 30 15 (U.S.), 5 3 1 5v\n(Canada; 5v variable, broker average),\nprime (Canada and the U.S.: the banks'\nprime rate),\n"
-        "2f 3f 5f svr (UK: fixed 2, 3, 5 years;\nsvr the standard variable rate, quoted\nfrom 1995, the millennium dataset's\nvariable mortgage rate from 1939),\n"
+        "2f 3f 5f svr tracker (UK: fixed 2, 3, 5\nyears; svr the standard variable rate,\nquoted from 1995, the millennium\n"
+        "dataset's variable mortgage rate from\n1939; tracker Bank Rate plus a margin,\nfrom 1997),\n"
         "1-5 5-10 over10 (Germany: fixed over 1\nto 5, over 5 to 10, over 10 years);\n"
         f"default {','.join(DEFAULT_MORTGAGE_TERMS)} (the UK's and Germany's: all\ntheir terms); turns --mortgages on",
         names=("mortgages",), shortest=2, parse=parse_mortgage_terms, turns_on="mortgages",
@@ -788,6 +795,19 @@ OPTIONS: tuple[Option, ...] = (
         "and the prime term on, unless a list\nof terms is given",
         names=("prime",), shortest=2, parse=parse_prime_margin, turns_on="mortgages",
         label="Prime margin (points)", format=partial(format_margin, field="prime_margin"),
+    ),
+    # Batch 9.5 (Terry, 2026-10-13, decision 26): the UK tracker, Bank Rate
+    # plus a margin, by default 1.75 points (config.DEFAULT_TRACKER_MARGIN).
+    # Per nation (--uk:tracker:2); only the UK has a tracker. At least "tr":
+    # "--t:" stays the right axis's Top. The tracker is in the UK's own
+    # default list, so with no list given its margin needs to name nothing;
+    # with a list given, the list says whether it is drawn.
+    Option(
+        "tracker-margin", Kind.VALUE, ("tracker_margin",), "rates", "--tracker:MARGIN / --tr:MARGIN",
+        "the UK's tracker mortgage: Bank Rate\nplus MARGIN points (negative allowed;\n"
+        f"default {DEFAULT_TRACKER_MARGIN:g}), from 1997; turns --mortgages on",
+        names=("tracker",), shortest=2, parse=parse_tracker_margin, turns_on="mortgages",
+        label="Tracker margin (points)", format=partial(format_margin, field="tracker_margin"),
     ),
     # At least "sp": "--s:" stays the start date.
     Option(
@@ -1017,7 +1037,10 @@ def margin_options() -> dict[str, Option]:
 
 # What a nation without a margin's term lacks, for the message refusing its
 # margin ("--uk:prime:0.5").
-_MARGIN_TERM_LACKED = {"prime": "no prime rate (the prime term is Canada's and the U.S.')"}
+_MARGIN_TERM_LACKED = {
+    "prime": "no prime rate (the prime term is Canada's and the U.S.')",
+    "tracker": "no tracker mortgage (the tracker term is the UK's)",
+}
 
 
 def _with_term(terms: tuple[str, ...], added: str) -> tuple[str, ...]:
