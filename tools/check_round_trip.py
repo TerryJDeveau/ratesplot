@@ -60,6 +60,8 @@ VALUES = (
     "--cdn:sp:none --sp:10-2", "--cdn:mo:none --us:mo:none --uk:mo:none --ger:mo:none --mo",
     # The prime margin (batch 9.4): for every chart, for one nation, with a list that leaves prime out.
     "--prime:0.5", "--cdn:prime:-0.25", "--us:prime:1 --mo:30,prime", "--mo:5 --prime:0.5", "--prime:0.5 --cdn:mo:5v",
+    # A margin for every chart names its term on the charts that have it only: the UK keeps its own default (2026-10-21).
+    "--nations:ca,gb --prime:0.5",
     # The policy terms (batch 9.1): for every chart, for one nation, a nation's own none.
     "--po", "--po:market", "--po:target,market", "--us:po:market", "--po:market --cdn:po:target,market",
     "--uk:po:none --po", "--po:target --ger:po:market --mo",

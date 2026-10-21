@@ -1083,17 +1083,22 @@ def _nation_settings(payloads: Mapping[str, str], values: Mapping[str, object]) 
                 given[option.name] = payloads[key]
                 if option.fields[0] in ("yield_terms", "spread_pairs", "mortgage_terms"):
                     _check_nation_terms(nation, option.fields[0], own)
-            # A margin of the nation's own names its term too, unless a list
-            # of terms is given (as ``config_from_choices`` does for every
-            # chart): added to the nation's list where that does not draw it.
+            # A margin names its term too, unless a list of terms is given:
+            # one for every chart on each nation that has the term, one of
+            # the nation's own on it (a nation without the term refuses
+            # that), added to the nation's list where that does not draw it.
+            # Not to the list for every chart: that would no longer be the
+            # default, and a nation with its own default would lose it
+            # (`--na:gb --prime:0.5` drew no UK mortgage until 2026-10-21).
             lists = by_name("mortgage-terms")
             for term, margin in margin_options().items():
-                if nation_choice(nation, margin) not in payloads:
-                    continue
-                if term not in nation.mortgage_terms:
+                own_margin = nation_choice(nation, margin) in payloads
+                if own_margin and term not in nation.mortgage_terms:
                     raise ValueError(f"{nation.name} has {_MARGIN_TERM_LACKED[term]}")
                 if (
-                    lists.name not in payloads
+                    (own_margin or margin.name in payloads)
+                    and term in nation.mortgage_terms
+                    and lists.name not in payloads
                     and nation_choice(nation, lists) not in payloads
                     and term not in nation.view("mortgage_terms", own["mortgage_terms"])
                 ):
@@ -1143,10 +1148,12 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
       unless the flag was given explicitly (--reg:2 --no-reg is off); given
       for one nation (--us:sp:10-2) too, for both charts.
     * A margin (``margin_options``: --prime:MARGIN, batch 9.4) also names
-      its term, for every chart or for the nation it is given for, unless a
+      its term, on each chart that has the term (given for every chart) or
+      on its nation's (given for one), in that nation's own list, unless a
       list of mortgage terms is given there: then the list says what is
       drawn (--mo:5 --prime:0.5 draws no prime rate, its margin idle). The
-      window and the page always give the lists, so there it never adds one.
+      window and the page always give the lists, so there it never adds one
+      (``_nation_settings``).
     * A value given for one nation (key "us:top") applies to its chart only
       (``_nation_settings``).
     * Measure: -r and -p exclude each other (``check_single_measure``); -r
@@ -1168,13 +1175,6 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
             values.update(zip(option.fields, parsed if len(option.fields) > 1 else (parsed,)))
         if option.check is not None:
             option.check(values)
-    # A margin names its term (``margin_options``), unless a list is given:
-    # the term is added where the list for every chart does not draw it.
-    for term, margin in margin_options().items():
-        if margin.name in payloads and "mortgage-terms" not in payloads and any(
-            term not in nation.view("mortgage_terms", values["mortgage_terms"]) for nation in NATIONS if term in nation.mortgage_terms
-        ):
-            values["mortgage_terms"] = _with_term(values["mortgage_terms"], term)
 
     given_parts = {curve: by_name(name).parse(payloads[name]) for name, curve in _PART_OPTIONS.items() if name in payloads}
     if len(set(given_parts.values())) > 1:
