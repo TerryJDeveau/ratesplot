@@ -395,7 +395,9 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     earlier = drawing.failed.get(key) if drawing is not None else None
     try:
         if earlier is not None:
-            raise earlier
+            # With this call's traceback only: the object is the one raised before, whose
+            # traceback (the first pass's, perhaps another thread's) each raise would extend.
+            raise earlier.with_traceback(None)
         result = download()
     except Exception as failure:
         if drawing is not None:
