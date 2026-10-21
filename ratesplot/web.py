@@ -137,6 +137,7 @@ from .frontend import (  # noqa: E402
     option_of,
     png_bytes,
     problem_text,
+    reset_choices,
     saved_log_name,
     saved_png_name,
     size_boxes_at_fault,
@@ -149,7 +150,6 @@ from .options import (  # noqa: E402
     Kind,
     Option,
     by_name,
-    choices_from_config,
     command_line_tokens,
     config_from_choices,
     help_epilog,
@@ -552,9 +552,13 @@ def _choice_changed(key: str, value: str) -> None:
 
 
 def _reset() -> None:
-    """The default charts, and the aspect-ratio lock ticked, as in the window (Back undoes both)."""
+    """The default charts for the nations ticked, and the aspect-ratio lock ticked, as in the window (Back undoes both).
+
+    Terry, 2026-10-20 (batch 17.5): Reset leaves the nation boxes alone
+    (``frontend.reset_choices``).
+    """
     _remember_view(lock=True)
-    _load_choices(choices_from_config(PlotConfig()))
+    _load_choices(reset_choices(_snapshot()[1]))
     _set_lock(True)
     st.query_params.clear()
 

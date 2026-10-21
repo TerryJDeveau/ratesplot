@@ -329,12 +329,12 @@ def check_address_and_rules(check: Check) -> None:
     at.run()
     check("Refresh draws again", at.session_state["drawing"].finished != finished)
 
-    # Reset.
+    # Reset: the defaults, but the nation boxes as they were (batch 17.5).
     button(at, "Reset").click()
     at.run()
     f = flags(at)
-    check("reset: both countries, no measure", f["cdn"] and f["us"] and not f["relative"] and not f["per-capita"], f)
-    check("reset: two charts", charts_shown(at) == 2, charts_shown(at))
+    check("reset: Canada still alone, no measure", f["cdn"] and not f["us"] and not f["relative"] and not f["per-capita"], f)
+    check("reset: one chart", charts_shown(at) == 1, charts_shown(at))
 
 
 def check_bad_addresses(check: Check) -> None:
@@ -866,10 +866,28 @@ def check_batch94(check: Check) -> None:
           ticked == boxes and set(texts.values()) == {"0.5"} and flags(page)["mortgages"], (sorted(ticked), texts))
 
 
+def check_batch17(check: Check) -> None:
+    """Batch 17.5: Reset leaves the nation boxes alone."""
+    at = new_page("--e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    at.checkbox(key="flag:germany").check()
+    at.text_input(key="value:cdn:max").input("9")
+    at.run()
+    at.checkbox(key="flag:us").uncheck()
+    at.run()
+    button(at, "Reset").click()
+    at.run()
+    f = flags(at)
+    check("Reset: the nation boxes as they were (Canada, Germany)",
+          (f["cdn"], f["us"], f["uk"], f["germany"]) == (True, False, False, True), {key: f[key] for key in ("cdn", "us", "uk", "germany")})
+    check("Reset: each nation's own fields reset", at.text_input(key="value:cdn:max").value == "", at.text_input(key="value:cdn:max").value)
+    check("no exception, two charts", not at.exception and charts_shown(at) == 2, (at.exception, charts_shown(at)))
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
-    check_batch15, check_batch9, check_batch94,
+    check_batch15, check_batch9, check_batch94, check_batch17,
 )
 
 

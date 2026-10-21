@@ -134,6 +134,7 @@ from .frontend import (
     pan_updates,
     png_bytes,
     problem_text,
+    reset_choices,
     save_state,
     saved_log_name,
     saved_png_name,
@@ -147,7 +148,6 @@ from .options import (
     Kind,
     Option,
     by_name,
-    choices_from_config,
     command_line_tokens,
     config_from_choices,
     idle_prime_margins,
@@ -1942,13 +1942,14 @@ class RatesPlotApp:
         self.request_redraw(force=True)
 
     def _reset(self) -> None:
-        """Back to the default charts, and the preview's defaults: "Fit to window", aspect ratio preserved.
+        """Back to the default charts for the nations ticked, and the preview's defaults: "Fit to window", aspect ratio preserved.
 
         Terry, 2026-10-12: Reset left the preview's two settings as they were.
-        Back undoes all of it.
+        Terry, 2026-10-20 (batch 17.5): Reset leaves the nation boxes alone
+        (``frontend.reset_choices``). Back undoes all of it.
         """
         self._remember_step(preview=True)
-        self._load_choices(choices_from_config(PlotConfig()))
+        self._load_choices(reset_choices(self._snapshot()[1]))
         self._set_preview(_DEFAULT_PREVIEW, {name: True for name in self.size_editors})
         self.request_redraw()
 

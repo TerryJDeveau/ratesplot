@@ -22,7 +22,8 @@ may not have it) and the two cannot drift apart:
   window's mouse and the web page's drag use the same rules; the page's
   buttons move the dates by ``move_dates_updates``;
 * what a blank field shows in grey: the value in effect (``field_hints``);
-  a typed number's 0 before its point (``with_leading_zero``).
+  a typed number's 0 before its point (``with_leading_zero``);
+* the nation boxes: what Reset leaves of them (``reset_choices``).
 """
 
 from __future__ import annotations
@@ -75,6 +76,7 @@ from .options import (
     options_in,
     options_of,
     per_nation,
+    switch_of,
 )
 
 # The start date written out before it became automatic (Terry, 2026-09-29):
@@ -388,6 +390,28 @@ def starting_choices(
             notes.append(f"Remembered settings not used ({exc}); starting from the command line and defaults.")
             choices = combine(use_state=False)
     return choices, notes
+
+
+# ---------------------------------------------------------------------------
+# The nation boxes: Reset
+# ---------------------------------------------------------------------------
+
+
+def nation_boxes() -> dict[str, str]:
+    """Return each nation's box in the window and on the page: its option's name -> the nation's key ("germany": "de")."""
+    return {switch_of(nation): nation.key for nation in NATIONS}
+
+
+def reset_choices(flags: Mapping[str, bool]) -> Choices:
+    """Return the choices Reset gives: every default, but the nation boxes as they are (batch 17.5).
+
+    Terry, 2026-10-20: "Pressing “Reset” should not tick or untick any nation
+    tick-boxes." Each nation's own controls are reset with the rest.
+    """
+    payloads, defaults = choices_from_config(PlotConfig())
+    kept = {name: bool(flags[name]) for name in nation_boxes() if name in flags}
+    return payloads, {**defaults, **kept}
+
 
 
 # ---------------------------------------------------------------------------
