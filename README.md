@@ -27,6 +27,14 @@ national debt and GDP, to 1956 for Germany's 10-year yield) is built into the co
 
 All three draw the same charts from the same code (`plotting.build_figure`).
 
+When a source does not answer (it is down, or sends a web page such as its maintenance notice
+in place of its data), the chart is drawn from the last good copy of that download, which is
+kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_good` on Windows,
+`~/.cache/ratesplot/last_good` elsewhere). The message log names the source and the copy's date;
+the web page says so above the charts, and the window in its status line. A chart whose source
+has failed with no copy kept is left out and named, and the other charts are drawn. The web
+page's server keeps its copies only until it restarts.
+
 In the window and on the page a blank field shows in grey the value it stands for (the
 automatic start, today's end, each chart's axis limits as drawn); a value typed in is black,
 and a number typed without the 0 before its point (`.3`) gets it (`0.3`). A country ticked
@@ -68,6 +76,7 @@ projection of each curve to today are provisional, and drawn as such. The subtit
 
 `ratesplot/` is the program (its `__init__.py` has the module map); `tools/` holds the checks
 used when it is changed (`regress_charts.py`, `verify_cli.py`, `verify_web.py`, `check_sources.py`,
-`check_drawn_values.py`, every curve on the yield axis against its sources, and `check_reg_labels.py`,
-what the regression segments' labels cover)
+`check_drawn_values.py`, every curve on the yield axis against its sources, `check_reg_labels.py`,
+what the regression segments' labels cover, and `check_last_good.py`, the charts drawn from the
+last good copies with every source cut off)
 and the bake of the historical data (`bake_archives.py`).
