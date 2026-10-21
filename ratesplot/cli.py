@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 
 from .config import NATIONS, Nation, PlotConfig, nation_by_code, nation_by_key
 from .options import (
@@ -276,12 +277,24 @@ def main(argv: list[str] | None = None) -> None:
             # source is fetched twice.
             enable_download_cache()
             config = resolve_start(config)
-        if config.show_cdn:
-            run_cdn(config)
-        if config.show_us:
-            run_us(config)
-        if config.show_uk:
-            run_uk(config)
-        if config.show_de:
-            run_de(config)
+        # Each chart on its own: one whose source is down (FRED's maintenance
+        # page, 2026-10-21) is named with its traceback, and the rest drawn.
+        not_drawn = []
+        for shown, run, name in (
+            (config.show_cdn, run_cdn, "Canada"),
+            (config.show_us, run_us, "United States"),
+            (config.show_uk, run_uk, "United Kingdom"),
+            (config.show_de, run_de, "Germany"),
+        ):
+            if not shown:
+                continue
+            try:
+                run(config)
+            except Exception as exc:  # named here and at the end, never swallowed
+                traceback.print_exc()
+                print(f"Warning: the {name} chart was not drawn ({type(exc).__name__}: {exc}).\n")
+                not_drawn.append(name)
+    if not_drawn:
+        print(f"Charts not drawn: {', '.join(not_drawn)}.")
+        sys.exit(1)
     print("All requested charts finished.")

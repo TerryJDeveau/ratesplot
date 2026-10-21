@@ -809,19 +809,28 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
     drawing on the web page, prints as before. A curve that begins within
     ``MIN_WINDOW_DAYS`` of the end, or after it, cannot be whole in any
     window: it is left out of the choice (and said so), and drawn from where
-    it begins, if at all.
+    it begins, if at all. A country whose data cannot be prepared at all (a
+    source down, 2026-10-21) is left out of the choice, with a warning; its
+    chart's own drawing then fails and says why, and the others are drawn.
     """
     if config.start is not None:
         return config
     trial = replace(config, start=EARLIEST_DATA_START, current=False)
     firsts: dict[tuple[str, str], pd.Timestamp] = {}  # (country, curve label) -> first date
+    unprepared: list[str] = []
     with this_thread_output_to(None):
         for country in COUNTRIES:
             if getattr(config, country.show_field):
                 own = trial.for_nation(country.key)
-                yields, macro, rates = country.prepare(own)
+                try:
+                    yields, macro, rates = country.prepare(own)
+                except Exception as exc:  # warned of below, out of the silenced pass
+                    unprepared.append(f"{country.metadata.country_name} ({type(exc).__name__}: {exc})")
+                    continue
                 for label, first in curve_first_dates(yields, macro, rates, own, country.metadata).items():
                     firsts[(country.metadata.country_name, label)] = first
+    for which in unprepared:
+        print(f"  Warning: no data could be prepared for the chart of {which}; the start is found without it.")
 
     def named(curves: list[tuple[str, str]]) -> str:
         """``5-Year Yield and 10-Year Yield (Canada)``, one bracket per country."""

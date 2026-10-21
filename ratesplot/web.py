@@ -240,7 +240,10 @@ class Drawing:
     geometry: dict[str, ChartGeometry | None]  # Country.key -> where its axes are, for zooming
     tokens: tuple[str, ...]  # the chart's command line (after the script name)
     log: str
-    error: str | None
+    error: str | None  # the whole drawing failed (no start found)
+    # Country.key -> why its chart alone was not drawn (a source down,
+    # 2026-10-21): the other charts are drawn and shown.
+    failed: dict[str, str]
     seconds: float
     finished: pd.Timestamp
 
@@ -1031,7 +1034,12 @@ def _nation_controls(bar, nation: Nation) -> None:
 
 
 def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
-    """Draw every chosen country's chart for ``config``; never raises (a failure is in the Drawing)."""
+    """Draw every chosen country's chart for ``config``; never raises (a failure is in the Drawing).
+
+    A chart that cannot be drawn (its source down: FRED's maintenance page,
+    2026-10-21, took every chart with it) is named in ``Drawing.failed`` and
+    the others are drawn.
+    """
     lines: list[str] = []
     began = time.perf_counter()
     source = "the automatic start" if config.start is None else f"{config.start:%Y-%m-%d}"
@@ -1040,20 +1048,27 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
     pngs: dict[str, bytes] = {}
     geometry: dict[str, ChartGeometry | None] = {}
     error: str | None = None
+    failed: dict[str, str] = {}
     # Each real download logged, and those reused counted, once the lock is held (http.drawing_downloads).
     with this_thread_output_to(lines.append), _DRAWING_LOCK, http.drawing_downloads():
         try:
             drawn = resolve_start(config)
-            for country in COUNTRIES:
-                if getattr(drawn, country.show_field):
-                    figure = build_figure(country, drawn)
-                    pngs[country.key] = png_bytes(figure)
-                    # Measured after savefig, so the axes positions are the final rendered ones (as in the window).
-                    geometry[country.key] = ChartGeometry.from_figure(figure, drawn)
         except Exception as exc:  # shown on the page and in the log, never swallowed
             error = f"{type(exc).__name__}: {exc}"
             lines.append(traceback.format_exc())
-            drawn = None
+        else:
+            for country in COUNTRIES:
+                if not getattr(drawn, country.show_field):
+                    continue
+                try:
+                    figure = build_figure(country, drawn)
+                except Exception as exc:  # that chart alone; shown on the page and in the log
+                    failed[country.key] = f"{type(exc).__name__}: {exc}"
+                    lines.append(traceback.format_exc())
+                    continue
+                pngs[country.key] = png_bytes(figure)
+                # Measured after savefig, so the axes positions are the final rendered ones (as in the window).
+                geometry[country.key] = ChartGeometry.from_figure(figure, drawn)
     return Drawing(
         config=config,
         drawn=drawn,
@@ -1062,6 +1077,7 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
         tokens=tokens,
         log="".join(lines),
         error=error,
+        failed=failed,
         seconds=time.perf_counter() - began,
         finished=pd.Timestamp.now(tz=MARKET_TIMEZONE),
     )
@@ -1103,6 +1119,8 @@ def _show(drawing: Drawing) -> None:
     """The charts, one tab per country, each with its download button; then the command line and log."""
     if drawing.error is not None:
         st.error(f"Drawing failed: {drawing.error} (details in the message log below)")
+    for key, why in drawing.failed.items():
+        st.error(f"{TAB_TITLES[key]}: chart not drawn. {why} (details in the message log below)")
     if drawing.pngs:
         _view_buttons(drawing)
         show_chart = _chart_component()

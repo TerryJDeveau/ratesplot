@@ -1592,21 +1592,29 @@ class RatesPlotApp:
         A blank Start is found first, once for all the charts (``resolve_start``).
         What this thread prints goes to the message log (``console``), with a
         line for each real download (``http.drawing_downloads``); the main
-        thread's output goes to the console as before.
+        thread's output goes to the console as before. A chart that cannot
+        be drawn (its source down, 2026-10-21) is named, and the others are
+        drawn.
         """
         with this_thread_output_to(lambda text: self.messages.put(("log", text))), http.drawing_downloads():
             try:
                 drawn = resolve_start(config)
-                for country in countries:
-                    figure = build_figure(country, drawn)
-                    png = png_bytes(figure)
-                    # Measured after savefig, so the axes positions are the final rendered ones.
-                    geometry = ChartGeometry.from_figure(figure, drawn)
-                    self.messages.put(("chart", country.key, png, geometry))
             except Exception as exc:  # reported in the window and log, never swallowed
                 self.messages.put(("failed", config, f"{type(exc).__name__}: {exc}", traceback.format_exc()))
-            else:
-                self.messages.put(("done", config, drawn))
+                return
+            not_drawn: dict[str, str] = {}
+            for country in countries:
+                try:
+                    figure = build_figure(country, drawn)
+                except Exception as exc:  # that chart alone; reported in the window and log
+                    not_drawn[country.key] = f"{type(exc).__name__}: {exc}"
+                    self.messages.put(("not drawn", country.key, traceback.format_exc()))
+                    continue
+                png = png_bytes(figure)
+                # Measured after savefig, so the axes positions are the final rendered ones.
+                geometry = ChartGeometry.from_figure(figure, drawn)
+                self.messages.put(("chart", country.key, png, geometry))
+            self.messages.put(("done", config, drawn, not_drawn))
 
     def _poll(self) -> None:
         """Handle every message the worker has posted, then check again shortly."""
@@ -1618,8 +1626,11 @@ class RatesPlotApp:
                     self._append_log(message[1])
                 elif kind == "chart":
                     self._show_chart(message[1], message[2], message[3])
+                elif kind == "not drawn":
+                    self._append_log(message[2])
+                    self._clear_chart(message[1])
                 elif kind == "done":
-                    self._render_finished(message[1], None, message[2])
+                    self._render_finished(message[1], None, message[2], message[3])
                 elif kind == "failed":
                     self._append_log(message[3])
                     self._render_finished(message[1], message[2])
@@ -1638,15 +1649,31 @@ class RatesPlotApp:
             self._ticked_nation = None
             self.notebook.select(self.tabs[key])
 
-    def _render_finished(self, config: PlotConfig, error: str | None, drawn: PlotConfig | None = None) -> None:
+    def _clear_chart(self, key: str) -> None:
+        """Take a chart that could not be drawn off its tab, so an older drawing is not shown as this one."""
+        self.pngs.pop(key, None)
+        self.images.pop(key, None)
+        self.geometry[key] = None
+        self.canvases[key].delete("all")
+
+    def _render_finished(
+        self, config: PlotConfig, error: str | None, drawn: PlotConfig | None = None, not_drawn: dict[str, str] | None = None
+    ) -> None:
         self.rendering = False
         if error is None:
             self.shown_config = config
             self.drawn_config = drawn
             self.drawn_choices = self.rendering_choices
-            drawn = [TAB_TITLES.get(c.key, c.key) for c in COUNTRIES if getattr(config, c.show_field)]
+            not_drawn = not_drawn or {}
+            drawn = [TAB_TITLES.get(c.key, c.key) for c in COUNTRIES if getattr(config, c.show_field) and c.key not in not_drawn]
             names = drawn[0] if len(drawn) == 1 else f"{', '.join(drawn[:-1])} and {drawn[-1]}"
-            self.status.set(f"Drawn: {names} at {config.width_px} x {config.height_px} px.")
+            failures = "; ".join(f"{TAB_TITLES.get(key, key)} not drawn: {why}" for key, why in not_drawn.items())
+            if not drawn:
+                self.status.set(f"{failures} (details in the message log)")
+            elif failures:
+                self.status.set(f"Drawn: {names}. {failures} (details in the message log)")
+            else:
+                self.status.set(f"Drawn: {names} at {config.width_px} x {config.height_px} px.")
             self._show_hints()
             self._remember()
         else:

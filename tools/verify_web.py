@@ -156,8 +156,8 @@ def check_charts(cases: tuple[str, ...], outdir: Path, verbose: bool = False) ->
             all_same = False
             continue
         drawing = web._draw(page_config, tuple(command_line_tokens(*choices)))
-        if drawing.error is not None:
-            print(f"{name:12} FAIL: the page's drawing failed: {drawing.error}")
+        if drawing.error is not None or drawing.failed:
+            print(f"{name:12} FAIL: the page's drawing failed: {drawing.error or drawing.failed}")
             all_same = False
             continue
         output = io.StringIO()
