@@ -158,8 +158,10 @@ from .options import (  # noqa: E402
     by_name,
     command_line_tokens,
     config_from_choices,
+    field_default,
     help_epilog,
-    idle_prime_margins,
+    idle_margins,
+    margin_options,
     nation_choice,
     options_in,
     parse_date_spec,
@@ -185,11 +187,13 @@ _PLACEHOLDERS = {
     "start": "automatic",
     "end": "today",
     "regression-tolerance": f"{DEFAULT_REGRESSION_TOLERANCE_PCT:g}",
-    "prime-margin": "0",
+    # The margins at their defaults: the prime margin's 0 (batch 9.4).
+    **{margin.name: f"{field_default(margin.fields[0]):g}" for margin in margin_options().values()},
 }
 _DEFAULT_PLACEHOLDER = "automatic"
-# The prime margin's field beside a nation's prime box (batch 9.4): narrow,
-# a number of points, so it stays on the box's row in the sidebar.
+# A margin's field beside its term's box in a nation's panel (batch 9.4, the
+# prime rate's): narrow, a number of points, so it stays on the box's row in
+# the sidebar.
 _MARGIN_FIELD_PX = 110
 _DRAWING_LOCK = threading.Lock()
 # How many zoom and pan steps "Back" can undo (as in the window); the view
@@ -713,10 +717,10 @@ def _value_control(where, option: Option, key: str | None = None, label: str | N
 
     Blank, it shows the value in effect in grey (the placeholder): the
     last drawing's (``_HINTS``), or before any drawing what blank means.
-    ``label`` replaces the option's label (the prime margin's "margin
-    (pts)" beside its box). Greyed while its flag is off, while it has no
-    curve to act on, and a nation's prime margin while its chart draws no
-    prime rate (``options.idle_prime_margins``), as in the window.
+    ``label`` replaces the option's label (a margin's "margin (pts)" beside
+    its term's box). Greyed while its flag is off, while it has no curve to
+    act on, and a nation's margin while its chart draws not its term, the
+    prime rate (``options.idle_margins``), as in the window.
     """
     key = key or option.name
     flag_off = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
@@ -727,7 +731,7 @@ def _value_control(where, option: Option, key: str | None = None, label: str | N
         args=(key,),
         help=_help(option, "Blank = default (shown in grey)."),
         placeholder=st.session_state.get(_HINTS, {}).get(key) or _PLACEHOLDERS.get(option.name, _DEFAULT_PLACEHOLDER),
-        disabled=flag_off or option.name in _idle() or key in idle_prime_margins(*_snapshot()),
+        disabled=flag_off or option.name in _idle() or key in idle_margins(*_snapshot()),
         width=width,
     )
 
@@ -924,8 +928,10 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     for caption, boxes in rows:
         if caption:
             where.caption(caption)
-        # A nation's prime box has its margin's field beside it (batch 9.4), as in the window.
-        margin = nation is not None and option.fields == ("mortgage_terms",) and any(value == "prime" for value, _text in boxes)
+        # A nation's box of a term drawn plus a margin has the margin's field
+        # beside it (batch 9.4, the prime rate's), as in the window.
+        margins = margin_options() if nation is not None and option.fields == ("mortgage_terms",) else {}
+        margin = next((margins[value] for value, _text in boxes if value in margins), None)
         row = where.container(horizontal=True, wrap=True, vertical_alignment="bottom" if margin else "top")
         for value, text in boxes:
             row.checkbox(
@@ -936,8 +942,7 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
                 args=(key, value),
             )
         if margin:
-            option_margin = by_name("prime-margin")
-            _value_control(row, option_margin, key=nation_choice(nation, option_margin), label="margin (pts)", width=_MARGIN_FIELD_PX)
+            _value_control(row, margin, key=nation_choice(nation, margin), label="margin (pts)", width=_MARGIN_FIELD_PX)
 
 
 def _field_hints() -> dict[str, str]:

@@ -68,9 +68,11 @@ from .options import (
     config_from_choices,
     format_dollar_bound,
     group_title,
+    field_default,
+    idle_margins,
     idle_options,
-    idle_prime_margins,
     is_percent_bound,
+    margin_options,
     list_switch,
     nation_choice,
     nation_view,
@@ -344,7 +346,7 @@ def starting_choices(
         for option in NATION_OPTIONS:
             given = [other for other in options_of(Kind.VALUE) if other.fields == option.fields]
             if option.fields == ("mortgage_terms",):
-                given.append(by_name("prime-margin"))  # it names the prime term too (batch 9.4)
+                given += margin_options().values()  # a margin names its term too (batch 9.4)
             for nation in NATIONS:
                 key = nation_choice(nation, option)
                 if any(other.name in cli_payloads or nation_choice(nation, other) in cli_payloads for other in given):
@@ -473,18 +475,18 @@ def drawn_payloads(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> di
     A greyed field changes nothing, so a bad text left in it must not stop
     the drawing: a value whose flag is off (the tolerance without --reg), and
     one with no curve to act on (``idle_controls``: Top and Bottom, the
-    levels, the tolerance; a nation's prime margin while its chart draws no
-    prime rate, ``options.idle_prime_margins``). The field keeps its text
+    levels, the tolerance; a nation's margin while its chart draws not its
+    term, the prime rate, ``options.idle_margins``). The field keeps its text
     for when it applies again, and the written command line leaves it out
     (``options.command_line_tokens``).
     """
     idle = idle_controls(flags)
-    idle_margins = idle_prime_margins(payloads, flags)
+    idle_margin_keys = idle_margins(payloads, flags)
     drawn: dict[str, str] = {}
     for key, text in payloads.items():
         option = option_of(key)
         off = option.turns_on in flags and not flags[option.turns_on]
-        if text.strip() and not off and option.name not in idle and key not in idle_margins:
+        if text.strip() and not off and option.name not in idle and key not in idle_margin_keys:
             drawn[key] = text.strip()
     return drawn
 
@@ -860,8 +862,10 @@ def field_hints(drawn: PlotConfig | None, geometries: Mapping[str, ChartGeometry
     greyed.
     """
     hints = {"regression-tolerance": f"{DEFAULT_REGRESSION_TOLERANCE_PCT:g}"}
-    # Each nation's prime margin: 0, the prime rate itself (batch 9.4).
-    hints.update({nation_choice(nation, by_name("prime-margin")): "0" for nation in NATIONS})
+    # Each nation's margins at their defaults: the prime margin's 0, the prime
+    # rate itself (batch 9.4).
+    for margin in margin_options().values():
+        hints.update({nation_choice(nation, margin): f"{field_default(margin.fields[0]):g}" for nation in NATIONS})
     if drawn is None:
         return hints
     hints["start"] = f"{drawn.start:%Y-%m-%d}"

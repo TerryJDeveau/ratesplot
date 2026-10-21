@@ -152,7 +152,8 @@ from .options import (
     by_name,
     command_line_tokens,
     config_from_choices,
-    idle_prime_margins,
+    idle_margins,
+    margin_options,
     nation_choice,
     options_in,
     parse_date_spec,
@@ -1118,8 +1119,9 @@ class RatesPlotApp:
         while the flag is off; one of its own (the yield terms) has its label
         at the left, as the other fields do. A nation's own list (under its
         tab) has its label above, and only the boxes its chart can draw. A
-        nation's prime box has its margin's field beside it (batch 9.4): "prime
-        margin [0.5] pts", as the tolerance sits on the regression row.
+        nation's box of a term drawn plus a margin (``options.margin_options``)
+        has the margin's field beside it (batch 9.4): "prime margin [0.5] pts",
+        as the tolerance sits on the regression row.
         """
         key = nation_choice(nation, option) if nation else option.name
         payload = tk.StringVar()
@@ -1143,16 +1145,20 @@ class RatesPlotApp:
         for caption, boxes in choice_rows(option, "", nation):
             editor.add_row(caption, boxes)
         self.choice_editors[key] = editor
-        if nation is not None and option.fields == ("mortgage_terms",) and "prime" in editor.boxes:
-            margin = by_name("prime-margin")
-            prime_box = next(widget for widget in editor.widgets if str(widget.cget("text")) == "prime")
+        if nation is None or option.fields != ("mortgage_terms",):
+            return
+        for term, margin in margin_options().items():
+            if term not in editor.boxes:
+                continue
+            # The editor keeps its boxes and their widgets in the same order.
+            term_box = editor.widgets[list(editor.boxes).index(term)].grid_info()
             cell = ttk.Frame(box)
             # Spanning the columns after it, so no box of the row above is widened.
-            cell.grid(row=int(prime_box.grid_info()["row"]), column=2, columnspan=8, sticky="w")
+            cell.grid(row=int(term_box["row"]), column=int(term_box["column"]) + 1, columnspan=8, sticky="w")
             self._add_value_control(cell, 0, margin, entry_width=5, pady=0, key=nation_choice(nation, margin), text="margin", after="pts")
 
     def _choices_changed(self) -> None:
-        """A tick box of a list changed: what it greys or ungreys (the prime margin), then a drawing."""
+        """A tick box of a list changed: what it greys or ungreys (a margin), then a drawing."""
         self._update_dependent_controls()
         self.request_redraw()
 
@@ -1447,12 +1453,12 @@ class RatesPlotApp:
         without debt or interest, Per capita, the regression segments and
         each chart's Top and Bottom without debt, GDP or interest; and a
         value whose flag is off (the regression tolerance without --reg, the
-        mortgage terms without mortgages); and a nation's prime margin while
-        its chart draws no prime rate (``options.idle_prime_margins``).
+        mortgage terms without mortgages); and a nation's margin while its
+        chart draws not its term, the prime rate (``options.idle_margins``).
         """
         flags = {name: variable.get() for name, variable in self.flag_vars.items()}
         idle = idle_controls(flags)
-        idle_margins = idle_prime_margins(self._snapshot()[0], flags)
+        idle_margin_keys = idle_margins(self._snapshot()[0], flags)
         for name, box in self.flag_boxes.items():
             if name in GREYABLE_OPTIONS:
                 box.state(["disabled"] if name in idle else ["!disabled"])
@@ -1461,7 +1467,7 @@ class RatesPlotApp:
             off = option.turns_on in flags and not flags[option.turns_on]
             if option.turns_on not in flags and option.name not in GREYABLE_OPTIONS:
                 continue
-            state = ["disabled"] if off or option.name in idle or key in idle_margins else ["!disabled"]
+            state = ["disabled"] if off or option.name in idle or key in idle_margin_keys else ["!disabled"]
             if key in self.value_entries:
                 self.value_entries[key].state(state)
             if key in self.value_labels:

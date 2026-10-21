@@ -424,6 +424,10 @@ MORTGAGE_TERMS = {
     "over10": (("de",), "20y"),
 }
 DEFAULT_MORTGAGE_TERMS = ("30", "5")
+# The terms drawn plus a margin in points, each with a box beside its tick
+# (batch 9.4, the prime rate): term -> the PlotConfig field holding the
+# margin. The options, the controls and the drawing take them from here.
+MORTGAGE_MARGINS = {"prime": "prime_margin"}
 # The legend lists each nation's mortgage terms longest first, then its
 # variable and prime rates, as it lists the yields longest first (batch 17.2,
 # Terry 2026-10-15: "this would echo the vertical placement of the curves");

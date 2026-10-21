@@ -66,6 +66,7 @@ from .config import (
     MIN_CANVAS_PX,
     MIN_REGRESSION_TOLERANCE_PCT,
     MIN_WINDOW_DAYS,
+    MORTGAGE_MARGINS,
     MORTGAGE_TERMS,
     NATIONS,
     PER_NATION_FIELDS,
@@ -179,29 +180,34 @@ def parse_regression_tolerance(spec: str) -> float:
     return parsed
 
 
-# The prime margin's limits, in points either way: a margin the size of the
-# prime rate itself is a typing error, not a mortgage.
-MAX_PRIME_MARGIN = 10.0
+# A margin's limits (config.MORTGAGE_MARGINS), in points either way: a margin
+# the size of the rate itself is a typing error, not a mortgage.
+MAX_MARGIN = 10.0
 
 
-def parse_prime_margin(spec: str) -> float:
-    """Parse the prime margin, in points above (or, negative, below) the prime rate: ``0.5``, ``-0.25``, ``+1``.
+def parse_margin(spec: str, *, spelling: str, base: str, examples: tuple[str, str]) -> float:
+    """Parse a margin, in points above (or, negative, below) ``base``: ``0.5``, ``-0.25``, ``+1``.
 
-    A "+" written in the web page's address arrives as a space, which is
-    ignored, so ``--prime:+0.5`` there means 0.5 as on the command line.
+    ``spelling`` names the option in messages ("--prime"), ``examples`` two
+    margins to suggest. A "+" written in the web page's address arrives as
+    a space, which is ignored, so ``--prime:+0.5`` there means 0.5 as on
+    the command line.
     """
     value = spec.strip()
+    first, second = examples
     if not value:
-        raise ValueError("empty --prime margin: give points above or below the prime rate, e.g. --prime:0.5 or --prime:-0.25")
+        raise ValueError(f"empty {spelling} margin: give points above or below {base}, e.g. {spelling}:{first} or {spelling}:{second}")
     try:
         parsed = float(value)
     except ValueError:
-        raise ValueError(
-            f"invalid --prime margin {spec.strip()!r}: give points above or below the prime rate, e.g. 0.5 or -0.25"
-        ) from None
-    if not -MAX_PRIME_MARGIN <= parsed <= MAX_PRIME_MARGIN:
-        raise ValueError(f"--prime margin must be within {MAX_PRIME_MARGIN:g} points of the prime rate, got {spec.strip()}")
+        raise ValueError(f"invalid {spelling} margin {value!r}: give points above or below {base}, e.g. {first} or {second}") from None
+    if not -MAX_MARGIN <= parsed <= MAX_MARGIN:
+        raise ValueError(f"{spelling} margin must be within {MAX_MARGIN:g} points of {base}, got {value}")
     return parsed + 0.0  # -0 is 0
+
+
+# The prime margin (batch 9.4), in points above or below the prime rate.
+parse_prime_margin = partial(parse_margin, spelling="--prime", base="the prime rate", examples=("0.5", "-0.25"))
 
 
 _TERM_SPEC = re.compile(r"^(\d+)\s*([my]?)$")
@@ -420,9 +426,14 @@ def format_regression_tolerance(values: tuple, _config: PlotConfig) -> str:
     return "" if values[0] is None else f"{values[0]:g}"
 
 
-def format_prime_margin(values: tuple, _config: PlotConfig) -> str:
-    """Format the prime margin in points; blank at 0, the default (shown in grey)."""
-    return "" if values[0] == 0 else f"{values[0]:g}"
+def field_default(name: str) -> object:
+    """Return the default of the PlotConfig field ``name`` (one with a plain default, not a factory)."""
+    return next(field.default for field in dataclasses.fields(PlotConfig) if field.name == name)
+
+
+def format_margin(values: tuple, _config: PlotConfig, *, field: str) -> str:
+    """Format a margin (the PlotConfig ``field``) in points; blank at its default (shown in grey)."""
+    return "" if values[0] == field_default(field) else f"{values[0]:g}"
 
 
 # ---------------------------------------------------------------------------
@@ -776,7 +787,7 @@ OPTIONS: tuple[Option, ...] = (
         "the prime rate plus MARGIN points\n(negative allowed; default 0), as in\n\"Prime Rate + 0.50\"; turns --mortgages\n"
         "and the prime term on, unless a list\nof terms is given",
         names=("prime",), shortest=2, parse=parse_prime_margin, turns_on="mortgages",
-        label="Prime margin (points)", format=format_prime_margin,
+        label="Prime margin (points)", format=partial(format_margin, field="prime_margin"),
     ),
     # At least "sp": "--s:" stays the start date.
     Option(
@@ -999,22 +1010,33 @@ def _check_nation_terms(nation: Nation, field: str, values: Mapping[str, object]
         raise ValueError(f"{nation.name} has no {lacking[0]} yield (its terms: {','.join(nation.yield_terms)})")
 
 
-def _with_prime(terms: tuple[str, ...]) -> tuple[str, ...]:
-    """Return mortgage terms with the prime term added, in MORTGAGE_TERMS order."""
-    return tuple(term for term in MORTGAGE_TERMS if term in terms or term == "prime")
+def margin_options() -> dict[str, Option]:
+    """Return the options of the mortgage terms drawn plus a margin (``config.MORTGAGE_MARGINS``): term -> option ("prime" -> --prime:MARGIN)."""
+    return {term: next(option for option in OPTIONS if option.fields == (field,)) for term, field in MORTGAGE_MARGINS.items()}
 
 
-def idle_prime_margins(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
-    """Return the keys of the nations' prime margins that change nothing ("cdn:prime-margin"): their charts draw no prime rate.
+# What a nation without a margin's term lacks, for the message refusing its
+# margin ("--uk:prime:0.5").
+_MARGIN_TERM_LACKED = {"prime": "no prime rate (the prime term is Canada's and the U.S.')"}
 
-    That is while the mortgages are off, or while the prime term is not
-    among the nation's mortgage terms (its own list, else the list for
-    every chart, else the default), as for a nation that has none (the UK,
-    Germany). The window and the page grey such a field, keeping its text,
+
+def _with_term(terms: tuple[str, ...], added: str) -> tuple[str, ...]:
+    """Return mortgage terms with ``added`` among them, in MORTGAGE_TERMS order."""
+    return tuple(term for term in MORTGAGE_TERMS if term in terms or term == added)
+
+
+def idle_margins(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
+    """Return the keys of the nations' margins that change nothing ("cdn:prime-margin"): their charts draw no such term.
+
+    A margin (``margin_options``: the prime rate's) is idle while the
+    mortgages are off, or while its term is not among the nation's mortgage
+    terms (its own list, else the list for every chart, else the default),
+    as for a nation that has no such term (the UK and Germany have no prime
+    rate). The window and the page grey such a field, keeping its text,
     and the written command line leaves it out: written, ``--cdn:prime:0.5``
     would add the prime term to Canada's chart (``config_from_choices``).
     """
-    margin, terms = by_name("prime-margin"), by_name("mortgage-terms")
+    terms = by_name("mortgage-terms")
     idle = set()
     for nation in NATIONS:
         text = payloads.get(nation_choice(nation, terms), "").strip() or payloads.get(terms.name, "").strip()
@@ -1022,8 +1044,9 @@ def idle_prime_margins(payloads: Mapping[str, str], flags: Mapping[str, bool]) -
             chosen = terms.parse(text) if text else DEFAULT_MORTGAGE_TERMS
         except ValueError:
             chosen = ()
-        if not flags.get(terms.turns_on, False) or "prime" not in nation.view("mortgage_terms", chosen):
-            idle.add(nation_choice(nation, margin))
+        for term, margin in margin_options().items():
+            if not flags.get(terms.turns_on, False) or term not in nation.view("mortgage_terms", chosen):
+                idle.add(nation_choice(nation, margin))
     return frozenset(idle)
 
 
@@ -1060,14 +1083,21 @@ def _nation_settings(payloads: Mapping[str, str], values: Mapping[str, object]) 
                 given[option.name] = payloads[key]
                 if option.fields[0] in ("yield_terms", "spread_pairs", "mortgage_terms"):
                     _check_nation_terms(nation, option.fields[0], own)
-            # A margin of the nation's own names its prime term too, unless a
-            # list of terms is given (as ``config_from_choices`` does for both).
-            margin, lists = by_name("prime-margin"), by_name("mortgage-terms")
-            if nation_choice(nation, margin) in payloads:
-                if "prime" not in nation.mortgage_terms:
-                    raise ValueError(f"{nation.name} has no prime rate (the prime term is Canada's and the U.S.')")
-                if lists.name not in payloads and nation_choice(nation, lists) not in payloads:
-                    own["mortgage_terms"] = _with_prime(own["mortgage_terms"])
+            # A margin of the nation's own names its term too, unless a list
+            # of terms is given (as ``config_from_choices`` does for every
+            # chart): added to the nation's list where that does not draw it.
+            lists = by_name("mortgage-terms")
+            for term, margin in margin_options().items():
+                if nation_choice(nation, margin) not in payloads:
+                    continue
+                if term not in nation.mortgage_terms:
+                    raise ValueError(f"{nation.name} has {_MARGIN_TERM_LACKED[term]}")
+                if (
+                    lists.name not in payloads
+                    and nation_choice(nation, lists) not in payloads
+                    and term not in nation.view("mortgage_terms", own["mortgage_terms"])
+                ):
+                    own["mortgage_terms"] = _with_term(own["mortgage_terms"], term)
             if given:
                 check_yield_bounds(own)
                 check_macro_bounds(own)
@@ -1112,11 +1142,11 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     * A value that belongs to a flag (``turns_on``: --reg:TOL) turns it on,
       unless the flag was given explicitly (--reg:2 --no-reg is off); given
       for one nation (--us:sp:10-2) too, for both charts.
-    * The prime margin (--prime:MARGIN, batch 9.4) also names the prime
-      term, for every chart or for the nation it is given for, unless a list
-      of mortgage terms is given there: then the list says what is drawn
-      (--mo:5 --prime:0.5 draws no prime rate, its margin idle). The window
-      and the page always give the lists, so there it never adds one.
+    * A margin (``margin_options``: --prime:MARGIN, batch 9.4) also names
+      its term, for every chart or for the nation it is given for, unless a
+      list of mortgage terms is given there: then the list says what is
+      drawn (--mo:5 --prime:0.5 draws no prime rate, its margin idle). The
+      window and the page always give the lists, so there it never adds one.
     * A value given for one nation (key "us:top") applies to its chart only
       (``_nation_settings``).
     * Measure: -r and -p exclude each other (``check_single_measure``); -r
@@ -1138,8 +1168,13 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
             values.update(zip(option.fields, parsed if len(option.fields) > 1 else (parsed,)))
         if option.check is not None:
             option.check(values)
-    if "prime-margin" in payloads and "mortgage-terms" not in payloads:
-        values["mortgage_terms"] = _with_prime(values["mortgage_terms"])
+    # A margin names its term (``margin_options``), unless a list is given:
+    # the term is added where the list for every chart does not draw it.
+    for term, margin in margin_options().items():
+        if margin.name in payloads and "mortgage-terms" not in payloads and any(
+            term not in nation.view("mortgage_terms", values["mortgage_terms"]) for nation in NATIONS if term in nation.mortgage_terms
+        ):
+            values["mortgage_terms"] = _with_term(values["mortgage_terms"], term)
 
     given_parts = {curve: by_name(name).parse(payloads[name]) for name, curve in _PART_OPTIONS.items() if name in payloads}
     if len(set(given_parts.values())) > 1:
@@ -1295,9 +1330,10 @@ def drawn_config(config: PlotConfig, key: str) -> PlotConfig:
         for option in options_of(Kind.VALUE)
         if per_nation(option) and not option.removes
     }
-    # A margin with no prime rate drawn draws nothing (``idle_prime_margins``).
-    if not own.mortgages or "prime" not in viewed["mortgage_terms"]:
-        viewed["prime_margin"] = 0.0
+    # A margin with its term not drawn draws nothing (``idle_margins``).
+    for term, field in MORTGAGE_MARGINS.items():
+        if not own.mortgages or term not in viewed["mortgage_terms"]:
+            viewed[field] = field_default(field)
     return dataclasses.replace(own, nation_settings=(), **viewed)
 
 
@@ -1370,8 +1406,8 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     defaults, default_flags = choices_from_config(PlotConfig())
     tokens: list[str] = []
     idle = idle_options(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True))
-    idle_margins = idle_prime_margins(payloads, flags)
-    payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle and key not in idle_margins}
+    idle_margin_keys = idle_margins(payloads, flags)
+    payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle and key not in idle_margin_keys}
 
     # The nations' switches, unless the ones chosen are those drawn by default.
     countries = [option for option in options_in("country") if option.in_gui]

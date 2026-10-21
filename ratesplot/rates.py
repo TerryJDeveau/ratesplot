@@ -23,6 +23,7 @@ from .cdn_data import boc_valet_series, statcan_zip_table
 from .config import (
     CANADIAN_YIELD_HIST_END,
     DATE_COLUMN,
+    MORTGAGE_MARGINS,
     MORTGAGE_OWN_COLORS,
     MORTGAGE_STYLE,
     MORTGAGE_TERMS,
@@ -595,9 +596,11 @@ def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) ->
     ``country``: one of the term's countries, its only one when not given
     (the prime rate is Canada's and the U.S.'). Canada's 5-year: the posted
     weekly rate, carried back before it begins by the monthly CMHC rate
-    (with a warning, and from 1975 only, if that fails). The prime rate is
-    drawn plus ``margin`` points (``PlotConfig.prime_margin``, batch 9.4).
+    (with a warning, and from 1975 only, if that fails). A term of
+    ``config.MORTGAGE_MARGINS`` is drawn plus ``margin`` points (the prime
+    rate: ``PlotConfig.prime_margin``, batch 9.4); the others take none.
     """
+    assert margin == 0 or term in MORTGAGE_MARGINS, (term, margin)
     countries, yield_term = MORTGAGE_TERMS[term]
     if country is None:
         (country,) = countries
@@ -628,7 +631,7 @@ def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) ->
             history = history.loc[history.index < values.index[0]]
             values = pd.concat([history, values])
             holds = pd.concat([holding(history, "monthly"), holds])
-    if term == "prime" and margin:
+    if margin:
         values = values + margin
     color_of = YIELD_TERMS[yield_term] if yield_term is not None else None
     return RateCurve(f"mortgage_{term}", label, values, _mortgage_style(term), title="Mortgage Rates", color_of=color_of,
@@ -735,7 +738,10 @@ def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[
             warn_none_drawn(country, "mortgage rate", f"none of its mortgage terms ({own}) is chosen")
         else:
             with downloads_of(f"{adjective} mortgage rates"):
-                curves += [mortgage_rate(term, country, config.prime_margin if term == "prime" else 0.0) for term in terms]
+                curves += [
+                    mortgage_rate(term, country, getattr(config, MORTGAGE_MARGINS[term]) if term in MORTGAGE_MARGINS else 0.0)
+                    for term in terms
+                ]
     if config.spreads:
         curves += yield_spreads(country, yields, config)
     chosen = []
