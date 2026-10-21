@@ -33,7 +33,9 @@ kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_goo
 `~/.cache/ratesplot/last_good` elsewhere). The message log names the source and the copy's date;
 the web page says so above the charts, and the window in its status line. A chart whose source
 has failed with no copy kept is left out and named, and the other charts are drawn. The web
-page's server keeps its copies only until it restarts.
+page's server keeps its copies only until it restarts. A curve on the right axis whose source
+has stopped (or is left with only its baked history) ends a year after its last figure
+instead of running on flat to the end of the chart.
 
 In the window and on the page a blank field shows in grey the value it stands for (the
 automatic start, today's end, each chart's axis limits as drawn); a value typed in is black,
