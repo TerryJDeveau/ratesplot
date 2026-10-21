@@ -1341,8 +1341,8 @@ class RatesPlotApp:
     def _build_nation_panel(self, tab: ttk.Frame, nation: Nation) -> None:
         """The nation's own controls, under its chart (``frontend.NATION_OPTIONS``).
 
-        Its yield terms, spreads and mortgage terms as tick boxes (only those
-        its chart can draw), then its axis limits. They set that chart only;
+        Its yield terms, spreads, policy terms and mortgage terms as tick
+        boxes (only those its chart can draw), then its axis limits. They set that chart only;
         the curves' own boxes (yields, spreads, mortgages on or off) stay in
         the column, for both charts (Terry, 2026-10-06: a panel under each
         tab, ready for more nations).
@@ -1351,10 +1351,12 @@ class RatesPlotApp:
         frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         column = 0
         limits = ttk.Frame(frame)
-        # The spreads next to the yield terms, as in the column (Terry, 2026-10-06).
+        # The spreads next to the yield terms, as in the column (Terry,
+        # 2026-10-06); the policy terms (batch 9.1) before the mortgages, as
+        # the column has the policy rate before them.
         lists = sorted(
             (option for option in NATION_OPTIONS if option.editor == "choices"),
-            key=lambda option: ("yield_terms", "spread_pairs", "mortgage_terms").index(option.fields[0]),
+            key=lambda option: ("yield_terms", "spread_pairs", "policy_terms", "mortgage_terms").index(option.fields[0]),
         )
         for option in lists:
             self._add_choices_control(frame, column, option, nation)

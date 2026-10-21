@@ -1010,13 +1010,13 @@ def _controls() -> None:
 def _nation_controls(bar, nation: Nation) -> None:
     """A nation's own section (``frontend.NATION_OPTIONS``), as the panel under its tab in the window.
 
-    Its yield terms, spreads and mortgage terms (only those its chart can
-    draw), then its axis limits as in the window: the yield axis's Max above
+    Its yield terms, spreads, policy terms and mortgage terms (only those its
+    chart can draw), then its axis limits as in the window: the yield axis's Max above
     its Min, beside the right axis's Top above its Bottom (Terry, 2026-10-12;
     ``LIMIT_COLUMNS``).
     """
     bar.subheader(f"{nation.name} only", divider="gray")
-    order = ("yield_terms", "spread_pairs", "mortgage_terms")
+    order = ("yield_terms", "spread_pairs", "policy_terms", "mortgage_terms")
     for option in sorted((o for o in NATION_OPTIONS if o.editor == "choices"), key=lambda o: order.index(o.fields[0])):
         _choices_control(bar, option, nation)
     for row in zip(*LIMIT_COLUMNS):  # (max, top), then (min, bottom)

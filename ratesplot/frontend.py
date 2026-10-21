@@ -265,7 +265,7 @@ def nation_text(nation: Nation, option: Option, text: str) -> str:
     "none", which its chart draws (Terry, 2026-10-07); a text that does not
     parse is kept as it is, for the field to report.
     """
-    if not text.strip() or option.fields[0] not in ("yield_terms", "mortgage_terms", "spread_pairs"):
+    if not text.strip() or option.fields[0] not in ("yield_terms", "mortgage_terms", "spread_pairs", "policy_terms"):
         return text
     try:
         value = nation_view(nation, option, option.parse(text))
@@ -627,7 +627,9 @@ def choice_values(option: Option, text: str, nation: Nation | None = None) -> li
 
 
 def _offers(nation: Nation, option: Option, value: str) -> bool:
-    """True when ``nation``'s chart can draw a box's item: a term it has, a spread of two of them."""
+    """True when ``nation``'s chart can draw a box's item: a term it has, a spread of two of them; either policy term."""
+    if option.fields[0] == "policy_terms":
+        return True
     if option.fields[0] == "mortgage_terms":
         return value in nation.mortgage_terms
     terms = value.split("-") if option.fields[0] == "spread_pairs" else [value]

@@ -370,6 +370,22 @@ RATE_AXIS_LABEL = "Rate (%)"
 # real data it was hard to tell from the 2-year's orange where they cross;
 # Terry chose dark brown, 2026-10-06.)
 POLICY_RATE_STYLE = {"color": "#5c4033", "linewidth": 1.8, "drawstyle": "steps-post"}
+# --policy:LIST (batch 9.1; Terry, decision 27, 2026-10-13): each central
+# bank's official rate ("target", the default) and the market's overnight rate
+# around it ("market": the effective fed funds rate, CORRA, SONIA, €STR), which
+# moves day to day (the "jitter" Terry asked about, 2026-10-12). Every nation
+# has both. The market rate alone is drawn as the policy rate was before
+# (POLICY_RATE_STYLE); with the target, thin and pale beside the target's
+# steps: the policy brown at 60 % on white, given as a colour of its own, not
+# as transparency, since the end labels take a hidden line of a curve's colour
+# and dashes for a piece of it (``endlabels._curve_end``), and the target's
+# band has one.
+POLICY_TERMS = ("target", "market")
+DEFAULT_POLICY_TERMS = ("target",)
+POLICY_MARKET_STYLE = POLICY_RATE_STYLE | {"color": "#9d8c85", "linewidth": 0.8}
+# The U.S. target range (from 2008-12-16) is drawn as a band between its two
+# limits, each a step line in the policy rate's style, shaded between them.
+POLICY_BAND_ALPHA = 0.25
 # --mortgages (ratesplot.rates): the terms, as written on the command line ->
 # the countries that have them and the yield term whose colour they take (None:
 # no yield of that term, so a colour of their own, MORTGAGE_OWN_COLORS). In
@@ -582,7 +598,7 @@ def nation_by_key(key: str) -> Nation | None:
 # currency, so a limit right for one is wrong for the other).
 PER_NATION_FIELDS = (
     "yield_terms", "mortgage_terms", "spread_pairs", "yield_ymin", "yield_ymax", "macro_bottom", "macro_top",
-    "prime_margin",
+    "prime_margin", "policy_terms",
 )
 # The defaults of the lists a nation may have its own default of (Nation.own_defaults).
 _LIST_DEFAULTS = {
@@ -984,6 +1000,10 @@ class PlotConfig:
     # --policy: each country's policy rate on the yield axis (ratesplot.rates);
     # additive, not under the curve rule.
     policy_rates: bool = False
+    # --policy:LIST (batch 9.1): which of POLICY_TERMS, the official rate
+    # ("target") and the market's overnight rate ("market"). Per nation
+    # (--us:policy:market).
+    policy_terms: tuple[str, ...] = DEFAULT_POLICY_TERMS
     # --mortgages[:LIST]: mortgage rates on the yield axis, the terms of
     # MORTGAGE_TERMS chosen (each drawn on the chart of its country); additive.
     mortgages: bool = False

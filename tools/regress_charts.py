@@ -223,6 +223,12 @@ CASES: dict[str, list[str]] = {
     "u_reg_fed1950": ["-u", "-l", "--reg", "--y", "--gdp", "--d:f", "-i", "-s:1950"],
     "u_reg_lv1950": ["-u", "-l", "--reg", "--y", "--gdp", "--d:fnpm", "-i", "-dim:4096x3072", "-s:1950"],
     "uk_reg_tol03": ["--na:gb", "-l", "--reg:.3", "--policy", "--mo:2f,3f,5f,svr", "-dim:2048x1950", "-s:1990"],
+    # Batch 9.1: both policy terms on every nation's chart, across every join
+    # (the U.S. target in 1982 and its range in 2008, Canada's target in 1996
+    # and CORRA in 1997, SONIA in 1997, EONIA in 1999 and €STR in 2019); and
+    # the market rate alone, which draws what u_policy_y1990 drew before.
+    "policy_both": ["--na:ca,us,gb,de", "--po:target,market", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-s:1978", "-l"],
+    "u_policy_market": ["-u", "--po:market", "--yield", "-s:1990"],
 }
 
 

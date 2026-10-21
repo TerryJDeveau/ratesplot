@@ -26,7 +26,9 @@ from .config import (
     MORTGAGE_OWN_COLORS,
     MORTGAGE_STYLE,
     MORTGAGE_TERMS,
+    POLICY_MARKET_STYLE,
     POLICY_RATE_STYLE,
+    POLICY_TERMS,
     PRIME_RATE_STYLE,
     SPREAD_COLORS,
     SPREAD_STYLE,
@@ -42,15 +44,37 @@ from .http import downloads_of, fetch_fred_csv
 from .uk_archive_data import EMBEDDED_UK_BANK_RATE_HISTORY, EMBEDDED_UK_MORTGAGE_HISTORY
 from .uk_data import YIELD_HISTORY_ATTR, iadb_series
 
-# Policy rates (--policy). U.S.: the effective federal funds rate, daily from
-# 1954-07-01. Canada: the Bank Rate, monthly from 1935, until the Canadian
-# Overnight Repo Rate Average (CORRA) begins, daily from 1997; series and
-# spans measured by Terry 2026-10-06. Since 1996 the Bank Rate has been the top
-# of the Bank of Canada's operating band, a quarter point above its target
-# for the overnight rate, which CORRA tracks: the joined curve steps down
-# about 0.25 there (a change of measure, as the legend says).
-US_POLICY_SERIES = "DFF"
+# Policy rates (--policy:LIST; batch 9.1, Terry's decision 27, 2026-10-13):
+# each central bank's official rate ("target", the default) and the overnight
+# market's rate around it ("market"), which moves day to day. Measured
+# 2026-10-21.
+#
+# U.S. target: the Federal Reserve's target for the federal funds rate (FRED
+# DFEDTAR, daily 1982-09-27 to 2008-12-15), then its target range (DFEDTARL
+# and DFEDTARU, daily from 2008-12-16, a quarter point wide on every day),
+# drawn as a band; before the target, the effective rate's monthly average
+# (FEDFUNDS, from 1954-07), which equals the daily rate's calendar-day mean
+# to within 0.005 points. Market: the effective rate (DFF, daily from
+# 1954-07-01), outside the range on 7 days of 6,517 since 2008-12-16.
+US_MARKET_SERIES = "DFF"
+US_MONTHLY_EFFECTIVE_SERIES = "FEDFUNDS"
+US_TARGET_SERIES = "DFEDTAR"
+US_TARGET_RANGE_SERIES = ("DFEDTARL", "DFEDTARU")
+# Canada's target: the Bank Rate until 1996-02-22, when the Bank of Canada set
+# it at the top of its operating band for the overnight rate, a quarter point
+# above the target at the band's middle; then that target. The Bank Rate
+# monthly from 1935 (V122530: each month's last Wednesday, dated by the
+# month's first day, in all 561 months from 1980), weekly (Wednesdays) from
+# 1980-01-02 (V80691310). The target daily from 2001 (CBC20210), and before
+# that the weekly Bank Rate less a quarter point, which equals the daily
+# target on all 1,346 Wednesdays since 2001 (so a change made between
+# Wednesdays in 1996-2000 shows from the next Wednesday). Market: the
+# Canadian Overnight Repo Rate Average (CORRA), daily from 1997-08-12.
 CDN_BANK_RATE_SERIES = "V122530"
+CDN_WEEKLY_BANK_RATE_SERIES = "V80691310"
+CDN_TARGET_SERIES = "CBC20210"
+CDN_TARGET_FROM = pd.Timestamp("1996-02-22")
+CDN_BANK_RATE_ABOVE_TARGET = 0.25
 CDN_CORRA_SERIES = "AVG.INTWO"
 # Valet returns a series from this date; it precedes every series asked for.
 _VALET_FROM = "1900-01-01"
@@ -77,7 +101,10 @@ CDN_MORTGAGE_HISTORY_TABLE = "34100145"
 # standard variable rate carried back to 1939 by the millennium dataset's
 # spliced variable mortgage rate (baked). IADB dates a month by its last
 # day; here by its first, as Canada's monthly rates are, so its step covers it.
+# The UK's market rate (batch 9.1): the Sterling Overnight Index Average
+# (SONIA), daily from 1997-01-02.
 UK_POLICY_SERIES = "IUDBEDR"
+UK_MARKET_SERIES = "IUDSOIA"
 UK_MORTGAGE_SERIES = {"2f": "IUMBV34", "3f": "IUMBV37", "5f": "IUMBV42", "svr": "IUMTLMV"}
 # Germany (batch 4), from the ECB Data Portal, measured from Terry's laptop
 # 2026-10-06. Policy: the main refinancing rate, on the days it changed since
@@ -89,6 +116,12 @@ UK_MORTGAGE_SERIES = {"2f": "IUMBV34", "3f": "IUMBV37", "5f": "IUMBV42", "svr": 
 # reported from 2003), dated by each month's first day as the UK's are.
 DE_POLICY_FIXED = ("FM", "B.U2.EUR.4F.KR.MRR_FR.LEV", "PCPA")
 DE_POLICY_MINIMUM_BID = ("FM", "B.U2.EUR.4F.KR.MRR_MBR.LEV", "PCPA")
+# Germany's market rate (batch 9.1), the euro area's: the euro overnight index
+# average (EONIA, daily 1999-01-04 to 2021-12-31) until the euro short-term
+# rate (€STR) begins, daily from 2019-10-01. EONIA was €STR plus 0.085 points
+# on every day both were published, so the line steps down 0.085 at the join.
+DE_EONIA = ("EON", "D.EONIA_TO.RATE", "PC")
+DE_ESTR = ("EST", "B.EU000A2X2A25.WT", "PC")
 DE_MORTGAGE_SERIES = {"1-5": "M.DE.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.DE.B.A2C.O.R.A.2250.EUR.N", "over10": "M.DE.B.A2C.P.R.A.2250.EUR.N"}
 _MORTGAGE_LABELS = {
     "30": "30-Year Mortgage",
@@ -185,10 +218,20 @@ class RateCurve:
     # chart (a mortgage: its term's yield); its style's colour otherwise.
     color_of: str | None = None
     # How long each value holds (``HELD`` or a key of ``OBSERVED``), one per
-    # value, so a curve joined from two sources can have both kinds (Canada's
-    # Bank Rate, then CORRA); drawn by ``held_steps``. None: the yields' rule,
-    # ``in_window`` (the spreads, taken from the yields).
+    # value, so a curve joined from two sources can have both kinds (the U.S.
+    # target: the monthly average, then the announced target); drawn by
+    # ``held_steps``. None: the yields' rule, ``in_window`` (the spreads,
+    # taken from the yields).
     holds: pd.Series | None = None
+    # A band (batch 9.1, the U.S. target range): its upper limits, one per
+    # value, ``values`` being its lower; equal to ``values`` where the rate
+    # is a single one. Drawn as two step lines, shaded between them.
+    upper: pd.Series | None = None
+    # A curve joined from several sources: each part's first date, its name
+    # alone, and its name after another ("Target" in "Fed Funds Rate (monthly
+    # avg.), Target from 1982-09"). The legend names only the parts the
+    # window shows (``legend_label``); ``label`` names them all.
+    parts: tuple[tuple[pd.Timestamp, str, str], ...] = ()
 
     @property
     def first(self) -> pd.Timestamp:
@@ -196,7 +239,31 @@ class RateCurve:
         return pd.Timestamp(self.values.index[0])
 
 
-def held_steps(curve: RateCurve, config: PlotConfig) -> pd.Series:
+def _named(parts: tuple[tuple[pd.Timestamp, str, str], ...]) -> str:
+    """Return the label of a curve made of ``parts`` (``RateCurve.parts``): "Bank Rate, Overnight Target from 1996-02"."""
+    (_date, name, _after), *rest = parts
+    return ", ".join([name, *(f"{after} from {date:%Y-%m}" for date, _name, after in rest)])
+
+
+def legend_label(curve: RateCurve, config: PlotConfig) -> str:
+    """Return ``curve``'s legend label: of a curve joined from several sources, the parts the window shows (batch 9.1).
+
+    "Fed Funds Rate (monthly avg.), Target from 1982-09, Range from 2008-12"
+    on a chart from 1970, "Fed Funds Target Range" on one from 2015. A part
+    is shown from its first date to the next part's (an announced rate's
+    last value is in force until then). A curve of one source: its label.
+    """
+    if not curve.parts:
+        return curve.label
+    shown = tuple(
+        part
+        for position, part in enumerate(curve.parts)
+        if part[0] <= config.end and (position + 1 == len(curve.parts) or curve.parts[position + 1][0] > config.start)
+    )
+    return _named(shown or curve.parts[-1:])
+
+
+def held_steps(curve: RateCurve, config: PlotConfig, values: pd.Series | None = None) -> pd.Series:
     """Return the points that draw ``curve`` as steps from ``config.start`` to ``config.end``; a NaN breaks the line.
 
     Each value is drawn from its date to the next value, and, as
@@ -207,9 +274,12 @@ def held_steps(curve: RateCurve, config: PlotConfig) -> pd.Series:
     carried to it if it still applies there: an announced rate's always, so
     it has a line across the whole window however long since it last
     changed, and never an isolated point. Empty when no value applies in the
-    window (``plotting.add_rate_lines`` says so).
+    window (``plotting.add_rate_lines`` says so). ``values``: the series
+    stepped when not the curve's own (a band's upper limits, ``RateCurve.upper``,
+    on the same dates, so its points fall on the same dates as the lower's).
     """
-    values, holds = curve.values, curve.holds
+    values = curve.values if values is None else values
+    holds = curve.holds
     assert holds is not None and holds.index.equals(values.index), curve.label
     start, end = config.start, config.end
     dates = values.index
@@ -274,44 +344,101 @@ def _fred(series_id: str) -> pd.Series:
     return _clean(frame.set_index("DATE")[series_id])
 
 
-def us_policy_rate() -> RateCurve | None:
+def _parts(*named: tuple[pd.Series, str, str]) -> tuple[tuple[pd.Timestamp, str, str], ...]:
+    """Return ``RateCurve.parts`` for a curve joined from ``(values, name, name after another)``, the empty ones left out."""
+    return tuple((pd.Timestamp(values.index[0]), name, after) for values, name, after in named if not values.empty)
+
+
+def us_policy_target() -> RateCurve | None:
+    """Return the federal funds target: a band between its range's limits from 2008-12-16, one rate from 1982-09-27, the effective rate's monthly average before.
+
+    None, with a warning, if the target or either limit of its range fails
+    (the 2008 target would be carried on to today); drawn from the target's
+    first day, with a warning, if the monthly average fails.
+    """
+    low_code, high_code = US_TARGET_RANGE_SERIES
+    try:
+        target, low, high = _fred(US_TARGET_SERIES), _fred(low_code), _fred(high_code)
+    except Exception as exc:
+        print(f"  Warning: fed funds target ({US_TARGET_SERIES}, {low_code}, {high_code}) unavailable ({exc}); not drawn.")
+        return None
+    try:
+        monthly = _fred(US_MONTHLY_EFFECTIVE_SERIES)
+    except Exception as exc:
+        print(f"  Warning: fed funds rate's monthly average ({US_MONTHLY_EFFECTIVE_SERIES}) unavailable ({exc}); "
+              f"drawn from {target.index[0]:%Y-%m-%d}, the target's first day.")
+        monthly = target.iloc[:0]
+    low, high = low.align(high, join="inner")  # the days both limits have (the upper is sometimes a day ahead)
+    target = target.loc[target.index < low.index[0]]
+    monthly = monthly.loc[monthly.index < target.index[0]]
+    # The monthly average is observed across its month (the last month's to
+    # the target's first day); the target and its range are announced.
+    lower, upper = pd.concat([monthly, target, low]), pd.concat([monthly, target, high])
+    holds = pd.concat([holding(monthly, "monthly"), holding(target, HELD), holding(low, HELD)])
+    parts = _parts(
+        (monthly, "Fed Funds Rate (monthly avg.)", "Monthly Avg."),
+        (target, "Fed Funds Target", "Target"),
+        (low, "Fed Funds Target Range", "Range"),
+    )
+    return RateCurve("policy", _named(parts), lower, POLICY_RATE_STYLE, title="Policy Rate", holds=holds, upper=upper, parts=parts)
+
+
+def us_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
     """Return the effective federal funds rate (FRED DFF), or None with a warning if FRED fails."""
     try:
-        values = _fred(US_POLICY_SERIES)
+        values = _fred(US_MARKET_SERIES)
     except Exception as exc:
-        print(f"  Warning: effective federal funds rate ({US_POLICY_SERIES}) unavailable ({exc}); not drawn.")
+        print(f"  Warning: effective federal funds rate ({US_MARKET_SERIES}) unavailable ({exc}); not drawn.")
         return None
     # The rate banks paid each other that day: observed, not announced.
-    return RateCurve("policy", "Fed Funds Rate (effective)", values, POLICY_RATE_STYLE, title="Policy Rate",
+    return RateCurve("policy_market", "Fed Funds Rate (effective)", values, style, title="Policy Rate",
                      holds=holding(values, "daily"))
 
 
-def cdn_policy_rate() -> RateCurve | None:
-    """Return the Bank Rate joined to CORRA where CORRA begins (see ``CDN_CORRA_SERIES``); None if both fail.
+def cdn_policy_target() -> RateCurve | None:
+    """Return the Bank Rate until 1996-02-22, then the target for the overnight rate (``CDN_TARGET_FROM``).
 
-    Either alone is drawn, with a warning, if the other fails.
+    Without the weekly Bank Rate, None with a warning; without the monthly
+    one, drawn from 1980; without the daily target, the weekly Bank Rate
+    less a quarter point to its last Wednesday; each with a warning.
     """
-    parts: dict[str, pd.Series] = {}
-    for name, code in (("Bank Rate", CDN_BANK_RATE_SERIES), ("CORRA", CDN_CORRA_SERIES)):
-        try:
-            parts[name] = _valet(code)
-        except Exception as exc:
-            print(f"  Warning: Bank of Canada {name} ({code}) unavailable ({exc}).")
-    if not parts:
-        print("  Warning: no Canadian policy rate; not drawn.")
+    try:
+        weekly = _valet(CDN_WEEKLY_BANK_RATE_SERIES)
+    except Exception as exc:
+        print(f"  Warning: Bank of Canada weekly Bank Rate ({CDN_WEEKLY_BANK_RATE_SERIES}) unavailable ({exc}); "
+              "no Canadian target; not drawn.")
         return None
-    # The Bank Rate is announced; CORRA, the overnight repo market's average,
-    # is observed day by day.
-    kinds = {"Bank Rate": HELD, "CORRA": "daily"}
-    if len(parts) == 1:
-        (name, values), = parts.items()
-        return RateCurve("policy", name, values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, kinds[name]))
-    bank, corra = parts["Bank Rate"], parts["CORRA"]
-    bank = bank.loc[bank.index < corra.index[0]]
-    joined = pd.concat([bank, corra])
-    holds = pd.concat([holding(bank, HELD), holding(corra, "daily")])
-    label = f"Bank Rate, CORRA from {corra.index[0]:%Y-%m}"
-    return RateCurve("policy", label, joined, POLICY_RATE_STYLE, title="Policy Rate", holds=holds)
+    try:
+        monthly = _valet(CDN_BANK_RATE_SERIES)
+    except Exception as exc:
+        print(f"  Warning: Bank of Canada monthly Bank Rate ({CDN_BANK_RATE_SERIES}) unavailable ({exc}); "
+              f"drawn from {weekly.index[0]:%Y-%m-%d}.")
+        monthly = weekly.iloc[:0]
+    try:
+        daily = _valet(CDN_TARGET_SERIES)
+    except Exception as exc:
+        print(f"  Warning: Bank of Canada target for the overnight rate ({CDN_TARGET_SERIES}) unavailable ({exc}); "
+              "the weekly Bank Rate less a quarter point in its place, dated by Wednesdays.")
+        daily = weekly.iloc[:0]
+    bank = pd.concat([monthly.loc[monthly.index < weekly.index[0]], weekly.loc[weekly.index < CDN_TARGET_FROM]])
+    until = daily.index[0] if not daily.empty else pd.Timestamp.max
+    implied = weekly.loc[(weekly.index >= CDN_TARGET_FROM) & (weekly.index < until)] - CDN_BANK_RATE_ABOVE_TARGET
+    target = pd.concat([implied, daily])
+    values = pd.concat([bank, target])
+    parts = _parts((bank, "Bank Rate", "Bank Rate"), (target, "Target for the Overnight Rate", "Overnight Target"))
+    # Both are announced: each holds until it is changed.
+    return RateCurve("policy", _named(parts), values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, HELD),
+                     parts=parts)
+
+
+def cdn_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
+    """Return CORRA, the overnight repo market's average (from 1997-08-12), or None with a warning if Valet fails."""
+    try:
+        values = _valet(CDN_CORRA_SERIES)
+    except Exception as exc:
+        print(f"  Warning: Bank of Canada CORRA ({CDN_CORRA_SERIES}) unavailable ({exc}); not drawn.")
+        return None
+    return RateCurve("policy_market", "CORRA", values, style, title="Policy Rate", holds=holding(values, "daily"))
 
 
 def _baked(rows: list[tuple[str, float]]) -> pd.Series:
@@ -324,7 +451,7 @@ def _joined(history: pd.Series, live: pd.Series) -> pd.Series:
     return pd.concat([history.loc[history.index < live.index[0]], live]) if not live.empty else history
 
 
-def uk_policy_rate() -> RateCurve | None:
+def uk_policy_target() -> RateCurve | None:
     """Return the Bank of England's official Bank Rate: its changes since 1833 (baked), then daily from 1975.
 
     If the database fails, the baked changes alone (to 2017), with a warning;
@@ -341,6 +468,16 @@ def uk_policy_rate() -> RateCurve | None:
     if values.empty:
         return None
     return RateCurve("policy", "Official Bank Rate", values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, HELD))
+
+
+def uk_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
+    """Return SONIA, the sterling overnight market's average (from 1997-01-02), or None with a warning if the database fails."""
+    try:
+        values = _clean(iadb_series(UK_MARKET_SERIES))
+    except Exception as exc:
+        print(f"  Warning: Bank of England SONIA ({UK_MARKET_SERIES}) unavailable ({exc}); not drawn.")
+        return None
+    return RateCurve("policy_market", "SONIA", values, style, title="Policy Rate", holds=holding(values, "daily"))
 
 
 def _uk_mortgage(term: str) -> pd.Series:
@@ -360,7 +497,7 @@ def _uk_mortgage(term: str) -> pd.Series:
     return values
 
 
-def de_policy_rate() -> RateCurve | None:
+def de_policy_target() -> RateCurve | None:
     """Return the ECB's main refinancing rate since 1999: fixed, the minimum bid while the tenders were variable, fixed again.
 
     Both series hold only the days the rate changed: each value is carried
@@ -393,6 +530,31 @@ def de_policy_rate() -> RateCurve | None:
     values = values.reindex(pd.date_range(values.index[0], max(today, values.index[-1]), freq="D")).ffill()
     return RateCurve("policy", "ECB Main Refinancing Rate", values, POLICY_RATE_STYLE, title="Policy Rate",
                      holds=holding(values, HELD))
+
+
+def de_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
+    """Return the euro area's overnight rate: EONIA until €STR begins, then €STR (``DE_ESTR``); None if both fail.
+
+    Either alone is drawn, with a warning, if the other fails (EONIA ends
+    2021-12-31, €STR begins 2019-10-01).
+    """
+    found: dict[str, pd.Series] = {}
+    for name, source in (("EONIA", DE_EONIA), ("€STR", DE_ESTR)):
+        try:
+            found[name] = _clean(ecb_series(*source))
+        except Exception as exc:
+            print(f"  Warning: ECB {name} ({source[0]}.{source[1]}) unavailable ({exc}).")
+    if not found:
+        print("  Warning: no euro area overnight rate; not drawn.")
+        return None
+    empty = next(iter(found.values())).iloc[:0]
+    eonia, estr = found.get("EONIA", empty), found.get("€STR", empty)
+    if not estr.empty:
+        eonia = eonia.loc[eonia.index < estr.index[0]]
+    values = pd.concat([eonia, estr])
+    parts = _parts((eonia, "EONIA", "EONIA"), (estr, "€STR", "€STR"))
+    return RateCurve("policy_market", _named(parts), values, style, title="Policy Rate", holds=holding(values, "daily"),
+                     parts=parts)
 
 
 def _de_mortgage(term: str) -> pd.Series:
@@ -539,6 +701,11 @@ def _steps_until(yields: pd.DataFrame, columns: tuple[str, str]) -> pd.Timestamp
     return max(through) if through else None
 
 
+# Each nation's policy terms (batch 9.1).
+_POLICY_TARGETS = {"us": us_policy_target, "cdn": cdn_policy_target, "uk": uk_policy_target, "de": de_policy_target}
+_POLICY_MARKETS = {"us": us_policy_market, "cdn": cdn_policy_market, "uk": uk_policy_market, "de": de_policy_market}
+
+
 def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[RateCurve]:
     """Return one country's chosen curves for the yield axis ("cdn", "us", "uk" or "de"), in drawing order.
 
@@ -549,9 +716,18 @@ def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[
     """
     curves: list[RateCurve | None] = []
     adjective = nation_by_key(country).adjective
-    if config.policy_rates:
+    if config.policy_rates and not config.policy_terms:
+        warn_none_drawn(country, "policy rate", f"none of its policy terms ({','.join(POLICY_TERMS)}) is chosen")
+    elif config.policy_rates:
         with downloads_of(f"{adjective} policy rate"):
-            curves.append({"us": us_policy_rate, "cdn": cdn_policy_rate, "uk": uk_policy_rate, "de": de_policy_rate}[country]())
+            # The market rate first, so the target's steps are drawn over its
+            # daily moves (the legend lists the target first); drawn as the
+            # policy rate was before batch 9.1 when it is drawn alone.
+            if "market" in config.policy_terms:
+                style = POLICY_MARKET_STYLE if "target" in config.policy_terms else POLICY_RATE_STYLE
+                curves.append(_POLICY_MARKETS[country](style))
+            if "target" in config.policy_terms:
+                curves.append(_POLICY_TARGETS[country]())
     if config.mortgages:
         terms = [term for term in config.mortgage_terms if country in MORTGAGE_TERMS[term][0]]
         if not terms:

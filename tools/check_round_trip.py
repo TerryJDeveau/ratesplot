@@ -41,7 +41,7 @@ from ratesplot.frontend import NATION_OPTIONS, choice_values, choices_text, star
 from ratesplot.options import command_line_tokens, config_from_choices, drawn_config, nation_choice  # noqa: E402
 
 # The lists a nation may be left none of, and the flag that draws each.
-_LISTS = {"yield_terms": "include_yield", "mortgage_terms": "mortgages", "spread_pairs": "spreads"}
+_LISTS = {"yield_terms": "include_yield", "mortgage_terms": "mortgages", "spread_pairs": "spreads", "policy_terms": "policy_rates"}
 
 # The nations drawn, and the lists and values given: for every chart, for
 # one nation, both; lists some nation has none of; removals; limits.
@@ -60,6 +60,9 @@ VALUES = (
     "--cdn:sp:none --sp:10-2", "--cdn:mo:none --us:mo:none --uk:mo:none --ger:mo:none --mo",
     # The prime margin (batch 9.4): for every chart, for one nation, with a list that leaves prime out.
     "--prime:0.5", "--cdn:prime:-0.25", "--us:prime:1 --mo:30,prime", "--mo:5 --prime:0.5", "--prime:0.5 --cdn:mo:5v",
+    # The policy terms (batch 9.1): for every chart, for one nation, a nation's own none.
+    "--po", "--po:market", "--po:target,market", "--us:po:market", "--po:market --cdn:po:target,market",
+    "--uk:po:none --po", "--po:target --ger:po:market --mo",
 )
 
 

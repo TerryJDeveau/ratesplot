@@ -56,6 +56,7 @@ from .config import (
     MIN_WINDOW_DAYS,
     MORTGAGE_LEGEND_ORDER,
     NATIONS,
+    POLICY_BAND_ALPHA,
     PROJECTION_ALPHA,
     PROJECTION_KEY_COLOR,
     PROJECTION_LABEL,
@@ -89,7 +90,7 @@ from .latest import (
 )
 from .legend import finish_legend_and_title
 from .measures import express
-from .rates import RateCurve, held_steps, in_window, rate_curves, warn_none_drawn
+from .rates import RateCurve, held_steps, in_window, legend_label, rate_curves, warn_none_drawn
 from .regression import RateLabel, add_regression_segments
 from .regression import legend_entry as regression_legend_entry
 from .de_data import (
@@ -321,6 +322,9 @@ def add_rate_lines(
     shaded between it and zero, in its colour. A curve with ``color_of`` (a
     mortgage) takes the colour of that yield's line among ``yield_lines``
     when it is drawn, so the two match whatever colour the yield was given.
+    A band (``RateCurve.upper``, the U.S. target range) gets its upper
+    limits drawn and the space between shaded (``_add_band``). The legend
+    names the parts of a joined curve the window shows (``rates.legend_label``).
     """
     yield_colours = {line.get_label(): line.get_color() for line in yield_lines}
     drawn: list[tuple[Line2D, RateCurve]] = []
@@ -347,7 +351,7 @@ def add_rate_lines(
                 continue
             # The second part in the first's colour, and only the first in the legend.
             colour = {} if first is None else {"color": first.get_color()}
-            label = curve.label if first is None else "_nolegend_"
+            label = legend_label(curve, config) if first is None else "_nolegend_"
             (drawn_line,) = ax.plot(part.index, part.to_numpy(), label=label, **(part_style | colour))
             first = first or drawn_line
             if curve.spread:
@@ -357,9 +361,48 @@ def add_rate_lines(
                     step="post" if as_steps else None, color=drawn_line.get_color(), alpha=SPREAD_INVERSION_ALPHA,
                     linewidth=0, label="_nolegend_",
                 )
+        if first is not None and curve.upper is not None:
+            _add_band(ax, curve, values, config, style | {"color": first.get_color()})
         if first is not None:
             drawn.append((first, curve))
     return drawn
+
+
+def _add_band(ax: Axes, curve: RateCurve, lower: pd.Series, config: PlotConfig, style: dict) -> None:
+    """Draw a band's upper limits as a step line in ``style`` and shade it (batch 9.1, the U.S. target range).
+
+    ``lower`` is the curve as drawn (``rates.held_steps``); the upper limits
+    are stepped on the same dates. The upper line is drawn only where the two
+    differ, and from the point before each such stretch, so it leaves the
+    lower line where the band begins; where they are equal (a single target)
+    the shading has no height. Neither is in the legend.
+    """
+    upper = held_steps(curve, config, curve.upper)
+    apart = ((upper - lower).abs() > 1e-9).to_numpy()  # NaN (a break) is not apart
+    if not apart.any():
+        return
+    edge = apart | np.append(apart[1:], False)
+    ax.plot(upper.index, upper.where(edge).to_numpy(), label="_nolegend_", **style)
+    ax.fill_between(
+        upper.index, lower.to_numpy(), upper.to_numpy(), step="post", color=style["color"], alpha=POLICY_BAND_ALPHA,
+        linewidth=0, label="_nolegend_",
+    )
+
+
+def _end_label_format(curve: RateCurve, config: PlotConfig) -> ValueFormatter:
+    """Return how a rate curve's end label (-l) writes its last value: a spread in points, a band as its range ("3.75–4.00%").
+
+    The label stands at the band's lower limit, the end of its legend line.
+    """
+    if curve.spread:
+        return format_spread
+    if curve.upper is not None:
+        upper = held_steps(curve, config, curve.upper).dropna()
+        lower = held_steps(curve, config).dropna()
+        if not upper.empty and abs(upper.iloc[-1] - lower.iloc[-1]) > 1e-9:
+            top = float(upper.iloc[-1])
+            return lambda value: f"{format_yield(value).removesuffix('%')}–{format_yield(top)}"
+    return format_yield
 
 
 def yield_axis_legend(yield_lines: list[Line2D], rate_lines: list[tuple[Line2D, RateCurve]]) -> list[Line2D]:
@@ -380,7 +423,9 @@ def yield_axis_legend(yield_lines: list[Line2D], rate_lines: list[tuple[Line2D, 
         key = item[1].key
         if key.startswith("mortgage_"):
             return 1, MORTGAGE_LEGEND_ORDER.index(key.removeprefix("mortgage_"))
-        return (0 if key == "policy" else 2), 0
+        if key.startswith("policy"):
+            return 0, int(key == "policy_market")  # the target, then the market rate (batch 9.1)
+        return 2, 0
 
     return yields + [line for line, _curve in sorted(rate_lines, key=place)]
 
@@ -468,7 +513,7 @@ def draw_country(
     if config.end_labels:
         macro_format = format_percent if config.relative else partial(format_currency, prefix=metadata.currency_prefix)
         end_labels = [(line, format_yield) for line in yield_lines] + [
-            (line, format_spread if curve.spread else format_yield) for line, curve in rate_lines
+            (line, _end_label_format(curve, config)) for line, curve in rate_lines
         ] + [
             (line, (lambda value, fmt=macro_format: PROJECTION_LABEL_PREFIX + fmt(value)) if column in projected else macro_format)
             for line, column in zip(macro_lines, macro_columns_drawn)

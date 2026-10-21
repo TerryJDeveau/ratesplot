@@ -204,6 +204,10 @@ CASES: list[list[str]] = [
     ["--prime:0.5"], ["--pr:-0.25"], ["--prime:+0.5"], ["--prime:0.125"], ["--cdn:prime:-0.25"], ["--us:prime:1"],
     ["--uk:prime:0.5"], ["--prime:x"], ["--prime:20"], ["--prime:"], ["--prime"], ["--pr"], ["--p:0.5"],
     ["--mo:5", "--prime:0.5"], ["--prime:0.5", "--no-mo"], ["--na:gb", "--prime:0.5"], ["--mo:30,prime", "-u"],
+    # Batch 9.1: the policy terms, for every chart and for one nation; they turn --policy on.
+    ["--policy:target"], ["--policy:market"], ["--po:market,target"], ["--po:Market"], ["--po:target,target"],
+    ["--policy-rates:market"], ["--po:none"], ["--us:po:market"], ["--cdn:po:none", "--po"], ["--ger:po:target,market"],
+    ["--po:t"], ["--po:"], ["--po:market", "--no-po"], ["--p:market"], ["--pol:market"], ["--no-po:market"],
 ]
 
 

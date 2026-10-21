@@ -128,9 +128,23 @@ _GROWTH = {  # id -> (start, freq, first, last), FRED's units
 }
 
 
+def _quarter_points(values: np.ndarray) -> np.ndarray:
+    """An announced rate from a path: rounded to quarter points, never below zero."""
+    return np.maximum(np.round(values * 4) / 4, 0.0)
+
+
 def fred(series_id: str) -> pd.DataFrame:
     """Return one FRED series as ``http.fetch_fred_csv`` returns it: ``DATE`` and the series' values."""
-    if series_id in _GROWTH:
+    if series_id == "FEDFUNDS":
+        # The effective rate's monthly average (batch 9.1).
+        dates = pd.date_range("1954-07-01", "2026-09-01", freq="MS")
+        values = np.round(np.maximum(_anchors(_SHORT, dates), 0.04), 2)
+    elif series_id in ("DFEDTAR", "DFEDTARL", "DFEDTARU"):
+        # The target, every calendar day, then its range a quarter point wide.
+        first, last = ("1982-09-27", "2008-12-15") if series_id == "DFEDTAR" else ("2008-12-16", "2026-09-30")
+        dates = pd.date_range(first, last, freq="D")
+        values = _quarter_points(_anchors(_SHORT, dates)) + (0.25 if series_id == "DFEDTARU" else 0.0)
+    elif series_id in _GROWTH:
         start, freq, first, last = _GROWTH[series_id]
         end = "2026-07-01" if freq == "QS" else "2025-01-01"
         dates = pd.date_range(start, end, freq=freq)
@@ -190,6 +204,10 @@ _VALET_SERIES = {
     "TB.CDN.180D.MID": ("2001-01-02", "B", 0.5, 0.0),
     "TB.CDN.1Y.MID": ("2001-01-02", "B", 1, 0.0),
     "V122530": ("1935-03-01", "MS", 0.0, 0.25),
+    # Batch 9.1: the weekly Bank Rate and the daily overnight target, in
+    # quarter points (``valet``), the target a quarter point below.
+    "V80691310": ("1980-01-02", "W-WED", 0.0, 0.25),
+    "CBC20210": ("2001-01-01", "B", 0.0, 0.0),
     "AVG.INTWO": ("1997-01-02", "B", 0.0, 0.0),
     "V80691335": ("1975-01-01", "W-WED", 10, 2.4),
     "V80691334": ("1980-01-02", "W-WED", 3, 2.6),
@@ -216,7 +234,9 @@ def valet(url: str, params: tuple) -> bytes:
     first, freq, years, margin = _VALET_SERIES[code]
     begin = max(pd.Timestamp(first), pd.Timestamp(start)) if start else pd.Timestamp(first)
     dates = pd.bdate_range(begin, "2026-08-31") if freq == "B" else pd.date_range(begin, "2026-08-31", freq=freq)
-    if years == 0:
+    if code in ("V80691310", "CBC20210"):
+        values = _quarter_points(_anchors(_SHORT, dates) + _CDN_OFFSET - 0.4) + margin
+    elif years == 0:
         values = np.round(np.maximum(_anchors(_SHORT, dates) + _CDN_OFFSET - 0.4, 0.25) + margin, 2)
     else:
         values = _yield_path("cdn" + code, dates, years, _CDN_OFFSET) + margin
@@ -298,6 +318,7 @@ _IADB_SERIES = {
     "IUDMNPY": ("1993-11-01", "B", 10, 0.0),
     "IUDLNPY": ("2000-01-04", "B", 20, 0.0),
     "IUDBEDR": ("1975-01-02", "B", 0, 0.25),
+    "IUDSOIA": ("1997-01-02", "B", 0, 0.2),  # SONIA (batch 9.1), just under Bank Rate
     "IUMBV34": ("1995-01-31", "ME", 2, 1.2),
     "IUMBV37": ("1995-01-31", "ME", 3, 1.25),
     "IUMBV42": ("1995-01-31", "ME", 5, 1.3),
@@ -408,6 +429,13 @@ def ecb(url: str) -> bytes:
                                 pd.Series([rates.asof(pd.Timestamp("2008-10-15"))], index=[pd.Timestamp("2008-10-15")]),
                                 rates.loc[rates.index > "2008-10-15"]])
         periods, values = [f"{day:%Y-%m-%d}" for day in chosen.index], list(chosen.to_numpy())
+    elif flow in ("EON", "EST"):
+        # The overnight rates (batch 9.1): EONIA 1999-2021, €STR from 2019-10,
+        # 0.085 below it while both were published; in percent ("PC").
+        first, last = ("1999-01-04", "2021-12-31") if flow == "EON" else ("2019-10-01", "2026-09-30")
+        days = pd.bdate_range(first, last)
+        path = np.round(_anchors(_SHORT, days) - 1.1 + _noise("ecb" + flow, len(days), 0.01) - (0.085 if flow == "EST" else 0.0), 3)
+        periods, values, unit = [f"{day:%Y-%m-%d}" for day in days], list(path), "PC"
     elif flow == "MIR":
         months = pd.date_range("2000-01-31", "2026-08-31", freq="ME")
         band = {"I": 3, "O": 10, "P": 20}[key.split(".")[4]]

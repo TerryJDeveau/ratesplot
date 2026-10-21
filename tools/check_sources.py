@@ -24,7 +24,10 @@ Two checks are of a different kind:
   judgement calls of batch 3; a note, never a failure. ``de_joins`` does the
   same for Germany (batch 4), and ``de_fred`` tries the FRED German series
   the laptop could not fetch on 2026-10-06 (a note: which answer, and from
-  when).
+  when). ``policy_joins`` measures what the policy curves' joins rest on
+  (batch 9.1); a WARN if Canada's weekly Bank Rate less a quarter point no
+  longer equals its daily overnight target, which the target before 2001
+  is taken from.
 * The Census publishes each fiscal year of state and local government
   finances about a year and a half after it ends. When a year newer than the
   one baked into ``us_archive_data`` is listed, the line says so: run
@@ -230,6 +233,33 @@ def _rate(fetch: Callable[[], rates.RateCurve | None]) -> Callable[[PlotConfig],
         return _last(curve.values), f"{curve.label}, from {curve.first:%Y-%m-%d}"
 
     return run
+
+
+def _policy_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """What the policy curves' joins rest on (batch 9.1), measured: a note, and a Warning if Canada's no longer holds.
+
+    Canada's target before 2001 is the weekly Bank Rate less a quarter point
+    (``rates.CDN_TARGET_FROM``), checked here on every Wednesday the daily
+    target has; the U.S. range's width; EONIA less €STR while both were
+    published (the German market rate's step at the join).
+    """
+    notes = []
+    weekly, daily = rates._valet(rates.CDN_WEEKLY_BANK_RATE_SERIES), rates._valet(rates.CDN_TARGET_SERIES)
+    both = pd.concat([weekly - rates.CDN_BANK_RATE_ABOVE_TARGET, daily], axis=1, join="inner").dropna()
+    differ = (both.iloc[:, 0] - both.iloc[:, 1]).abs() > 1e-9
+    notes.append(f"Canada: the weekly Bank Rate less {rates.CDN_BANK_RATE_ABOVE_TARGET} equals the daily target on "
+                 f"{int((~differ).sum()):,} of {len(both):,} Wednesdays from {both.index[0]:%Y-%m-%d}")
+    if differ.any():
+        print(f"  Warning: the weekly Bank Rate less {rates.CDN_BANK_RATE_ABOVE_TARGET} differs from the daily target on "
+              f"{int(differ.sum())} Wednesdays, the first {both.index[differ.to_numpy()][0]:%Y-%m-%d}; "
+              f"the Canadian target before {daily.index[0]:%Y-%m-%d} is drawn from it (rates.CDN_TARGET_FROM)")
+    low, high = (rates._fred(code) for code in rates.US_TARGET_RANGE_SERIES)
+    widths = (high - low).dropna().round(4).value_counts()
+    notes.append("U.S. target range: " + ", ".join(f"{width:g} points wide on {count:,} days" for width, count in widths.items()))
+    eonia, estr = rates._clean(de_data.ecb_series(*rates.DE_EONIA)), rates._clean(de_data.ecb_series(*rates.DE_ESTR))
+    gaps = (eonia - estr).dropna().round(4).value_counts()
+    notes.append("EONIA less €STR: " + ", ".join(f"{gap:+g} on {count:,} days" for gap, count in gaps.items()))
+    return None, "; ".join(notes)
 
 
 def _spread_crosscheck(series_id: str, pair: tuple[str, str]) -> Callable[[PlotConfig], tuple[pd.Timestamp | None, str]]:
@@ -448,8 +478,12 @@ CHECKS: tuple[Check, ...] = (
     Check("fred_interest_p", "FRED W756RC1A027NBEA state interest (annual)", ANNUAL, _fred("W756RC1A027NBEA", quarterly=False)),
     Check("fred_interest_m", "FRED W856RC1A027NBEA local interest (annual)", ANNUAL, _fred("W856RC1A027NBEA", quarterly=False)),
     Check("fred_population", "FRED B230RC0Q173SBEA population", QUARTERLY, _fred("B230RC0Q173SBEA", quarterly=True)),
-    Check("fred_dff", "FRED DFF effective federal funds rate (--policy)", DAILY, _rate(rates.us_policy_rate)),
-    Check("boc_policy", "Bank of Canada Bank Rate V122530, CORRA AVG.INTWO (--policy)", DAILY, _rate(rates.cdn_policy_rate)),
+    # Batch 9.1: each nation's official rate (--policy, --policy:target) and its market's (--policy:market).
+    Check("fred_target", "FRED FEDFUNDS, DFEDTAR, DFEDTARL, DFEDTARU fed funds target (--policy)", DAILY, _rate(rates.us_policy_target)),
+    Check("fred_dff", "FRED DFF effective federal funds rate (--policy:market)", DAILY, _rate(rates.us_policy_market)),
+    Check("boc_target", "Bank of Canada Bank Rate V122530, V80691310, target CBC20210 (--policy)", DAILY, _rate(rates.cdn_policy_target)),
+    Check("boc_corra", "Bank of Canada CORRA AVG.INTWO (--policy:market)", DAILY, _rate(rates.cdn_policy_market)),
+    Check("policy_joins", "Policy rates: what their joins rest on (a measurement)", None, _policy_joins),
     Check("fred_mortgage30", "FRED MORTGAGE30US (--mortgages:30)", DAILY, _rate(partial(rates.mortgage_rate, "30"))),
     Check("fred_mortgage15", "FRED MORTGAGE15US (--mortgages:15)", DAILY, _rate(partial(rates.mortgage_rate, "15"))),
     Check("boc_mortgage5", "Bank of Canada V80691335 posted 5-year, StatCan 34-10-0145 before", DAILY, _rate(partial(rates.mortgage_rate, "5"))),
@@ -471,7 +505,8 @@ CHECKS: tuple[Check, ...] = (
     Check("census", "U.S. Census state and local finances: a year newer than baked?", None, _census),
     # The UK (batch 3).
     Check("boe_yields", "Bank of England par yields IUDSNPY, IUDMNPY, IUDLNPY (5, 10, 20 years)", DAILY, _uk_yields),
-    Check("boe_bank_rate", "Bank of England Bank Rate IUDBEDR (--policy)", DAILY, _rate(rates.uk_policy_rate)),
+    Check("boe_bank_rate", "Bank of England Bank Rate IUDBEDR (--policy)", DAILY, _rate(rates.uk_policy_target)),
+    Check("boe_sonia", "Bank of England SONIA IUDSOIA (--policy:market)", DAILY, _rate(rates.uk_policy_market)),
     Check("boe_mortgage2f", "Bank of England IUMBV34 quoted 2-year fixed", MONTHLY, _rate(partial(rates.mortgage_rate, "2f"))),
     Check("boe_mortgage3f", "Bank of England IUMBV37 quoted 3-year fixed", MONTHLY, _rate(partial(rates.mortgage_rate, "3f"))),
     Check("boe_mortgage5f", "Bank of England IUMBV42 quoted 5-year fixed", MONTHLY, _rate(partial(rates.mortgage_rate, "5f"))),
@@ -493,7 +528,8 @@ CHECKS: tuple[Check, ...] = (
     Check("uk_joins", "UK history against the live series where they meet (a measurement)", None, _uk_joins),
     # Germany (batch 4).
     Check("bbk_yields", "Bundesbank Svensson yields 1 2 5 7 10 20 30 years (daily)", DAILY, _de_yields),
-    Check("ecb_policy", "ECB main refinancing rate, fixed and minimum bid (--policy)", None, _rate(rates.de_policy_rate)),
+    Check("ecb_policy", "ECB main refinancing rate, fixed and minimum bid (--policy)", None, _rate(rates.de_policy_target)),
+    Check("ecb_overnight", "ECB EONIA, then €STR (--policy:market)", DAILY, _rate(rates.de_policy_market)),
     Check("ecb_mortgage1_5", "ECB MIR German housing loans, fixed over 1 to 5 years", MONTHLY, _rate(partial(rates.mortgage_rate, "1-5"))),
     Check("ecb_mortgage5_10", "ECB MIR German housing loans, fixed over 5 to 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "5-10"))),
     Check("ecb_mortgage10", "ECB MIR German housing loans, fixed over 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "over10"))),

@@ -26,6 +26,11 @@ built-in history:
   is drawn on to the chart's end: no limit);
 * anything else is a drawn value no source has: FAIL.
 
+A band (the U.S. target range, batch 9.1) is checked as one curve: its
+upper limits, drawn unlabelled after its lower, against the same sources.
+A curve joined from several sources is found by the label the window gives
+it (``rates.legend_label``).
+
 A spread is checked against the two yields drawn with it, point by point.
 Each line is reported with the sources that explain it and the dates each
 covers, so every join and stand-in is in the open, and with its carried
@@ -83,30 +88,36 @@ MONTHLY_CARRY_DAYS = 62
 
 # Each case: a name and the command line drawn (the pinned end added).
 # Chosen to cross every join the yield axis has: Canada's PDF history to
-# Valet (2001), Bank Rate to CORRA (1997-08), the CMHC rate before the
-# posted 5-year; the U.S. 20-year's gap (1987-1993); the UK's built-in
-# yields, Bank Rate and variable mortgage rate to the Bank of England's
-# series; Germany's built-in 10-year to the fitted curve (1972), the ECB's
-# fixed rate to the minimum bid rate and back (2000-2008); and recent
-# windows with every term, mortgage and the default spreads.
+# Valet (2001), the monthly Bank Rate to the weekly (1980), the Bank Rate to
+# the overnight target (1996-02) and the weekly to the daily target (2001),
+# CORRA's start (1997-08), the CMHC rate before the posted 5-year; the U.S.
+# 20-year's gap (1987-1993), the fed funds monthly average to the target
+# (1982-09) and the target to its range (2008-12); the UK's built-in yields,
+# Bank Rate and variable mortgage rate to the Bank of England's series;
+# Germany's built-in 10-year to the fitted curve (1972), the ECB's fixed rate
+# to the minimum bid rate and back (2000-2008), EONIA to €STR (2019-10); and
+# recent windows with every term, mortgage, both policy terms and the
+# default spreads.
 CASES: dict[str, list[str]] = {
     "ca_1960": ["-c", "-s:1960", "--e:1985", "--policy", "--mo:5"],
-    "ca_1995": ["-c", "-s:1995", "--e:2005", "--policy", "--mo:5,3,1,prime"],
-    "ca_2015": ["-c", "-s:2015", "--policy", "--mo:5,3,1,5v,prime", "--sp"],
+    "ca_1995": ["-c", "-s:1995", "--e:2005", "--po:target,market", "--mo:5,3,1,prime"],
+    "ca_2015": ["-c", "-s:2015", "--po:target,market", "--mo:5,3,1,5v,prime", "--sp"],
     # Batch 9.3: every Canadian term across the start of the five new ones
     # (2001-01-02), and spreads of them.
     "ca_terms": ["-c", "-s:2000-06-01", "--y:1m,3m,6m,1,2,3,5,7,10,30", "--sp:7y-1m,3y-6m"],
     "us_1985": ["-u", "-s:1985", "--e:1995", "--y:3m,6m,1,2,5,7,10,20,30", "--policy", "--mo:30,15"],
     "us_2000": ["-u", "-s:2000", "--e:2008", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--sp:30y-10y,30y-2y"],
-    "us_2015": ["-u", "-s:2015", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy", "--mo:30,15", "--sp"],
+    "us_2015": ["-u", "-s:2015", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--po:target,market", "--mo:30,15", "--sp"],
+    # Batch 9.1: the U.S. target across its three parts, and the market rate.
+    "us_policy": ["-u", "-s:1978", "--no-yield", "--po:target,market"],
     # Batch 9.4: the prime rates plus a margin, each nation's own (the U.S.'
     # from FRED DPRIME, daily from 1955-08; Canada's below its prime).
     "prime_margin": ["-s:2005", "--mo:5v,30,prime", "--us:prime:0.5", "--cdn:prime:-0.25"],
     "uk_1970": ["--na:gb", "-s:1970", "--e:1990", "--policy", "--mo:svr"],
-    "uk_2015": ["--na:gb", "-s:2015", "--policy", "--mo:2f,3f,5f,svr", "--sp"],
+    "uk_2015": ["--na:gb", "-s:2015", "--po:target,market", "--mo:2f,3f,5f,svr", "--sp"],
     "de_1965": ["--na:de", "-s:1965", "--e:1980"],
-    "de_1998": ["--na:de", "-s:1998", "--e:2010", "--policy", "--mo:1-5,5-10,over10"],
-    "de_2015": ["--na:de", "-s:2015", "--y:1,2,5,7,10,20,30", "--policy", "--mo:1-5,5-10,over10", "--sp"],
+    "de_1998": ["--na:de", "-s:1998", "--e:2010", "--po:target,market", "--mo:1-5,5-10,over10"],
+    "de_2015": ["--na:de", "-s:2015", "--y:1,2,5,7,10,20,30", "--po:target,market", "--mo:1-5,5-10,over10", "--sp"],
 }
 
 
@@ -206,13 +217,47 @@ def yield_sources(nation: str, column: str) -> list[Source]:
     return sources
 
 
-def policy_sources(nation: str) -> list[Source]:
+def within(source: Source, name: str, start: pd.Timestamp | None = None, end: pd.Timestamp | None = None, less: float = 0.0) -> Source:
+    """``source`` from ``start`` and before ``end`` only, less ``less``: the part of it a curve is drawn from."""
+
+    def read() -> pd.Series:
+        values = source.read()
+        values = values.loc[(values.index >= (start or pd.Timestamp.min)) & (values.index < (end or pd.Timestamp.max))]
+        return values - less
+
+    return Source(name, read, source.monthly, source.carry_days)
+
+
+def policy_sources(nation: str, key: str) -> list[Source]:
+    """A policy term's sources (batch 9.1): the official rate's (``key`` "policy") or the market's ("policy_market")."""
+    if key == "policy_market":
+        return {
+            "us": lambda: [fred(rates.US_MARKET_SERIES)],
+            "cdn": lambda: [valet(rates.CDN_CORRA_SERIES)],
+            "uk": lambda: [iadb(rates.UK_MARKET_SERIES)],
+            "de": lambda: [ecb(*rates.DE_ESTR), ecb(*rates.DE_EONIA)],
+        }[nation]()
+    # An announced rate (the targets, the Bank Rates, the ECB's) holds until
+    # it changes and is drawn on to the chart's end (batch 17.3): no limit to
+    # its carry. The monthly average before the U.S. target is observed.
     if nation == "us":
-        return [fred(rates.US_POLICY_SERIES)]
-    # An announced rate (the Bank Rates, the ECB's) holds until it changes and
-    # is drawn on to the chart's end (batch 17.3): no limit to its carry.
+        return [
+            fred(rates.US_TARGET_SERIES, carry_days=None),
+            *(fred(code, carry_days=None) for code in rates.US_TARGET_RANGE_SERIES),
+            fred(rates.US_MONTHLY_EFFECTIVE_SERIES, monthly=True, carry_days=MONTHLY_CARRY_DAYS),
+        ]
     if nation == "cdn":
-        return [valet(rates.CDN_CORRA_SERIES), valet(rates.CDN_BANK_RATE_SERIES, carry_days=None)]
+        # The weekly Bank Rate is the Bank Rate before 1996-02-22, and less a
+        # quarter point the overnight target after, until the daily target.
+        weekly = valet(rates.CDN_WEEKLY_BANK_RATE_SERIES, carry_days=None)
+        since = rates.CDN_TARGET_FROM
+        return [
+            valet(rates.CDN_TARGET_SERIES, carry_days=None),
+            within(weekly, f"{weekly.name} less {rates.CDN_BANK_RATE_ABOVE_TARGET} from {since:%Y-%m-%d}", start=since,
+                   less=rates.CDN_BANK_RATE_ABOVE_TARGET),
+            within(weekly, f"{weekly.name} before {since:%Y-%m-%d}", end=since),
+            valet(rates.CDN_BANK_RATE_SERIES, carry_days=None),
+        ]
     if nation == "uk":
         return [iadb(rates.UK_POLICY_SERIES, carry_days=None), built_in("Bank Rate's changes 1833-2017", EMBEDDED_UK_BANK_RATE_HISTORY, carry_days=None)]
     # The ECB's rates are published on the days they change; the program
@@ -339,7 +384,7 @@ def check_case(name: str, tokens: list[str]) -> bool:
     print(f"== {name}: {' '.join(tokens)} {PINNED_END}")
     passed = True
     for key, figure in figures.items():
-        curves = {curve.label: curve for curve in chosen_rates[key]}
+        curves = {rates.legend_label(curve, config.for_nation(key)): curve for curve in chosen_rates[key]}
         yields = {}
         drawn_lines = drawn_curves(figure.axes[0])
         for line in drawn_lines:
@@ -363,8 +408,8 @@ def check_case(name: str, tokens: list[str]) -> bool:
                 continue
             if line.label.endswith(" Yield"):
                 sources = yield_sources(key, line.label.removesuffix(" Yield"))
-            elif curve is not None and curve.key == "policy":
-                sources = policy_sources(key)
+            elif curve is not None and curve.key in ("policy", "policy_market"):
+                sources = policy_sources(key, curve.key)
             elif curve is not None and curve.key.startswith("mortgage_"):
                 term = curve.key.removeprefix("mortgage_")
                 sources = mortgage_sources(term, key)

@@ -69,6 +69,7 @@ from .config import (
     MORTGAGE_TERMS,
     NATIONS,
     PER_NATION_FIELDS,
+    POLICY_TERMS,
     YIELD_TERMS,
     Nation,
     PlotConfig,
@@ -270,6 +271,25 @@ def parse_mortgage_terms(spec: str) -> tuple[str, ...]:
             )
         chosen.add(term)
     return tuple(term for term in MORTGAGE_TERMS if term in chosen)
+
+
+def parse_policy_terms(spec: str) -> tuple[str, ...]:
+    """Parse ``--policy:LIST``: ``target`` (the central bank's official rate) and ``market`` (the overnight market's), in that order.
+
+    Repeats are harmless; "none" is none (a nation's own list).
+    """
+    if _is_none(spec):
+        return ()
+    items = [item.strip().lower() for item in spec.split(",") if item.strip()]
+    if not items:
+        raise ValueError("empty --policy list: name target, market or both")
+    unknown = [item for item in items if item not in POLICY_TERMS]
+    if unknown:
+        raise ValueError(
+            f"invalid --policy term {unknown[0]!r}: use target (the central bank's official rate) "
+            "or market (the overnight market's rate around it), or both"
+        )
+    return tuple(term for term in POLICY_TERMS if term in items)
 
 
 def parse_spreads(spec: str) -> tuple[tuple[str, str], ...]:
@@ -586,6 +606,8 @@ _MORTGAGE_CHOICES = (
     ("UK", (("2f", "2y"), ("3f", "3y"), ("5f", "5y"), ("svr", "SVR"))),
     ("Germany", (("1-5", "1–5y"), ("5-10", "5–10y"), ("over10", "over 10y"))),
 )
+# Every nation has both policy terms (batch 9.1).
+_POLICY_CHOICES = (("", tuple((term, term) for term in POLICY_TERMS)),)
 _SPREAD_CHOICES = (
     ("", tuple((f"{a}-{b}", f"{a}–{b}") for a, b in DEFAULT_SPREADS)),
     ("", tuple((f"{a}-{b}", f"{a}–{b}") for a, b in (("2y", "3m"), ("5y", "2y"), ("30y", "2y")))),
@@ -712,9 +734,19 @@ OPTIONS: tuple[Option, ...] = (
     # "-p" stays per capita.
     Option(
         "policy", Kind.FLAG, ("policy_rates",), "rates", "--policy / --no-policy",
-        "each country's policy rate: the effective\nfed funds rate; the Bank Rate, then\n"
-        "CORRA from 1997 (a quarter point lower);\nthe UK's Bank Rate; the ECB's main\nrefinancing rate (Germany, from 1999)",
+        "each country's policy rate, the central\nbank's official rate: the fed funds\n"
+        "target (a range from 2008, the monthly\naverage before 1982-09); the Bank Rate,\n"
+        "the overnight target from 1996; the UK's\nBank Rate; the ECB's main refinancing\nrate (Germany, from 1999)",
         names=("policy-rates",), shortest=2, label="Policy rate",
+    ),
+    # Batch 9.1 (Terry, decision 27): the official rate by default, the
+    # market's overnight rate a second term. Per nation (--us:policy:market).
+    Option(
+        "policy-terms", Kind.VALUE, ("policy_terms",), "rates", "--policy:LIST / --po:LIST",
+        "target (the official rate, the default),\nmarket (the overnight market's rate: the\n"
+        "effective fed funds rate, CORRA from\n1997, SONIA from 1997, EONIA from 1999\nthen €STR), or both; turns --policy on",
+        names=("policy-rates",), shortest=2, parse=parse_policy_terms, turns_on="policy",
+        label="Policy rates", format=format_terms, editor="choices", choices=_POLICY_CHOICES,
     ),
     # At least "mo": "--m:" stays ambiguous (--min or --max).
     Option(
@@ -929,7 +961,7 @@ _PART_OPTIONS = {"debt-parts": "debt", "interest-parts": "interest"}
 #   flags:    FLAG / TOGGLE / SWITCH option -> True or False (absent = not given)
 # The fields holding a list of items (terms, pairs), which a nation's chart
 # draws as far as it has them (``nation_view``) and which may be none.
-_LIST_FIELDS = ("yield_terms", "mortgage_terms", "spread_pairs")
+_LIST_FIELDS = ("yield_terms", "mortgage_terms", "spread_pairs", "policy_terms")
 
 
 def list_switch(option: Option) -> Option:

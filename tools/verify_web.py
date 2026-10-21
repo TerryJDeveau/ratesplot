@@ -115,6 +115,8 @@ CHART_CASES = (
     "uk_rates", "uk_nat", "all3",
     # Batch 4: Germany, alone with its curves, with its own values, and all four nations.
     "de_rates", "de_nat", "all4",
+    # Batch 9.1: both policy terms on every nation's chart, the U.S. target range a band.
+    "policy_both",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -867,6 +869,43 @@ def check_batch94(check: Check) -> None:
           ticked == boxes and set(texts.values()) == {"0.5"} and flags(page)["mortgages"], (sorted(ticked), texts))
 
 
+def check_batch91(check: Check) -> None:
+    """Batch 9.1: each nation's policy terms, target and market, as boxes; the target ticked; greyed while the policy rate is off."""
+    at = new_page("--e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    boxes = {box.key for box in at.checkbox if box.key and ":policy-terms:" in box.key}
+    wanted = {f"choice:{key}:policy-terms:{term}" for key in NATION_KEYS for term in ("target", "market")}
+    check("every nation's section has target and market", boxes == wanted, sorted(boxes))
+    targets = {f"choice:{key}:policy-terms:target" for key in NATION_KEYS}
+    check("the target ticked in each, the market not", {key for key in boxes if at.checkbox(key=key).value} == targets)
+    check("greyed while the policy rate is off", all(at.checkbox(key=key).disabled for key in boxes))
+    at.checkbox(key="flag:policy").check()
+    at.run()
+
+    def drawn(page: AppTest, key: str):
+        return drawn_config(config_from_choices(*sort_tokens(address(page).split())[:2]), key)
+
+    check("policy on: the boxes active, the address draws the target",
+          not any(at.checkbox(key=key).disabled for key in boxes) and drawn(at, "us").policy_rates
+          and drawn(at, "us").policy_terms == ("target",), address(at))
+    at.checkbox(key="choice:us:policy-terms:market").check()
+    at.run()
+    terms = {key: drawn(at, key).policy_terms for key in ("cdn", "us")}
+    check("the U.S.' market ticked: the address draws both there, the target alone in Canada",
+          terms == {"cdn": ("target",), "us": ("target", "market")}, (address(at), terms))
+    at.checkbox(key="choice:cdn:policy-terms:target").uncheck()
+    at.run()
+    check("Canada's last policy box cannot be unticked",
+          at.checkbox(key="choice:cdn:policy-terms:target").value
+          and any("untick “Policy rate”" in str(item.value) for item in list(at.info) + list(at.warning)), address(at))
+    check("no exception, one drawing per chart", not at.exception and charts_shown(at) == 2, at.exception)
+    page = new_page("--po:market --e:2026-09-01")
+    markets = {f"choice:{key}:policy-terms:market" for key in NATION_KEYS}
+    check("--po:market: the market ticked in every section, the target not",
+          {key for key in wanted if page.checkbox(key=key).value} == markets and flags(page)["policy"],
+          sorted(key for key in wanted if page.checkbox(key=key).value))
+
+
 def check_batch17(check: Check) -> None:
     """Batch 17.4 and 17.5: a nation ticked by hand gets its tab once drawn; Reset leaves the nation boxes alone."""
     at = new_page("--e:2026-09-01")
@@ -904,7 +943,7 @@ def check_batch17(check: Check) -> None:
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
-    check_batch15, check_batch9, check_batch94, check_batch17,
+    check_batch15, check_batch9, check_batch94, check_batch17, check_batch91,
 )
 
 

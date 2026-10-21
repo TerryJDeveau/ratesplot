@@ -220,7 +220,7 @@ def check_fetchers() -> None:
         n = levels[component_column("debt", "n")]
         check("levels: f n p m debt and interest; n is the Länder and local together",
               len(levels.columns) == 8 and (n == levels[component_column("debt", "p")] + levels[component_column("debt", "m")]).all())
-        policy = rates.de_policy_rate().values
+        policy = rates.de_policy_target().values
         check("policy: the fixed rate (3 in 1999), the minimum bid 2000-06-28 to 2008-10-14, fixed again from 2008-10-15",
               policy.loc["1999-01-04"] == 3.0 and policy.loc["2000-06-28"] == 4.25 and policy.loc["2000-10-06"] == 4.75
               and policy.loc["2008-10-14"] == 4.25 and policy.loc["2008-10-15"] == 3.75,
