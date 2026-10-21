@@ -761,6 +761,9 @@ class CountryMetadata:
     net_debt_column: str | None = None
     net_debt_label: str = ""
     net_debt_title: str = ""
+    # The word the title phrases name the nation by ("CDN", "US", "UK",
+    # "German"), kept only in a title's first phrase (batch 21, title_for).
+    title_nation: str = ""
     # Components (--debt:LETTERS): the name of each level, and the wording
     # around a name ("{}" is replaced by it, or in a title by nothing).
     level_names: tuple[tuple[str, str], ...] = (
@@ -828,23 +831,29 @@ class CountryMetadata:
         """Compose the chart title from the series that were actually drawn.
 
         Parts are joined with commas and a final ampersand, e.g.
-        ``"U.S. Treasury Yields, Aggregate US Public Debt & TTM GDP"``.
+        ``"U.S. Treasury Yields, Aggregate Public Debt & TTM GDP"``.
         Federal debt alone is named only when the aggregate is not drawn.
         Under -r and -p the macro phrase is qualified and set off from the
         yields by a semicolon, since the qualifier does not apply to them:
-        ``"CDN Benchmark Yields; Aggregate CDN Public Debt & Interest Outlays
+        ``"CDN Benchmark Yields; Aggregate Public Debt & Interest Outlays
         as % of TTM GDP"``. ``rate_titles`` name the yield axis's other
         curves drawn (``ratesplot.rates``), after the yields, in the order
         given (the spreads first, ``plotting.draw_country``): "U.S. Treasury
-        Yields, Spreads, Policy Rate, Aggregate US Public Debt …".
+        Yields, Spreads, Policy Rate, Aggregate Public Debt …".
 
         A title whose first phrase does not name the nation begins with it
         (batch 17.6, Terry 2026-10-20: every chart "should have the nation
         that pertains to the tab that it is plotted on included somewhere near
         the beginning of the main title"): "Canada: Policy Rate", "United
-        States: TTM GDP & Interest Outlays", even where a later phrase names it.
-        The yield and debt phrases name it ("CDN Benchmark Yields", "Aggregate
-        US Public Debt"), so a title beginning with one is unchanged.
+        States: TTM GDP & Interest Outlays". The yield and debt phrases name
+        it ("CDN Benchmark Yields", "Aggregate US Public Debt"), so a title
+        beginning with one has no such prefix.
+
+        The nation is named once (batch 21, Terry 2026-10-21: "once the
+        country is identified in the main title, don't repeat it"): every
+        phrase after the first drops it ("Aggregate CDN Public Debt" becomes
+        "Aggregate Public Debt"), and so after "Canada: " does every phrase.
+        The legend keeps its labels, which name each series whole.
         """
         drawn = set(macro_keys_drawn)
         if "debt" in drawn:
@@ -861,7 +870,8 @@ class CountryMetadata:
         # title ends "… by Level of Government" (after the -r / -p qualifier,
         # set off by a comma). Debt and interest split alike are named once,
         # after GDP: "TTM GDP & CDN Public Debt and Interest Outlays by Level
-        # of Government", "Federal CDN Public Debt and Interest Outlays".
+        # of Government", "Federal CDN Public Debt and Interest Outlays" (the
+        # phrases as built; "CDN" is dropped below unless it comes first).
         levels = {
             kind: [letter for letter in COMPONENT_LETTERS if f"{kind}_{letter}" in drawn] for kind in ("debt", "interest")
         }
@@ -887,11 +897,27 @@ class CountryMetadata:
         if not parts:
             return f"{self.country_name}: no series selected"
         nation = "" if parts[0] in naming else f"{self.country_name}: "
+        # The nation named once: the first phrase keeps it (when it names it,
+        # nothing else does); every later phrase that names it drops it.
+        parts = [
+            part if index == 0 or part not in naming else _without_nation(part, self.title_nation)
+            for index, part in enumerate(parts)
+        ]
+        yield_parts, macro_parts = parts[: len(yield_parts)], parts[len(yield_parts) :]
         title_suffix = _measure_suffixes(config)[1]
         if title_suffix and macro_parts:
             macro_phrase = _join_title_parts(macro_parts) + title_suffix + ("," if levels_suffix else "") + levels_suffix
             return nation + "; ".join(yield_parts + [macro_phrase])
         return nation + _join_title_parts(parts) + levels_suffix
+
+
+def _without_nation(phrase: str, nation: str) -> str:
+    """Return a title phrase without the word that names the nation: "Aggregate CDN Public Debt" -> "Aggregate Public Debt"."""
+    words = phrase.split(" ")
+    if nation not in words:
+        raise ValueError(f"title phrase {phrase!r} does not name the nation by {nation!r}")
+    words.remove(nation)
+    return " ".join(words)
 
 
 def _join_title_parts(parts: list[str]) -> str:
@@ -908,6 +934,7 @@ CDN = CountryMetadata(
     currency_label="Nominal Units (CAD – Log Scale)",
     per_capita_label="Nominal Units per Capita (CAD – Log Scale)",
     yield_title="CDN Benchmark Yields",
+    title_nation="CDN",
     debt_column=CDN_DEBT_COLUMN,
     debt_label="Aggregate CDN Public Debt",
     debt_title="Aggregate CDN Public Debt",
@@ -927,6 +954,8 @@ US = CountryMetadata(
     currency_label="Nominal Units (USD – Log Scale)",
     per_capita_label="Nominal Units per Capita (USD – Log Scale)",
     yield_title="U.S. Treasury Yields",
+    # "U.S." in the yields' phrase, which always comes first; "US" in the rest.
+    title_nation="US",
     debt_column=US_DEBT_COLUMN,
     debt_label="Aggregate US Public Debt",
     debt_title="Aggregate US Public Debt",
@@ -949,6 +978,7 @@ UK = CountryMetadata(
     # The Bank of England's fitted par yields (monthly averages of gilt
     # redemption yields before them): the title says which kind they are.
     yield_title="UK Gilt Yields (fitted par)",
+    title_nation="UK",
     debt_column=UK_DEBT_COLUMN,
     debt_label="UK General Government Gross Debt",
     debt_title="UK General Government Gross Debt",
@@ -981,6 +1011,7 @@ DE = CountryMetadata(
     # The Bundesbank's Svensson term structure: zero-coupon yields fitted to
     # the Federal securities' prices; the title says which kind they are.
     yield_title="German Federal Yields (Svensson fitted)",
+    title_nation="German",
     debt_column=DE_DEBT_COLUMN,
     debt_label="German General Government Gross Debt",
     debt_title="German General Government Gross Debt",
