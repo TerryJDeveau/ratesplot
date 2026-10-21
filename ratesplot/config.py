@@ -796,6 +796,14 @@ class CountryMetadata:
         curves drawn (``ratesplot.rates``), after the yields, in the order
         given (the spreads first, ``plotting.draw_country``): "U.S. Treasury
         Yields, Spreads, Policy Rate, Aggregate US Public Debt …".
+
+        A title whose first phrase does not name the nation begins with it
+        (batch 17.6, Terry 2026-10-20: every chart "should have the nation
+        that pertains to the tab that it is plotted on included somewhere near
+        the beginning of the main title"): "Canada: Policy Rate", "United
+        States: TTM GDP & Interest Outlays", even where a later phrase names it.
+        The yield and debt phrases name it ("CDN Benchmark Yields", "Aggregate
+        US Public Debt"), so a title beginning with one is unchanged.
         """
         drawn = set(macro_keys_drawn)
         if "debt" in drawn:
@@ -820,24 +828,29 @@ class CountryMetadata:
         by_level = any(len(levels[kind]) > 1 for kind in split)
         names = {kind: "" if by_level else self.level_name(levels[kind][0]) for kind in split}
         templates = {"debt": self.component_debt_title, "interest": self.component_interest_title}
+        # The phrases that name the nation: the yields' and the debt's.
+        naming = {self.yield_title, self.debt_title, self.federal_debt_title}
         if len(split) == 2 and names["debt"] == names["interest"]:
             both = templates["debt"].format(names["debt"]).strip() + " and " + templates["interest"].format("").strip()
+            naming.add(both)
             macro_parts = ([self.gdp_title] if "gdp" in drawn else []) + [both]
         else:
             for kind in split:
                 drawn.add(kind)
                 macro_titles[kind] = templates[kind].format(names[kind]).strip()
+            naming.add(macro_titles["debt"])
             macro_parts = [macro_titles[key] for key in macro_titles if key in drawn]
         levels_suffix = LEVELS_TITLE_SUFFIX if by_level else ""
         yield_parts = ([self.yield_title] if yields_drawn else []) + list(dict.fromkeys(rate_titles))
-        title_suffix = _measure_suffixes(config)[1]
-        if title_suffix and macro_parts:
-            macro_phrase = _join_title_parts(macro_parts) + title_suffix + ("," if levels_suffix else "") + levels_suffix
-            return "; ".join(yield_parts + [macro_phrase])
         parts = yield_parts + macro_parts
         if not parts:
             return f"{self.country_name}: no series selected"
-        return _join_title_parts(parts) + levels_suffix
+        nation = "" if parts[0] in naming else f"{self.country_name}: "
+        title_suffix = _measure_suffixes(config)[1]
+        if title_suffix and macro_parts:
+            macro_phrase = _join_title_parts(macro_parts) + title_suffix + ("," if levels_suffix else "") + levels_suffix
+            return nation + "; ".join(yield_parts + [macro_phrase])
+        return nation + _join_title_parts(parts) + levels_suffix
 
 
 def _join_title_parts(parts: list[str]) -> str:
