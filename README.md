@@ -37,6 +37,9 @@ page's server keeps its copies only until it restarts. A curve on the right axis
 has stopped (or is left with only its baked history) ends a year after its last figure
 instead of running on flat to the end of the chart.
 
+The nations' sources are fetched side by side, but each source's server gets one request at
+a time from the program, and a request that fails is not made again until the next drawing.
+
 In the window and on the page a blank field shows in grey the value it stands for (the
 automatic start, today's end, each chart's axis limits as drawn); a value typed in is black,
 and a number typed without the 0 before its point (`.3`) gets it (`0.3`). A country ticked
