@@ -398,7 +398,8 @@ def check_view_buttons(check: Check) -> None:
     check("Back after Unzoom: the view before it", fields == (s3, n3) and enabled(view)["Unzoom"], (fields, enabled(view)))
     button(view, "Reset").click()
     view.run()
-    check("Reset draws the defaults", address(view) == "" and charts_shown(view) == 2, address(view))
+    # The defaults for the nations ticked: Canada alone stays (batch 17.5).
+    check("Reset draws the defaults, Canada's alone", address(view) == "--C" and charts_shown(view) == 1, address(view))
     button(view, "◀ Back").click()
     view.run()
     check("Back undoes Reset", address(view) == e3, (address(view), e3))
