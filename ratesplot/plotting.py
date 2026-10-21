@@ -480,7 +480,10 @@ def draw_country(
     macro_lines: list[Line2D] = []
     macro_keys_drawn: list[str] = []
     macro_columns_drawn: list[str] = []
-    for style_key, enabled, column, label in metadata.macro_specs(config):
+    # The aggregate debt's column is missing only when its source failed; in
+    # a window before it begins (the UK's to 1900) it is there, empty.
+    aggregate_debt = metadata.debt_column in macro.columns
+    for style_key, enabled, column, label in metadata.macro_specs(config, aggregate_debt=aggregate_debt):
         line = add_macro_line(
             ax_macro,
             macro_in_range,

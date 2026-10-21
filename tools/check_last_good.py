@@ -16,7 +16,8 @@ charts are drawn three times:
    cannot draw them all (the difference the copies make). What it draws from the baked
    history alone must stop: no curve on the right axis keeps its last value for more than
    ``joins.MACRO_CARRY_LIMIT`` (Canada's debt, left with its history to 1994, ran on flat
-   to the day before 2026-10-21).
+   to the day before 2026-10-21); and the UK's national debt, drawn to 2016 without the
+   gross debt, is named without "(pre-1975)".
 
 Usage (from the project root)::
 
@@ -234,6 +235,9 @@ def main() -> int:
     check(f"the baked history alone: no right-axis curve keeps its last value more than {MACRO_CARRY_LIMIT.days} days",
           bool(flat) and not held_on,
           held_on or "; ".join(f"{curve} {round(days)}" for curve, days in flat.items()))
+    national = [curve for curve in flat if "National Debt" in curve]
+    check("the baked history alone: the UK's national debt, past 1975 without the gross debt, named without (pre-1975)",
+          national == ["rates, uk: UK National Debt"], national)
 
     print(f"[last good] {'all checks passed' if not failures else f'{failures} FAILED'}")
     return 1 if failures else 0

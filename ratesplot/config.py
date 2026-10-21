@@ -781,13 +781,18 @@ class CountryMetadata:
             return RELATIVE_AXIS_LABEL
         return self.per_capita_label if config.per_capita else self.currency_label
 
-    def macro_specs(self, config: PlotConfig) -> tuple[tuple[str, bool, str, str], ...]:
+    def macro_specs(self, config: PlotConfig, *, aggregate_debt: bool = True) -> tuple[tuple[str, bool, str, str], ...]:
         """Return ``(style_key, enabled, column, label)`` for each macro curve, in legend order.
 
         Under -r GDP is the denominator and is not drawn itself. With
         components chosen, each of debt and interest is one line per level
         instead of the aggregate (and the federal-only debt before 1933 is
         simply the start of the federal line).
+
+        ``aggregate_debt`` False: the aggregate's source failed, so the debt
+        alone is drawn past the years its label gives and is named without
+        them ("UK National Debt", not "UK National Debt (pre-1975)", when the
+        ONS's gross debt fails and the national debt runs to 2016).
         """
         suffix = _measure_suffixes(config)[0]
         if config.components:
@@ -813,7 +818,8 @@ class CountryMetadata:
             specs.insert(1, ("net_debt", config.include_debt, self.net_debt_column, self.net_debt_label))
         if self.federal_debt_column is not None:
             # Chosen with the debt curve; listed straight after it.
-            specs.insert(1, ("federal_debt", config.include_debt, self.federal_debt_column, self.federal_debt_label))
+            label = self.federal_debt_label if aggregate_debt else self.federal_debt_title
+            specs.insert(1, ("federal_debt", config.include_debt, self.federal_debt_column, label))
         return tuple((key, enabled, column, _with_suffix(label, suffix)) for key, enabled, column, label in specs)
 
     def title_for(
