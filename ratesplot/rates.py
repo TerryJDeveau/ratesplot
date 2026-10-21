@@ -113,6 +113,39 @@ _MORTGAGE_LABELS = {
 # The U.S. prime rate by the name the Federal Reserve's H.15 gives it.
 _US_PRIME_LABEL = "Bank Prime Loan Rate"
 
+# How long a value drawn as a step holds (batch 17.3; Terry, decision 44,
+# 2026-10-21), declared with its source rather than read from its dates. An
+# announced rate (a central bank's rate, a prime rate) holds until it is
+# changed, at whatever irregular times: each value to the next, the last to
+# the chart's end. An observed one (a market's overnight rate, a survey, an
+# average) holds for its own period only, whether or not the next value has
+# come (Terry, 2026-10-20: "There is no point extrapolating (even at a
+# constant value) beyond what the quotes have implied"). For each observed
+# kind: the period its last value is drawn across, and the longest step to the
+# next value still drawn as one, so a holiday or a release moved by a day
+# breaks nothing. Measured 2026-10-21: the daily sources' longest step 6 days
+# (CORRA), the weekly ones' 9 (the U.S. 30-year, released on a Wednesday in a
+# holiday week); the monthly ones are dated by each month's first day. The
+# 5-year variable rate's missing stretches (28 days from 2013-05-30, 14 from
+# 2014-12-04) are breaks.
+HELD = "held"
+OBSERVED = {
+    "daily": (pd.offsets.BDay(1), pd.Timedelta(days=7)),
+    "weekly": (pd.Timedelta(days=7), pd.Timedelta(days=10)),
+    "monthly": (pd.offsets.MonthBegin(1), pd.Timedelta(days=31)),
+}
+# An observed value's period is drawn to a second before it ends, so the
+# subtitle, which names the last day drawn, names the period's last day (an
+# August average: 08-31, not 09-01).
+_PERIOD_END_MARGIN = pd.Timedelta(seconds=1)
+_MORTGAGE_HOLDS = {"us": "weekly", "cdn": "weekly", "uk": "monthly", "de": "monthly"}
+
+
+def holding(values: pd.Series, kind: str) -> pd.Series:
+    """Return ``kind`` (``HELD`` or a key of ``OBSERVED``) for each of ``values``, as ``RateCurve.holds`` takes it."""
+    assert kind == HELD or kind in OBSERVED, kind
+    return pd.Series(kind, index=values.index, dtype=object)
+
 
 def _mortgage_label(term: str, country: str, margin: float) -> str:
     """Return a mortgage term's legend label; the prime rate's with its margin when there is one.
@@ -151,6 +184,11 @@ class RateCurve:
     # The yield column whose drawn colour it takes, if that yield is on the
     # chart (a mortgage: its term's yield); its style's colour otherwise.
     color_of: str | None = None
+    # How long each value holds (``HELD`` or a key of ``OBSERVED``), one per
+    # value, so a curve joined from two sources can have both kinds (Canada's
+    # Bank Rate, then CORRA); drawn by ``held_steps``. None: the yields' rule,
+    # ``in_window`` (the spreads, taken from the yields).
+    holds: pd.Series | None = None
 
     @property
     def first(self) -> pd.Timestamp:
@@ -158,12 +196,58 @@ class RateCurve:
         return pd.Timestamp(self.values.index[0])
 
 
+def held_steps(curve: RateCurve, config: PlotConfig) -> pd.Series:
+    """Return the points that draw ``curve`` as steps from ``config.start`` to ``config.end``; a NaN breaks the line.
+
+    Each value is drawn from its date to the next value, and, as
+    ``curve.holds`` declares it (batch 17.3, decision 44): an announced
+    rate's last value on to the chart's end; an observed value only to the
+    end of its own period, so a missing stretch is a break and the last value
+    stops where its period does. The value in effect at the window's start is
+    carried to it if it still applies there: an announced rate's always, so
+    it has a line across the whole window however long since it last
+    changed, and never an isolated point. Empty when no value applies in the
+    window (``plotting.add_rate_lines`` says so).
+    """
+    values, holds = curve.values, curve.holds
+    assert holds is not None and holds.index.equals(values.index), curve.label
+    start, end = config.start, config.end
+    dates = values.index
+    first = max(int(dates.searchsorted(start)) - 1, 0)  # the last value before the window, if any
+    points: list[tuple[pd.Timestamp, float]] = []
+    for position in range(first, len(dates)):
+        date = dates[position]
+        if date > end:
+            break
+        after = dates[position + 1] if position + 1 < len(dates) else None
+        kind = holds.iloc[position]
+        if kind == HELD:
+            until = after if after is not None else pd.Timestamp.max
+        else:
+            period, longest = OBSERVED[kind]
+            until = after if after is not None and after - date <= longest else date + period - _PERIOD_END_MARGIN
+        if until <= start:
+            continue  # it applies only before the window
+        value = float(values.iloc[position])
+        points.append((max(date, start), value))
+        if after is None or after > end:  # the last drawn: on to the end of what it applies to
+            stop = min(until, end)
+            if stop > points[-1][0]:
+                points.append((stop, value))
+        elif until < after:  # its period ends before the next value comes
+            points.append((until, float("nan")))
+    if not points:
+        return values.iloc[:0]
+    return pd.Series([value for _date, value in points], index=pd.DatetimeIndex([date for date, _value in points]))
+
+
 def in_window(values: pd.Series, config: PlotConfig) -> pd.Series:
     """Return ``values`` from ``config.start`` to ``config.end``, the value in effect at the start carried to it.
 
-    A rate holds until it changes (a monthly Bank Rate, a weekly mortgage
-    rate), so a window starting between two observations begins with the
-    one before it, as the right-axis curves do (``us_data.fetch_us_macro``).
+    The yields' rule, for the curves taken from them (the spreads): a window
+    starting between two observations begins with the one before it, as the
+    right-axis curves do (``us_data.fetch_us_macro``). The rates themselves
+    are drawn by ``held_steps``.
     """
     inside = values.loc[(values.index >= config.start) & (values.index <= config.end)]
     before = values.loc[values.index < config.start]
@@ -197,7 +281,9 @@ def us_policy_rate() -> RateCurve | None:
     except Exception as exc:
         print(f"  Warning: effective federal funds rate ({US_POLICY_SERIES}) unavailable ({exc}); not drawn.")
         return None
-    return RateCurve("policy", "Fed Funds Rate (effective)", values, POLICY_RATE_STYLE, title="Policy Rate")
+    # The rate banks paid each other that day: observed, not announced.
+    return RateCurve("policy", "Fed Funds Rate (effective)", values, POLICY_RATE_STYLE, title="Policy Rate",
+                     holds=holding(values, "daily"))
 
 
 def cdn_policy_rate() -> RateCurve | None:
@@ -214,13 +300,18 @@ def cdn_policy_rate() -> RateCurve | None:
     if not parts:
         print("  Warning: no Canadian policy rate; not drawn.")
         return None
+    # The Bank Rate is announced; CORRA, the overnight repo market's average,
+    # is observed day by day.
+    kinds = {"Bank Rate": HELD, "CORRA": "daily"}
     if len(parts) == 1:
         (name, values), = parts.items()
-        return RateCurve("policy", name, values, POLICY_RATE_STYLE, title="Policy Rate")
+        return RateCurve("policy", name, values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, kinds[name]))
     bank, corra = parts["Bank Rate"], parts["CORRA"]
-    joined = pd.concat([bank.loc[bank.index < corra.index[0]], corra])
+    bank = bank.loc[bank.index < corra.index[0]]
+    joined = pd.concat([bank, corra])
+    holds = pd.concat([holding(bank, HELD), holding(corra, "daily")])
     label = f"Bank Rate, CORRA from {corra.index[0]:%Y-%m}"
-    return RateCurve("policy", label, joined, POLICY_RATE_STYLE, title="Policy Rate")
+    return RateCurve("policy", label, joined, POLICY_RATE_STYLE, title="Policy Rate", holds=holds)
 
 
 def _baked(rows: list[tuple[str, float]]) -> pd.Series:
@@ -249,7 +340,7 @@ def uk_policy_rate() -> RateCurve | None:
     values = _joined(history, live)
     if values.empty:
         return None
-    return RateCurve("policy", "Official Bank Rate", values, POLICY_RATE_STYLE, title="Policy Rate")
+    return RateCurve("policy", "Official Bank Rate", values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, HELD))
 
 
 def _uk_mortgage(term: str) -> pd.Series:
@@ -294,12 +385,14 @@ def de_policy_rate() -> RateCurve | None:
         resumed = fixed.loc[fixed.index > bid.index[0]]
         end = resumed.index[0] if not resumed.empty else pd.Timestamp.max
         values = pd.concat([fixed.loc[fixed.index < bid.index[0]], bid.loc[bid.index < end], resumed])
-    # Each day's rate, carried from its change to the next and on to today,
-    # so a window ending between changes is drawn to its end (as the UK's
-    # daily Bank Rate is).
+    # Each day's rate, carried from its change to the next and on to today.
+    # (Since batch 17.3 ``held_steps`` carries an announced rate on to the
+    # chart's end anyway; the daily values are kept, so the points drawn are
+    # those drawn before.)
     today = pd.Timestamp.today().normalize()
     values = values.reindex(pd.date_range(values.index[0], max(today, values.index[-1]), freq="D")).ffill()
-    return RateCurve("policy", "ECB Main Refinancing Rate", values, POLICY_RATE_STYLE, title="Policy Rate")
+    return RateCurve("policy", "ECB Main Refinancing Rate", values, POLICY_RATE_STYLE, title="Policy Rate",
+                     holds=holding(values, HELD))
 
 
 def _de_mortgage(term: str) -> pd.Series:
@@ -358,6 +451,9 @@ def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) ->
     except Exception as exc:
         print(f"  Warning: {label} ({code}) unavailable ({exc}); not drawn.")
         return None
+    # The prime rates are announced; the mortgage rates are surveys and
+    # averages, observed weekly or monthly.
+    holds = holding(values, HELD if term == "prime" else _MORTGAGE_HOLDS[country])
     if country == "cdn" and term == "5":
         try:
             history = cdn_mortgage_history()
@@ -367,11 +463,14 @@ def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) ->
                 f"{values.index[0]:%Y-%m-%d}) unavailable ({exc}); drawn from then only."
             )
         else:
-            values = pd.concat([history.loc[history.index < values.index[0]], values])
+            history = history.loc[history.index < values.index[0]]
+            values = pd.concat([history, values])
+            holds = pd.concat([holding(history, "monthly"), holds])
     if term == "prime" and margin:
         values = values + margin
     color_of = YIELD_TERMS[yield_term] if yield_term is not None else None
-    return RateCurve(f"mortgage_{term}", label, values, _mortgage_style(term), title="Mortgage Rates", color_of=color_of)
+    return RateCurve(f"mortgage_{term}", label, values, _mortgage_style(term), title="Mortgage Rates", color_of=color_of,
+                     holds=holds)
 
 
 def warn_none_drawn(country: str, curve: str, why: str) -> None:

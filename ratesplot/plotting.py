@@ -89,7 +89,7 @@ from .latest import (
 )
 from .legend import finish_legend_and_title
 from .measures import express
-from .rates import RateCurve, in_window, rate_curves, warn_none_drawn
+from .rates import RateCurve, held_steps, in_window, rate_curves, warn_none_drawn
 from .regression import RateLabel, add_regression_segments
 from .regression import legend_entry as regression_legend_entry
 from .de_data import (
@@ -311,7 +311,10 @@ def add_rate_lines(
 ) -> list[tuple[Line2D, RateCurve]]:
     """Plot the yield axis's other curves (``ratesplot.rates``); return each drawn curve's legend line with it.
 
-    Each is drawn from the value in effect at the window's start
+    A rate is drawn as ``rates.held_steps`` says (batch 17.3): each value
+    across what it applies to, an announced rate on to the chart's end; a
+    rate with no value applying in the window is left off with a note. A
+    spread is drawn from the value in effect at the window's start
     (``rates.in_window``). Where ``steps_until`` is set, the part up to it is
     drawn as steps and the rest as a line in the same colour, as the Canadian
     yields are. A spread's stretches below zero (an inverted curve) are
@@ -322,8 +325,12 @@ def add_rate_lines(
     yield_colours = {line.get_label(): line.get_color() for line in yield_lines}
     drawn: list[tuple[Line2D, RateCurve]] = []
     for curve in rates:
-        values = in_window(curve.values, config)
+        values = in_window(curve.values, config) if curve.holds is None else held_steps(curve, config)
         if values.empty:
+            before = curve.values.loc[curve.values.index < config.start]
+            if curve.holds is not None and not before.empty:
+                print(f"  Note: {curve.label}: no value applies in the window; its last before it is "
+                      f"{format_yield(before.iloc[-1])} on {before.index[-1]:%Y-%m-%d}; not drawn.")
             continue
         style = curve.style
         if curve.color_of is not None and f"{curve.color_of} Yield" in yield_colours:

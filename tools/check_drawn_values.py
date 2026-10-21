@@ -21,7 +21,9 @@ built-in history:
 * the value of the source's last observation before that date, carried:
   allowed for the line's first point (the value in effect at the window's
   start) and within the source's limit after that (a yield over a holiday:
-  a few days; a policy rate that holds until it changes: no limit);
+  a few days; an observed rate's last value across its own period, batch
+  17.3: up to a week; an announced rate, which holds until it changes and
+  is drawn on to the chart's end: no limit);
 * anything else is a drawn value no source has: FAIL.
 
 A spread is checked against the two yields drawn with it, point by point.
@@ -207,10 +209,12 @@ def yield_sources(nation: str, column: str) -> list[Source]:
 def policy_sources(nation: str) -> list[Source]:
     if nation == "us":
         return [fred(rates.US_POLICY_SERIES)]
+    # An announced rate (the Bank Rates, the ECB's) holds until it changes and
+    # is drawn on to the chart's end (batch 17.3): no limit to its carry.
     if nation == "cdn":
-        return [valet(rates.CDN_CORRA_SERIES), valet(rates.CDN_BANK_RATE_SERIES)]
+        return [valet(rates.CDN_CORRA_SERIES), valet(rates.CDN_BANK_RATE_SERIES, carry_days=None)]
     if nation == "uk":
-        return [iadb(rates.UK_POLICY_SERIES), built_in("Bank Rate's changes 1833-2017", EMBEDDED_UK_BANK_RATE_HISTORY, carry_days=None)]
+        return [iadb(rates.UK_POLICY_SERIES, carry_days=None), built_in("Bank Rate's changes 1833-2017", EMBEDDED_UK_BANK_RATE_HISTORY, carry_days=None)]
     # The ECB's rates are published on the days they change; the program
     # carries each to the next change (a rate holds until it changes).
     return [ecb(*rates.DE_POLICY_FIXED, carry_days=None), ecb(*rates.DE_POLICY_MINIMUM_BID, carry_days=None)]
@@ -219,10 +223,11 @@ def policy_sources(nation: str) -> list[Source]:
 def mortgage_sources(term: str, nation: str) -> list[Source]:
     """A mortgage term's sources on ``nation``'s chart (the prime rate is Canada's and the U.S.')."""
     assert nation in rates.MORTGAGE_TERMS[term][0], (term, nation)
+    held = {"carry_days": None} if term == "prime" else {}  # announced: drawn on to the chart's end (batch 17.3)
     if nation == "us":
-        return [fred(rates.US_MORTGAGE_SERIES[term])]
+        return [fred(rates.US_MORTGAGE_SERIES[term], **held)]
     if nation == "cdn":
-        sources = [valet(rates.CDN_MORTGAGE_SERIES[term])]
+        sources = [valet(rates.CDN_MORTGAGE_SERIES[term], **held)]
         if term == "5":
             sources.append(Source(f"StatCan {rates.CDN_MORTGAGE_HISTORY_TABLE} (CMHC rate)", rates.cdn_mortgage_history, carry_days=MONTHLY_CARRY_DAYS))
         return sources
