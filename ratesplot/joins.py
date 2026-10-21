@@ -15,6 +15,7 @@ joins its baked history to its live tables by the same rules:
 
 from __future__ import annotations
 
+import threading
 import warnings
 from typing import Iterable
 
@@ -29,6 +30,11 @@ from .frames import at_quarter_end, normalize_date_column, rows_to_frame
 # (yearly at the longest) and its publication lag (months). A column whose
 # source has stopped ends a year after its last value instead of running on.
 MACRO_CARRY_LIMIT = pd.Timedelta(days=366)
+
+# warnings.catch_warnings changes the process's warning filters, so two
+# threads inside it at once (the nations are prepared side by side, batch
+# 19.1) could leave them changed: one thread at a time.
+_WARNINGS_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +197,7 @@ def align_macro(
     if not parts:
         return pd.DataFrame({DATE_COLUMN: plot_index})
 
-    with warnings.catch_warnings():
+    with _WARNINGS_LOCK, warnings.catch_warnings():
         # pandas warns about concatenating frames with differing index dtypes/names.
         warnings.simplefilter("ignore", FutureWarning)
         macro = pd.concat(parts, axis=1, sort=False)

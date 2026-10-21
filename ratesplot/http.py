@@ -16,7 +16,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Iterator, TypeVar
+from typing import Callable, Iterator, Sequence, TypeVar
 from urllib.parse import urlsplit
 
 import pandas as pd
@@ -34,7 +34,7 @@ from .config import (
     RETRY_BACKOFF_BASE_SECONDS,
     UK_SESSION,
 )
-from .console import current_writer
+from .console import current_writer, this_thread_output_to
 
 T = TypeVar("T")
 
@@ -152,9 +152,10 @@ def _copy_used(key: tuple, fetched_wall: float, failure: Exception) -> None:
     if drawing is None:
         print(f"  Warning: {label}: {why}; drawn from its last good copy, downloaded {_utc_text(fetched_wall)}.")
         return
-    earlier = drawing.copies.get(label)
-    if earlier is None or fetched_wall < earlier[0]:  # a group's oldest copy is the one named
-        drawing.copies[label] = (fetched_wall, why)
+    with drawing.lock:
+        earlier = drawing.copies.get(label)
+        if earlier is None or fetched_wall < earlier[0]:  # a group's oldest copy is the one named
+            drawing.copies[label] = (fetched_wall, why)
 
 
 def _utc_text(wall: float) -> str:
@@ -202,6 +203,8 @@ class _Drawing:
     # copy was drawn -> (when the oldest copy used was downloaded, time.time();
     # why the source failed). Batch 20.
     copies: dict[str, tuple[float, str]] = field(default_factory=dict)
+    # Its tasks may run side by side (``in_parallel``): ``copies`` is read and then written.
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def copies_used(self) -> list[str]:
         """The sources drawn from their last good copies, each with the copy's date: "FRED Treasury yields (2026-10-21 18:30 UTC)"."""
@@ -290,6 +293,44 @@ def drawing_downloads() -> Iterator[_Drawing]:
             when = f"{oldest:%H:%M:%S}" if oldest.date() == datetime.now(timezone.utc).date() else f"{oldest:%Y-%m-%d %H:%M:%S}"
             count = len(drawing.reused)
             drawing.write(f"Reused {count} earlier download{'' if count == 1 else 's'}, the oldest from {when} UTC\n")
+
+
+def in_parallel(tasks: Sequence[Callable[[], T]]) -> list[T | Exception]:
+    """Run ``tasks`` at the same time, a thread each, in the calling thread's drawing; return each one's result or exception, in order.
+
+    For work that mostly waits on downloads (batch 19.1: the trial pass of
+    ``plotting.resolve_start`` prepares the nations side by side). Each host
+    still gets one request at a time (``host_turn``). Each task belongs to
+    the calling thread's drawing (``drawing_downloads``): its real downloads
+    are logged as they happen, each line with its time, and its copies and
+    reused downloads are counted there. What a task prints is held, and
+    written where the calling thread's output goes once every task has
+    ended, task by task in the order given, so the log reads as if they had
+    run one after another. A task's exception is returned, not raised: the
+    caller decides what it means.
+    """
+    drawing = getattr(_log_state, "drawing", None)
+    printed: list[list[str]] = [[] for _ in tasks]
+    outcomes: list[T | Exception | None] = [None] * len(tasks)
+
+    def run(index: int) -> None:
+        _log_state.drawing = drawing
+        try:
+            with this_thread_output_to(printed[index].append):
+                outcomes[index] = tasks[index]()
+        except Exception as exc:
+            outcomes[index] = exc
+        finally:
+            _log_state.drawing = None
+
+    threads = [threading.Thread(target=run, args=(index,), name=f"ratesplot task {index}") for index in range(len(tasks))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    for text in printed:
+        print("".join(text), end="")
+    return outcomes  # type: ignore[return-value]  (every task has ended: no None is left)
 
 
 def enable_download_cache(max_age_seconds: float | None = None) -> None:

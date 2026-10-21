@@ -77,6 +77,7 @@ from .config import (
 from .console import this_thread_output_to
 from .endlabels import ValueFormatter
 from .frames import filter_to_date_range
+from .http import in_parallel
 from .joins import align_macro
 from .latest import (
     PROJECTION_ATTR,
@@ -815,23 +816,28 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
     it begins, if at all. A country whose data cannot be prepared at all (a
     source down, 2026-10-21) is left out of the choice, with a warning; its
     chart's own drawing then fails and says why, and the others are drawn.
+
+    The trial pass prepares the chosen nations side by side (batch 19.1,
+    ``http.in_parallel``): it makes a drawing's first downloads, which
+    mostly wait on the network, and the nations' sources are different
+    hosts. Each host still gets one request at a time.
     """
     if config.start is not None:
         return config
     trial = replace(config, start=EARLIEST_DATA_START, current=False)
     firsts: dict[tuple[str, str], pd.Timestamp] = {}  # (country, curve label) -> first date
     unprepared: list[str] = []
+    chosen = [country for country in COUNTRIES if getattr(config, country.show_field)]
     with this_thread_output_to(None):
-        for country in COUNTRIES:
-            if getattr(config, country.show_field):
-                own = trial.for_nation(country.key)
-                try:
-                    yields, macro, rates = country.prepare(own)
-                except Exception as exc:  # warned of below, out of the silenced pass
-                    unprepared.append(f"{country.metadata.country_name} ({type(exc).__name__}: {exc})")
-                    continue
-                for label, first in curve_first_dates(yields, macro, rates, own, country.metadata).items():
-                    firsts[(country.metadata.country_name, label)] = first
+        prepared = in_parallel([partial(country.prepare, trial.for_nation(country.key)) for country in chosen])
+        for country, outcome in zip(chosen, prepared):
+            if isinstance(outcome, Exception):  # warned of below, out of the silenced pass
+                unprepared.append(f"{country.metadata.country_name} ({type(outcome).__name__}: {outcome})")
+                continue
+            yields, macro, rates = outcome
+            own = trial.for_nation(country.key)
+            for label, first in curve_first_dates(yields, macro, rates, own, country.metadata).items():
+                firsts[(country.metadata.country_name, label)] = first
     for which in unprepared:
         print(f"  Warning: no data could be prepared for the chart of {which}; the start is found without it.")
 
