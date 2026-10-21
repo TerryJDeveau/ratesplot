@@ -127,12 +127,14 @@ from .frontend import (  # noqa: E402
     choice_values,
     choices_text,
     control_blocks,
+    current_tab,
     drawn_payloads,
     field_hints,
     field_problems,
     idle_controls,
     level_letters,
     move_dates_updates,
+    nation_boxes,
     option_help_lines,
     option_of,
     png_bytes,
@@ -216,6 +218,8 @@ _CALENDAR = "calendar:"  # + option name: a date field's calendar
 _SIZE = "size:"          # + "width", "height", "lock", "ratio": the Size boxes, their lock and kept shape
 _CHANGED = "changed"     # the text fields changed by hand, oldest first (frontend.field_problems)
 _WRONG = "wrong"         # the fields in the wrong now, by key: their labels are red
+_TAB = "tab"             # the charts' tabs: the title of the one shown
+_TICKED = "ticked"       # a nation ticked by hand, whose tab is shown once its chart is drawn (batch 17.4)
 # The calendar's first day: no series starts earlier (config.EARLIEST_DATA_START).
 _CALENDAR_FIRST = EARLIEST_DATA_START.date()
 # A date field with its calendar button: room for a whole YYYY-MM-DD.
@@ -488,11 +492,21 @@ def _config_for(choices: Choices) -> tuple[PlotConfig | None, list[str]]:
 
 
 def _country_changed(name: str) -> None:
-    """Keep at least one country ticked: the command line's "none means both" would look like a bug."""
+    """Keep at least one country ticked (the command line's "none means both" would look like a bug); note one ticked.
+
+    A nation ticked by hand gets its tab once its chart is drawn (batch
+    17.4, ``_show``); unticked before that, it does not.
+    """
     countries = [option.name for option in options_in("country") if option.in_gui]
     if not any(st.session_state[_FLAG + country] for country in countries):
         st.session_state[_FLAG + name] = True
         st.session_state[_NOTICE] = "At least one country must stay selected."
+        return
+    key = nation_boxes()[name]
+    if st.session_state[_FLAG + name]:
+        st.session_state[_TICKED] = key
+    elif st.session_state.get(_TICKED) == key:
+        del st.session_state[_TICKED]
 
 
 def _measure_changed(name: str) -> None:
@@ -1093,7 +1107,17 @@ def _show(drawing: Drawing) -> None:
         _view_buttons(drawing)
         show_chart = _chart_component()
         keys = [key for key in TAB_TITLES if key in drawing.pngs]
-        for tab, key in zip(st.tabs([TAB_TITLES[key] for key in keys]), keys):
+        # The tab made current (batch 17.4, ``frontend.current_tab``): a nation
+        # ticked by hand once its chart is drawn, else the one shown, else the
+        # first. The tabs keep their place in the session (a click on one
+        # reruns the page, which draws nothing new), so it can be set here.
+        ticked = st.session_state.get(_TICKED)
+        if ticked in keys:
+            del st.session_state[_TICKED]
+        by_title = {title: key for key, title in TAB_TITLES.items()}
+        current = current_tab(keys, by_title.get(st.session_state.get(_TAB)), ticked)
+        st.session_state[_TAB] = TAB_TITLES[current]
+        for tab, key in zip(st.tabs([TAB_TITLES[key] for key in keys], key=_TAB, on_change="rerun"), keys):
             with tab:
                 show_chart(
                     key=drawing.chart_key(key),

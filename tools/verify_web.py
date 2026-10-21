@@ -867,9 +867,25 @@ def check_batch94(check: Check) -> None:
 
 
 def check_batch17(check: Check) -> None:
-    """Batch 17.5: Reset leaves the nation boxes alone."""
+    """Batch 17.4 and 17.5: a nation ticked by hand gets its tab once drawn; Reset leaves the nation boxes alone."""
     at = new_page("--e:2026-09-01")
     check("no exception", not at.exception, at.exception)
+    check("the first tab current at first", at.session_state["tab"] == "Canada", at.session_state["tab"])
+    at.checkbox(key="flag:uk").check()
+    at.run()
+    check("UK ticked: three charts, its tab current", charts_shown(at) == 3 and at.session_state["tab"] == "United Kingdom",
+          (charts_shown(at), at.session_state["tab"]))
+    at.checkbox(key="flag:germany").check()
+    at.run()
+    check("Germany ticked: its tab current", at.session_state["tab"] == "Germany", at.session_state["tab"])
+    at.checkbox(key="flag:germany").uncheck()
+    at.run()
+    check("the current nation unticked: the first tab current", at.session_state["tab"] == "Canada", at.session_state["tab"])
+    at.session_state["tab"] = "United States"  # as a click on its tab leaves it
+    at.run()
+    at.checkbox(key="flag:uk").uncheck()
+    at.run()
+    check("another nation unticked: the current tab kept", at.session_state["tab"] == "United States", at.session_state["tab"])
     at.checkbox(key="flag:germany").check()
     at.text_input(key="value:cdn:max").input("9")
     at.run()

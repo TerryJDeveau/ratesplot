@@ -123,12 +123,14 @@ from .frontend import (
     choice_values,
     choices_text,
     control_blocks,
+    current_tab,
     drawn_payloads,
     field_hints,
     field_problems,
     idle_controls,
     level_letters,
     load_state,
+    nation_boxes,
     option_help_lines,
     option_of,
     pan_updates,
@@ -804,6 +806,8 @@ class RatesPlotApp:
         # dates they were drawn for); shown_config keeps a blank start blank.
         self.drawn_config: PlotConfig | None = None
         self.target_config: PlotConfig | None = None  # what the worker is drawing now
+        # A nation ticked by hand: its tab is made current once its chart is drawn (batch 17.4).
+        self._ticked_nation: str | None = None
         self.rendering_choices: Choices | None = None
         self.drawn_choices: Choices | None = None
         self._text_after_id: str | None = None
@@ -1396,6 +1400,14 @@ class RatesPlotApp:
             self.flag_vars[name].set(True)
             self.status.set("At least one country must stay selected.")
             return
+        if name in nation_boxes():
+            # Batch 17.4: a nation ticked by hand gets its tab once its chart is
+            # drawn (``_show_chart``); unticked before that, it does not.
+            key = nation_boxes()[name]
+            if self.flag_vars[name].get():
+                self._ticked_nation = key
+            elif self._ticked_nation == key:
+                self._ticked_nation = None
         units = [option.name for option in options_in("units") if option.name in self.flag_vars]
         if name in units:
             # One measure at a time: ticking one unticks the others.
@@ -1557,8 +1569,14 @@ class RatesPlotApp:
         self.target_config = config
         self.rendering_choices = choices
         countries = [country for country in COUNTRIES if getattr(config, country.show_field)]
+        # Tk makes the nearest tab current when the current one is hidden; the
+        # first shown is made current instead (batch 17.4, as on the page).
+        current = self._current_tab_key()
         for country in COUNTRIES:
             self.notebook.tab(self.tabs[country.key], state="normal" if country in countries else "hidden")
+        key = current_tab([country.key for country in countries], current)
+        if key is not None and key != self._current_tab_key():
+            self.notebook.select(self.tabs[key])
         self.status.set("Drawing …")
         # What is really downloaded is logged line by line, and what is
         # reused counted at the end (http.drawing_downloads).
@@ -1614,6 +1632,9 @@ class RatesPlotApp:
         image.load()
         self.images[key] = image
         self._refresh_view(key)
+        if key == self._ticked_nation:
+            self._ticked_nation = None
+            self.notebook.select(self.tabs[key])
 
     def _render_finished(self, config: PlotConfig, error: str | None, drawn: PlotConfig | None = None) -> None:
         self.rendering = False

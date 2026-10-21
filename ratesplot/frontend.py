@@ -23,7 +23,8 @@ may not have it) and the two cannot drift apart:
   buttons move the dates by ``move_dates_updates``;
 * what a blank field shows in grey: the value in effect (``field_hints``);
   a typed number's 0 before its point (``with_leading_zero``);
-* the nation boxes: what Reset leaves of them (``reset_choices``).
+* the nation boxes: what Reset leaves of them (``reset_choices``), and which
+  tab is made current after a drawing (``current_tab``).
 """
 
 from __future__ import annotations
@@ -393,7 +394,7 @@ def starting_choices(
 
 
 # ---------------------------------------------------------------------------
-# The nation boxes: Reset
+# The nation boxes: Reset, and the tab made current
 # ---------------------------------------------------------------------------
 
 
@@ -412,6 +413,19 @@ def reset_choices(flags: Mapping[str, bool]) -> Choices:
     kept = {name: bool(flags[name]) for name in nation_boxes() if name in flags}
     return payloads, {**defaults, **kept}
 
+
+def current_tab(shown: Sequence[str], current: str | None, ticked: str | None = None) -> str | None:
+    """Return the tab (a nation's key) to make current among those ``shown`` after a drawing (batch 17.4).
+
+    A newly ticked nation's (``ticked``), once its chart is drawn (Terry,
+    2026-10-20: "once the tab for country Y is built and ready, that new tab
+    should become the new current tab"); else the current one while it is
+    shown; else, its nation unticked, the first. None if no tab is shown.
+    """
+    for key in (ticked, current):
+        if key is not None and key in shown:
+            return key
+    return shown[0] if shown else None
 
 
 # ---------------------------------------------------------------------------
