@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+import gzip
+import html
 import io
+import re
 import threading
 import time
+import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Iterator, TypeVar
@@ -232,6 +236,42 @@ class BotCheck(RuntimeError):
 _BOT_CHECK_PATHS = ("/.enodia/challenge",)
 
 
+class SourcePage(RuntimeError):
+    """A source answered a request for data with a web page (its outage or maintenance page). Never retried.
+
+    Measured 2026-10-21, for hours: FRED answered every CSV request with its
+    "Site Maintenance | St. Louis Fed" page, and Statistics Canada every
+    table download (and its WDS service) with its "We're sorry! The website
+    is currently unavailable" page, all with status 200. Read as data they
+    gave a pandas ParserError and "File is not a zip file", each FRED series
+    was asked for three times, and the web page's drawing failed with a
+    traceback. The page's own title says what happened, so it is named.
+    """
+
+    def __init__(self, host: str, title: str) -> None:
+        super().__init__(f"{host} sent a web page instead of data (“{title}”); the site may be down for maintenance")
+        self.host = host
+        self.title = title
+
+
+# The start of a web page: an HTML document, after any blank lines and
+# comments (Statistics Canada's outage page opens with "<!--Last modified
+# ... -->"). No source the program reads sends HTML as its data: CSV, JSON,
+# XML ("<?xml") and ZIP never begin so.
+_WEB_PAGE_START = re.compile(rb"\A\s*(?:<!--.*?-->\s*)*<(?:!doctype\s+html|html)[\s>]", re.IGNORECASE | re.DOTALL)
+_WEB_PAGE_TITLE = re.compile(rb"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+
+
+def raise_if_web_page(url: str, body: bytes) -> None:
+    """Raise ``SourcePage`` if ``body``, the answer to a request for data at ``url``, is a web page, naming its title."""
+    if not _WEB_PAGE_START.match(body[:8192]):
+        return
+    found = _WEB_PAGE_TITLE.search(body[:65536])
+    # FRED's title ends in a stray "<" ("Site Maintenance | St. Louis Fed<").
+    title = " ".join(html.unescape(found.group(1).decode("utf-8", errors="replace")).split()).strip(" <") if found else ""
+    raise SourcePage(urlsplit(url).netloc, title or "untitled")
+
+
 def _with_retries(
     describe: str,
     attempt_once: Callable[[], T],
@@ -243,10 +283,14 @@ def _with_retries(
 
     The wait after attempt *n* is ``RETRY_BACKOFF_BASE_SECONDS ** n`` seconds.
     The last failure is re-raised unchanged so callers see the real exception.
+    A bot check or a web page in place of data is raised at once: asking
+    again seconds later does not get past either.
     """
     for attempt in range(1, max_retries + 1):
         try:
             return attempt_once()
+        except (BotCheck, SourcePage):
+            raise
         except retry_on as exc:
             if attempt == max_retries:
                 raise
@@ -284,6 +328,10 @@ def _session_get(
         if missing_ok and response.status_code == 404:
             return None
         response.raise_for_status()
+        # Not after a redirect: that is the source's own answer, which its
+        # caller reads (the Bank of England's error page, uk_data.iadb_series).
+        if not response.history:
+            raise_if_web_page(url, response.content)
         return response
 
     def download() -> requests.Response | None:
@@ -391,10 +439,14 @@ def get_if_published(
 def fetch_fred_csv(series_id: str, *, max_retries: int = DEFAULT_FRED_RETRIES) -> pd.DataFrame:
     """Download one FRED series as a two-column ``DATE`` / ``series_id`` frame.
 
-    FRED is intentionally read by handing the URL straight to ``pandas.read_csv``
-    rather than through a ``requests.Session``. Routing FRED through the shared
-    session caused connection resets and long retry delays in practice, so do
-    not "tidy" this into the Canadian download path.
+    FRED is intentionally read as ``pandas.read_csv`` reads a URL (urllib's
+    ``urlopen``) rather than through a ``requests.Session``. Routing FRED
+    through the shared session caused connection resets and long retry
+    delays in practice, so do not "tidy" this into the Canadian download
+    path. The answer is read first and then parsed, so that a web page in
+    its place (FRED's maintenance page, 2026-10-21) is named and not
+    retried (``SourcePage``); until then the URL itself was handed to
+    ``pandas.read_csv``, which made the same request without a time limit.
 
     Args:
         series_id: FRED series identifier, such as ``"DGS10"`` or ``"GDP"``.
@@ -403,7 +455,13 @@ def fetch_fred_csv(series_id: str, *, max_retries: int = DEFAULT_FRED_RETRIES) -
     url = f"{FRED_CSV_URL}?id={series_id}"
 
     def attempt() -> pd.DataFrame:
-        data = pd.read_csv(url)
+        with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            body = response.read()
+            # As pandas does for a URL: a gzip-encoded answer is unpacked.
+            if response.headers.get("Content-Encoding") == "gzip":
+                body = gzip.decompress(body)
+        raise_if_web_page(url, body)
+        data = pd.read_csv(io.BytesIO(body))
         if len(data.columns) < 2:
             raise ValueError(f"FRED series {series_id} returned no value column")
         # FRED's header is ``observation_date,<SERIES>``; normalise positionally
