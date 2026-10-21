@@ -39,6 +39,7 @@ from .config import (
     PlotConfig,
     nation_by_key,
 )
+from .de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES
 from .de_data import ecb_series
 from .de_data import YIELD_HISTORY_ATTR as DE_YIELD_HISTORY_ATTR
 from .http import downloads_of, fetch_fred_csv
@@ -118,8 +119,9 @@ UK_TRACKER_FROM = pd.Timestamp("1997-01-01")
 # Germany (batch 4), from the ECB Data Portal, measured from Terry's laptop
 # 2026-10-06. Policy: the main refinancing rate, on the days it changed since
 # 1999: the fixed rate of the fixed-rate tenders, and from 2000-06-28 to
-# 2008-10-14, when the tenders were variable, their minimum bid rate. (The
-# Bundesbank's discount rate before 1999 is still to be found.) Mortgages:
+# 2008-10-14, when the tenders were variable, their minimum bid rate; before
+# it, the Bundesbank's discount rate from 1948-07, on the days it changed
+# (batch 9.6, baked: ``de_archive_data``). Mortgages:
 # the MFI interest rates on new housing loans to households in Germany, by
 # initial rate fixation, monthly from 2000 (2000-2002 the ECB's estimates;
 # reported from 2003), dated by each month's first day as the UK's are.
@@ -529,12 +531,20 @@ def _uk_tracker() -> pd.Series:
 
 
 def de_policy_target() -> RateCurve | None:
-    """Return the ECB's main refinancing rate since 1999: fixed, the minimum bid while the tenders were variable, fixed again.
+    """Return Germany's official rate: the Bundesbank's discount rate, then the ECB's main refinancing rate from 1999.
 
-    Both series hold only the days the rate changed: each value is carried
-    daily to the next change, and the last to today (it holds until changed). If the minimum bid rate
-    fails, the fixed rate alone, with a warning (wrong 2000-2008); None if
-    the fixed rate fails.
+    The ECB's: fixed, the minimum bid while the tenders were variable, fixed
+    again. Both series hold only the days the rate changed: each value is
+    carried daily to the next change, and the last to today (it holds until
+    changed). If the minimum bid rate fails, the fixed rate alone, with a
+    warning (wrong 2000-2008); None if the fixed rate fails (the discount
+    rate alone would be carried on from 1998, as an announced rate is).
+    Before the ECB's first day, the Bundesbank's discount rate on the days
+    it changed, from 1948-07 (baked, batch 9.6; Terry's 2026-10-13 request,
+    labelled for its years as the U.S. line is for its years before the
+    target). The Lombard rate, its ceiling, is not drawn: its special rate
+    stood in for it in 1973-74 and 1981-82, it lay one to three points
+    above, and the ECB's corridor is not drawn after 1999 either.
     """
     try:
         fixed = _clean(ecb_series(*DE_POLICY_FIXED))
@@ -559,8 +569,15 @@ def de_policy_target() -> RateCurve | None:
     # those drawn before.)
     today = pd.Timestamp.today().normalize()
     values = values.reindex(pd.date_range(values.index[0], max(today, values.index[-1]), freq="D")).ffill()
-    return RateCurve("policy", "ECB Main Refinancing Rate", values, POLICY_RATE_STYLE, title="Policy Rate",
-                     holds=holding(values, HELD))
+    discount = _baked(EMBEDDED_DE_DISCOUNT_RATE_CHANGES)
+    discount = discount.loc[discount.index < values.index[0]]
+    parts = _parts(
+        (discount, "Bundesbank Discount Rate", "Bundesbank Discount Rate"),
+        (values, "ECB Main Refinancing Rate", "ECB Main Refinancing Rate"),
+    )
+    values = pd.concat([discount, values])
+    return RateCurve("policy", _named(parts), values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, HELD),
+                     parts=parts)
 
 
 def de_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:

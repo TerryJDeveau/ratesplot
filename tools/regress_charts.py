@@ -234,6 +234,9 @@ CASES: dict[str, list[str]] = {
     "uk_tracker": [
         "--na:gb", "--mo:svr,tracker", "--uk:tracker:1.25", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1995", "-l",
     ],
+    # Batch 9.6: Germany's policy line, the Bundesbank's discount rate from
+    # 1948 (baked), then the ECB's rate from 1999, with the yields.
+    "de_policy1960": ["--na:de", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1960", "--e:2005", "-l"],
 }
 
 

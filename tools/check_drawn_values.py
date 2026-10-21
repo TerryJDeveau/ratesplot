@@ -69,6 +69,7 @@ from regress_charts import PINNED_END, install_disk_cache  # noqa: E402
 
 from ratesplot import cdn_data, cli, de_data, http, rates, uk_data, us_data  # noqa: E402
 from ratesplot.cdn_hist_yields import build_cdn_hist_yields  # noqa: E402
+from ratesplot.de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.joins import embedded_frame  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
@@ -118,6 +119,8 @@ CASES: dict[str, list[str]] = {
     # Batch 9.5: the UK tracker, Bank Rate plus its margin, from where it begins (1997-01).
     "uk_tracker": ["--na:gb", "-s:1996-06-01", "--policy", "--mo:svr,tracker", "--uk:tracker:1.25"],
     "de_1965": ["--na:de", "-s:1965", "--e:1980"],
+    # Batch 9.6: the Bundesbank's discount rate, then the ECB's rate from 1999.
+    "de_policy": ["--na:de", "-s:1985", "--e:2004", "--policy", "--no-yield"],
     "de_1998": ["--na:de", "-s:1998", "--e:2010", "--po:target,market", "--mo:1-5,5-10,over10"],
     "de_2015": ["--na:de", "-s:2015", "--y:1,2,5,7,10,20,30", "--po:target,market", "--mo:1-5,5-10,over10", "--sp"],
 }
@@ -263,8 +266,12 @@ def policy_sources(nation: str, key: str) -> list[Source]:
     if nation == "uk":
         return [iadb(rates.UK_POLICY_SERIES, carry_days=None), built_in("Bank Rate's changes 1833-2017", EMBEDDED_UK_BANK_RATE_HISTORY, carry_days=None)]
     # The ECB's rates are published on the days they change; the program
-    # carries each to the next change (a rate holds until it changes).
-    return [ecb(*rates.DE_POLICY_FIXED, carry_days=None), ecb(*rates.DE_POLICY_MINIMUM_BID, carry_days=None)]
+    # carries each to the next change (a rate holds until it changes). Before
+    # them the Bundesbank's discount rate, baked on its change days (batch 9.6).
+    return [
+        ecb(*rates.DE_POLICY_FIXED, carry_days=None), ecb(*rates.DE_POLICY_MINIMUM_BID, carry_days=None),
+        built_in("the Bundesbank's discount rate's changes 1948-1998", EMBEDDED_DE_DISCOUNT_RATE_CHANGES, carry_days=None),
+    ]
 
 
 def mortgage_sources(term: str, nation: str) -> list[Source]:

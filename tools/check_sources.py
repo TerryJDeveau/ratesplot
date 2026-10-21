@@ -333,6 +333,22 @@ def _uk_population(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     return _last(people), f"{people.iloc[-1] / 1e6:.2f} million; a quarter dated by its middle"
 
 
+def _de_discount(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """The baked discount rate's change days (batch 9.6) against the Bundesbank's end-of-month values; raises if any month differs.
+
+    Terminated in 1998, so a difference would be a revision at the source,
+    or a bake gone wrong: re-bake (``tools/bake_archives.py --only de``).
+    """
+    flow, key = bake.DE_DISCOUNT_RATE_SERIES
+    month_end = de_data.bundesbank_series(flow, key)
+    changes = pd.Series({pd.Timestamp(date): value for date, value in de_archive_data.EMBEDDED_DE_DISCOUNT_RATE_CHANGES})
+    in_effect = changes.reindex(month_end.index, method="ffill")
+    differ = month_end[in_effect.to_numpy() != month_end.to_numpy()]
+    if not differ.empty:
+        raise ValueError(f"{len(differ)} months differ from the baked changes, the first {differ.index[0]:%Y-%m} ({differ.iloc[0]})")
+    return None, f"the {len(changes)} baked changes give all {len(month_end)} end-of-month values, {month_end.index[0]:%Y-%m} to {month_end.index[-1]:%Y-%m}"
+
+
 def _uk_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     """Where the baked UK history meets the live series: measured, for the PR's open questions (batch 3).
 
@@ -533,6 +549,8 @@ CHECKS: tuple[Check, ...] = (
     # Germany (batch 4).
     Check("bbk_yields", "Bundesbank Svensson yields 1 2 5 7 10 20 30 years (daily)", DAILY, _de_yields),
     Check("ecb_policy", "ECB main refinancing rate, fixed and minimum bid (--policy)", None, _rate(rates.de_policy_target)),
+    # Batch 9.6: the Bundesbank's discount rate before 1999, baked.
+    Check("bbk_discount", "Bundesbank discount rate 1948-1998 (baked) against BBIN1's month-end values", None, _de_discount),
     Check("ecb_overnight", "ECB EONIA, then €STR (--policy:market)", DAILY, _rate(rates.de_policy_market)),
     Check("ecb_mortgage1_5", "ECB MIR German housing loans, fixed over 1 to 5 years", MONTHLY, _rate(partial(rates.mortgage_rate, "1-5"))),
     Check("ecb_mortgage5_10", "ECB MIR German housing loans, fixed over 5 to 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "5-10"))),

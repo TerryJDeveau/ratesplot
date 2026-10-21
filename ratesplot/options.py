@@ -753,7 +753,7 @@ OPTIONS: tuple[Option, ...] = (
         "policy", Kind.FLAG, ("policy_rates",), "rates", "--policy / --no-policy",
         "each country's policy rate, the central\nbank's official rate: the fed funds\n"
         "target (a range from 2008, the monthly\naverage before 1982-09); the Bank Rate,\n"
-        "the overnight target from 1996; the UK's\nBank Rate; the ECB's main refinancing\nrate (Germany, from 1999)",
+        "the overnight target from 1996; the UK's\nBank Rate; Germany's: the Bundesbank's\ndiscount rate, the ECB's main\nrefinancing rate from 1999",
         names=("policy-rates",), shortest=2, label="Policy rate",
     ),
     # Batch 9.1 (Terry, decision 27): the official rate by default, the

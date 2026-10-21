@@ -13,7 +13,9 @@ differs from the one measured fails here.
 * the Bundesbank's CSV: daily and end-of-month term structure, each term's
   first month as ``DE_YIELD_EARLIEST`` says, the old database's frozen
   series, and the answers it must refuse (an unknown series, a 404, a
-  changed unit); the baked history equals the saved download;
+  changed unit); the baked history equals the saved download; the
+  discount rate's change days read from its comments (batch 9.6), and the
+  Lombard rate refused;
 * the ECB's CSV: key rates on their change days, annual debt, bank lending
   rates; a wrong key, a wrong unit and an error page refused;
 * Eurostat's JSON-stat: debt and interest by sector, GDP, population; the
@@ -45,7 +47,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import de_archive_data, de_data, latest, rates  # noqa: E402
+from ratesplot import bake, de_archive_data, de_data, latest, rates  # noqa: E402
 from ratesplot.config import CNBC_QUOTE_URL, PlotConfig, component_column  # noqa: E402
 
 RAW = ROOT / "tools" / "de_fixtures" / "raw"
@@ -131,6 +133,22 @@ def check_bundesbank() -> None:
     check("bake: the baked public debt yield is the saved WU0004, each month dated by its first day",
           list(baked.to_numpy()) == list(wu0004.to_numpy()) and (baked.index == wu0004.index.to_period("M").start_time).all()
           and baked.index[0] == pd.Timestamp("1956-05-01"), (len(baked), len(wu0004)))
+
+
+def check_discount_rate() -> None:
+    """Batch 9.6: the discount rate's change days, read from the download's comments (saved 2026-10-21)."""
+    changes = bake.parse_bundesbank_change_days(text("bbin1_BBKDIS.csv"))
+    check("discount rate: 94 changes, 5.00 from 1948-07-01, 2.50 from 1996-04-19 (to 1998-12-31)",
+          len(changes) == 94 and changes.iloc[0] == 5.0 and changes.index[0] == pd.Timestamp("1948-07-01")
+          and changes.index[-1] == pd.Timestamp("1996-04-19") and changes.iloc[-1] == 2.5, (len(changes), changes.tail(1).to_dict()))
+    check("discount rate: 8.75 from 1992-07-17, the peak", changes.loc["1992-07-17"] == 8.75 and changes.max() == 8.75)
+    baked = pd.Series({pd.Timestamp(date): value for date, value in de_archive_data.EMBEDDED_DE_DISCOUNT_RATE_CHANGES})
+    check("bake: the baked changes are the saved download's", baked.equals(changes.rename(None)), (len(baked), len(changes)))
+    check("discount rate: the Lombard rate is refused (its special rate in the month-end values, 1973-74, 1981-82)",
+          raises(bake.parse_bundesbank_change_days, text("bbin1_BBKLOM.csv")) is not None)
+    altered = text("bbin1_BBKDIS.csv").replace("Comment on 1995-08: From 25 August 3.50%", "Comment on 1995-08: From 25 August 3.75%")
+    check("discount rate: a comment that disagrees with the month-end values is refused",
+          raises(bake.parse_bundesbank_change_days, altered) is not None)
 
 
 def check_ecb() -> None:
@@ -225,6 +243,11 @@ def check_fetchers() -> None:
               policy.loc["1999-01-04"] == 3.0 and policy.loc["2000-06-28"] == 4.25 and policy.loc["2000-10-06"] == 4.75
               and policy.loc["2008-10-14"] == 4.25 and policy.loc["2008-10-15"] == 3.75,
               policy.loc["2008-10-13":"2008-10-16"].to_dict())
+        joined = rates.de_policy_target()
+        check("policy: the Bundesbank's discount rate before 1999 (batch 9.6): 5.0 from 1948-07-01, 2.5 to the ECB's first day",
+              joined.values.index[0] == pd.Timestamp("1948-07-01") and joined.values.iloc[0] == 5.0
+              and joined.values.loc[:"1998-12-31"].iloc[-1] == 2.5 and joined.values.loc["1999-01-01"] == 3.0
+              and joined.label == "Bundesbank Discount Rate, ECB Main Refinancing Rate from 1999-01", joined.label)
         check("policy: each day carried to the next change, the last to today (2.65 since 2026-09-16)",
               policy.loc["2026-09-30"] == 2.65 and policy.index[-1] >= pd.Timestamp("2026-10-07") and policy.loc["2025-01-01"] == 3.15)
         mortgage = rates.mortgage_rate("5-10")
@@ -259,7 +282,7 @@ def check_cnbc() -> None:
 
 
 def main() -> int:
-    for group in (check_bundesbank, check_ecb, check_eurostat, check_fetchers, check_cnbc):
+    for group in (check_bundesbank, check_discount_rate, check_ecb, check_eurostat, check_fetchers, check_cnbc):
         group()
     passed = sum(RESULTS)
     print(f"[de parsers] {passed} of {len(RESULTS)} checks passed")

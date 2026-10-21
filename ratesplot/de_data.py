@@ -105,8 +105,10 @@ _NO_VALUES = pd.Series(dtype=float, index=pd.DatetimeIndex([], name=DATE_COLUMN)
 _DAILY_FILL_LIMIT = 3
 
 # The units the sources were measured in. The Bundesbank writes "percent"
-# in its new database's English header and "Prozent"/"PROZENT" elsewhere.
-_BUNDESBANK_PERCENT = ("percent", "prozent")
+# in its new database's English header and "Prozent"/"PROZENT" elsewhere;
+# its central bank rates (flow BBIN1, the discount rate baked in batch 9.6)
+# "% p.a.", a rate per year as the yields are.
+_BUNDESBANK_PERCENT = ("percent", "prozent", "% p.a.")
 _BUNDESBANK_DATE = re.compile(r"^\d{4}-\d{2}(-\d{2})?$")
 _BUNDESBANK_MISSING = (".", "-", "")
 

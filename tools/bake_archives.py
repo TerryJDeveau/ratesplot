@@ -16,8 +16,10 @@ the BEGIN/END markers of
   ``openpyxl``. ``--uk-workbook FILE`` reads a copy already downloaded
   instead of fetching the 27.5 MB workbook.
 * ``ratesplot/de_archive_data.py``: Germany's 10-year before 1972 (the
-  Bundesbank's frozen yield on public debt securities, from 1956).
-  ``--de-csv FILE`` reads a download already saved (tools/de_fixtures).
+  Bundesbank's frozen yield on public debt securities, from 1956), and the
+  Bundesbank's discount rate 1948-1998 on the days it changed (batch 9.6).
+  ``--de-csv FILE`` and ``--de-discount-csv FILE`` read the downloads
+  already saved (tools/de_fixtures).
 
 Nothing is written for a country unless every one of its sources is extracted
 and the new module compiles.
@@ -33,7 +35,7 @@ Usage (from the project root)::
     python tools/bake_archives.py            # every nation
     python tools/bake_archives.py --only us  # or cdn, uk, de
     python tools/bake_archives.py --only uk --uk-workbook a-millennium-of-macroeconomic-data-for-the-uk.xlsx
-    python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv
+    python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv
 """
 
 from __future__ import annotations
@@ -55,13 +57,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation only")
     parser.add_argument("--uk-workbook", type=Path, help="the UK millennium workbook already on disk (not downloaded)")
     parser.add_argument("--de-csv", type=Path, help="the Bundesbank's WU0004 download already on disk (not downloaded)")
+    parser.add_argument("--de-discount-csv", type=Path, help="the Bundesbank's discount rate download (BBIN1) already on disk")
     args = parser.parse_args(argv)
     for key, bake in BAKES.items():
         if args.only in (None, key):
             if key == "uk":
                 bake(workbook_path=args.uk_workbook)
             elif key == "de":
-                bake(saved_csv=args.de_csv)
+                bake(saved_csv=args.de_csv, saved_discount_csv=args.de_discount_csv)
             else:
                 bake()
     return 0

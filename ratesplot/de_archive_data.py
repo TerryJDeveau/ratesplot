@@ -1,4 +1,4 @@
-"""Baked historical German observations: the Bundesbank's yield on public debt securities before 1972.
+"""Baked historical German observations: the yield on public debt securities before 1972, the discount rate before 1999.
 
 The Bundesbank's monthly average yield on public debt securities
 outstanding (BBK01.WU0004, from 1956) is a series of its former database
@@ -7,16 +7,21 @@ that was never moved to the new one: its download still answers, frozen at
 structure begins (1972-09), so it is written here once, as the UK's
 millennium dataset is; ``de_data`` joins it to the live series at run time.
 
+The Bundesbank's discount rate (BBIN1, 1948-07 to 1998-12) on the days it
+changed (batch 9.6): Germany's official rate before the ECB's, drawn by
+``rates.de_policy_target`` before the ECB's main refinancing rate.
+
 The block between the BEGIN/END markers is regenerated in place by
 ``tools/bake_archives.py --only de`` (see :mod:`ratesplot.bake`). Do not
 hand-edit it.
 """
 
 # BEGIN AUTO-GENERATED GERMAN ARCHIVE DATA
-# Generated on 2026-10-07 from the Deutsche Bundesbank, read from:
-# https://www.bundesbank.de/statistic-rmi/StatisticDownload?tsId=BBK01.WU0004
-# Historical observations in the source's own terms; de_data joins them to
-# the live series at run time.
+# Generated on 2026-10-21 from the Deutsche Bundesbank, read from:
+# bbk01_WU0004.csv (saved from https://www.bundesbank.de/statistic-rmi/StatisticDownload?tsId=BBK01.WU0004)
+# bbin1_BBKDIS.csv (saved from https://api.statistiken.bundesbank.de/rest/download/BBIN1/M.DE.BBK.BBKDIS.DEM.ME?format=csv&lang=en)
+# Historical observations in the source's own terms; de_data and rates join
+# them to the live series at run time.
 
 # Dated by the first day of the month averaged.
 # BBK01.WU0004: yields on debt securities outstanding issued by residents, public debt
@@ -790,5 +795,106 @@ EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY = [
     ("2020-02-01", -0.4),
     ("2020-03-01", -0.4),
     ("2020-04-01", -0.3),
+]
+
+# The day each change took effect, from the download's comments, checked against its
+# end-of-month values. The Bank deutscher Länder's rate until the Bundesbank took over in
+# 1957; replaced by the ECB's rates from 1999-01-01.
+# BBIN1.M.DE.BBK.BBKDIS.DEM.ME: discount rate of the Bundesbank, percent per year
+EMBEDDED_DE_DISCOUNT_RATE_CHANGES = [
+    ("1948-07-01", 5),
+    ("1949-05-27", 4.5),
+    ("1949-07-14", 4),
+    ("1950-10-27", 6),
+    ("1952-05-29", 5),
+    ("1952-08-21", 4.5),
+    ("1953-01-08", 4),
+    ("1953-06-11", 3.5),
+    ("1954-05-20", 3),
+    ("1955-08-04", 3.5),
+    ("1956-03-08", 4.5),
+    ("1956-05-19", 5.5),
+    ("1956-09-06", 5),
+    ("1957-01-01", 4.5),
+    ("1957-09-19", 4),
+    ("1958-01-17", 3.5),
+    ("1958-06-27", 3),
+    ("1959-01-10", 2.75),
+    ("1959-09-04", 3),
+    ("1959-10-23", 4),
+    ("1960-06-03", 5),
+    ("1960-11-11", 4),
+    ("1961-01-20", 3.5),
+    ("1961-05-05", 3),
+    ("1965-01-22", 3.5),
+    ("1965-08-13", 4),
+    ("1966-05-27", 5),
+    ("1967-01-06", 4.5),
+    ("1967-02-17", 4),
+    ("1967-04-14", 3.5),
+    ("1967-05-12", 3),
+    ("1969-04-18", 4),
+    ("1969-06-20", 5),
+    ("1969-09-11", 6),
+    ("1970-03-09", 7.5),
+    ("1970-07-16", 7),
+    ("1970-11-18", 6.5),
+    ("1970-12-03", 6),
+    ("1971-04-01", 5),
+    ("1971-10-14", 4.5),
+    ("1971-12-23", 4),
+    ("1972-02-25", 3),
+    ("1972-10-09", 3.5),
+    ("1972-11-03", 4),
+    ("1972-12-01", 4.5),
+    ("1973-01-12", 5),
+    ("1973-05-04", 6),
+    ("1973-06-01", 7),
+    ("1974-10-25", 6.5),
+    ("1974-12-20", 6),
+    ("1975-02-07", 5.5),
+    ("1975-03-07", 5),
+    ("1975-05-23", 4.5),
+    ("1975-08-15", 4),
+    ("1975-09-12", 3.5),
+    ("1977-12-16", 3),
+    ("1979-03-30", 4),
+    ("1979-07-13", 5),
+    ("1979-11-01", 6),
+    ("1980-02-29", 7),
+    ("1980-05-02", 7.5),
+    ("1982-08-27", 7),
+    ("1982-10-22", 6),
+    ("1982-12-03", 5),
+    ("1983-03-18", 4),
+    ("1984-06-29", 4.5),
+    ("1985-08-16", 4),
+    ("1986-03-07", 3.5),
+    ("1987-01-23", 3),
+    ("1987-12-04", 2.5),
+    ("1988-07-01", 3),
+    ("1988-08-26", 3.5),
+    ("1989-01-20", 4),
+    ("1989-04-21", 4.5),
+    ("1989-06-30", 5),
+    ("1989-10-06", 6),
+    ("1991-02-01", 6.5),
+    ("1991-08-16", 7.5),
+    ("1991-12-20", 8),
+    ("1992-07-17", 8.75),
+    ("1992-09-15", 8.25),
+    ("1993-02-05", 8),
+    ("1993-03-19", 7.5),
+    ("1993-04-23", 7.25),
+    ("1993-07-02", 6.75),
+    ("1993-09-10", 6.25),
+    ("1993-10-22", 5.75),
+    ("1994-02-18", 5.25),
+    ("1994-04-15", 5),
+    ("1994-05-13", 4.5),
+    ("1995-03-31", 4),
+    ("1995-08-25", 3.5),
+    ("1995-12-15", 3),
+    ("1996-04-19", 2.5),
 ]
 # END AUTO-GENERATED GERMAN ARCHIVE DATA

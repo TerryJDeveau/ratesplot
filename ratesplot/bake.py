@@ -58,6 +58,7 @@ from .config import (
     CENSUS_OLD_ESTIMATES_URL,
     CENSUS_TABLES_URL,
     BUNDESBANK_OLD_SERIES_URL,
+    BUNDESBANK_SERIES_URL,
     DE_ARCHIVE_BEGIN_MARKER,
     DE_ARCHIVE_END_MARKER,
     DATE_COLUMN,
@@ -1398,16 +1399,78 @@ def bake_uk_archives(source_path: Path | None = None, workbook_path: Path | None
 # The Bundesbank's former database (BBK01): the monthly average yield on
 # public debt securities outstanding, from 1956 (frozen at 2020-04).
 DE_PUBLIC_DEBT_YIELD_SERIES = "BBK01.WU0004"
+# The Bundesbank's discount rate (batch 9.6), 1948-07 to 1998-12, Germany's
+# official rate before the ECB's: its database (flow BBIN1, "Central bank
+# rates") holds it as end-of-month values only, but the download's comments
+# give the day each change took effect ("Comment on 1995-03: From 31 March
+# 4.00%"). Measured 2026-10-21: 94 comments, one in each month whose value
+# changed and in the first. Terminated, so baked. (The Lombard rate, BBKLOM,
+# is not: its month-end values hold the special Lombard rate in 1973-74 and
+# 1981-82, and one month has two changes; ``parse_bundesbank_change_days``
+# refuses it.)
+DE_DISCOUNT_RATE_SERIES = ("BBIN1", "M.DE.BBK.BBKDIS.DEM.ME")
+_CHANGE_COMMENT = re.compile(
+    r"^Comment on (\d{4})-(\d{2}): From (\d{1,2}) ([A-Za-z]+)(?: (\d{4}))?(?: to \d{1,2} [A-Za-z]+ \d{4})? (\d+(?:\.\d+)?)%$"
+)
 
 
-def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None = None) -> None:
-    """Extract the Bundesbank's yield on public debt securities and embed it into ``ratesplot/de_archive_data.py``.
+def parse_bundesbank_change_days(text: str) -> pd.Series:
+    """Return a Bundesbank rate's changes, dated by the day each took effect, from a download's comments.
 
-    ``saved_csv`` reads the download already on disk (as saved in
-    ``tools/de_fixtures``) instead of fetching it. The series is a monthly
-    average, so each month is dated by its first day; every value the
-    series has is kept (to 2020-04), and ``de_data`` uses the months before
-    the term structure begins.
+    Each comment, "Comment on 1995-03: From 31 March 4.00%" (the last "From
+    19 April 1996 to 31 December 1998 2.50%"), gives a day and the rate from
+    it. Checked against the download's own end-of-month values, else it
+    raises: one comment for each month whose value differs from the month
+    before's (and for the first), each day in its comment's month, the days
+    ascending, and every month's end-of-month value the rate then in effect.
+    """
+    month_end = parse_bundesbank_csv(text)
+    rows = list(csv.reader(io.StringIO(text.lstrip("﻿"))))
+    comments = [row[1].strip() for row in rows if len(row) > 1 and not row[0].strip() and row[1].strip().startswith("Comment on ")]
+    changes: dict[pd.Timestamp, float] = {}
+    for comment in comments:
+        match = _CHANGE_COMMENT.match(comment)
+        if match is None:
+            raise ValueError(f"{month_end.name}: a comment that is not one change: {comment!r}")
+        year, month, day, month_name, its_year, rate = match.groups()
+        when = pd.Timestamp(dt.datetime.strptime(f"{day} {month_name} {its_year or year}", "%d %B %Y"))
+        if (when.year, when.month) != (int(year), int(month)):
+            raise ValueError(f"{month_end.name}: {comment!r} names a day outside its month")
+        changes[when] = float(rate)
+    dates = list(changes)
+    if not dates or dates != sorted(dates):
+        raise ValueError(f"{month_end.name}: the changes are missing or out of order")
+    days = pd.Series(changes, dtype=float).rename(month_end.name)
+    by_month = month_end.set_axis(month_end.index.to_period("M"))
+    changed = [period for position, period in enumerate(by_month.index) if position == 0 or by_month.iloc[position] != by_month.iloc[position - 1]]
+    if changed != [day.to_period("M") for day in days.index]:
+        raise ValueError(f"{month_end.name}: the months that changed and the months with a change differ")
+    in_effect = days.reindex(by_month.index.end_time.normalize(), method="ffill")
+    if not (in_effect.to_numpy() == by_month.to_numpy()).all():
+        raise ValueError(f"{month_end.name}: a month's end-of-month value is not the rate its comments put in effect")
+    return days
+
+
+def _bundesbank_text(series: tuple[str, str], saved: Path | None) -> tuple[str, str]:
+    """Return ``(the download's text, where it was read from)``: from the Bundesbank, or the copy ``saved``."""
+    flow, key = series
+    url = f"{BUNDESBANK_SERIES_URL.format(flow=flow, key=key)}?format=csv&lang=en"
+    if saved is None:
+        print(f"Downloading the Bundesbank's {flow}.{key} …")
+        return de_get(BUNDESBANK_SERIES_URL.format(flow=flow, key=key), {"format": "csv", "lang": "en"}).text, url
+    return Path(saved).read_text(encoding="utf-8-sig"), f"{Path(saved).name} (saved from {url})"
+
+
+def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None = None, saved_discount_csv: Path | None = None) -> None:
+    """Extract the Bundesbank's yield on public debt securities and its discount rate, and embed them into ``ratesplot/de_archive_data.py``.
+
+    ``saved_csv`` and ``saved_discount_csv`` read the downloads already on
+    disk (as saved in ``tools/de_fixtures``) instead of fetching them. The
+    yield is a monthly average, so each month is dated by its first day;
+    every value the series has is kept (to 2020-04), and ``de_data`` uses
+    the months before the term structure begins. The discount rate is kept
+    on the days it changed (``parse_bundesbank_change_days``); ``rates``
+    draws it before the ECB's rate (batch 9.6).
     """
     source_path = source_path or Path(__file__).resolve().with_name("de_archive_data.py")
     if saved_csv is None:
@@ -1428,14 +1491,29 @@ def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None
         f"{DE_PUBLIC_DEBT_YIELD_SERIES}: yields on debt securities outstanding issued by residents, public debt\n"
         "securities, monthly average, percent"
     )
+    discount_text, discount_name = _bundesbank_text(DE_DISCOUNT_RATE_SERIES, saved_discount_csv)
+    discount = parse_bundesbank_change_days(discount_text)
+    if discount.name != ".".join(DE_DISCOUNT_RATE_SERIES):
+        raise RuntimeError(f"expected {'.'.join(DE_DISCOUNT_RATE_SERIES)}, read {discount.name}; data module not modified.")
+    discount_data = _require_rows(discount.rename("value").to_frame(), discount.name)
+    discount_comment = (
+        "The day each change took effect, from the download's comments, checked against its\n"
+        "end-of-month values. The Bank deutscher Länder's rate until the Bundesbank took over in\n"
+        "1957; replaced by the ECB's rates from 1999-01-01.\n"
+        f"{discount.name}: discount rate of the Bundesbank, percent per year"
+    )
     block = (
         f"{DE_ARCHIVE_BEGIN_MARKER}\n"
         f"# Generated on {dt.date.today():%Y-%m-%d} from the Deutsche Bundesbank, read from:\n# {source_name}\n"
-        "# Historical observations in the source's own terms; de_data joins them to\n"
-        "# the live series at run time.\n\n"
+        f"# {discount_name}\n"
+        "# Historical observations in the source's own terms; de_data and rates join\n"
+        "# them to the live series at run time.\n\n"
         + _embedded_list("EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY", comment, data, "value")
+        + "\n"
+        + _embedded_list("EMBEDDED_DE_DISCOUNT_RATE_CHANGES", discount_comment, discount_data, "value")
         + f"{DE_ARCHIVE_END_MARKER}"
     )
     _replace_generated_block(source_path, DE_ARCHIVE_BEGIN_MARKER, DE_ARCHIVE_END_MARKER, block)
-    print(f"Embedded the Bundesbank's yield on public debt securities into {source_path}")
+    print(f"Embedded the Bundesbank's yield on public debt securities and its discount rate into {source_path}")
     print(f"  EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY {len(data):5,} values, {data.index[0]:%Y-%m-%d} to {data.index[-1]:%Y-%m-%d}")
+    print(f"  EMBEDDED_DE_DISCOUNT_RATE_CHANGES     {len(discount_data):5,} changes, {discount_data.index[0]:%Y-%m-%d} to {discount_data.index[-1]:%Y-%m-%d}")

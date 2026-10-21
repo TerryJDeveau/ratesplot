@@ -37,8 +37,13 @@ sources served on 2026-10-06 evening (Toronto).
   - `WZ9826`: 10-year term structure, monthly, 1972-09 (8.08 %) — the same as `bbk_ts_m_R10XX`;
   - `WX4260`: from 1990;
   - `SU0112` (discount rate), `SU0115` (Lombard), `SU0202`, `WT1010`: "not valid or not present".
-  The Bundesbank discount rate 1948–1998 still needs its SDMX key (flow `BBIN1` or `BBIM1`);
-  not found yet.
+  - *(Found 2026-10-21, batch 9.6, on Buddug: flow **`BBIN1`**, "Central bank rates":
+    `M.DE.BBK.BBKDIS.DEM.ME` the discount rate (SU0112) and `M.DE.BBK.BBKLOM.DEM.ME` the Lombard
+    rate (SU0113), end of month 1948-07 to 1998-12, unit "% p.a.". The comments give each change's
+    day ("Comment on 1995-03: From 31 March 4.00%"). Saved as `bbin1_BBKDIS.csv` (baked, the
+    discount rate's change days) and `bbin1_BBKLOM.csv` (kept to be refused: its month-end values
+    hold the special Lombard rate in 1973-74 and 1981-82). The flow also has the ECB's three rates
+    and the base rates.)*
 
 ### ECB Data Portal (`https://data-api.ecb.europa.eu/service/data/{flow}/{key}?format=csvdata`)
 
@@ -88,7 +93,9 @@ debt `ecb_gfs_a_debt` (year-ends 1991-1999) + `est_ggdebt_q`; interest `est_edpt
 
 ## Still to find (on the laptop)
 
-- The Bundesbank discount and Lombard rates, 1948–1998, as SDMX keys.
+- *(Found 2026-10-21: the discount and Lombard rates, above.)* The Bundesbank's securities
+  repurchase rate of the 1980s and 1990s: not in `BBIN1` or `BBIG1` (money market rates, which
+  have Frankfurt overnight money from 1960, `SU0101` monthly and `ST0101` daily).
 - German GDP, debt, interest and population **before 1991** (West Germany): Destatis or the
   Bundesbank's long series; candidates for a bake, like the UK's millennium dataset.
 - Mortgage rates before 2003 (the Bundesbank's old interest rate statistics, to 2003-06).
