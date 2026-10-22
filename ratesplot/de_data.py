@@ -116,6 +116,18 @@ _BUNDESBANK_MISSING = (".", "-", "")
 # GFS debt is in "national currency" (XDC): euros, Deutsche Mark figures
 # converted at the fixed parity.
 ECB_ANNUAL_DEBT = ("GFS", "A.N.DE.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC")
+# The ECB's series are baked (batch 19.2) under ``ratesplot/data/ecb/``
+# (``tools/bake_archives.py --only ecb``), each file named by its flow and
+# key: the annual debt here, the policy, market and mortgage rates in ``rates``.
+ECB_BAKED_SOURCE = "ecb"
+# How ``startPeriod`` is written for each frequency (a key's first part), so
+# that the ECB answers from the period holding the date asked for. Measured
+# 2026-10-22 (all eight series the program reads): asked from a day, the ECB
+# answers from the first period beginning on or after it, so an annual series
+# asked from 2023-12-31 begins with 2024 and a monthly one asked from
+# 2026-06-30 with July; asked in the period's own form (2023, 2026-06), from
+# that period. A frequency not measured raises.
+_ECB_START_FORMS = {"A": "%Y", "M": "%Y-%m", "B": "%Y-%m-%d", "D": "%Y-%m-%d"}
 
 # Eurostat datasets: dataset -> (the query sent, the unit expected). The
 # query is the one measured from the laptop; one answer holds every sector.
@@ -244,10 +256,35 @@ def parse_ecb_csv(text: str, series_key: str, unit: str) -> pd.Series:
     return values.sort_index()
 
 
+def _ecb_start_period(key: str, day: pd.Timestamp) -> str:
+    """``startPeriod`` asking series ``key`` for the period holding ``day`` on: ``2023`` (annual), ``2026-06`` (monthly), the day itself (daily)."""
+    frequency = key.split(".")[0]
+    if frequency not in _ECB_START_FORMS:
+        raise ValueError(f"ECB {key}: no startPeriod form measured for its frequency {frequency!r}")
+    return f"{day:{_ECB_START_FORMS[frequency]}}"
+
+
+def ecb_download(flow: str, key: str, unit: str, start: pd.Timestamp | None = None) -> pd.Series:
+    """Ask the ECB Data Portal for one series (``parse_ecb_csv``): every value, or those from the period holding ``start`` on.
+
+    One request (cached and kept as the others are). The whole series is
+    asked for as before batch 19.2 (``format=csvdata`` alone), so its request
+    is the same. The ECB answers a range it has no value in with an empty
+    body (status 200), which raises here, naming it: no series the program
+    reads is empty from any date it asks for.
+    """
+    params = {"format": "csvdata"}
+    if start is not None:
+        params["startPeriod"] = _ecb_start_period(key, start)
+    response = de_get(ECB_SERIES_URL.format(flow=flow, key=key), params)
+    if not response.text.strip():
+        raise ValueError(f"the ECB gave no values of {flow}.{key}" + (f" from {params['startPeriod']}" if start is not None else ""))
+    return parse_ecb_csv(response.text, f"{flow}.{key}", unit)
+
+
 def ecb_series(flow: str, key: str, unit: str) -> pd.Series:
     """Return one whole ECB Data Portal series (``parse_ecb_csv``)."""
-    response = de_get(ECB_SERIES_URL.format(flow=flow, key=key), {"format": "csvdata"})
-    return parse_ecb_csv(response.text, f"{flow}.{key}", unit)
+    return ecb_download(flow, key, unit)
 
 
 def parse_jsonstat(data: dict, unit: str, **chosen: str) -> pd.Series:

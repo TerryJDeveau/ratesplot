@@ -8,8 +8,9 @@ Offline, in seconds:
   none (a date the source lists without one, FRED's);
 * every Bank of England database series the program reads
   (``bake.boe_baked_codes``) has a file, and every file there is one of them;
-  so does every Bank of Canada Valet series (``bake.boc_baked_codes``) and
-  every FRED series (``bake.fred_baked_codes``);
+  so does every Bank of Canada Valet series (``bake.boc_baked_codes``),
+  every FRED series (``bake.fred_baked_codes``) and every ECB Data Portal
+  series (``bake.ecb_baked_codes``);
 * a series written by ``baked.write_series`` reads back float for float,
   its dates without a value too, and its text is the bake's form (comment,
   header, one row per date, empty where there is no value);
@@ -54,7 +55,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, baked, cdn_data, uk_data, us_data  # noqa: E402
+from ratesplot import bake, baked, cdn_data, de_data, uk_data, us_data  # noqa: E402
 from ratesplot.config import DATE_COLUMN  # noqa: E402
 
 RESULTS: list[bool] = []
@@ -87,6 +88,7 @@ def check_files() -> None:
         ("Bank of England", uk_data.BOE_BAKED_SOURCE, bake.boe_baked_codes()),
         ("Bank of Canada", cdn_data.BOC_BAKED_SOURCE, bake.boc_baked_codes()),
         ("FRED", us_data.FRED_BAKED_SOURCE, bake.fred_baked_codes()),
+        ("ECB", de_data.ECB_BAKED_SOURCE, bake.ecb_baked_codes()),
     ):
         found = {path.stem for path in (baked.DATA_FOLDER / source).glob("*.csv")}
         codes = set(read)

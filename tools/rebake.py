@@ -6,8 +6,8 @@ pull request instead when it revises or refuses something." Run each day by
 ``.github/workflows/rebake.yml``; by hand, to see what it would do.
 
 ``python tools/rebake.py --out DIR`` runs each live source's bake (so far the Bank of
-England's, the Bank of Canada's and FRED's, ``LIVE_BAKES``) with withdrawn dates accepted, so that every file
-holds what its source now gives, and writes to DIR:
+England's, the Bank of Canada's, FRED's and the ECB's, ``LIVE_BAKES``) with withdrawn dates accepted, so that
+every file holds what its source now gives, and writes to DIR:
 
 * ``append.txt``: the files whose only change is new values after the bake's last date
   (or a new file): they go straight to main;
@@ -47,13 +47,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot.bake import SeriesBake, bake_boc_history, bake_boe_history, bake_fred_history  # noqa: E402
+from ratesplot.bake import SeriesBake, bake_boc_history, bake_boe_history, bake_ecb_history, bake_fred_history  # noqa: E402
 
 # Each live source baked as data files: its folder under ratesplot/data/ -> its name, its bake.
 LIVE_BAKES = {
     "boe": ("Bank of England", bake_boe_history),
     "boc": ("Bank of Canada", bake_boc_history),
     "fred": ("FRED", bake_fred_history),
+    "ecb": ("ECB", bake_ecb_history),
 }
 REVIEW_BRANCH = "rebake-review"
 AUTHOR = "Terry J. Deveau <terryjdeveau@gmail.com>"

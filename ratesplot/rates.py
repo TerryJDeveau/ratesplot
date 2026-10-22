@@ -144,6 +144,10 @@ DE_POLICY_MINIMUM_BID = ("FM", "B.U2.EUR.4F.KR.MRR_MBR.LEV", "PCPA")
 DE_EONIA = ("EON", "D.EONIA_TO.RATE", "PC")
 DE_ESTR = ("EST", "B.EU000A2X2A25.WT", "PC")
 DE_MORTGAGE_SERIES = {"1-5": "M.DE.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.DE.B.A2C.O.R.A.2250.EUR.N", "over10": "M.DE.B.A2C.P.R.A.2250.EUR.N"}
+# The ECB's flow of the MFI interest rate statistics and the unit its mortgage
+# rates are given in (a rate per year), for every band of DE_MORTGAGE_SERIES.
+DE_MORTGAGE_FLOW = "MIR"
+DE_MORTGAGE_UNIT = "PCPA"
 _MORTGAGE_LABELS = {
     "30": "30-Year Mortgage",
     "15": "15-Year Mortgage",
@@ -629,7 +633,7 @@ def de_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
 
 def _de_mortgage(term: str) -> pd.Series:
     """Return one German mortgage band's monthly rate, dated by each month's first day."""
-    monthly = ecb_series("MIR", DE_MORTGAGE_SERIES[term], "PCPA")
+    monthly = ecb_series(DE_MORTGAGE_FLOW, DE_MORTGAGE_SERIES[term], DE_MORTGAGE_UNIT)
     return _clean(monthly.set_axis(monthly.index.to_period("M").start_time))
 
 

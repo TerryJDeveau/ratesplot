@@ -106,7 +106,7 @@ from .config import (
     US_ARCHIVE_BEGIN_MARKER,
     US_ARCHIVE_END_MARKER,
 )
-from .de_data import parse_bundesbank_csv
+from .de_data import ECB_ANNUAL_DEBT, ECB_BAKED_SOURCE, ecb_download, parse_bundesbank_csv
 from .http import canadian_get, de_get, fetch_fred_csv, get_if_published, uk_get
 from .rates import (
     CDN_BANK_RATE_SERIES,
@@ -114,6 +114,13 @@ from .rates import (
     CDN_MORTGAGE_SERIES,
     CDN_TARGET_SERIES,
     CDN_WEEKLY_BANK_RATE_SERIES,
+    DE_EONIA,
+    DE_ESTR,
+    DE_MORTGAGE_FLOW,
+    DE_MORTGAGE_SERIES,
+    DE_MORTGAGE_UNIT,
+    DE_POLICY_FIXED,
+    DE_POLICY_MINIMUM_BID,
     UK_MARKET_SERIES,
     UK_MORTGAGE_SERIES,
     UK_POLICY_SERIES,
@@ -1581,8 +1588,9 @@ def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None
 # daily (Terry, decision 49); each run says what changed in each file, every
 # revision with its size, so a revision is seen before it is committed.
 # Begun with the Bank of England's database (2026-10-21); the Bank of
-# Canada's Valet and FRED next (2026-10-22). Each source's bake is a call of
-# ``_bake_live_series`` with its list of series and its download.
+# Canada's Valet, FRED and the ECB's Data Portal next (2026-10-22). Each
+# source's bake is a call of ``_bake_live_series`` with its list of series and
+# its download.
 
 # Each Bank of England database series the program reads, for its file's
 # first line. A series read but not named here stops the bake (KeyError).
@@ -1907,3 +1915,71 @@ def bake_fred_history(folder: Path | None = None, *, accept_withdrawn: bool = Fa
 
     titles = {code: _FRED_SERIES_TITLES[code] for code in fred_baked_codes()}
     return _bake_live_series(FRED_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
+
+
+# Each ECB Data Portal series the program reads, by its file's name (its flow
+# and key), for the file's first line: the ECB's own title (TITLE), with the
+# area where the title leaves it out, and the frequency (FREQ), read from each
+# series' answer 2026-10-22. A series read but not named here stops the bake (KeyError).
+_ECB_SERIES_TITLES = {
+    f"{ECB_ANNUAL_DEBT[0]}.{ECB_ANNUAL_DEBT[1]}": "Government debt (consolidated), Germany, general government; annual",
+    f"{DE_POLICY_FIXED[0]}.{DE_POLICY_FIXED[1]}":
+        "Main refinancing operations - fixed rate tenders (fixed rate) (date of changes) - Level; on the days it changed",
+    f"{DE_POLICY_MINIMUM_BID[0]}.{DE_POLICY_MINIMUM_BID[1]}":
+        "ECB Main refinancing operations - variable rate tenders (minimun bid rate) (date of changes) - Level; "
+        "on the days it changed, 2000 to 2008",
+    f"{DE_EONIA[0]}.{DE_EONIA[1]}":
+        "Rate for the overnight maturity calculated as the euro short-term rate plus a spread of 8.5 basis points "
+        "(EONIA); daily, 1999 to 2021",
+    f"{DE_ESTR[0]}.{DE_ESTR[1]}": "Euro short-term rate (€STR); business days",
+    f"{DE_MORTGAGE_FLOW}.{DE_MORTGAGE_SERIES['1-5']}":
+        "Bank interest rates - loans to households for house purchase with an interest rate fixation period of "
+        "over one & up to five years (new business), Germany; monthly",
+    f"{DE_MORTGAGE_FLOW}.{DE_MORTGAGE_SERIES['5-10']}":
+        "Bank interest rates - loans to households for house purchase with an interest rate fixation period of "
+        "over five & up to ten years (new business), Germany; monthly",
+    f"{DE_MORTGAGE_FLOW}.{DE_MORTGAGE_SERIES['over10']}":
+        "Bank interest rates - loans to households for house purchase with an interest rate fixation period of "
+        "over ten years (new business), Germany; monthly",
+}
+
+
+def ecb_baked_series() -> dict[str, tuple[str, str, str]]:
+    """Every ECB Data Portal series the program reads, by its file's name (``FLOW.KEY``): its flow, key and unit. The annual debt (``de_data``); the policy, market and mortgage rates (``rates``)."""
+    series = [ECB_ANNUAL_DEBT, DE_POLICY_FIXED, DE_POLICY_MINIMUM_BID, DE_EONIA, DE_ESTR,
+              *((DE_MORTGAGE_FLOW, key, DE_MORTGAGE_UNIT) for key in DE_MORTGAGE_SERIES.values())]
+    return {f"{flow}.{key}": (flow, key, unit) for flow, key, unit in sorted(series)}
+
+
+def ecb_baked_codes() -> list[str]:
+    """The names of the ECB's baked files (``ecb_baked_series``), ``FLOW.KEY``."""
+    return sorted(ecb_baked_series())
+
+
+def bake_ecb_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every ECB Data Portal series the program reads, whole, into ``ratesplot/data/ecb/`` (batch 19.2).
+
+    As every live source is baked (``_bake_live_series``: ``folder``,
+    ``accept_withdrawn``, what is printed and returned). Each series as
+    ``de_data.parse_ecb_csv`` reads it: dated by each period's last day, in
+    the series' unit times ten to the power of its multiplier (the debt's
+    millions of euros written in euros), a period without a value left out.
+    """
+    print("Baking the ECB Data Portal's series …")
+    series = ecb_baked_series()
+
+    def download(code: str) -> pd.Series:
+        return ecb_download(*series[code])
+
+    def comment(code: str, title: str) -> str:
+        flow, key, unit = series[code]
+        return (
+            f"ECB Data Portal, flow {flow}, series {key}: {title}.\n"
+            f"Every value the ECB gives, as ratesplot.de_data reads it: dated by each period's last day, unit {unit}\n"
+            "times ten to the power of the series' UNIT_MULT.\n"
+            "Written by tools/bake_archives.py --only ecb (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {code: _ECB_SERIES_TITLES[code] for code in series}
+    return _bake_live_series(ECB_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
