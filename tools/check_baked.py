@@ -7,6 +7,7 @@ Offline, in seconds:
   bake's form, its dates in order and each once, every value a number;
 * every Bank of England database series the program reads
   (``bake.boe_baked_codes``) has a file, and every file there is one of them;
+  so does every Bank of Canada Valet series (``bake.boc_baked_codes``);
 * a series written by ``baked.write_series`` reads back float for float,
   and its text is the bake's form (comment, header, one row per value);
 * ``baked.with_recent_part``, with made-up answers from the source: the bake,
@@ -44,7 +45,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, baked, uk_data  # noqa: E402
+from ratesplot import bake, baked, cdn_data, uk_data  # noqa: E402
 from ratesplot.config import DATE_COLUMN  # noqa: E402
 
 RESULTS: list[bool] = []
@@ -73,10 +74,14 @@ def check_files() -> None:
         except Exception as exc:
             problems.append(f"{path.name}: {exc}")
     check(f"every baked file reads in the bake's form ({len(files)} files)", bool(files) and not problems, problems)
-    boe = {path.stem for path in (baked.DATA_FOLDER / uk_data.BOE_BAKED_SOURCE).glob("*.csv")}
-    codes = set(bake.boe_baked_codes())
-    check("every Bank of England series the program reads has a file, and every file is one of them",
-          boe == codes, {"missing": sorted(codes - boe), "not read": sorted(boe - codes)})
+    for name, source, read in (
+        ("Bank of England", uk_data.BOE_BAKED_SOURCE, bake.boe_baked_codes()),
+        ("Bank of Canada", cdn_data.BOC_BAKED_SOURCE, bake.boc_baked_codes()),
+    ):
+        found = {path.stem for path in (baked.DATA_FOLDER / source).glob("*.csv")}
+        codes = set(read)
+        check(f"every {name} series the program reads has a file, and every file is one of them",
+              found == codes, {"missing": sorted(codes - found), "not read": sorted(found - codes)})
 
 
 def check_written(folder: Path) -> None:

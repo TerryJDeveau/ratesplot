@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from .cdn_data import boc_valet_series, statcan_zip_table
+from .cdn_data import BOC_VALET_FROM, boc_valet_series, statcan_zip_table
 from .config import (
     CANADIAN_YIELD_HIST_END,
     DATE_COLUMN,
@@ -78,8 +78,6 @@ CDN_TARGET_SERIES = "CBC20210"
 CDN_TARGET_FROM = pd.Timestamp("1996-02-22")
 CDN_BANK_RATE_ABOVE_TARGET = 0.25
 CDN_CORRA_SERIES = "AVG.INTWO"
-# Valet returns a series from this date; it precedes every series asked for.
-_VALET_FROM = "1900-01-01"
 
 # Mortgage rates (--mortgages), by term (config.MORTGAGE_TERMS). U.S.: Freddie
 # Mac's survey averages, weekly, on FRED (30-year from 1971, 15-year from 1991).
@@ -351,7 +349,7 @@ def _clean(values: pd.Series) -> pd.Series:
 
 def _valet(series_code: str) -> pd.Series:
     """Return one whole Bank of Canada Valet series, cleaned (``_clean``)."""
-    return _clean(boc_valet_series(series_code, start=_VALET_FROM))
+    return _clean(boc_valet_series(series_code, start=BOC_VALET_FROM))
 
 
 def _fred(series_id: str) -> pd.Series:

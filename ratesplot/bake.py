@@ -23,7 +23,7 @@ its own data module. The live sources' history (batch 19.2) is baked
 differently: every value of each series, one data file per series under
 ``ratesplot/data/`` (``ratesplot.baked``), re-baked daily, so that a drawing
 asks only for the recent part. Begun with the Bank of England's database
-(``bake_boe_history``).
+(``bake_boe_history``), then the Bank of Canada's Valet (``bake_boc_history``).
 """
 
 from __future__ import annotations
@@ -40,12 +40,25 @@ import textwrap
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import pandas as pd
 
 from . import baked
-from .cdn_data import statcan_zip_table, statcan_zip_table_with_metadata
+from .cdn_data import (
+    BOC_3M_AUCTION_SERIES,
+    BOC_3M_TBILL_SERIES,
+    BOC_BAKED_SOURCE,
+    BOC_BENCHMARK_COLUMNS,
+    BOC_BENCHMARK_GROUP,
+    BOC_BILL_SERIES,
+    BOC_VALET_FROM,
+    statcan_zip_table,
+    statcan_zip_table_with_metadata,
+    valet_download,
+    valet_group_download,
+)
 from .config import (
     ARCHIVE_BEGIN_MARKER,
     ARCHIVE_CALIBRATION_END_YEAR,
@@ -93,7 +106,16 @@ from .config import (
 )
 from .de_data import parse_bundesbank_csv
 from .http import canadian_get, de_get, get_if_published, uk_get
-from .rates import UK_MARKET_SERIES, UK_MORTGAGE_SERIES, UK_POLICY_SERIES
+from .rates import (
+    CDN_BANK_RATE_SERIES,
+    CDN_CORRA_SERIES,
+    CDN_MORTGAGE_SERIES,
+    CDN_TARGET_SERIES,
+    CDN_WEEKLY_BANK_RATE_SERIES,
+    UK_MARKET_SERIES,
+    UK_MORTGAGE_SERIES,
+    UK_POLICY_SERIES,
+)
 from .uk_data import BOE_BAKED_SOURCE, UK_YIELD_SERIES, iadb_download
 
 # Balance-sheet members that constitute marketable debt securities.
@@ -1538,7 +1560,9 @@ def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None
 # (``ratesplot.baked``), and a drawing asks only for the recent part. Re-baked
 # daily (Terry, decision 49); each run says what changed in each file, every
 # revision with its size, so a revision is seen before it is committed.
-# Begun with the Bank of England's database (2026-10-21).
+# Begun with the Bank of England's database (2026-10-21); the Bank of
+# Canada's Valet next (2026-10-22). Each source's bake is a call of
+# ``_bake_live_series`` with its list of series and its download.
 
 # Each Bank of England database series the program reads, for its file's
 # first line. A series read but not named here stops the bake (KeyError).
@@ -1627,7 +1651,7 @@ def bake_changes(old: pd.Series | None, new: pd.Series) -> SeriesChanges:
 
 @dataclass
 class SeriesBake:
-    """One series' bake (``bake_boe_history``): its file, what changed, and whether the file was written."""
+    """One series' bake (``_bake_live_series``): its file, what changed, and whether the file was written."""
 
     source: str
     code: str
@@ -1639,9 +1663,18 @@ class SeriesBake:
     last: pd.Timestamp | None = None  # the download's last date
 
 
-def bake_boe_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
-    """Bake every Bank of England database series the program reads, whole, into ``ratesplot/data/boe/`` (batch 19.2).
+def _bake_live_series(
+    source: str,
+    titles: dict[str, str],
+    download: Callable[[str], pd.Series],
+    comment: Callable[[str, str], str],
+    folder: Path | None,
+    accept_withdrawn: bool,
+) -> list[SeriesBake]:
+    """Bake each series of ``titles`` (code -> its title), whole, into ``ratesplot/data/SOURCE/``: the bake of every live source.
 
+    ``download(code)`` asks the source for every value of one series,
+    without missing days; ``comment(code, title)`` is its file's comment.
     ``folder`` writes the files there instead. Each series is a file and is
     written on its own. One whose download fails keeps its file as it was;
     so does one whose download lacks baked dates (``SeriesChanges.refused``),
@@ -1649,15 +1682,13 @@ def bake_boe_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
     then, for a pull request a person merges or not. What changed in each
     file is printed, and returned, a ``SeriesBake`` per series.
     """
-    print("Baking the Bank of England database's series …")
     results = []
-    for code in boe_baked_codes():
-        title = _BOE_SERIES_TITLES[code]
-        path = folder / f"{code}.csv" if folder is not None else baked.data_file(BOE_BAKED_SOURCE, code)
-        result = SeriesBake(BOE_BAKED_SOURCE, code, path)
+    for code, title in titles.items():
+        path = folder / f"{code}.csv" if folder is not None else baked.data_file(source, code)
+        result = SeriesBake(source, code, path)
         results.append(result)
         try:
-            new = iadb_download(code)
+            new = download(code)
         except Exception as exc:
             result.error = str(exc) or type(exc).__name__
             print(f"  {code}: not baked ({result.error}); its file is left as it was.")
@@ -1668,15 +1699,100 @@ def bake_boe_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
         if changes.refused and not accept_withdrawn:
             print(f"  {code}: not baked: {changes.refused}; its file is left as it was.")
             continue
-        comment = (
-            f"Bank of England database (IADB), series {code}: {title}.\n"
-            f"Every value the database gives from {BOE_IADB_FROM} on, dated as the database dates it.\n"
-            "Written by tools/bake_archives.py --only boe (ratesplot.bake), read by ratesplot.baked;\n"
-            "not edited by hand."
-        )
-        baked.write_series(path, new, comment)
+        baked.write_series(path, new, comment(code, title))
         result.written = True
         print(f"  {code}: {len(new):,} values, {new.index[0]:%Y-%m-%d} to {new.index[-1]:%Y-%m-%d}; {changes.lines[-1]}")
         for line in changes.lines[:-1]:
             print(f"      {line}")
     return results
+
+
+def bake_boe_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every Bank of England database series the program reads, whole, into ``ratesplot/data/boe/`` (batch 19.2).
+
+    As every live source is baked (``_bake_live_series``: ``folder``,
+    ``accept_withdrawn``, what is printed and returned).
+    """
+    print("Baking the Bank of England database's series …")
+
+    def comment(code: str, title: str) -> str:
+        return (
+            f"Bank of England database (IADB), series {code}: {title}.\n"
+            f"Every value the database gives from {BOE_IADB_FROM} on, dated as the database dates it.\n"
+            "Written by tools/bake_archives.py --only boe (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {code: _BOE_SERIES_TITLES[code] for code in boe_baked_codes()}
+    return _bake_live_series(BOE_BAKED_SOURCE, titles, iadb_download, comment, folder, accept_withdrawn)
+
+
+# Each Bank of Canada Valet series the program reads, for its file's first
+# line (Valet's own labels, read 2026-10-22). The benchmark yields are one
+# group, asked for in one request; the group's real return bond yield is not
+# read, and not baked. A series read but not named here stops the bake (KeyError).
+_BOC_SERIES_TITLES = {
+    "BD.CDN.2YR.DQ.YLD": "Government of Canada benchmark bond yield, 2-year; daily (group bond_yields_benchmark)",
+    "BD.CDN.3YR.DQ.YLD": "Government of Canada benchmark bond yield, 3-year; daily (group bond_yields_benchmark)",
+    "BD.CDN.5YR.DQ.YLD": "Government of Canada benchmark bond yield, 5-year; daily (group bond_yields_benchmark)",
+    "BD.CDN.7YR.DQ.YLD": "Government of Canada benchmark bond yield, 7-year; daily (group bond_yields_benchmark)",
+    "BD.CDN.10YR.DQ.YLD": "Government of Canada benchmark bond yield, 10-year; daily (group bond_yields_benchmark)",
+    "BD.CDN.LONG.DQ.YLD": "Government of Canada benchmark bond yield, long-term; daily (group bond_yields_benchmark)",
+    "TB.CDN.30D.MID": "Government of Canada treasury bills, 1-month, mid-market yield; daily",
+    "TB.CDN.90D.MID": "Government of Canada treasury bills, 3-month, mid-market yield; daily",
+    "TB.CDN.180D.MID": "Government of Canada treasury bills, 6-month, mid-market yield; daily",
+    "TB.CDN.1Y.MID": "Government of Canada treasury bills, 1-year, mid-market yield; daily",
+    "V80691303": "treasury bill auction, 3-month, average yield; every second week",
+    "V122530": "Bank Rate; monthly",
+    "V80691310": "Bank Rate; weekly",
+    "CBC20210": "target for the overnight rate; daily",
+    "AVG.INTWO": "CORRA, the Canadian Overnight Repo Rate Average; daily",
+    "V80691335": "conventional mortgage, 5-year, chartered banks' posted rate; weekly",
+    "V80691334": "conventional mortgage, 3-year, chartered banks' posted rate; weekly",
+    "V80691333": "conventional mortgage, 1-year, chartered banks' posted rate; weekly",
+    "BROKER_AVERAGE_5YR_VRM": "estimated 5-year variable mortgage rate, the brokers' average; weekly",
+    "V80691311": "prime rate, chartered banks; weekly",
+}
+
+
+def boc_baked_codes() -> list[str]:
+    """Every Bank of Canada Valet series the program reads: the benchmark yields and the bills (``cdn_data``), Bank Rate, the target, CORRA and the mortgage rates (``rates``)."""
+    return sorted({
+        *BOC_BENCHMARK_COLUMNS, BOC_3M_TBILL_SERIES, BOC_3M_AUCTION_SERIES, *BOC_BILL_SERIES.values(),
+        CDN_BANK_RATE_SERIES, CDN_WEEKLY_BANK_RATE_SERIES, CDN_TARGET_SERIES, CDN_CORRA_SERIES, *CDN_MORTGAGE_SERIES.values(),
+    })
+
+
+def bake_boc_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every Bank of Canada Valet series the program reads, whole, into ``ratesplot/data/boc/`` (batch 19.2).
+
+    As every live source is baked (``_bake_live_series``: ``folder``,
+    ``accept_withdrawn``, what is printed and returned). The benchmark
+    yields come in one request for their group, made once; each of its
+    series is then a file of its own.
+    """
+    print("Baking the Bank of Canada's Valet series …")
+    try:
+        group: pd.DataFrame | Exception = valet_group_download(BOC_BENCHMARK_GROUP)
+    except Exception as exc:
+        group = exc
+
+    def download(code: str) -> pd.Series:
+        if code not in BOC_BENCHMARK_COLUMNS:
+            return valet_download(code).dropna()
+        if isinstance(group, Exception):
+            raise group
+        if code not in group.columns:
+            raise ValueError(f"Valet's group {BOC_BENCHMARK_GROUP} has no {code} column ({list(group.columns)})")
+        return group[code].dropna()
+
+    def comment(code: str, title: str) -> str:
+        return (
+            f"Bank of Canada Valet, series {code}: {title}.\n"
+            f"Every value Valet gives from {BOC_VALET_FROM} on, dated as Valet dates it.\n"
+            "Written by tools/bake_archives.py --only boc (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {code: _BOC_SERIES_TITLES[code] for code in boc_baked_codes()}
+    return _bake_live_series(BOC_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)

@@ -79,6 +79,14 @@ from .config import (
 from .http import canadian_get, canadian_post, downloads_of, fetch_fred_csv, parse_boc_csv
 from .joins import align_macro, chain, dated_by_quarter_end, embedded_frame
 
+# The Bank of Canada's Valet series are baked (batch 19.2) under
+# ``ratesplot/data/boc/`` (``tools/bake_archives.py --only boc``).
+BOC_BAKED_SOURCE = "boc"
+# Valet gives a series from this date: it precedes every series' first value,
+# so a request from it is the whole series (what the bake writes, and what
+# the policy and mortgage rates are drawn from).
+BOC_VALET_FROM = "1900-01-01"
+
 # Bank of Canada Valet series codes -> chart column names. The 3-month T-bill
 # is not part of the benchmark group, so it is fetched as a separate series.
 # The group's 3- and 7-year (batch 9.3) begin on 2001-01-02, as the others'
@@ -160,17 +168,35 @@ def cdn_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
 # ---------------------------------------------------------------------------
 
 
-def boc_valet_group(group: str, start: str = BOC_START_DATE) -> pd.DataFrame:
-    """Download a Bank of Canada Valet observation group as a date-indexed frame."""
+def valet_group_download(group: str, start: str = BOC_VALET_FROM) -> pd.DataFrame:
+    """Ask Valet for an observation group from ``start`` on (its every value by default): a date-indexed frame, a float column per series.
+
+    One request (cached and kept as the others are). A day the group lists
+    without a value in a series is NaN in that column.
+    """
     response = canadian_get(BOC_GROUP_URL.format(group=group), params={"start_date": start})
     return parse_boc_csv(response.text).apply(pd.to_numeric, errors="coerce")
 
 
-def boc_valet_series(series_code: str, start: str = BOC_START_DATE) -> pd.Series:
-    """Download one Bank of Canada Valet series as a date-indexed numeric Series."""
+def valet_download(series_code: str, start: str = BOC_VALET_FROM) -> pd.Series:
+    """Ask Valet for one series from ``start`` on (its every value by default): a date-indexed numeric series, named by its code.
+
+    One request (cached and kept as the others are). A day listed without
+    a value is NaN.
+    """
     response = canadian_get(BOC_SERIES_URL.format(series_code=series_code), params={"start_date": start})
     frame = parse_boc_csv(response.text)
     return pd.to_numeric(frame.iloc[:, 0], errors="coerce")
+
+
+def boc_valet_group(group: str, start: str = BOC_START_DATE) -> pd.DataFrame:
+    """Download a Bank of Canada Valet observation group as a date-indexed frame."""
+    return valet_group_download(group, start)
+
+
+def boc_valet_series(series_code: str, start: str = BOC_START_DATE) -> pd.Series:
+    """Download one Bank of Canada Valet series as a date-indexed numeric Series."""
+    return valet_download(series_code, start)
 
 
 def statcan_zip_table_with_metadata(table_id: str) -> tuple[pd.DataFrame, str]:
