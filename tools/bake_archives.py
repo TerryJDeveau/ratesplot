@@ -35,6 +35,9 @@ the BEGIN/END markers of
 * ``ratesplot/data/eurostat/``: Eurostat's series, in the same way (the
   fifth), each dataset asked for once and each series read of it (a sector of
   the debt or the interest) a file, named by the dataset and the categories.
+* ``ratesplot/data/ons/``: the ONS's time series, in the same way (the
+  sixth), each file named by the series' CDID and holding the frequency the
+  program reads of it (months or quarters).
 
 Nothing is written for a country's archive module unless every one of its
 sources is extracted and the new module compiles.
@@ -48,8 +51,8 @@ only read the modules and the files.
 
 Usage (from the project root)::
 
-    python tools/bake_archives.py            # every nation, and boe, boc, fred, ecb and eurostat
-    python tools/bake_archives.py --only us  # or cdn, uk, de, boe, boc, fred, ecb, eurostat
+    python tools/bake_archives.py            # every nation, and boe, boc, fred, ecb, eurostat and ons
+    python tools/bake_archives.py --only us  # or cdn, uk, de, boe, boc, fred, ecb, eurostat, ons
     python tools/bake_archives.py --only uk --uk-workbook a-millennium-of-macroeconomic-data-for-the-uk.xlsx
     python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv
 """
@@ -71,6 +74,7 @@ from ratesplot.bake import (  # noqa: E402
     bake_eurostat_history,
     bake_fred_history,
     bake_german_archives,
+    bake_ons_history,
     bake_uk_archives,
     bake_us_archives,
 )
@@ -85,12 +89,13 @@ BAKES = {
     "fred": bake_fred_history,
     "ecb": bake_ecb_history,
     "eurostat": bake_eurostat_history,
+    "ons": bake_ons_history,
 }
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation's archives, or one live source's history (boe, boc, fred, ecb, eurostat)")
+    parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation's archives, or one live source's history (boe, boc, fred, ecb, eurostat, ons)")
     parser.add_argument("--uk-workbook", type=Path, help="the UK millennium workbook already on disk (not downloaded)")
     parser.add_argument("--de-csv", type=Path, help="the Bundesbank's WU0004 download already on disk (not downloaded)")
     parser.add_argument("--de-discount-csv", type=Path, help="the Bundesbank's discount rate download (BBIN1) already on disk")

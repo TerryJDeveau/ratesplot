@@ -24,8 +24,10 @@ differently: every value of each series, one data file per series under
 ``ratesplot/data/`` (``ratesplot.baked``), re-baked daily, so that a drawing
 asks only for the recent part. Begun with the Bank of England's database
 (``bake_boe_history``), then the Bank of Canada's Valet (``bake_boc_history``),
-FRED (``bake_fred_history``), the ECB's Data Portal (``bake_ecb_history``) and
-Eurostat (``bake_eurostat_history``).
+FRED (``bake_fred_history``), the ECB's Data Portal (``bake_ecb_history``),
+Eurostat (``bake_eurostat_history``) and the ONS (``bake_ons_history``), which
+cannot be asked for a recent part: a drawing asks it for the whole series, as
+before, and takes only the recent part of the answer.
 """
 
 from __future__ import annotations
@@ -98,6 +100,7 @@ from .config import (
     HSC_PROVINCIAL_DEBT_SERIES,
     HSC_SECTION_H_URL,
     MILLION,
+    ONS_TIMESERIES_URL,
     POPULATION_COLUMN,
     STATCAN_TABLE_URL,
     THOUSAND,
@@ -142,7 +145,15 @@ from .rates import (
     US_TARGET_RANGE_SERIES,
     US_TARGET_SERIES,
 )
-from .uk_data import BOE_BAKED_SOURCE, UK_YIELD_SERIES, iadb_download
+from .uk_data import (
+    BOE_BAKED_SOURCE,
+    ONS_BAKED_SOURCE,
+    ONS_SERIES,
+    ONS_SERIES_READ,
+    UK_YIELD_SERIES,
+    iadb_download,
+    ons_download,
+)
 from .us_data import (
     FRED_BAKED_SOURCE,
     US_DEBT_SERIES_ID,
@@ -1600,9 +1611,9 @@ def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None
 # daily (Terry, decision 49); each run says what changed in each file, every
 # revision with its size, so a revision is seen before it is committed.
 # Begun with the Bank of England's database (2026-10-21); the Bank of
-# Canada's Valet, FRED, the ECB's Data Portal and Eurostat next (2026-10-22). Each
-# source's bake is a call of ``_bake_live_series`` with its list of series and
-# its download.
+# Canada's Valet, FRED, the ECB's Data Portal, Eurostat and the ONS next
+# (2026-10-22). Each source's bake is a call of ``_bake_live_series`` with its
+# list of series and its download.
 
 # Each Bank of England database series the program reads, for its file's
 # first line. A series read but not named here stops the bake (KeyError).
@@ -2080,3 +2091,64 @@ def bake_eurostat_history(folder: Path | None = None, *, accept_withdrawn: bool 
 
     titles = {code: _EUROSTAT_SERIES_TITLES[code] for code in series}
     return _bake_live_series(EUROSTAT_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
+
+
+# Each ONS time series the program reads, by its CDID, for its file's first
+# line: the ONS's own title as its description gives it (BKPX's
+# "condolidated" is the ONS's spelling), its dataset and the frequency read
+# (``uk_data.ONS_SERIES_READ``), read 2026-10-22. A series read but not named
+# here stops the bake (KeyError).
+_ONS_SERIES_TITLES = {
+    "BKPX": "GG: General government condolidated gross debt (Maastricht): £m CPNSA; dataset PUSF; monthly",
+    "BKPW": "CG: Total central government gross debt: £m CPNSA; dataset PUSF; monthly",
+    "MDYT": "LG: Local government gross debt; dataset EDP; quarterly",
+    "HF6W": "PS: Net Debt (excluding public sector banks): £bn: CPNSA; dataset PUSF; monthly",
+    "NMYX": "GG: Current exp: Interest & dividends paid to private sector and RoW: £m CPNSA; dataset PUSF; quarterly",
+    "NMFX": "CG: Current expenditure: Net Interest payable: £m CPNSA; dataset PUSF; quarterly",
+    "NUGW": "LG: Current expenditure: Interest: £m CPNSA; dataset PUSF; quarterly",
+    "YBHA": "Gross Domestic Product at market prices: Current price: Seasonally adjusted £m; dataset UKEA; quarterly",
+    "EBAQ": "UK resident population: mid-year estimates (Qtly data interpolated); dataset UKEA; quarterly "
+            "(dated here by the quarter's last day, as every period is; uk_data dates it by the quarter's middle)",
+}
+# The unit of each ONS series as its description gives it (``uk_data.ONS_SERIES``), in words.
+_ONS_UNIT_WORDS = {
+    "m": "millions of pounds",
+    "bn": "billions of pounds",
+    "": "millions of pounds (its description gives no unit)",
+    ",000": "thousands of persons",
+}
+_ONS_FREQUENCY_WORDS = {"months": "monthly", "quarters": "quarterly"}
+
+
+def ons_baked_codes() -> list[str]:
+    """Every ONS time series the program reads (``uk_data.ONS_SERIES_READ``), by its CDID."""
+    return sorted(ONS_SERIES_READ)
+
+
+def bake_ons_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every ONS time series the program reads, whole, into ``ratesplot/data/ons/`` (batch 19.2).
+
+    As every live source is baked (``_bake_live_series``: ``folder``,
+    ``accept_withdrawn``, what is printed and returned). One request answers
+    every frequency of a series; the frequency the program reads of it
+    (``uk_data.ONS_SERIES_READ``) is baked, as ``uk_data.parse_ons_series``
+    reads it: dated by each period's last day, in the series' own unit, a
+    period without a value left out.
+    """
+    print("Baking the ONS's time series …")
+
+    def download(code: str) -> pd.Series:
+        return ons_download(code, ONS_SERIES_READ[code])
+
+    def comment(code: str, title: str) -> str:
+        path, unit, _multiplier = ONS_SERIES[code]
+        return (
+            f"Office for National Statistics, time series {code} ({ONS_TIMESERIES_URL.format(path=path)}): {title}.\n"
+            f"Every {_ONS_FREQUENCY_WORDS[ONS_SERIES_READ[code]]} value the ONS gives, as ratesplot.uk_data reads it: dated by each period's last day,\n"
+            f"in {_ONS_UNIT_WORDS[unit]}, the series' own unit (uk_data converts it to pounds or persons).\n"
+            "Written by tools/bake_archives.py --only ons (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {code: _ONS_SERIES_TITLES[code] for code in ons_baked_codes()}
+    return _bake_live_series(ONS_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)

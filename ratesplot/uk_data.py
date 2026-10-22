@@ -132,6 +132,24 @@ ONS_SERIES = {
     "YBHA": ("/economy/grossdomesticproductgdp/timeseries/ybha/ukea", "m", MILLION),
     "EBAQ": ("/economy/grossdomesticproductgdp/timeseries/ebaq/ukea", ",000", THOUSAND),
 }
+# The frequency the program reads of each ONS series: a debt at the end of
+# each month where the ONS has months (BKPX, BKPW and HF6W, from 1975), else
+# of each quarter (MDYT has none); the interest, GDP and the population by
+# quarter. Measured 2026-10-22. These are baked (batch 19.2) under
+# ``ratesplot/data/ons/`` (``tools/bake_archives.py --only ons``), a file
+# each, named by the CDID; one request answers every frequency of a series.
+ONS_SERIES_READ = {
+    "BKPX": "months",
+    "BKPW": "months",
+    "MDYT": "quarters",
+    "HF6W": "months",
+    "NMYX": "quarters",
+    "NMFX": "quarters",
+    "NUGW": "quarters",
+    "YBHA": "quarters",
+    "EBAQ": "quarters",
+}
+ONS_BAKED_SOURCE = "ons"
 UK_DEBT_SERIES = "BKPX"
 UK_NET_DEBT_SERIES = "HF6W"
 UK_INTEREST_SERIES = "NMYX"
@@ -265,14 +283,28 @@ def parse_ons_series(data: dict, cdid: str, frequency: str) -> pd.Series:
     return values.sort_index()
 
 
-def ons_series(cdid: str, frequency: str) -> pd.Series:
-    """Return one ONS series (``ONS_SERIES``) at ``frequency``, in pounds or persons; raises if it has no values there."""
-    path, _unit, multiplier = ONS_SERIES[cdid]
-    data = uk_get(ONS_TIMESERIES_URL.format(path=path)).json()
-    values = parse_ons_series(data, cdid, frequency)
+def ons_download(cdid: str, frequency: str) -> pd.Series:
+    """Ask the ONS for one time series (``ONS_SERIES``): its every value at ``frequency``, in its own unit; raises if it has none there.
+
+    One request (cached and kept as the others are), which answers every
+    frequency of the series, so each frequency asks the same. The ONS cannot
+    be asked for a series from a date (measured 2026-10-22, for all nine):
+    the time-series page's own filter fields (from-year, from-quarter,
+    from-month), given to this JSON, to the CSV download the page links or
+    to the beta API's copy of the JSON, are ignored, and the old API was
+    retired on 2024-11-25. Every answer is the whole series.
+    """
+    path, _unit, _multiplier = ONS_SERIES[cdid]
+    values = parse_ons_series(uk_get(ONS_TIMESERIES_URL.format(path=path)).json(), cdid, frequency)
     if values.empty:
         raise ValueError(f"ONS {cdid} has no {frequency}")
-    return values * multiplier
+    return values
+
+
+def ons_series(cdid: str, frequency: str) -> pd.Series:
+    """Return one ONS series (``ONS_SERIES``) at ``frequency``, in pounds or persons; raises if it has no values there."""
+    _path, _unit, multiplier = ONS_SERIES[cdid]
+    return ons_download(cdid, frequency) * multiplier
 
 
 def _ons_stock(cdid: str) -> pd.Series:
