@@ -7,8 +7,8 @@ Reboot all start with the history in hand, and a source that is down, or
 gone, is still drawn to the bake's last date. Re-baked daily (decision 49)
 by a separate job whose result is committed; the running program never
 writes these files. Begun with the Bank of England's database, 2026-10-21;
-then the Bank of Canada's Valet, FRED, the ECB's Data Portal and Eurostat,
-2026-10-22.
+then the Bank of Canada's Valet, FRED, the ECB's Data Portal, Eurostat and
+the ONS, 2026-10-22.
 
 The files: ``ratesplot/data/SOURCE/CODE.csv``, one series each, written
 only by the bake (``ratesplot.bake``, run by ``tools/bake_archives.py``):
@@ -32,7 +32,9 @@ or ``RECENT_PART_REVISED``, the source's own), so that late values and
 revisions in that span arrive. The baked values and the recent part are
 one series, so they meet without a ramp, unlike the joins of different
 sources (``joins.chain``): the bake's values before the recent part's
-first date, the source's from it on.
+first date, the source's from it on. A source that cannot be asked for part
+of a series (the ONS) is asked for the whole, and only its values from that
+date on are taken.
 """
 
 from __future__ import annotations

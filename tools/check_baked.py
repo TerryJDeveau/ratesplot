@@ -35,7 +35,7 @@ Offline, in seconds:
 The live checks: ``tools/check_sources.py`` draws through the bake and its
 recent part; ``tools/check_drawn_values.py`` checks every drawn value against
 each baked source's whole series; ``tools/check_uk_parsers.py`` the warning
-when the database redirects.
+when the database redirects or the ONS fails.
 
 Usage (from the project root)::
 

@@ -48,6 +48,13 @@ are in pounds (and persons): ONS gives most series in £m, HF6W in £bn and
 the population in thousands; each series' unit is checked against the one
 measured, so a change of unit fails rather than shifting a curve a
 thousandfold.
+
+The Bank of England database's series and the ONS's (batch 19.2,
+``iadb_series``, ``ons_series``): their history is in ``ratesplot/data/boe/``
+and ``ratesplot/data/ons/``, and a drawing takes from the source only the
+recent part. The ONS cannot be asked for part of a series, so it is asked
+for the whole, as before, and only its last 24 months are taken. If a source
+fails, the baked history alone, with a warning.
 """
 
 from __future__ import annotations
@@ -132,10 +139,12 @@ ONS_SERIES = {
     "YBHA": ("/economy/grossdomesticproductgdp/timeseries/ybha/ukea", "m", MILLION),
     "EBAQ": ("/economy/grossdomesticproductgdp/timeseries/ebaq/ukea", ",000", THOUSAND),
 }
-# The frequency the program reads of each ONS series: a debt at the end of
-# each month where the ONS has months (BKPX, BKPW and HF6W, from 1975), else
-# of each quarter (MDYT has none); the interest, GDP and the population by
-# quarter. Measured 2026-10-22. These are baked (batch 19.2) under
+# The frequency the program reads of each ONS series (``ons_series``): a
+# debt at the end of each month where the ONS has months (BKPX, BKPW and
+# HF6W, from 1975), else of each quarter (MDYT has none); the interest, GDP
+# and the population by quarter. Measured 2026-10-22; declared, so that a
+# series whose months stop is refused (and drawn from its bake) rather than
+# drawn by quarter unseen. These are baked (batch 19.2) under
 # ``ratesplot/data/ons/`` (``tools/bake_archives.py --only ons``), a file
 # each, named by the CDID; one request answers every frequency of a series.
 ONS_SERIES_READ = {
@@ -301,20 +310,39 @@ def ons_download(cdid: str, frequency: str) -> pd.Series:
     return values
 
 
-def ons_series(cdid: str, frequency: str) -> pd.Series:
-    """Return one ONS series (``ONS_SERIES``) at ``frequency``, in pounds or persons; raises if it has no values there."""
+def _ons_answer(cdid: str, start: pd.Timestamp | None) -> pd.Series:
+    """The ONS's answer for one series at the frequency read (``ons_download``), always whole; ``start`` is the recent part's first date.
+
+    An answer with no value from ``start`` on raises, naming the series: the
+    join would otherwise end the series at the bake's values before it.
+    """
+    values = ons_download(cdid, ONS_SERIES_READ[cdid])
+    if start is not None and not (values.index >= start).any():
+        raise ValueError(f"the ONS gave no values of {cdid} from {start:%Y-%m-%d}")
+    return values
+
+
+def ons_series(cdid: str) -> pd.Series:
+    """Return one ONS series (``ONS_SERIES``) at the frequency the program reads of it (``ONS_SERIES_READ``), in pounds or persons.
+
+    Batch 19.2 (``ratesplot.baked``): its history is in
+    ``ratesplot/data/ons/``. The ONS cannot be asked for a series from a
+    date (``ons_download``), so a drawing asks for the whole series, as
+    before, and takes only its values from 24 months before the bake's last
+    value on (every ONS series the program reads is revised: debt, interest,
+    GDP, population), the bake's before them: 19.2's plan for a source that
+    cannot be asked for a date range. A revision further back reaches the
+    chart once the daily re-bake's pull request is merged, as FRED's and
+    Eurostat's do. If the ONS fails, the baked history alone, to its last
+    value, with a warning; a series not baked is the ONS's whole answer, as
+    before 19.2. Raises if the ONS has no values at that frequency and there
+    is no bake.
+    """
     _path, _unit, multiplier = ONS_SERIES[cdid]
-    return ons_download(cdid, frequency) * multiplier
-
-
-def _ons_stock(cdid: str) -> pd.Series:
-    """Return a stock (a debt) at the end of each month when ONS has months, else of each quarter."""
-    try:
-        return ons_series(cdid, "months")
-    except ValueError as exc:
-        if "has no months" not in str(exc):
-            raise
-    return ons_series(cdid, "quarters")
+    values = with_recent_part(
+        ONS_BAKED_SOURCE, cdid, f"ONS {cdid}", lambda start: _ons_answer(cdid, start), RECENT_PART_REVISED
+    )
+    return values * multiplier
 
 
 # ---------------------------------------------------------------------------
@@ -398,16 +426,17 @@ def fetch_uk_debt(config: PlotConfig) -> pd.DataFrame | None:
     """Return general government gross debt (BKPX), the national debt alone before it begins, and net debt (HF6W); monthly.
 
     The national debt (``UK_NATIONAL_DEBT_COLUMN``) is kept as it is, a
-    different quantity: its years before BKPX's first month. If BKPX fails,
-    the national debt alone, to 2017, with a warning; if HF6W fails, no
-    net debt, with a warning.
+    different quantity: its years before BKPX's first month. If the ONS
+    fails, BKPX and HF6W are drawn from their bake (``ons_series``, batch
+    19.2); only with neither, the national debt alone, to 2017, with a
+    warning, and no net debt, with a warning.
     """
     if not config.include_debt:
         return None
     parts: list[pd.DataFrame] = []
     history = embedded_frame(EMBEDDED_UK_DEBT_HISTORY, UK_NATIONAL_DEBT_COLUMN)
     try:
-        live = _ons_stock(UK_DEBT_SERIES).rename(UK_DEBT_COLUMN).to_frame()
+        live = ons_series(UK_DEBT_SERIES).rename(UK_DEBT_COLUMN).to_frame()
     except Exception as exc:
         print(f"  Warning: ONS {UK_DEBT_SERIES} (UK debt) unavailable ({exc}); the national debt alone (to 2017).")
         live = None
@@ -416,7 +445,7 @@ def fetch_uk_debt(config: PlotConfig) -> pd.DataFrame | None:
     if history is not None:
         parts.append(history if live is None else history.loc[history.index < live.index[0]])
     try:
-        parts.append(_ons_stock(UK_NET_DEBT_SERIES).rename(UK_NET_DEBT_COLUMN).to_frame())
+        parts.append(ons_series(UK_NET_DEBT_SERIES).rename(UK_NET_DEBT_COLUMN).to_frame())
     except Exception as exc:
         print(f"  Warning: ONS {UK_NET_DEBT_SERIES} (UK net debt) unavailable ({exc}); not drawn.")
     return pd.concat(parts, axis=1).sort_index() if parts else None
@@ -429,7 +458,7 @@ def fetch_uk_gdp(config: PlotConfig) -> pd.DataFrame | None:
         return None
     history = embedded_frame(EMBEDDED_UK_GDP_HISTORY, GDP_COLUMN)
     try:
-        live = ttm_sum(ons_series(UK_GDP_SERIES, "quarters")).rename(GDP_COLUMN).to_frame()
+        live = ttm_sum(ons_series(UK_GDP_SERIES)).rename(GDP_COLUMN).to_frame()
     except Exception as exc:
         print(f"  Warning: ONS {UK_GDP_SERIES} (UK GDP) unavailable ({exc}); using the baked history only (to 2016).")
         live = None
@@ -438,11 +467,11 @@ def fetch_uk_gdp(config: PlotConfig) -> pd.DataFrame | None:
 
 @downloads_of("ONS interest outlays")
 def fetch_uk_interest(config: PlotConfig) -> pd.DataFrame | None:
-    """Return trailing-twelve-month general government interest (NMYX, four-quarter sums); None, with a warning, if ONS fails."""
+    """Return trailing-twelve-month general government interest (NMYX, four-quarter sums); None, with a warning, if neither the ONS nor its bake gives it."""
     if not config.include_interest:
         return None
     try:
-        return ttm_sum(ons_series(UK_INTEREST_SERIES, "quarters")).rename(UK_INTEREST_COLUMN).to_frame()
+        return ttm_sum(ons_series(UK_INTEREST_SERIES)).rename(UK_INTEREST_COLUMN).to_frame()
     except Exception as exc:
         print(f"  Warning: ONS {UK_INTEREST_SERIES} (UK interest) unavailable ({exc}); not drawn.")
         return None
@@ -455,7 +484,8 @@ def fetch_uk_components(config: PlotConfig) -> pd.DataFrame | None:
     The UK accounts have no level between them (the devolved governments are
     inside central government): "p" is named and left out. "n", every level
     but the central one, is local government, drawn once if "m" is chosen too.
-    A level whose source fails is left out, with a warning.
+    A level's series is drawn from its bake if the ONS fails (``ons_series``,
+    batch 19.2); one with neither is left out, with a warning.
     """
     letters = config.components
     if "p" in letters:
@@ -475,7 +505,7 @@ def fetch_uk_components(config: PlotConfig) -> pd.DataFrame | None:
                 continue
             cdid = series_of[source]
             try:
-                values = _ons_stock(cdid) if kind == "debt" else ttm_sum(ons_series(cdid, "quarters"))
+                values = ons_series(cdid) if kind == "debt" else ttm_sum(ons_series(cdid))
             except Exception as exc:
                 print(f"  Warning: ONS {cdid} ({kind}, level {letter}) unavailable ({exc}); not drawn.")
                 continue
@@ -494,7 +524,7 @@ def fetch_uk_population() -> pd.Series | None:
     """
     history = embedded_frame(EMBEDDED_UK_POPULATION_HISTORY, POPULATION_COLUMN)
     try:
-        quarterly = ons_series(UK_POPULATION_SERIES, "quarters")
+        quarterly = ons_series(UK_POPULATION_SERIES)
         middles = quarterly.index.to_period("Q").start_time + pd.Timedelta(days=_QUARTER_MIDDLE_DAYS)
         live = quarterly.set_axis(pd.DatetimeIndex(middles, name=DATE_COLUMN))
     except Exception as exc:

@@ -16,10 +16,12 @@ charts are drawn three times:
    cannot draw them all (the difference the copies make). What it draws from the baked
    history alone must stop: no curve on the right axis keeps its last value for more than
    ``joins.MACRO_CARRY_LIMIT`` (Canada's debt, left with its history to 1994, ran on flat
-   to the day before 2026-10-21); and the UK's national debt, drawn to 2016 without the
-   gross debt, is named without "(pre-1975)". The Bank of England's series, the Bank
-   of Canada's, FRED's, the ECB's and Eurostat's, baked (batch 19.2; a synthetic bake here),
-   are drawn to the bake's last date, each with a warning naming it and that date.
+   to the day before 2026-10-21). The Bank of England's series, the Bank of Canada's,
+   FRED's, the ECB's, Eurostat's and the ONS's, baked (batch 19.2; a synthetic bake here),
+   are drawn to the bake's last date, each with a warning naming it and that date. The
+   UK's chart is drawn once more without the ONS's bake (as before 19.2's ONS stage):
+   its national debt, drawn to 2016 without the gross debt, must stop and is named
+   without "(pre-1975)".
 
 In passes 2 and 3 every request is counted: within one drawing a request answered with
 an outage page or a bot check is made once, the Statistics Canada WDS post (not retried)
@@ -36,6 +38,7 @@ The exit code is 1 if any check fails. No network is used.
 
 from __future__ import annotations
 
+import shutil
 import sys
 import tempfile
 from collections import Counter
@@ -83,6 +86,11 @@ ECB_DRAWN_IN_RATES = (
 # The Eurostat series the "rates" case draws (batch 19.2): Germany's quarterly debt, its interest (the
 # annual figures, then the quarters) and its GDP, each of general government; not the levels or population.
 EUROSTAT_DRAWN_IN_RATES = ("gov_10q_ggdebt.S13", "gov_10q_ggnfa.S13", "gov_10dd_edpt1.D41PAY.S13", "namq_10_gdp")
+# The ONS series the "rates" case draws (batch 19.2): the UK's gross and net debt, its interest and its GDP;
+# not the levels or population.
+ONS_DRAWN_IN_RATES = ("BKPX", "HF6W", "NMYX", "YBHA")
+# The UK's chart of the "rates" case, drawn again in pass 3 without the ONS's bake.
+UK_RATES = ["--na:gb", *CASES["rates"][1:]]
 
 # The pages measured on 2026-10-21 (their heads; the program reads only the start and title).
 FRED_PAGE = (
@@ -325,16 +333,41 @@ def main() -> int:
                              if "Warning: Eurostat " in line and "its recent values unavailable" in line} - set(ends))
             check("rates: Eurostat's series drawn from their bake, each named with its last date (19.2)",
                   named == sorted(ends) and not others, (named, others))
+            ends = {code: baked.read_series("ons", code).index[-1] for code in ONS_DRAWN_IN_RATES}
+            named = sorted(code for code, end in ends.items() if any(
+                f"ONS {code}: its recent values unavailable" in line
+                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
+            others = sorted({line.split("ONS ", 1)[1].split(":", 1)[0] for line in log.splitlines()
+                             if "Warning: ONS " in line and "its recent values unavailable" in line} - set(ends))
+            check("rates: the ONS's series drawn from their bake, each named with its last date (19.2)",
+                  named == sorted(ends) and not others, (named, others))
         differs = sorted(key for key in first[name] if pngs.get(key) != first[name][key])
         check(f"{name}: not drawn, or drawn otherwise, without them", bool(differs), f"differ or missing: {differs}")
         flat.update((f"{name}, {curve}", days) for curve, days in case_flat.items())
+    # The UK's chart without the ONS's bake too, as before 19.2's ONS stage: its gross debt is not drawn, so the
+    # national debt runs on alone to 2016, past 1975.
+    without_ons = Path(tempfile.mkdtemp(prefix="ratesplot_baked_no_ons_"))
+    shutil.copytree(baked.DATA_FOLDER, without_ons, dirs_exist_ok=True)
+    shutil.rmtree(without_ons / "ons")
+    with_ons, baked.DATA_FOLDER = baked.DATA_FOLDER, without_ons
+    baked.forget_read_files()
+    try:
+        asked.clear()
+        _pngs, not_drawn, _copies, log, uk_flat = draw(UK_RATES)
+        check_asked_once("uk without the ONS's bake")
+        check("uk without the ONS's bake: the gross debt not drawn, with its warning",
+              "uk" not in not_drawn and "Warning: ONS BKPX (UK debt) unavailable" in log, not_drawn)
+        flat.update((f"uk without the ONS's bake, {curve}", days) for curve, days in uk_flat.items())
+    finally:
+        baked.DATA_FOLDER = with_ons
+        baked.forget_read_files()
     held_on = {curve: round(days) for curve, days in flat.items() if days > MACRO_CARRY_LIMIT.days}
     check(f"the baked history alone: no right-axis curve keeps its last value more than {MACRO_CARRY_LIMIT.days} days",
           bool(flat) and not held_on,
           held_on or "; ".join(f"{curve} {round(days)}" for curve, days in flat.items()))
     national = [curve for curve in flat if "National Debt" in curve]
     check("the baked history alone: the UK's national debt, past 1975 without the gross debt, named without (pre-1975)",
-          national == ["rates, uk: UK National Debt"], national)
+          national == ["uk without the ONS's bake, uk: UK National Debt"], national)
 
     print(f"[last good] {'all checks passed' if not failures else f'{failures} FAILED'}")
     return 1 if failures else 0

@@ -371,11 +371,11 @@ def _uk_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
         gap = (baked - monthly).dropna()
         notes.append(f"{column} baked less par: mean {gap.mean():+.3f}, largest {gap.abs().max():.3f} over {len(gap)} months")
     national = dict(uk_archive_data.EMBEDDED_UK_DEBT_HISTORY).get("1975-03-31")
-    gross = uk_data.ons_series(uk_data.UK_DEBT_SERIES, "quarters").get(pd.Timestamp("1975-03-31"))
+    gross = uk_data.ons_series(uk_data.UK_DEBT_SERIES).get(pd.Timestamp("1975-03-31"))
     if national and gross:
         notes.append(f"debt 1975-03-31: general government {gross / 1e9:.1f} bn, national {national / 1e9:.1f} bn (x{gross / national:.3f})")
     history = pd.Series({pd.Timestamp(date): value for date, value in uk_archive_data.EMBEDDED_UK_GDP_HISTORY})
-    live = uk_data.ttm_sum(uk_data.ons_series(uk_data.UK_GDP_SERIES, "quarters"))
+    live = uk_data.ttm_sum(uk_data.ons_series(uk_data.UK_GDP_SERIES))
     ratio = (live / history).dropna()
     ratio = ratio.loc[ratio.index.year <= 1994]
     notes.append(f"GDP ONS / history 1955-1994: median {ratio.median():.4f}, {ratio.min():.4f} to {ratio.max():.4f}")
@@ -535,6 +535,9 @@ CHECKS: tuple[Check, ...] = (
     # Batch 9.5: the tracker, Bank Rate (IUDBEDR) from 1997 plus its default margin.
     Check("boe_tracker", "Bank of England IUDBEDR Bank Rate as the UK tracker", DAILY,
           _rate(partial(rates.mortgage_rate, "tracker", "uk", DEFAULT_TRACKER_MARGIN))),
+    # The ONS's, through the program's own fetchers (batch 19.2): the whole series asked for, as the ONS
+    # cannot be asked for less, its last 24 months joined to the bake; a WARN if the ONS fails. uk_joins
+    # reads them so too (the debt by month: 1975-03-31 is the first month and the first quarter's end).
     Check("ons_debt", "ONS BKPX general government gross debt (monthly)", QUARTERLY, _uk_ons(uk_data.fetch_uk_debt, UK_DEBT_COLUMN)),
     Check("ons_net_debt", "ONS HF6W public sector net debt ex banks (monthly)", QUARTERLY, _uk_ons(uk_data.fetch_uk_debt, UK_NET_DEBT_COLUMN)),
     Check("ons_gdp", "ONS YBHA GDP (four-quarter sums)", QUARTERLY, _uk_ons(uk_data.fetch_uk_gdp, GDP_COLUMN)),

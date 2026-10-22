@@ -602,8 +602,9 @@ def _refused(*_args, **_kwargs):
 
 
 # Batch 19.2: the program draws the Bank of England's series, the Bank of
-# Canada's, FRED's, the ECB's and Eurostat's from their baked history (ratesplot/data/boe/,
-# data/boc/, data/fred/, data/ecb/, data/eurostat/) and asks the sources only for the recent part. With synthetic answers the bake must
+# Canada's, FRED's, the ECB's, Eurostat's and the ONS's from their baked history (ratesplot/data/boe/,
+# data/boc/, data/fred/, data/ecb/, data/eurostat/, data/ons/) and takes from the sources only the recent part
+# (the ONS is asked for the whole series, which it always sends). With synthetic answers the bake must
 # be synthetic too, or a chart would join the real history to a made-up
 # recent part. So each series'
 # synthetic answer is baked to this date, in a folder of its own, and the
@@ -616,7 +617,7 @@ SYNTHETIC_BAKE_END = pd.Timestamp("2026-07-15")
 
 
 def install_synthetic_bake(folder: Path) -> bool:
-    """Bake the synthetic Bank of England, Bank of Canada, FRED, ECB and Eurostat series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
+    """Bake the synthetic Bank of England, Bank of Canada, FRED, ECB, Eurostat and ONS series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
 
     Through the program's own ``baked.write_series``. Returns False, changing
     nothing, for a tree without a bake (before batch 19.2). A tree that bakes
@@ -651,6 +652,9 @@ def install_synthetic_bake(folder: Path) -> bool:
         params, unit = de_data.EUROSTAT_QUERIES[dataset]
         answer = json.loads(eurostat(f"{_EUROSTAT_URL}{dataset}", tuple(sorted(params.items()))))
         bake("eurostat", code, de_data.parse_jsonstat(answer, unit, **chosen))
+    # The frequency the program reads of each (uk_data.ONS_SERIES_READ): months where the synthetic series has them.
+    for cdid, (*_spec, has_months) in _ONS_SERIES.items():
+        bake("ons", cdid, uk_data.parse_ons_series(json.loads(ons(cdid)), cdid, "months" if has_months else "quarters"))
     baked.DATA_FOLDER = folder
     baked.forget_read_files()
     return True
