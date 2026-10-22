@@ -8,17 +8,19 @@ Statistics for the UK; the Deutsche Bundesbank, the ECB and Eurostat for Germany
 before the sources' own series (back to 1867 for Canadian federal debt, to about 1700 for the UK's
 national debt and GDP, to 1956 for Germany's 10-year yield) is built into the code. So is the
 history of the series the program reads from the Bank of England's database, the Bank of
-Canada's Valet, FRED, the ECB's Data Portal, Eurostat, the ONS and the Bundesbank
-(`ratesplot/data/boe/`, `ratesplot/data/boc/`, `ratesplot/data/fred/`, `ratesplot/data/ecb/`,
-`ratesplot/data/eurostat/`, `ratesplot/data/ons/`, `ratesplot/data/bbk/`, one file per series): of
-each, a drawing asks the source only for the last
+Canada's Valet, FRED, the ECB's Data Portal, Eurostat, the ONS, the Bundesbank and Statistics
+Canada (`ratesplot/data/boe/`, `ratesplot/data/boc/`, `ratesplot/data/fred/`, `ratesplot/data/ecb/`,
+`ratesplot/data/eurostat/`, `ratesplot/data/ons/`, `ratesplot/data/bbk/`, `ratesplot/data/statcan/`,
+one file per series): of each, a drawing asks the source only for the last
 two months, or the last 24 for a series that may be revised (the Bank of England's quoted mortgage
 rates, the Bank of Canada's brokers' variable rate, FRED's GDP, debt, interest, population and
-mortgage rates, the ECB's German debt and mortgage rates, and every Eurostat and ONS series:
-Germany's and the UK's debt, interest, GDP and population). The ONS cannot be asked for part of a
-series, so it is asked for the whole, as before, and only its last 24 months are taken. The
-Bundesbank's download is whole too, so the last two months of its yields are asked of its web
-service, which can be asked from a date.
+mortgage rates, the ECB's German debt and mortgage rates, and every Eurostat, ONS and Statistics
+Canada series: Germany's, the UK's and Canada's debt, interest, GDP and population). The ONS cannot
+be asked for part of a series, so it is asked for the whole, as before, and only its last 24 months
+are taken. The Bundesbank's download is whole too, so the last two months of its yields are asked
+of its web service, which can be asked from a date; so are Statistics Canada's tables, whose last
+24 months are asked of its Web Data Service, one request per table. The CMHC mortgage rate, drawn
+only before Canada's posted 5-year rate begins in 1975, is not asked for at all.
 A job on GitHub (`.github/workflows/rebake.yml`, run each day at 06:37 UTC) bakes that history
 again: a series whose only change is new values is committed straight to `main`; one whose
 history changed (a value revised, a date added within it, dates the source no longer gives) goes
@@ -48,8 +50,8 @@ in place of its data), the chart is drawn from the last good copy of that downlo
 kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_good` on Windows,
 `~/.cache/ratesplot/last_good` elsewhere). The message log names the source and the copy's date;
 the web page says so above the charts, and the window in its status line. A Bank of England,
-Bank of Canada, FRED, ECB, Eurostat, ONS or Bundesbank series with no copy kept is drawn from its
-history built into the code, to its last date, with a warning. If the Bundesbank answers with a bot
+Bank of Canada, FRED, ECB, Eurostat, ONS, Bundesbank or Statistics Canada series with no copy kept
+is drawn from its history built into the code, to its last date, with a warning. If the Bundesbank answers with a bot
 check, as it may behind a VPN, and no copy is kept, it is asked nothing more in that drawing, and
 the German yields are drawn from their history built in, with one warning. A chart whose source has failed with no copy kept is left out and named,
 and the other charts are drawn. The web page's server keeps its copies only until it restarts. A
@@ -107,5 +109,5 @@ last good copies with every source cut off, and `check_baked.py`, the built-in h
 and how a drawing joins them to what it asks for)
 and the bake of the historical data (`bake_archives.py`), which also writes `ratesplot/data/`:
 the live sources' history, one file per series (`bake_archives.py --only boe`, `--only boc`,
-`--only fred`, `--only ecb`, `--only eurostat`, `--only ons`, `--only bbk`), re-baked by running it again or by the daily job
+`--only fred`, `--only ecb`, `--only eurostat`, `--only ons`, `--only bbk`, `--only statcan`), re-baked by running it again or by the daily job
 (`rebake.py`); nothing else writes there.
