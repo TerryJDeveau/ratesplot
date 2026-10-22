@@ -161,6 +161,27 @@ STATCAN_WDS_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorsAn
 STATCAN_WDS_RANGE_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorByReferencePeriodRange"
 STATCAN_WDS_RANGE_END = "9999-12-31"
 
+# Each source's name in the message log, by the host its requests go to: a
+# source that fails gets one warning per drawing, which names it once (batch
+# 19.4, Terry's decision 53, 2026-10-22; ``http.drawing_downloads``). Each
+# label its series and downloads are named by begins with it ("FRED DGS10",
+# "Statistics Canada table 36100467"), and is listed without it there.
+SOURCE_NAMES = {
+    "fred.stlouisfed.org": "FRED",
+    "www.bankofcanada.ca": "Bank of Canada",
+    "www150.statcan.gc.ca": "Statistics Canada",
+    "www.bankofengland.co.uk": "Bank of England",
+    "www.ons.gov.uk": "ONS",
+    "data-api.ecb.europa.eu": "ECB",
+    "ec.europa.eu": "Eurostat",
+    "api.statistiken.bundesbank.de": "Bundesbank",
+    "www.bundesbank.de": "Bundesbank",
+    "home.treasury.gov": "U.S. Treasury",
+    "api.fiscaldata.treasury.gov": "U.S. Treasury",
+    "quote.cnbc.com": "CNBC",
+    "www2.census.gov": "Census Bureau",
+}
+
 _BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

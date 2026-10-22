@@ -34,6 +34,7 @@ from .config import (
     HTTP_TIMEOUT_SECONDS,
     LATEST_SESSION,
     RETRY_WAIT_SECONDS,
+    SOURCE_NAMES,
     UK_SESSION,
 )
 from .console import current_writer, this_thread_output_to
@@ -148,9 +149,9 @@ def _last_good_copy(key: tuple) -> tuple[float, object] | None:
 
 
 def _copy_used(key: tuple, fetched_wall: float, failure: Exception) -> None:
-    """Record that ``key``'s source failed and its copy was used: in the drawing's log at its end, else at once."""
+    """Record that ``key``'s source failed and its copy was used: in the drawing's log at its end (its source's warning), else at once."""
     label = _copy_label(key)
-    why = str(failure) or type(failure).__name__
+    why = _why(failure)
     drawing = getattr(_log_state, "drawing", None)
     if drawing is None:
         print(f"  Warning: {label}: {why}; drawn from its last good copy, downloaded {_utc_text(fetched_wall)}.")
@@ -159,6 +160,43 @@ def _copy_used(key: tuple, fetched_wall: float, failure: Exception) -> None:
         earlier = drawing.copies.get(label)
         if earlier is None or fetched_wall < earlier[0]:  # a group's oldest copy is the one named
             drawing.copies[label] = (fetched_wall, why)
+        copies = drawing.fallback(source_name(_host_of(key)), why).copies
+        copies[label] = min(fetched_wall, copies.get(label, fetched_wall))
+
+
+def baked_alone(label: str, failure: Exception, last: pd.Timestamp) -> None:
+    """Record that series ``label``'s recent part failed and its bake alone is drawn, to ``last``: in its source's warning at the drawing's end, else at once.
+
+    Called by ``baked.with_recent_part`` and ``frame_with_recent_part``.
+    ``label`` begins with its source's name (``config.SOURCE_NAMES``).
+    """
+    why = _why(failure)
+    drawing = getattr(_log_state, "drawing", None)
+    if drawing is None:
+        print(f"  Warning: {label}: its recent values unavailable ({why}); drawn from its baked history, to {last:%Y-%m-%d}.")
+        return
+    with drawing.lock:
+        drawing.fallback(_source_named(label), why).baked.setdefault(label, last)
+
+
+def _why(failure: BaseException) -> str:
+    return str(failure) or type(failure).__name__
+
+
+def source_name(host: str) -> str:
+    """A source's name in the message log (``config.SOURCE_NAMES``), the host itself for one not named there."""
+    return SOURCE_NAMES.get(host, host)
+
+
+def _source_named(label: str) -> str:
+    """The source whose name ``label`` begins with (the longest that fits), else the label itself."""
+    names = sorted(set(SOURCE_NAMES.values()), key=len, reverse=True)
+    return next((name for name in names if label.startswith(f"{name} ")), label)
+
+
+def _within(name: str, label: str) -> str:
+    """``label`` without its source's name in front: "FRED DGS10" -> "DGS10"."""
+    return label[len(name) + 1 :] if label.startswith(f"{name} ") else label
 
 
 def _utc_text(wall: float) -> str:
@@ -196,6 +234,42 @@ class _Group:
 
 
 @dataclass
+class _Fallback:
+    """What a drawing drew in place of one source's answers, for one cause: its warning at the drawing's end (batch 19.4)."""
+
+    # A group of downloads (its label) -> when its oldest copy used was downloaded (time.time()).
+    copies: dict[str, float] = field(default_factory=dict)
+    # A series drawn from its bake alone (its label) -> the bake's last date.
+    baked: dict[str, pd.Timestamp] = field(default_factory=dict)
+
+    def warning(self, name: str, why: str) -> str:
+        """``  Warning: FRED: WHY. 13 series drawn from their baked history: DGS2, DGS10 to 2026-10-21; GDP to 2026-04-01. ...``
+
+        The cause once; the series grouped by how far their bake reaches,
+        the latest first (Terry, 2026-10-22, decision 53), each named
+        without its source's name; the copies by when they were downloaded,
+        each by its group's whole label ("FRED Treasury yields", "Canadian
+        policy rate"): a group may draw on two sources ("ECB and Eurostat
+        government debt"), and is then listed in each one's warning.
+        """
+        parts = [f"  Warning: {name}: {why}."]
+        if self.baked:
+            reach: dict[pd.Timestamp, list[str]] = {}
+            for label, last in self.baked.items():
+                reach.setdefault(last, []).append(_within(name, label))
+            count = len(self.baked)
+            groups = "; ".join(f"{', '.join(series)} to {last:%Y-%m-%d}" for last, series in sorted(reach.items(), reverse=True))
+            parts.append(f"{count} series drawn from {'its' if count == 1 else 'their'} baked history: {groups}.")
+        downloaded: dict[str, list[str]] = {}
+        for label, when in sorted(self.copies.items(), key=lambda item: item[1]):
+            downloaded.setdefault(_utc_text(when), []).append(label)
+        for when, labels in downloaded.items():
+            parts.append(f"Drawn from {'its last good copy' if len(labels) == 1 else 'their last good copies'}, "
+                         f"downloaded {when}: {'; '.join(labels)}.")
+        return " ".join(parts) + "\n"
+
+
+@dataclass
 class _Drawing:
     """One drawing's download log (``drawing_downloads``)."""
 
@@ -206,6 +280,9 @@ class _Drawing:
     # copy was drawn -> (when the oldest copy used was downloaded, time.time();
     # why the source failed). Batch 20.
     copies: dict[str, tuple[float, str]] = field(default_factory=dict)
+    # A source that failed, and why -> what was drawn in place of its answers:
+    # one warning each at the drawing's end (batch 19.4).
+    fallbacks: dict[tuple[str, str], _Fallback] = field(default_factory=dict)
     # A request (cache key) that failed in this drawing -> its failure: not asked
     # again before the drawing ends (``_cached``).
     failed: dict[tuple, Exception] = field(default_factory=dict)
@@ -218,6 +295,10 @@ class _Drawing:
     def copies_used(self) -> list[str]:
         """The sources drawn from their last good copies, each with the copy's date: "FRED Treasury yields (2026-10-21 18:30 UTC)"."""
         return [f"{label} ({_utc_text(when)})" for label, (when, _why) in self.copies.items()]
+
+    def fallback(self, name: str, why: str) -> _Fallback:
+        """Source ``name``'s record for failure ``why`` (made at its first use); the caller holds ``lock``."""
+        return self.fallbacks.setdefault((name, why), _Fallback())
 
 
 _log_state = threading.local()  # .groups: list[_Group]; .drawing: _Drawing | None
@@ -284,10 +365,15 @@ def drawing_downloads() -> Iterator[_Drawing]:
     the bake's run too (tools/bake_archives.py, tools/rebake.py), so that a
     host that fails as unavailable is asked nothing more in it (batch 19.3,
     ``host_turn``).
-    It also ends with a warning for each source whose last good copy was
-    drawn (batch 20), once however many times the drawing asked for it:
-    written at the end, the trial pass's silence cannot swallow it. The
-    drawing is yielded, so the window and the page can say so too
+    It also ends with one warning for each source that failed (Terry,
+    2026-10-22, decision 53: "one warning per source per drawing, the cause
+    once, its series grouped by how far their bake reaches"): what was
+    drawn from its last good copies (batch 20) and what from its bake alone
+    (19.2), once however many times the drawing asked for it. Written at
+    the end, the trial pass's silence cannot swallow it. Before, each copy
+    and each series had a line of its own, each repeating the cause: 22 for
+    the four nations' rates with every source failing. The drawing is
+    yielded, so the window and the page can name the copies too
     (``_Drawing.copies_used``).
     """
     drawing = _Drawing(write=current_writer(), began=time.monotonic())
@@ -297,8 +383,8 @@ def drawing_downloads() -> Iterator[_Drawing]:
         yield drawing
     finally:
         _log_state.drawing = previous
-        for label, (when, why) in drawing.copies.items():
-            drawing.write(f"  Warning: {label}: {why}; drawn from its last good copy, downloaded {_utc_text(when)}.\n")
+        for (name, why), fallback in drawing.fallbacks.items():
+            drawing.write(fallback.warning(name, why))
         if drawing.reused:
             oldest = datetime.fromtimestamp(min(drawing.reused.values()), timezone.utc)
             # The time alone on the day it is; a window left open overnight gets the date too.

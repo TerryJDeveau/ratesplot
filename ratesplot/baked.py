@@ -52,6 +52,7 @@ from typing import Callable, Sequence
 import pandas as pd
 
 from .config import DATE_COLUMN
+from .http import baked_alone
 
 # The package's data files; a harness may point it elsewhere (tools/synthetic_sources.py).
 DATA_FOLDER = Path(__file__).resolve().with_name("data")
@@ -158,7 +159,10 @@ def with_recent_part(
     was asked for (the ONS's, always whole) changes nothing.
 
     If the recent part fails, the baked history alone, with a warning naming
-    ``label`` and the bake's last date (decision 45). The request's last good
+    ``label`` and the bake's last date (decision 45): in a drawing, among its
+    source's at the drawing's end, one for the source (``http.baked_alone``,
+    batch 19.4); ``label`` begins with the source's name (``config.SOURCE_NAMES``),
+    "FRED DGS10". The request's last good
     copy (batch 20), where there is one, is drawn before that, by the
     download cache, which names it at the drawing's end. The bake's last date
     is its last with a value (a row without one, FRED's, is not counted).
@@ -190,7 +194,7 @@ def with_recent_part(
     except passes:
         raise
     except Exception as exc:
-        print(f"  Warning: {label}: its recent values unavailable ({exc}); drawn from its baked history, to {last:%Y-%m-%d}.")
+        baked_alone(label, exc, last)
         return baked
     return pd.concat([baked.loc[baked.index < start], live.loc[live.index >= start]])
 
@@ -214,7 +218,7 @@ def frame_with_recent_part(
     ``codes``, in their order, and its rows every date on which any of them
     has a value (a date the group lists with no value in any of them is not
     in the bake). If the recent part fails, or lacks one of ``codes``, the
-    baked history alone, with a warning naming ``label`` and the bake's last
+    baked history alone, with a warning naming ``label`` (as above) and the bake's last
     date.
     """
     bakes = [read_series(source, code) for code in codes]
@@ -226,6 +230,6 @@ def frame_with_recent_part(
     try:
         live = fetch(start)[list(codes)]
     except Exception as exc:
-        print(f"  Warning: {label}: its recent values unavailable ({exc}); drawn from its baked history, to {history.index[-1]:%Y-%m-%d}.")
+        baked_alone(label, exc, history.index[-1])
         return history
     return pd.concat([history.loc[history.index < start], live.loc[live.index >= start]])

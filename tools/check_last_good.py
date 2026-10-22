@@ -18,8 +18,10 @@ charts are drawn three times:
    ``joins.MACRO_CARRY_LIMIT`` (Canada's debt, left with its history to 1994, ran on flat
    to the day before 2026-10-21). The Bank of England's series, the Bank of Canada's,
    FRED's, the ECB's, Eurostat's, the ONS's and Statistics Canada's tables, baked (batch
-   19.2; a synthetic bake here), are drawn to the bake's last date, each with a warning
-   naming it and that date; Statistics Canada is asked only for its tables' recent parts
+   19.2; a synthetic bake here), are drawn to the bake's last date, each named with that
+   date in its source's one warning (19.4: one per source per drawing, the cause once, its
+   series grouped by how far their bake reaches; in pass 2 the copies are listed in it the
+   same way); Statistics Canada is asked only for its tables' recent parts
    (WDS), never the CMHC mortgage rate, which is drawn from its bake unasked. The
    Bundesbank's too, but its bot check is named once, after its first request, the only
    one it is sent in the drawing (its other series drawn from their bake unasked). The
@@ -44,6 +46,7 @@ The exit code is 1 if any check fails. No network is used.
 
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 import tempfile
@@ -202,6 +205,49 @@ def check_asked_once(name: str) -> None:
           again or f"{len(by_host)} hosts, {sum(by_host.values())} attempts")
 
 
+# A source's warning at a drawing's end (19.4), one per source and cause:
+#   "  Warning: FRED: WHY. 13 series drawn from their baked history: DGS2, DGS10 to 2026-10-21; GDP to 2026-04-01.
+#    Drawn from their last good copies, downloaded 2026-10-21 18:30 UTC: Treasury yields; debt, GDP, and interest."
+_BAKED_PART = re.compile(r"\d+ series drawn from (?:its|their) baked history: (.*?\d{4}-\d{2}-\d{2})\.(?= |$)")
+_COPIES_PART = re.compile(
+    r"Drawn from (?:its last good copy|their last good copies), downloaded \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC: (.*?)\.(?= Drawn from |$)"
+)
+
+
+def source_warnings(log: str) -> dict[str, list[str]]:
+    """Each source's warning lines in a drawing's log (19.4), by the source's name."""
+    found: dict[str, list[str]] = {}
+    for line in log.splitlines():
+        if line.startswith("  Warning: ") and (_BAKED_PART.search(line) or _COPIES_PART.search(line)):
+            found.setdefault(line[len("  Warning: "):].split(": ", 1)[0], []).append(line)
+    return found
+
+
+def baked_reach(lines: list[str]) -> dict[str, str]:
+    """The series a source's warnings list as drawn from their bake, each with its bake's last date: {"DGS10": "2026-10-21"}."""
+    reach: dict[str, str] = {}
+    for line in lines:
+        for match in _BAKED_PART.finditer(line):
+            for group in match.group(1).split("; "):
+                series, last = group.rsplit(" to ", 1)
+                reach.update((one, last) for one in series.split(", "))
+    return reach
+
+
+def copies_listed(lines: list[str]) -> list[str]:
+    """The downloads a source's warnings list as drawn from their last good copies."""
+    return [one for line in lines for match in _COPIES_PART.finditer(line) for one in match.group(1).split("; ")]
+
+
+def check_reach(what: str, warned: dict[str, list[str]], source: str, ends: dict[str, object]) -> None:
+    """``what``, the series of ``source`` the case draws (``ends``: each its bake's last date), all and only them in its one warning (19.2, 19.4)."""
+    reach = baked_reach(warned.get(source, []))
+    named = sorted(code for code, end in ends.items() if reach.get(code) == f"{end:%Y-%m-%d}")
+    others = sorted(set(reach) - set(ends))
+    check(f"rates: {what} drawn from their bake, each in {source}'s one warning with its last date (19.2, 19.4)",
+          named == sorted(ends) and not others and len(warned.get(source, [])) == 1, (named, others))
+
+
 def refused_post(_session, url, json=None, **_kwargs):
     asked[("post", url, repr(json))] += 1
     raise requests.ConnectionError("StatCan WDS: cut off by check_last_good")
@@ -281,8 +327,16 @@ def main() -> int:
               (same, sorted(first[name]), not_drawn))
         check(f"{name}: the copies named, each with its date", bool(copies) and all(" UTC)" in copy for copy in copies),
               "; ".join(copies))
-        warnings = [line for line in log.splitlines() if "drawn from its last good copy" in line]
-        check(f"{name}: one warning per source in the log", len(warnings) == len(copies), f"{len(warnings)} warnings")
+        warned = source_warnings(log)
+        warnings = [line for lines in warned.values() for line in lines]
+        # A group drawing on two sources ("ECB and Eurostat government debt") is listed in each one's warning.
+        listed = {item for lines in warned.values() for item in copies_listed(lines)}
+        labels = {copy.rsplit(" (", 1)[0] for copy in copies}
+        check(f"{name}: one warning per source in the log, the cause once, every copy listed in it (19.4)",
+              bool(warned) and all(len(lines) == 1 for lines in warned.values()) and listed == labels
+              and "drawn from its last good copy" not in log,
+              f"{len(warned)} sources ({', '.join(warned)}), {len(labels)} copies"
+              + ("" if listed == labels else f": listed {sorted(listed)}; copies {sorted(labels)}"))
         if name == "default":
             print("\n".join(f"      {line.strip()}" for line in warnings))
         if name == "rates":
@@ -302,68 +356,39 @@ def main() -> int:
         asked.clear()
         pngs, not_drawn, copies, log, case_flat = draw(tokens)
         check_asked_once(name)
+        warned = source_warnings(log)
+        check(f"{name}: one warning per source, none per series (19.4)",
+              all(len(lines) == 1 for lines in warned.values()) and "its recent values unavailable" not in log,
+              ", ".join(warned))
         if name == "rates":
             # Every Bank of England series the case draws (not SONIA, the market rate), each with its bake's last date.
             ends = {code: baked.read_series("boe", code).index[-1]
                     for code in ("IUDSNPY", "IUDMNPY", "IUDLNPY", "IUDBEDR", "IUMBV34", "IUMBV37", "IUMBV42", "IUMTLMV")}
-            named = sorted(code for code, end in ends.items() if any(
-                f"Bank of England {code}: its recent values unavailable" in line
-                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
-            check("rates: the Bank of England's series drawn from their bake, each named with its last date (19.2)",
-                  named == sorted(ends), named)
+            check_reach("the Bank of England's series", warned, "Bank of England", ends)
             # The Bank of Canada's the case draws: the benchmark group (named once), the 3-month, the policy rate's
             # three parts and the 5-year mortgage rate (not CORRA, nor the bills it does not choose).
             group = cdn_data.BOC_GROUP_CODES[cdn_data.BOC_BENCHMARK_GROUP]
             ends = {cdn_data.BOC_BENCHMARK_GROUP: max(baked.read_series("boc", code).index[-1] for code in group)}
             ends |= {code: baked.read_series("boc", code).index[-1]
                      for code in ("TB.CDN.90D.MID", "V80691303", "V122530", "V80691310", "CBC20210", "V80691335")}
-            named = sorted(code for code, end in ends.items() if any(
-                f"Bank of Canada {code}: its recent values unavailable" in line
-                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
-            check("rates: the Bank of Canada's series drawn from their bake, each named with its last date (19.2)",
-                  named == sorted(ends), named)
-            # FRED's the case draws: the five yields, the policy rate's four parts, the 30-year mortgage rate,
-            # debt (federal, state and local), GDP and interest, Canada's GDP (not DFF, the market rate).
+            check_reach("the Bank of Canada's series", warned, "Bank of Canada", ends)
+            # FRED's the case draws: the five yields, the policy rate's parts, the 30-year mortgage rate,
+            # debt (federal, state and local), GDP and interest (not DFF, the market rate).
             ends = {code: baked.read_series("fred", code).last_valid_index() for code in FRED_DRAWN_IN_RATES}
-            named = sorted(code for code, end in ends.items() if any(
-                f"FRED {code}: its recent values unavailable" in line
-                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
-            others = sorted({line.split("FRED ", 1)[1].split(":", 1)[0] for line in log.splitlines()
-                             if "Warning: FRED " in line and "its recent values unavailable" in line} - set(ends))
-            check("rates: FRED's series drawn from their bake, each named with its last date (19.2)",
-                  named == sorted(ends) and not others, (named, others))
+            check_reach("FRED's series", warned, "FRED", ends)
             ends = {code: baked.read_series("ecb", code).index[-1] for code in ECB_DRAWN_IN_RATES}
-            named = sorted(code for code, end in ends.items() if any(
-                f"ECB {code}: its recent values unavailable" in line
-                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
-            others = sorted({line.split("ECB ", 1)[1].split(":", 1)[0] for line in log.splitlines()
-                             if "Warning: ECB " in line and "its recent values unavailable" in line} - set(ends))
-            check("rates: the ECB's series drawn from their bake, each named with its last date (19.2)",
-                  named == sorted(ends) and not others, (named, others))
+            check_reach("the ECB's series", warned, "ECB", ends)
             # The stopped series: not asked (FRED's address names its series, "?id=DFEDTAR&"; the ECB's its key),
             # not named in a warning.
             stopped_asked = sorted(request[1] for request in asked
                                    if f"id={STOPPED_IN_RATES['FRED']}&" in request[1] or STOPPED_IN_RATES["ECB"].split(".", 1)[1] in request[1])
-            stopped_named = [line for line in log.splitlines()
-                             if any(f"{source} {code}:" in line for source, code in STOPPED_IN_RATES.items())]
+            stopped_named = [code for source, code in STOPPED_IN_RATES.items() if code in baked_reach(warned.get(source, []))]
             check("rates: the series declared stopped drawn from their bake alone, not asked, not named (19.3)",
                   not stopped_asked and not stopped_named, (stopped_asked, stopped_named))
             ends = {code: baked.read_series("eurostat", code).index[-1] for code in EUROSTAT_DRAWN_IN_RATES}
-            named = sorted(code for code, end in ends.items() if any(
-                f"Eurostat {code}: its recent values unavailable" in line
-                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
-            others = sorted({line.split("Eurostat ", 1)[1].split(":", 1)[0] for line in log.splitlines()
-                             if "Warning: Eurostat " in line and "its recent values unavailable" in line} - set(ends))
-            check("rates: Eurostat's series drawn from their bake, each named with its last date (19.2)",
-                  named == sorted(ends) and not others, (named, others))
+            check_reach("Eurostat's series", warned, "Eurostat", ends)
             ends = {code: baked.read_series("ons", code).index[-1] for code in ONS_DRAWN_IN_RATES}
-            named = sorted(code for code, end in ends.items() if any(
-                f"ONS {code}: its recent values unavailable" in line
-                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
-            others = sorted({line.split("ONS ", 1)[1].split(":", 1)[0] for line in log.splitlines()
-                             if "Warning: ONS " in line and "its recent values unavailable" in line} - set(ends))
-            check("rates: the ONS's series drawn from their bake, each named with its last date (19.2)",
-                  named == sorted(ends) and not others, (named, others))
+            check_reach("the ONS's series", warned, "ONS", ends)
             # Statistics Canada: asked once, for a table's recent part (WDS), never a ZIP; its outage page then
             # stands for every table (19.3); each table the case draws from its bake, named with its last date;
             # the CMHC mortgage rate (the 5-year before 1975) read from its bake alone, not asked.
@@ -371,14 +396,12 @@ def main() -> int:
             by_vectors = {",".join(f'"{vector.lstrip("v")}"' for vector in read.vectors): table
                           for table, read in cdn_data.STATCAN_SERIES_READ.items()}
             tables = sorted(by_vectors.get(dict(request[2]).get("vectorIds"), request[1]) for request in statcan)
-            ends = {table: max(baked.read_series("statcan", vector).index[-1] for vector in read.vectors)
+            check("rates: Statistics Canada asked once, for a table's recent part (19.2, 19.3)",
+                  len(tables) == 1 and tables[0] in STATCAN_DRAWN_IN_RATES
+                  and all(request[1] == cdn_data.STATCAN_WDS_RANGE_URL for request in statcan), tables)
+            ends = {f"table {table}": max(baked.read_series("statcan", vector).index[-1] for vector in read.vectors)
                     for table, read in cdn_data.STATCAN_SERIES_READ.items() if table in STATCAN_DRAWN_IN_RATES}
-            named = sorted(table for table, end in ends.items() if any(
-                f"Statistics Canada table {table}: its recent values unavailable" in line
-                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
-            check("rates: Statistics Canada asked once, for a table's recent part; each table drawn from its bake, named with its last date (19.2, 19.3)",
-                  len(tables) == 1 and tables[0] in STATCAN_DRAWN_IN_RATES and named == sorted(STATCAN_DRAWN_IN_RATES)
-                  and all(request[1] == cdn_data.STATCAN_WDS_RANGE_URL for request in statcan), (tables, named))
+            check_reach("Statistics Canada's tables", warned, "Statistics Canada", ends)
             # The Bundesbank's yields: its bot check answers the first request, the only one it is sent; every
             # term then drawn from its bake, the check named once, with the bakes' last date.
             end = max(baked.read_series("bbk", path.stem).index[-1] for path in (baked.DATA_FOLDER / "bbk").glob("*.csv"))
