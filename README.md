@@ -51,15 +51,20 @@ kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_goo
 `~/.cache/ratesplot/last_good` elsewhere). The message log names the source and the copy's date;
 the web page says so above the charts, and the window in its status line. A Bank of England,
 Bank of Canada, FRED, ECB, Eurostat, ONS, Bundesbank or Statistics Canada series with no copy kept
-is drawn from its history built into the code, to its last date, with a warning. If the Bundesbank answers with a bot
-check, as it may behind a VPN, and no copy is kept, it is asked nothing more in that drawing, and
-the German yields are drawn from their history built in, with one warning. A chart whose source has failed with no copy kept is left out and named,
+is drawn from its history built into the code, to its last date, with a warning. A source that
+does not answer (it times out, refuses the connection, or sends an outage page or a bot check, as
+the Bundesbank may behind a VPN) is asked nothing more in that drawing: each of its series is drawn
+from its copy or its history built in, and the next drawing asks it again. A chart whose source has failed with no copy kept is left out and named,
 and the other charts are drawn. The web page's server keeps its copies only until it restarts. A
 curve on the right axis whose source has stopped (or is left with only its baked history) ends a
 year after its last figure instead of running on flat to the end of the chart.
 
 The nations' sources are fetched side by side, but each source's server gets one request at
-a time from the program, and a request that fails is not made again until the next drawing.
+a time from the program, and a request that fails is not made again until the next drawing. A
+failed request is asked once more, 2 seconds later, only when its connection drops part way or
+the server reports an error of its own. A series whose source has stopped (the fed funds target
+before its range, the ECB's minimum bid rate, EONIA) is drawn from its history built in, without
+asking. The daily job asks its sources by the same rules.
 
 In the window and on the page a blank field shows in grey the value it stands for (the
 automatic start, today's end, each chart's axis limits as drawn); a value typed in is black,
@@ -105,8 +110,9 @@ projection of each curve to today are provisional, and drawn as such. The subtit
 used when it is changed (`regress_charts.py`, `verify_cli.py`, `verify_web.py`, `check_sources.py`,
 `check_drawn_values.py`, every curve on the yield axis against its sources, `check_reg_labels.py`,
 what the regression segments' labels cover, `check_last_good.py`, the charts drawn from the
-last good copies with every source cut off, and `check_baked.py`, the built-in history's files
-and how a drawing joins them to what it asks for)
+last good copies with every source cut off, `check_requests.py`, which failed requests are
+asked again and when a source is asked nothing more, against a server on the same machine, and
+`check_baked.py`, the built-in history's files and how a drawing joins them to what it asks for)
 and the bake of the historical data (`bake_archives.py`), which also writes `ratesplot/data/`:
 the live sources' history, one file per series (`bake_archives.py --only boe`, `--only boc`,
 `--only fred`, `--only ecb`, `--only eurostat`, `--only ons`, `--only bbk`, `--only statcan`), re-baked by running it again or by the daily job
