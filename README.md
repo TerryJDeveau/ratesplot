@@ -9,7 +9,11 @@ before the sources' own series (back to 1867 for Canadian federal debt, to about
 national debt and GDP, to 1956 for Germany's 10-year yield) is built into the code. So is the Bank
 of England's own history of the series the program reads (`ratesplot/data/boe/`, one file per
 series): of each, a drawing asks the Bank only for the last two months (the last 24 for its
-mortgage rates, which it may revise).
+mortgage rates, which it may revise). A job on GitHub (`.github/workflows/rebake.yml`, run each
+day at 06:37 UTC) bakes that history again: a series whose only change is new values is committed
+straight to `main`; one whose history changed (a value revised, a date added within it, dates the
+Bank no longer gives) goes to a pull request from the branch `rebake-review`, and merging it
+accepts the change.
 
 ## Three ways to run it
 
@@ -92,4 +96,4 @@ last good copies with every source cut off, and `check_baked.py`, the built-in h
 and how a drawing joins them to what it asks for)
 and the bake of the historical data (`bake_archives.py`), which also writes `ratesplot/data/`:
 the live sources' history, one file per series (`bake_archives.py --only boe`), re-baked by
-running it again; nothing else writes there.
+running it again or by the daily job (`rebake.py`); nothing else writes there.
