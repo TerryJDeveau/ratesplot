@@ -6,6 +6,7 @@ import contextlib
 import gzip
 import hashlib
 import html
+import http.client as http_client
 import io
 import json
 import os
@@ -13,6 +14,7 @@ import pickle
 import re
 import threading
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -22,17 +24,16 @@ from urllib.parse import urlsplit
 
 import pandas as pd
 import requests
+from urllib3.exceptions import MaxRetryError, ProtocolError
 
 from .config import (
     CANADIAN_SESSION,
     DE_SESSION,
     DATE_COLUMN,
-    DEFAULT_FRED_RETRIES,
-    DEFAULT_GET_RETRIES,
     FRED_CSV_URL,
     HTTP_TIMEOUT_SECONDS,
     LATEST_SESSION,
-    RETRY_BACKOFF_BASE_SECONDS,
+    RETRY_WAIT_SECONDS,
     UK_SESSION,
 )
 from .console import current_writer, this_thread_output_to
@@ -493,35 +494,66 @@ def host_turn(url: str) -> Iterator[None]:
     with lock:
         yield
 
-def _with_retries(
-    describe: str,
-    attempt_once: Callable[[], T],
-    *,
-    max_retries: int,
-    retry_on: tuple[type[BaseException], ...] = (Exception,),
-) -> T:
-    """Call ``attempt_once`` up to ``max_retries`` times with exponential backoff.
 
-    The wait after attempt *n* is ``RETRY_BACKOFF_BASE_SECONDS ** n`` seconds.
-    The last failure is re-raised unchanged so callers see the real exception.
-    A bot check or a web page in place of data is raised at once: asking
-    again seconds later does not get past either.
+# ---------------------------------------------------------------------------
+# A request asked once more (batch 19.3)
+# ---------------------------------------------------------------------------
+# Terry, 2026-10-22 (decision 52): "Retries: yes, one retry after 2 s, only
+# for a dropped or reset connection or a 5xx; none for a 404 or other 4xx, an
+# outage page, a bot check or a timeout". How each library reports each kind
+# was measured against a server on this machine (2026-10-22): a connection
+# reset, or closed without an answer, is requests' ConnectionError holding
+# urllib3's ProtocolError (urllib's ConnectionResetError, RemoteDisconnected);
+# an answer broken off, ChunkedEncodingError (urllib's IncompleteRead); a
+# server that never answers, ReadTimeout (urllib's TimeoutError); a refused
+# connection, ConnectionError holding a MaxRetryError whose reason is the
+# connection never made (on Windows a refusal by this machine itself came as a
+# ConnectTimeout, after its own retries); a 503, HTTPError.
+
+
+def _dropped_part_way(failure: BaseException) -> bool:
+    """Whether ``failure`` is a connection dropped or reset after it was made: an answer broken off, or none sent before it closed.
+
+    Not a connection refused or never made, and not a timeout.
     """
-    for attempt in range(1, max_retries + 1):
-        try:
-            return attempt_once()
-        except (BotCheck, SourcePage):
+    if isinstance(failure, requests.Timeout):
+        return False
+    if isinstance(failure, requests.exceptions.ChunkedEncodingError):
+        return True
+    if isinstance(failure, requests.ConnectionError):
+        cause = failure.args[0] if failure.args else None
+        if isinstance(cause, MaxRetryError):
+            cause = cause.reason
+        return isinstance(cause, ProtocolError)
+    # urllib (FRED's requests): its own errors, or a URLError holding one.
+    if isinstance(failure, urllib.error.URLError) and not isinstance(failure, urllib.error.HTTPError):
+        failure = failure.reason  # type: ignore[assignment]  (an exception, or a string, which is no drop)
+    return isinstance(failure, (http_client.IncompleteRead, ConnectionResetError, ConnectionAbortedError))
+
+
+def _server_error(failure: BaseException) -> bool:
+    """Whether ``failure`` is the server's own error status (5xx): requests' ``raise_for_status`` or urllib's."""
+    if isinstance(failure, requests.HTTPError):
+        return failure.response is not None and failure.response.status_code >= 500
+    return isinstance(failure, urllib.error.HTTPError) and failure.code >= 500
+
+
+def _with_retries(describe: str, attempt_once: Callable[[], T]) -> T:
+    """Call ``attempt_once``, and once more after ``RETRY_WAIT_SECONDS`` if it failed part way or with a server error (see above).
+
+    Every other failure is raised at once, and the second attempt's failure
+    as it is, so callers see the real exception: a 404 or other 4xx, an
+    outage page or a bot check, a refused connection, a timeout: a source
+    that does not answer is not asked again seconds later.
+    """
+    try:
+        return attempt_once()
+    except Exception as failure:
+        if not (_dropped_part_way(failure) or _server_error(failure)):
             raise
-        except retry_on as exc:
-            if attempt == max_retries:
-                raise
-            wait_seconds = RETRY_BACKOFF_BASE_SECONDS**attempt
-            print(
-                f"  {describe} attempt {attempt}/{max_retries} failed ({exc}). "
-                f"Retrying in {wait_seconds}s …"
-            )
-            time.sleep(wait_seconds)
-    raise AssertionError("unreachable: max_retries must be >= 1")
+        print(f"  {describe} failed ({failure}); asked once more in {RETRY_WAIT_SECONDS} s …")
+    time.sleep(RETRY_WAIT_SECONDS)
+    return attempt_once()
 
 
 def _session_get(
@@ -530,12 +562,11 @@ def _session_get(
     url: str,
     params: dict | None,
     *,
-    max_retries: int,
     timeout: int,
     cached: bool = True,
     missing_ok: bool = False,
 ) -> requests.Response | None:
-    """GET ``url`` through ``session`` with retries; cached under ``(tag, url, params)`` unless ``cached`` is False.
+    """GET ``url`` through ``session``, asked once more for a dropped connection or a server error (``_with_retries``); cached under ``(tag, url, params)`` unless ``cached`` is False.
 
     With ``missing_ok`` a 404 returns None at once: the thing does not exist
     (yet), and asking again will not change that.
@@ -558,7 +589,7 @@ def _session_get(
 
     def download() -> requests.Response | None:
         log_download(url)
-        return _with_retries(f"{tag.capitalize()} request", attempt, max_retries=max_retries, retry_on=(requests.RequestException,))
+        return _with_retries(f"{tag.capitalize()} request", attempt)
 
     if not cached:
         return download()
@@ -570,18 +601,16 @@ def canadian_get(
     url: str,
     params: dict | None = None,
     *,
-    max_retries: int = DEFAULT_GET_RETRIES,
     timeout: int = HTTP_TIMEOUT_SECONDS,
 ) -> requests.Response:
-    """GET a Bank of Canada or Statistics Canada URL with retries.
+    """GET a Bank of Canada or Statistics Canada URL, asked once more for a dropped connection or a server error (``_with_retries``).
 
     Args:
         url: Complete endpoint URL.
         params: Optional query parameters, such as ``start_date``.
-        max_retries: Total attempts before the last ``RequestException`` is raised.
         timeout: Per-request timeout in seconds.
     """
-    response = _session_get(CANADIAN_SESSION, "canadian", url, params, max_retries=max_retries, timeout=timeout)
+    response = _session_get(CANADIAN_SESSION, "canadian", url, params, timeout=timeout)
     assert response is not None  # only missing_ok returns None
     return response
 
@@ -610,11 +639,10 @@ def uk_get(
     url: str,
     params: dict | None = None,
     *,
-    max_retries: int = DEFAULT_GET_RETRIES,
     timeout: int = HTTP_TIMEOUT_SECONDS,
 ) -> requests.Response:
-    """GET a Bank of England or Office for National Statistics URL with retries (``uk_data``), cached as the others are."""
-    response = _session_get(UK_SESSION, "uk", url, params, max_retries=max_retries, timeout=timeout)
+    """GET a Bank of England or Office for National Statistics URL (``uk_data``), asked once more and cached as the others are."""
+    response = _session_get(UK_SESSION, "uk", url, params, timeout=timeout)
     assert response is not None  # only missing_ok returns None
     return response
 
@@ -623,15 +651,14 @@ def de_get(
     url: str,
     params: dict | None = None,
     *,
-    max_retries: int = DEFAULT_GET_RETRIES,
     timeout: int = HTTP_TIMEOUT_SECONDS,
 ) -> requests.Response:
-    """GET a Bundesbank, ECB or Eurostat URL with retries (``de_data``), cached as the others are.
+    """GET a Bundesbank, ECB or Eurostat URL (``de_data``), asked once more and cached as the others are.
 
     The Bundesbank's whole-series download once broke off part way from the
-    laptop and answered on the next try (2026-10-06): the retries cover that.
+    laptop and answered on the next try (2026-10-06): the retry covers that.
     """
-    response = _session_get(DE_SESSION, "de", url, params, max_retries=max_retries, timeout=timeout)
+    response = _session_get(DE_SESSION, "de", url, params, timeout=timeout)
     assert response is not None  # only missing_ok returns None
     return response
 
@@ -642,28 +669,23 @@ def latest_get(
     *,
     cached: bool = True,
     missing_ok: bool = False,
-    max_retries: int = DEFAULT_GET_RETRIES,
     timeout: int = HTTP_TIMEOUT_SECONDS,
 ) -> requests.Response | None:
-    """GET a source of the latest values (--cur, see ``ratesplot.latest``) with retries.
+    """GET a source of the latest values (--cur, see ``ratesplot.latest``), asked once more as the others are.
 
     ``cached=False`` is for intraday quotes: every drawing should show the
     quotes of the moment, not those of the window's first drawing.
     ``missing_ok`` returns None for a 404 (a year the source does not have).
     """
-    return _session_get(
-        LATEST_SESSION, "latest", url, params, max_retries=max_retries, timeout=timeout, cached=cached, missing_ok=missing_ok
-    )
+    return _session_get(LATEST_SESSION, "latest", url, params, timeout=timeout, cached=cached, missing_ok=missing_ok)
 
 
-def get_if_published(
-    url: str, *, max_retries: int = DEFAULT_GET_RETRIES, timeout: int = HTTP_TIMEOUT_SECONDS
-) -> requests.Response | None:
+def get_if_published(url: str, *, timeout: int = HTTP_TIMEOUT_SECONDS) -> requests.Response | None:
     """GET a file that may not exist, such as a Census year not yet published; None on 404.
 
-    Connection failures and timeouts are retried as in ``canadian_get``; a
-    missing file is not (it will not appear on retry), and any other HTTP
-    error is raised. Used by the bake, so not cached.
+    Asked once more for a dropped connection or a server error, as in
+    ``canadian_get``; a missing file is not (it will not appear on retry),
+    and any other HTTP error is raised. Used by the bake, so not cached.
     """
 
     def attempt() -> requests.Response | None:
@@ -674,14 +696,10 @@ def get_if_published(
         response.raise_for_status()
         return response
 
-    return _with_retries(
-        "Request", attempt, max_retries=max_retries, retry_on=(requests.ConnectionError, requests.Timeout)
-    )
+    return _with_retries("Request", attempt)
 
 
-def fetch_fred_csv(
-    series_id: str, *, since: pd.Timestamp | None = None, max_retries: int = DEFAULT_FRED_RETRIES
-) -> pd.DataFrame:
+def fetch_fred_csv(series_id: str, *, since: pd.Timestamp | None = None) -> pd.DataFrame:
     """Download one FRED series as a two-column ``DATE`` / ``series_id`` frame: every row, or those from ``since`` on.
 
     FRED is intentionally read as ``pandas.read_csv`` reads a URL (urllib's
@@ -692,6 +710,9 @@ def fetch_fred_csv(
     its place (FRED's maintenance page, 2026-10-21) is named and not
     retried (``SourcePage``); until then the URL itself was handed to
     ``pandas.read_csv``, which made the same request without a time limit.
+    Asked once more for a dropped connection or a server error, as every
+    request is (``_with_retries``); an answer that cannot be read as a
+    series is not (it was, until batch 19.3).
 
     Args:
         series_id: FRED series identifier, such as ``"DGS10"`` or ``"GDP"``.
@@ -700,7 +721,6 @@ def fetch_fred_csv(
             first day), every row after. The recent part of a baked series
             (batch 19.2, ``us_data.fred_series``); None, the whole series
             (the bake, and the checks against FRED itself).
-        max_retries: Complete read attempts before the last exception is raised.
     """
     url = f"{FRED_CSV_URL}?id={series_id}" + (f"&cosd={since:%Y-%m-%d}" if since is not None else "")
 
@@ -723,7 +743,7 @@ def fetch_fred_csv(
 
     def download() -> pd.DataFrame:
         log_download(f"FRED {series_id}")
-        return _with_retries(series_id, attempt, max_retries=max_retries)
+        return _with_retries(f"FRED {series_id} request", attempt)
 
     # Callers modify the frame they get, so each receives its own copy of the cached one.
     key = ("fred", series_id) if since is None else ("fred", series_id, f"{since:%Y-%m-%d}")

@@ -117,11 +117,20 @@ HTTP_POST_TIMEOUT_SECONDS = 60
 # Measured 2026-09-30 over 42 downloads of the 4 live and 11 archived tables:
 # the first byte came within 1.4 s and no silence lasted 0.2 s. So 30 s is
 # some twenty times the worst seen, and a request StatCan accepts and never
-# answers (one did, 2026-09-30) is retried after 30 s rather than 120.
+# answers (one did, 2026-09-30) is given up after 30 s rather than 90.
 STATCAN_TIMEOUT_SECONDS = 30
-DEFAULT_GET_RETRIES = 4
-DEFAULT_FRED_RETRIES = 3
-RETRY_BACKOFF_BASE_SECONDS = 2
+# A request is asked once more, this long after it failed, only when its
+# connection was dropped or reset part way or the server answered with an
+# error status of its own (5xx); never after a 404 or other 4xx, an outage
+# page, a bot check, a refused connection or a timeout, which the same request
+# seconds later does not get past (batch 19.3, Terry's decision 52,
+# 2026-10-22: "one retry after 2 s"; ``http._with_retries``). Before it a
+# request had 4 attempts (FRED's 3), 2, 4 and 8 s apart, a 404 among the
+# failures retried. On record then: one recovery (a Bundesbank download broken
+# off part way, 2026-10-06, on its first retry); every retry failed for two
+# Valet 404s and two FRED outage pages; the daily job's 9 runs, about 500
+# requests, had no failed attempt.
+RETRY_WAIT_SECONDS = 2
 # How old a kept download may be before it is fetched again: on the web page
 # for every drawing (it serves every visitor from one process for days), in
 # the window at Refresh (F5). The regular sources publish at most once a day
@@ -179,10 +188,10 @@ UK_SESSION.headers.update(_BROWSER_HEADERS | {"Accept-Language": "en-GB,en;q=0.9
 # from Terry's laptop (2026-10-06).
 DE_SESSION = requests.Session()
 DE_SESSION.headers.update(_BROWSER_HEADERS | {"Accept-Language": "en-GB,en;q=0.9,de;q=0.8"})
-# The quote feed is an extra: one quick try and one retry, then the chart is
-# drawn without it (with a warning).
+# The quote feed is an extra: one quick try (asked once more only as every
+# request is, RETRY_WAIT_SECONDS), then the chart is drawn without it (with a
+# warning).
 LATEST_QUOTE_TIMEOUT_SECONDS = 20
-LATEST_QUOTE_RETRIES = 2
 
 # ---------------------------------------------------------------------------
 # Data sources and units

@@ -65,7 +65,6 @@ from .config import (
     CDN_DEBT_COLUMN,
     CNBC_QUOTE_URL,
     DATE_COLUMN,
-    LATEST_QUOTE_RETRIES,
     LATEST_QUOTE_TIMEOUT_SECONDS,
     MARKET_TIMEZONE,
     TREASURY_DEBT_TO_PENNY_URL,
@@ -441,9 +440,7 @@ def fetch_quotes(country: str, columns: Iterable[str] | None = None) -> dict[str
         "events": "1",
     }
     with downloads_of(f"{nation_by_key(country).adjective} yield quotes of the moment, CNBC (--cur)"):
-        response = latest_get(
-            CNBC_QUOTE_URL, params, cached=False, max_retries=LATEST_QUOTE_RETRIES, timeout=LATEST_QUOTE_TIMEOUT_SECONDS
-        )
+        response = latest_get(CNBC_QUOTE_URL, params, cached=False, timeout=LATEST_QUOTE_TIMEOUT_SECONDS)
     quotes = response.json()["FormattedQuoteResult"]["FormattedQuote"]
     if isinstance(quotes, dict):  # a single symbol comes back unlisted
         quotes = [quotes]
