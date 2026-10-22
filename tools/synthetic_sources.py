@@ -221,10 +221,18 @@ _VALET_SERIES = {
 
 
 def valet(url: str, params: tuple) -> bytes:
-    """Return a Valet response body: the benchmark-yield group, or one series, from its ``start_date``."""
-    start = dict(params).get("start_date")
+    """Return a Valet response body: the benchmark-yield group, or one series, whole whatever its ``start_date``.
+
+    Whole: each series' noise is drawn day by day from its first date, so an
+    answer cut at a later date would give other values on the same days. As
+    the Bank of England's (``iadb``), the program cuts what it asked for
+    (batch 19.2). The starts the program asked for before then (2000-12-01
+    for the group and the bills, 1900-01-01 for the rates) precede or equal
+    each synthetic series' first day, so its earlier answers are unchanged.
+    """
+    del params  # every answer whole (above)
     if "group/bond_yields_benchmark" in url:
-        dates = pd.bdate_range(start or "2000-12-01", "2026-08-31")
+        dates = pd.bdate_range("2000-12-01", "2026-08-31")
         columns = {
             code: _yield_path("cdn" + code, dates, years, _CDN_OFFSET)
             for code, years in (
@@ -235,8 +243,7 @@ def valet(url: str, params: tuple) -> bytes:
         return _valet_csv(columns, dates)
     code = url.rstrip("/").split("/")[-2]
     first, freq, years, margin = _VALET_SERIES[code]
-    begin = max(pd.Timestamp(first), pd.Timestamp(start)) if start else pd.Timestamp(first)
-    dates = pd.bdate_range(begin, "2026-08-31") if freq == "B" else pd.date_range(begin, "2026-08-31", freq=freq)
+    dates = pd.bdate_range(first, "2026-08-31") if freq == "B" else pd.date_range(first, "2026-08-31", freq=freq)
     if code in ("V80691310", "CBC20210"):
         values = _quarter_points(_anchors(_SHORT, dates) + _CDN_OFFSET - 0.4) + margin
     elif years == 0:
@@ -552,10 +559,11 @@ def _refused(*_args, **_kwargs):
     raise requests.ConnectionError("synthetic data only: real requests are refused")
 
 
-# Batch 19.2: the program draws the Bank of England's series from their baked
-# history (ratesplot/data/boe/) and asks the database only for the recent
-# part. With synthetic answers the bake must be synthetic too, or a chart
-# would join the real history to a made-up recent part. So each series'
+# Batch 19.2: the program draws the Bank of England's series and the Bank of
+# Canada's from their baked history (ratesplot/data/boe/, data/boc/) and asks
+# the sources only for the recent part. With synthetic answers the bake must
+# be synthetic too, or a chart would join the real history to a made-up
+# recent part. So each series'
 # synthetic answer is baked to this date, in a folder of its own, and the
 # program reads it from there: the join is drawn, and gives exactly the
 # whole synthetic answer, which an older tree (no bake) draws, so the two
@@ -566,20 +574,31 @@ SYNTHETIC_BAKE_END = pd.Timestamp("2026-07-15")
 
 
 def install_synthetic_bake(folder: Path) -> bool:
-    """Bake the synthetic Bank of England series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
+    """Bake the synthetic Bank of England and Bank of Canada series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
 
     Through the program's own ``baked.write_series``. Returns False, changing
-    nothing, for a tree without a bake (before batch 19.2).
+    nothing, for a tree without a bake (before batch 19.2). A tree that bakes
+    only the Bank of England's reads no Valet files, and draws as before.
     """
     try:
         baked = importlib.import_module("ratesplot.baked")
     except ModuleNotFoundError:
         return False
     uk_data = importlib.import_module("ratesplot.uk_data")
+    http = importlib.import_module("ratesplot.http")
+
+    def bake(source: str, code: str, whole: pd.Series) -> None:
+        series = whole.dropna().rename(code)
+        baked.write_series(folder / source / f"{code}.csv", series.loc[:SYNTHETIC_BAKE_END], f"synthetic {code}, tools/synthetic_sources.py")
+
     for code in _IADB_SERIES:
-        whole = uk_data.parse_iadb_csv(iadb((("SeriesCodes", code),)).decode())[code].dropna().rename(code)
-        path = folder / uk_data.BOE_BAKED_SOURCE / f"{code}.csv"
-        baked.write_series(path, whole.loc[:SYNTHETIC_BAKE_END], f"synthetic {code}, tools/synthetic_sources.py")
+        bake(uk_data.BOE_BAKED_SOURCE, code, uk_data.parse_iadb_csv(iadb((("SeriesCodes", code),)).decode())[code])
+    valet_url = "https://www.bankofcanada.ca/valet/observations/"
+    group = http.parse_boc_csv(valet(f"{valet_url}group/bond_yields_benchmark/csv", ()).decode())
+    for code in group.columns:
+        bake("boc", code, pd.to_numeric(group[code], errors="coerce"))
+    for code in _VALET_SERIES:
+        bake("boc", code, pd.to_numeric(http.parse_boc_csv(valet(f"{valet_url}{code}/csv", ()).decode()).iloc[:, 0], errors="coerce"))
     baked.DATA_FOLDER = folder
     baked.forget_read_files()
     return True

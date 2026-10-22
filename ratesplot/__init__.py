@@ -24,7 +24,8 @@ bake              the bake of the historical data (run by tools/bake_archives.py
                   the live sources' history into data/
 baked             the live sources' history as data files (data/SOURCE/CODE.csv, batch
                   19.2): their form, their reading, and each joined to the recent part a
-                  drawing asks for (begun with the Bank of England's database)
+                  drawing asks for (the Bank of England's database, the Bank of
+                  Canada's Valet)
 us_data           FRED fetch for U.S. yields and macro series
 latest            --cur: newer values than the regular series (Treasury daily yields and
                   debt, intraday quotes)
@@ -55,7 +56,7 @@ plotting, http}; web -> {cli (its token matching), frontend, options,
 plotting, http}; cli -> {options, plotting, http}; frontend -> {options,
 config}; plotting -> {axes, legend, endlabels, regression, measures, rates,
 cdn_data, us_data, uk_data, de_data, joins, latest} -> {frames, http} -> config;
-{cdn_data, uk_data, de_data} -> joins; uk_data -> baked -> config;
+{cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data} -> baked -> config;
 rates -> {cdn_data, uk_data, de_data, http};
 plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};

@@ -93,6 +93,12 @@ CDN_CORRA_SERIES = "AVG.INTWO"
 # convention the top of the fed funds target range plus 3 points.
 US_MORTGAGE_SERIES = {"30": "MORTGAGE30US", "15": "MORTGAGE15US", "prime": "DPRIME"}
 CDN_MORTGAGE_SERIES = {"5": "V80691335", "3": "V80691334", "1": "V80691333", "5v": "BROKER_AVERAGE_5YR_VRM", "prime": "V80691311"}
+# Batch 19.2: each drawing asks Valet for a baked series' last two months
+# (config.RECENT_PART_UNREVISED), the rates being announced or observed, not
+# revised; the brokers' variable rate, which Valet calls an estimate, for its
+# last 24 (RECENT_PART_REVISED), as the UK's quoted rates (survey results).
+# None of the 20 changed a value from late September to 2026-10-22 (measured).
+_CDN_REVISED_SERIES = {CDN_MORTGAGE_SERIES["5v"]}
 CDN_MORTGAGE_HISTORY_TABLE = "34100145"
 # The UK (batch 3), from the Bank of England's database (IADB), measured from
 # Terry's laptop 2026-10-06: Bank Rate daily from 1975, and before it its
@@ -348,8 +354,8 @@ def _clean(values: pd.Series) -> pd.Series:
 
 
 def _valet(series_code: str) -> pd.Series:
-    """Return one whole Bank of Canada Valet series, cleaned (``_clean``)."""
-    return _clean(boc_valet_series(series_code, start=BOC_VALET_FROM))
+    """Return one whole Bank of Canada Valet series, cleaned (``_clean``): its baked history and recent part (batch 19.2)."""
+    return _clean(boc_valet_series(series_code, start=BOC_VALET_FROM, revised=series_code in _CDN_REVISED_SERIES))
 
 
 def _fred(series_id: str) -> pd.Series:
@@ -412,9 +418,12 @@ def us_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
 def cdn_policy_target() -> RateCurve | None:
     """Return the Bank Rate until 1996-02-22, then the target for the overnight rate (``CDN_TARGET_FROM``).
 
-    Without the weekly Bank Rate, None with a warning; without the monthly
-    one, drawn from 1980; without the daily target, the weekly Bank Rate
-    less a quarter point to its last Wednesday; each with a warning.
+    Each is its baked history and recent part (batch 19.2): if Valet fails,
+    the bake to its last date, with a warning (``cdn_data.boc_valet_series``).
+    For a series neither baked nor answered: without the weekly Bank Rate,
+    None with a warning; without the monthly one, drawn from 1980; without
+    the daily target, the weekly Bank Rate less a quarter point to its last
+    Wednesday; each with a warning.
     """
     try:
         weekly = _valet(CDN_WEEKLY_BANK_RATE_SERIES)
@@ -446,7 +455,7 @@ def cdn_policy_target() -> RateCurve | None:
 
 
 def cdn_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
-    """Return CORRA, the overnight repo market's average (from 1997-08-12), or None with a warning if Valet fails."""
+    """Return CORRA, the overnight repo market's average (from 1997-08-12); None, with a warning, if it is neither baked nor answered."""
     try:
         values = _valet(CDN_CORRA_SERIES)
     except Exception as exc:
@@ -645,6 +654,8 @@ def _mortgage_style(term: str) -> dict:
 def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) -> RateCurve | None:
     """Return one mortgage term's rate (``config.MORTGAGE_TERMS``) for ``country``, or None with a warning if its source fails.
 
+    A baked series (the Bank of England's, the Bank of Canada's: batch 19.2)
+    is drawn from its bake when its source fails, with the bake's warning.
     ``country``: one of the term's countries, its only one when not given
     (the prime rate is Canada's and the U.S.'). Canada's 5-year: the posted
     weekly rate, carried back before it begins by the monthly CMHC rate

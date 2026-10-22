@@ -6,7 +6,8 @@ stability": a new install, a colleague's copy and the web page after each
 Reboot all start with the history in hand, and a source that is down, or
 gone, is still drawn to the bake's last date. Re-baked daily (decision 49)
 by a separate job whose result is committed; the running program never
-writes these files. Begun with the Bank of England's database, 2026-10-21.
+writes these files. Begun with the Bank of England's database, 2026-10-21;
+then the Bank of Canada's Valet, 2026-10-22.
 
 The files: ``ratesplot/data/SOURCE/CODE.csv``, one series each, written
 only by the bake (``ratesplot.bake``, run by ``tools/bake_archives.py``):
@@ -36,7 +37,7 @@ import io
 import os
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Sequence
 
 import pandas as pd
 
@@ -157,3 +158,38 @@ def with_recent_part(
         print(f"  Warning: {label}: its recent values unavailable ({exc}); drawn from its baked history, to {baked.index[-1]:%Y-%m-%d}.")
         return baked
     return pd.concat([baked.loc[baked.index < start], live.loc[live.index >= start]])
+
+
+def frame_with_recent_part(
+    source: str,
+    codes: Sequence[str],
+    label: str,
+    fetch: Callable[[pd.Timestamp | None], pd.DataFrame],
+    recent: pd.DateOffset,
+) -> pd.DataFrame:
+    """Return series ``codes`` of ``source``, which one request gives together (a group), as a frame: their baked history, then their recent part.
+
+    ``with_recent_part`` for a request that answers several series at once
+    (the Bank of Canada's benchmark yields): ``fetch(start)`` asks for the
+    group from ``start`` on, ``fetch(None)`` for every value, which is what
+    the group gets, as before batch 19.2, if any of ``codes`` is not baked.
+    The recent part begins ``recent`` before the earliest of the bakes' last
+    dates, so each series gets every newer value. The frame's columns are
+    ``codes``, in their order, and its rows every date on which any of them
+    has a value (a date the group lists with no value in any of them is not
+    in the bake). If the recent part fails, or lacks one of ``codes``, the
+    baked history alone, with a warning naming ``label`` and the bake's last
+    date.
+    """
+    bakes = [read_series(source, code) for code in codes]
+    if any(series is None or series.empty for series in bakes):
+        return fetch(None)
+    start = min(series.index[-1] for series in bakes) - recent
+    # sort_index: concat along columns does not sort the dates one series lacks.
+    history = pd.concat(bakes, axis=1).sort_index()
+    try:
+        live = fetch(start)[list(codes)]
+    except Exception as exc:
+        print(f"  Warning: {label}: its recent values unavailable ({exc}); drawn from its baked history, to {history.index[-1]:%Y-%m-%d}.")
+        return history
+    return pd.concat([history.loc[history.index < start], live.loc[live.index >= start]])

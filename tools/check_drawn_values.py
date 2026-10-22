@@ -48,9 +48,12 @@ Usage (from the project root)::
 The drawing and the sources read the same downloads (the regression cache,
 or one live download each), so the check is of what the program does to
 them, never of a difference between two fetches. Except the Bank of
-England's series (batch 19.2): the drawing reads their baked history and
-asks for the recent part only, and they are checked against the database's
-whole series, so the check covers the bake too. Exit code 1 on any FAIL.
+England's series and the Bank of Canada's (batch 19.2): the drawing reads
+their baked history and asks for the recent part only, and they are checked
+against each source's whole series, so the check covers the bake too; a
+regression cache whose whole downloads are older than the bake then lacks
+the bake's newest values (run it on a copy without them, fetched again).
+Exit code 1 on any FAIL.
 """
 
 from __future__ import annotations
@@ -159,11 +162,13 @@ def fred(series_id: str, **kwargs) -> Source:
 
 
 def valet(code: str, **kwargs) -> Source:
-    return Source(f"Valet {code}", lambda: _clean(cdn_data.boc_valet_series(code, start="1900-01-01")), **kwargs)
+    # Valet's whole series, not its bake and recent part (``boc_valet_series``), which the drawing reads.
+    return Source(f"Valet {code}", lambda: _clean(cdn_data.valet_download(code)), **kwargs)
 
 
 def valet_group(group: str, code: str, **kwargs) -> Source:
-    return Source(f"Valet {code}", lambda: _clean(cdn_data.boc_valet_group(group)[code]), **kwargs)
+    # The group whole, from the date the drawing reads it from, not its bake and recent part (``boc_valet_group``).
+    return Source(f"Valet {code}", lambda: _clean(cdn_data.valet_group_download(group, cdn_data.BOC_START_DATE)[code]), **kwargs)
 
 
 def iadb(code: str, **kwargs) -> Source:

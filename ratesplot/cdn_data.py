@@ -50,6 +50,7 @@ from .cdn_archive_data import (
     EMBEDDED_CDN_INTEREST_HISTORY_BY_LEVEL,
     EMBEDDED_CDN_POPULATION_HISTORY,
 )
+from .baked import frame_with_recent_part, with_recent_part
 from .cdn_hist_yields import build_cdn_hist_yields
 from .config import (
     BOC_GROUP_URL,
@@ -63,6 +64,8 @@ from .config import (
     HTTP_POST_TIMEOUT_SECONDS,
     MILLION,
     POPULATION_COLUMN,
+    RECENT_PART_REVISED,
+    RECENT_PART_UNREVISED,
     STATCAN_CDN_DEBT_FALLBACK_VECTOR,
     STATCAN_CDN_DEBT_TABLE,
     STATCAN_CDN_GDP_TABLE,
@@ -100,6 +103,13 @@ BOC_BENCHMARK_COLUMNS = {
     "BD.CDN.10YR.DQ.YLD": "10-Year",
     "BD.CDN.LONG.DQ.YLD": "30-Year",
 }
+# A Valet group -> the series of it the program reads, baked one file each
+# (batch 19.2); the group is still asked for in one request.
+BOC_GROUP_CODES = {BOC_BENCHMARK_GROUP: tuple(BOC_BENCHMARK_COLUMNS)}
+# How ``http.parse_boc_csv`` names a Valet answer's dates; the bake's own
+# name (``config.DATE_COLUMN``) is not kept, so a reader sees what it did
+# before the bake.
+_VALET_DATES = "date"
 # The other treasury bills (batch 9.3; Terry, 2026-10-12: "a big gap" between
 # 3 months and 2 years): daily mid-market yields from 2001-01-02, each its own
 # series, so each is fetched only when chosen. Measured 2026-10-20.
@@ -172,31 +182,69 @@ def valet_group_download(group: str, start: str = BOC_VALET_FROM) -> pd.DataFram
     """Ask Valet for an observation group from ``start`` on (its every value by default): a date-indexed frame, a float column per series.
 
     One request (cached and kept as the others are). A day the group lists
-    without a value in a series is NaN in that column.
+    without a value in a series is NaN in that column. An answer with no
+    values raises: no group the program reads is empty from any date it
+    asks for, so an empty one is not to be drawn as the end of the group.
     """
     response = canadian_get(BOC_GROUP_URL.format(group=group), params={"start_date": start})
-    return parse_boc_csv(response.text).apply(pd.to_numeric, errors="coerce")
+    frame = parse_boc_csv(response.text).apply(pd.to_numeric, errors="coerce")
+    if frame.isna().all().all():
+        raise ValueError(f"Valet gave no values of the group {group} from {start}")
+    return frame
 
 
 def valet_download(series_code: str, start: str = BOC_VALET_FROM) -> pd.Series:
     """Ask Valet for one series from ``start`` on (its every value by default): a date-indexed numeric series, named by its code.
 
     One request (cached and kept as the others are). A day listed without
-    a value is NaN.
+    a value is NaN. An answer with no values raises, as for a group.
     """
     response = canadian_get(BOC_SERIES_URL.format(series_code=series_code), params={"start_date": start})
     frame = parse_boc_csv(response.text)
-    return pd.to_numeric(frame.iloc[:, 0], errors="coerce")
+    values = pd.to_numeric(frame.iloc[:, 0], errors="coerce")
+    if values.isna().all():
+        raise ValueError(f"Valet gave no values of {series_code} from {start}")
+    return values
 
 
 def boc_valet_group(group: str, start: str = BOC_START_DATE) -> pd.DataFrame:
-    """Download a Bank of Canada Valet observation group as a date-indexed frame."""
-    return valet_group_download(group, start)
+    """Return the series of a Bank of Canada Valet group that the program reads (``BOC_GROUP_CODES``), from ``start`` on: a column each.
+
+    Batch 19.2 (``ratesplot.baked``): their history is in
+    ``ratesplot/data/boc/``, and only the group's last two months are asked
+    for, in one request; a group not yet baked is asked for whole from
+    ``start``, every column of it. If Valet fails, the baked history alone,
+    to its last date, with a warning.
+    """
+    frame = frame_with_recent_part(
+        BOC_BAKED_SOURCE,
+        BOC_GROUP_CODES[group],
+        f"Bank of Canada {group}",
+        lambda since: valet_group_download(group, start if since is None else f"{since:%Y-%m-%d}"),
+        RECENT_PART_UNREVISED,
+    )
+    return frame.loc[frame.index >= pd.Timestamp(start)].rename_axis(_VALET_DATES)
 
 
-def boc_valet_series(series_code: str, start: str = BOC_START_DATE) -> pd.Series:
-    """Download one Bank of Canada Valet series as a date-indexed numeric Series."""
-    return valet_download(series_code, start)
+def boc_valet_series(series_code: str, start: str = BOC_START_DATE, *, revised: bool = False) -> pd.Series:
+    """Return one Bank of Canada Valet series from ``start`` on, date-indexed and numeric: its baked history, then its recent part from Valet.
+
+    Batch 19.2 (``ratesplot.baked``): the history is in
+    ``ratesplot/data/boc/``, and only the last two months are asked for
+    (``revised``: 24 months, for a series Valet may revise); a series not yet
+    baked is asked for whole from ``start``. If Valet fails, the baked
+    history alone, to its last date, with a warning. The bake holds the
+    whole series, cut here at ``start``: measured 2026-10-22, Valet's answer
+    from a date is the whole series cut there.
+    """
+    values = with_recent_part(
+        BOC_BAKED_SOURCE,
+        series_code,
+        f"Bank of Canada {series_code}",
+        lambda since: valet_download(series_code, start if since is None else f"{since:%Y-%m-%d}"),
+        RECENT_PART_REVISED if revised else RECENT_PART_UNREVISED,
+    )
+    return values.loc[values.index >= pd.Timestamp(start)].rename_axis(_VALET_DATES)
 
 
 def statcan_zip_table_with_metadata(table_id: str) -> tuple[pd.DataFrame, str]:

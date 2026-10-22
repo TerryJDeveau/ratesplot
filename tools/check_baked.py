@@ -16,6 +16,10 @@ Offline, in seconds:
   ignores the date asked for, left out); the source failing: the bake alone,
   with a warning naming the series and its last date; no bake: the whole
   series asked for, as before 19.2;
+* ``baked.frame_with_recent_part``, the same for a group of series asked for
+  in one request (the Bank of Canada's benchmark yields): one request, from
+  the earliest bake's last date less the recent part; only the columns read;
+  the answer failing or lacking one of them: the bakes alone;
 * the re-bake's report (``bake.bake_changes``): new values, each revised value
   with its size, dates within the bake that it lacked; a download that lacks
   dates the file has, refused.
@@ -150,9 +154,58 @@ def check_join(folder: Path) -> None:
         asked.clear()
         whole = baked.with_recent_part("made-up", "Y", "made-up Y", answering, pd.DateOffset(months=2))
         check("no bake: the whole series asked for, as before 19.2", asked == [None] and len(whole) == 5, asked)
+        check_group_join(folder, history)
     finally:
         baked.DATA_FOLDER = real_folder
         baked.forget_read_files()
+
+
+def check_group_join(folder: Path, history: pd.Series) -> None:
+    """``baked.frame_with_recent_part``: a group's series (here X, to 2026-09-30, and Z, to 2026-08-31) baked apart, asked for together."""
+    other = series({"2026-01-30": 10.0, "2026-07-31": 30.0, "2026-08-31": 40.0}, "Z")
+    baked.write_series(folder / "made-up" / "Z.csv", other, "made up")
+    asked: list[pd.Timestamp | None] = []
+
+    def answering(start: pd.Timestamp | None) -> pd.DataFrame:
+        # The group's answer: more than asked for, Z revised on 2026-08-31, new values, and a column not read (W).
+        asked.append(start)
+        frame = pd.concat([
+            series({"2026-06-30": 2.0, "2026-07-31": 3.0, "2026-08-31": 4.0, "2026-09-30": 5.0, "2026-10-31": 6.0}),
+            series({"2026-06-30": 20.0, "2026-07-31": 30.0, "2026-08-31": 41.0, "2026-09-30": 50.0}, "Z"),
+            series({"2026-08-31": 0.0}, "W"),
+        ], axis=1).sort_index()
+        return frame.rename_axis("date")
+
+    joined = baked.frame_with_recent_part("made-up", ("X", "Z"), "made-up group", answering, pd.DateOffset(months=2))
+    check("group: the recent part asked for once, from two months before the earliest of the bakes' last dates",
+          asked == [pd.Timestamp("2026-06-30")], asked)
+    expected = pd.concat([
+        series({"2026-01-30": 1.0, "2026-06-30": 2.0, "2026-07-31": 3.0, "2026-08-31": 4.0, "2026-09-30": 5.0, "2026-10-31": 6.0}),
+        series({"2026-01-30": 10.0, "2026-06-30": 20.0, "2026-07-31": 30.0, "2026-08-31": 41.0, "2026-09-30": 50.0}, "Z"),
+    ], axis=1).sort_index()
+    check("group: the bakes before it, the group's values from it on, the columns read and in their order",
+          # The dates' name is the caller's to set (the bake's and the source's differ).
+          joined.rename_axis(None).equals(expected.rename_axis(None)) and list(joined.columns) == ["X", "Z"], joined.to_dict())
+
+    def failing(start: pd.Timestamp | None) -> pd.DataFrame:
+        raise ConnectionError("refused by check_baked")
+
+    for why, fetch, cause in (
+        ("failing", failing, "refused by check_baked"),
+        ("lacking a column read", lambda start: answering(start).drop(columns="Z"), "\"['Z'] not in index\""),
+    ):
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            alone = baked.frame_with_recent_part("made-up", ("X", "Z"), "made-up group", fetch, pd.DateOffset(months=2))
+        said = printed.getvalue().strip()
+        check(f"group: the answer {why}: the bakes alone, with a warning naming the group and the bake's last date",
+              alone.equals(pd.concat([history, other], axis=1).sort_index())
+              and said == f"Warning: made-up group: its recent values unavailable ({cause}); drawn from its baked history, to 2026-09-30.",
+              said)
+    asked.clear()
+    whole = baked.frame_with_recent_part("made-up", ("X", "Y"), "made-up group", answering, pd.DateOffset(months=2))
+    check("group: a series of it not baked: the whole group asked for, every column, as before 19.2",
+          asked == [None] and list(whole.columns) == ["X", "Z", "W"], asked)
 
 
 def check_report() -> None:

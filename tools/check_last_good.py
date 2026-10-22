@@ -17,9 +17,9 @@ charts are drawn three times:
    history alone must stop: no curve on the right axis keeps its last value for more than
    ``joins.MACRO_CARRY_LIMIT`` (Canada's debt, left with its history to 1994, ran on flat
    to the day before 2026-10-21); and the UK's national debt, drawn to 2016 without the
-   gross debt, is named without "(pre-1975)". The Bank of England's series, baked
-   (batch 19.2; a synthetic bake here), are drawn to the bake's last date, each with a
-   warning naming it and that date.
+   gross debt, is named without "(pre-1975)". The Bank of England's series and the Bank
+   of Canada's, baked (batch 19.2; a synthetic bake here), are drawn to the bake's last
+   date, each with a warning naming it and that date.
 
 In passes 2 and 3 every request is counted: within one drawing a request answered with
 an outage page or a bot check is made once, the Statistics Canada WDS post (not retried)
@@ -53,7 +53,7 @@ import requests  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 import synthetic_sources  # noqa: E402
-from ratesplot import baked, cli, http  # noqa: E402
+from ratesplot import baked, cdn_data, cli, http  # noqa: E402
 from ratesplot import web  # noqa: E402  (imported first: it turns on the page's caches, undone below)
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.frontend import png_bytes  # noqa: E402
@@ -270,6 +270,17 @@ def main() -> int:
                 f"Bank of England {code}: its recent values unavailable" in line
                 and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
             check("rates: the Bank of England's series drawn from their bake, each named with its last date (19.2)",
+                  named == sorted(ends), named)
+            # The Bank of Canada's the case draws: the benchmark group (named once), the 3-month, the policy rate's
+            # three parts and the 5-year mortgage rate (not CORRA, nor the bills it does not choose).
+            group = cdn_data.BOC_GROUP_CODES[cdn_data.BOC_BENCHMARK_GROUP]
+            ends = {cdn_data.BOC_BENCHMARK_GROUP: max(baked.read_series("boc", code).index[-1] for code in group)}
+            ends |= {code: baked.read_series("boc", code).index[-1]
+                     for code in ("TB.CDN.90D.MID", "V80691303", "V122530", "V80691310", "CBC20210", "V80691335")}
+            named = sorted(code for code, end in ends.items() if any(
+                f"Bank of Canada {code}: its recent values unavailable" in line
+                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
+            check("rates: the Bank of Canada's series drawn from their bake, each named with its last date (19.2)",
                   named == sorted(ends), named)
         differs = sorted(key for key in first[name] if pngs.get(key) != first[name][key])
         check(f"{name}: not drawn, or drawn otherwise, without them", bool(differs), f"differ or missing: {differs}")
