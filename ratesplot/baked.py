@@ -7,7 +7,8 @@ Reboot all start with the history in hand, and a source that is down, or
 gone, is still drawn to the bake's last date. Re-baked daily (decision 49)
 by a separate job whose result is committed; the running program never
 writes these files. Begun with the Bank of England's database, 2026-10-21;
-then the Bank of Canada's Valet, FRED and the ECB's Data Portal, 2026-10-22.
+then the Bank of Canada's Valet, FRED, the ECB's Data Portal and Eurostat,
+2026-10-22.
 
 The files: ``ratesplot/data/SOURCE/CODE.csv``, one series each, written
 only by the bake (``ratesplot.bake``, run by ``tools/bake_archives.py``):
@@ -177,9 +178,10 @@ def frame_with_recent_part(
     """Return series ``codes`` of ``source``, which one request gives together (a group), as a frame: their baked history, then their recent part.
 
     ``with_recent_part`` for a request that answers several series at once
-    (the Bank of Canada's benchmark yields): ``fetch(start)`` asks for the
-    group from ``start`` on, ``fetch(None)`` for every value, which is what
-    the group gets, as before batch 19.2, if any of ``codes`` is not baked.
+    (the Bank of Canada's benchmark yields, a Eurostat dataset's sectors):
+    ``fetch(start)`` asks for the group from ``start`` on, ``fetch(None)``
+    for every value, which is what the group gets, as before batch 19.2, if
+    any of ``codes`` is not baked.
     The recent part begins ``recent`` before the earliest of the bakes' last
     dates, so each series gets every newer value. The frame's columns are
     ``codes``, in their order, and its rows every date on which any of them

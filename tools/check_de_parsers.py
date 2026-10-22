@@ -8,7 +8,10 @@ the parsers were written against responses saved on Terry's laptop on
 own code and compares a value read off the response by eye. The fetchers
 themselves are run too: ``de_get`` is replaced by a reader of the saved
 files, chosen by the URL and query the program asks for, so a request that
-differs from the one measured fails here.
+differs from the one measured fails here. The saved responses are whole
+series, so the fetchers are run without the live sources' bake (batch 19.2):
+each series asked for whole, as before it, and none joined to a recent part
+the saved responses do not hold.
 
 * the Bundesbank's CSV: daily and end-of-month term structure, each term's
   first month as ``DE_YIELD_EARLIEST`` says, the old database's frozen
@@ -38,6 +41,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
@@ -47,7 +51,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, de_archive_data, de_data, latest, rates  # noqa: E402
+from ratesplot import bake, baked, de_archive_data, de_data, latest, rates  # noqa: E402
 from ratesplot.config import CNBC_QUOTE_URL, PlotConfig, component_column  # noqa: E402
 
 RAW = ROOT / "tools" / "de_fixtures" / "raw"
@@ -206,8 +210,11 @@ def check_eurostat() -> None:
 
 
 def check_fetchers() -> None:
-    """The program's own fetchers, served the saved responses."""
+    """The program's own fetchers, served the saved responses, with no bake (batch 19.2): each series asked for whole."""
     real_get, de_data.de_get = de_data.de_get, saved_get
+    real_folder, no_bake = baked.DATA_FOLDER, tempfile.TemporaryDirectory(prefix="ratesplot_no_bake_")
+    baked.DATA_FOLDER = Path(no_bake.name)
+    baked.forget_read_files()
     try:
         config = PlotConfig(start=pd.Timestamp("1950-01-01"), end=pd.Timestamp("2026-10-07"), yield_terms=de_data.DE_YIELD_TERMS)
         yields = de_data.fetch_de_yields(config)
@@ -258,6 +265,9 @@ def check_fetchers() -> None:
               rates.mortgage_rate("over10") is not None and rates.mortgage_rate("1-5") is not None)
     finally:
         de_data.de_get = real_get
+        baked.DATA_FOLDER = real_folder
+        baked.forget_read_files()
+        no_bake.cleanup()
 
 
 def daily_value(code: str, day: str) -> float:

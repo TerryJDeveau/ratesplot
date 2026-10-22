@@ -49,7 +49,9 @@ curve a thousandfold. Deutsche Mark figures before 1999 are in euros at
 The ECB's series (batch 19.2, ``ecb_series``): their history is in
 ``ratesplot/data/ecb/``, and a drawing asks the ECB only for the recent part,
 from the period holding that date on; if the ECB fails, the baked history
-alone, with a warning.
+alone, with a warning. Eurostat's alike (``eurostat_series``), in
+``ratesplot/data/eurostat/``, each dataset's recent part asked for once for
+all its series.
 """
 
 from __future__ import annotations
@@ -78,7 +80,7 @@ from .config import (
     PlotConfig,
     component_column,
 )
-from .baked import with_recent_part
+from .baked import frame_with_recent_part, with_recent_part
 from .de_archive_data import EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY
 from .http import BotCheck, de_get, downloads_of
 from .joins import embedded_frame, ttm_sum
@@ -425,14 +427,47 @@ def eurostat_download(dataset: str, start: pd.Timestamp | None = None) -> dict:
     return data
 
 
+def _eurostat_frame(dataset: str, codes: dict[str, dict[str, str]], start: pd.Timestamp | None) -> pd.DataFrame:
+    """Series ``codes`` (each file's name -> the categories chosen) of one answer of ``dataset`` (``eurostat_download``), a column each, in the dataset's unit.
+
+    From ``start`` (a recent part), a series with no value raises, naming
+    it: the join would otherwise lose its values from there on.
+    """
+    _params, unit = EUROSTAT_QUERIES[dataset]
+    data = eurostat_download(dataset, start)
+    columns = {}
+    for code, chosen in codes.items():
+        columns[code] = parse_jsonstat(data, unit, **chosen)
+        if start is not None and columns[code].empty:
+            raise ValueError(f"Eurostat gave no values of {code} from {_eurostat_since(dataset, start)}")
+    return pd.concat(columns, axis=1).sort_index()
+
+
 def eurostat_series(dataset: str, **chosen: str) -> pd.Series:
     """Return one series of a Eurostat dataset (``EUROSTAT_QUERIES``), in euros or persons; raises if it has none.
 
-    The dataset is fetched once per run for all its series (the download
-    cache is keyed by the query, the same for every sector).
+    Batch 19.2 (``ratesplot.baked``): the history of every series read
+    (``EUROSTAT_SERIES_READ``) is in ``ratesplot/data/eurostat/``, and only
+    the last 24 months are asked for (every one is a statistic Eurostat
+    revises: debt, interest, GDP, population), from the period holding that
+    date on. One request answers all of a dataset's series, so it is asked
+    for once, from the earliest of their bakes' last values less 24 months
+    (``baked.frame_with_recent_part``; the download cache is keyed by the
+    query, the same for every series of it); a series not baked has its
+    dataset asked for whole. If Eurostat fails, the baked history alone, to
+    its last value, with a warning naming the series. Measured 2026-10-22:
+    the bake joined to its recent part is Eurostat's whole answer, value for
+    value, for all twelve.
     """
-    params, unit = EUROSTAT_QUERIES[dataset]
-    values = parse_jsonstat(eurostat_download(dataset), unit, **chosen)
+    _params, unit = EUROSTAT_QUERIES[dataset]
+    code = eurostat_code(dataset, **chosen)
+    codes = {eurostat_code(dataset, **read): read for read in EUROSTAT_SERIES_READ[dataset]}
+    codes.setdefault(code, chosen)  # not one read before, so not baked: the dataset is asked for whole
+    frame = frame_with_recent_part(
+        EUROSTAT_BAKED_SOURCE, list(codes), f"Eurostat {code}", lambda start: _eurostat_frame(dataset, codes, start), RECENT_PART_REVISED
+    )
+    # Named as before 19.2 (none): the callers name what they make of it.
+    values = frame[code].dropna().rename(None)
     if values.empty:
         raise ValueError(f"Eurostat {dataset} {chosen} has no values")
     return values * _EUROSTAT_MULTIPLIER[unit]

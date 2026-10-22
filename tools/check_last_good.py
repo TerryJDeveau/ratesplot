@@ -18,8 +18,8 @@ charts are drawn three times:
    ``joins.MACRO_CARRY_LIMIT`` (Canada's debt, left with its history to 1994, ran on flat
    to the day before 2026-10-21); and the UK's national debt, drawn to 2016 without the
    gross debt, is named without "(pre-1975)". The Bank of England's series, the Bank
-   of Canada's, FRED's and the ECB's, baked (batch 19.2; a synthetic bake here), are drawn
-   to the bake's last date, each with a warning naming it and that date.
+   of Canada's, FRED's, the ECB's and Eurostat's, baked (batch 19.2; a synthetic bake here),
+   are drawn to the bake's last date, each with a warning naming it and that date.
 
 In passes 2 and 3 every request is counted: within one drawing a request answered with
 an outage page or a bot check is made once, the Statistics Canada WDS post (not retried)
@@ -80,6 +80,9 @@ ECB_DRAWN_IN_RATES = (
     "FM.B.U2.EUR.4F.KR.MRR_FR.LEV", "FM.B.U2.EUR.4F.KR.MRR_MBR.LEV", "MIR.M.DE.B.A2C.I.R.A.2250.EUR.N",
     "MIR.M.DE.B.A2C.O.R.A.2250.EUR.N", "MIR.M.DE.B.A2C.P.R.A.2250.EUR.N", "GFS.A.N.DE.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T",
 )
+# The Eurostat series the "rates" case draws (batch 19.2): Germany's quarterly debt, its interest (the
+# annual figures, then the quarters) and its GDP, each of general government; not the levels or population.
+EUROSTAT_DRAWN_IN_RATES = ("gov_10q_ggdebt.S13", "gov_10q_ggnfa.S13", "gov_10dd_edpt1.D41PAY.S13", "namq_10_gdp")
 
 # The pages measured on 2026-10-21 (their heads; the program reads only the start and title).
 FRED_PAGE = (
@@ -313,6 +316,14 @@ def main() -> int:
             others = sorted({line.split("ECB ", 1)[1].split(":", 1)[0] for line in log.splitlines()
                              if "Warning: ECB " in line and "its recent values unavailable" in line} - set(ends))
             check("rates: the ECB's series drawn from their bake, each named with its last date (19.2)",
+                  named == sorted(ends) and not others, (named, others))
+            ends = {code: baked.read_series("eurostat", code).index[-1] for code in EUROSTAT_DRAWN_IN_RATES}
+            named = sorted(code for code, end in ends.items() if any(
+                f"Eurostat {code}: its recent values unavailable" in line
+                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
+            others = sorted({line.split("Eurostat ", 1)[1].split(":", 1)[0] for line in log.splitlines()
+                             if "Warning: Eurostat " in line and "its recent values unavailable" in line} - set(ends))
+            check("rates: Eurostat's series drawn from their bake, each named with its last date (19.2)",
                   named == sorted(ends) and not others, (named, others))
         differs = sorted(key for key in first[name] if pngs.get(key) != first[name][key])
         check(f"{name}: not drawn, or drawn otherwise, without them", bool(differs), f"differ or missing: {differs}")

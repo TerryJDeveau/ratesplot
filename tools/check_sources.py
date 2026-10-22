@@ -560,6 +560,8 @@ CHECKS: tuple[Check, ...] = (
     Check("ecb_mortgage5_10", "ECB MIR German housing loans, fixed over 5 to 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "5-10"))),
     Check("ecb_mortgage10", "ECB MIR German housing loans, fixed over 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "over10"))),
     Check("ecb_debt_annual", "ECB GFS German debt, year-ends (before 2000)", None, _de_annual_debt),
+    # Eurostat's, through the program's own fetchers (batch 19.2): their bake and one recent part per
+    # dataset, a WARN if Eurostat fails; de_joins reads them so too.
     Check("est_debt", "Eurostat gov_10q_ggdebt German debt (quarterly)", QUARTERLY, _de_column(de_data.fetch_de_debt, DE_DEBT_COLUMN)),
     Check("est_gdp", "Eurostat namq_10_gdp German GDP (four-quarter sums)", QUARTERLY, _de_column(de_data.fetch_de_gdp, GDP_COLUMN)),
     Check("est_interest", "Eurostat gov_10q_ggnfa German interest (four-quarter sums)", QUARTERLY, _de_column(de_data.fetch_de_interest, DE_INTEREST_COLUMN)),

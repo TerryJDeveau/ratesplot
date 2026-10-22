@@ -512,10 +512,25 @@ def _jsonstat(label: str, dims: list[tuple[str, list[str]]], value) -> bytes:
 # Eurostat: the German series, first and last value (millions of euros,
 # thousands of persons, persons) and each sector's share of the total.
 _DE_SECTOR_SHARES = {"S13": 1.0, "S1311": 0.70, "S1312": 0.235, "S1313": 0.07, "S1314": 0.005}
+_EUROSTAT_URL = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
+# Every Eurostat series the program reads, by its baked file's name (de_data.eurostat_code): its
+# dataset and the categories chosen (de_data.EUROSTAT_SERIES_READ; batch 19.2).
+_EUROSTAT_SERIES = {
+    **{f"{dataset}.{sector}": (dataset, {"sector": sector})
+       for dataset in ("gov_10q_ggdebt", "gov_10q_ggnfa") for sector in ("S13", "S1311", "S1312", "S1313")},
+    "gov_10dd_edpt1.D41PAY.S13": ("gov_10dd_edpt1", {"sector": "S13", "na_item": "D41PAY"}),
+    "namq_10_gdp": ("namq_10_gdp", {}),
+    "namq_10_pe": ("namq_10_pe", {}),
+    "demo_pjan": ("demo_pjan", {}),
+}
 
 
 def eurostat(url: str, params: tuple) -> bytes:
-    """A Eurostat JSON-stat answer for the query the program sends (``de_data.EUROSTAT_QUERIES``)."""
+    """A Eurostat JSON-stat answer for the query the program sends (``de_data.EUROSTAT_QUERIES``).
+
+    Whole, whatever period it is asked from (``sinceTimePeriod``, batch 19.2),
+    as the other baked sources' answers are: the program cuts what it asked for.
+    """
     dataset = url.rstrip("/").rsplit("/", 1)[1]
     query = dict(params)
     unit = query.get("unit", "NR")
@@ -587,8 +602,8 @@ def _refused(*_args, **_kwargs):
 
 
 # Batch 19.2: the program draws the Bank of England's series, the Bank of
-# Canada's, FRED's and the ECB's from their baked history (ratesplot/data/boe/,
-# data/boc/, data/fred/, data/ecb/) and asks the sources only for the recent part. With synthetic answers the bake must
+# Canada's, FRED's, the ECB's and Eurostat's from their baked history (ratesplot/data/boe/,
+# data/boc/, data/fred/, data/ecb/, data/eurostat/) and asks the sources only for the recent part. With synthetic answers the bake must
 # be synthetic too, or a chart would join the real history to a made-up
 # recent part. So each series'
 # synthetic answer is baked to this date, in a folder of its own, and the
@@ -601,7 +616,7 @@ SYNTHETIC_BAKE_END = pd.Timestamp("2026-07-15")
 
 
 def install_synthetic_bake(folder: Path) -> bool:
-    """Bake the synthetic Bank of England, Bank of Canada, FRED and ECB series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
+    """Bake the synthetic Bank of England, Bank of Canada, FRED, ECB and Eurostat series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
 
     Through the program's own ``baked.write_series``. Returns False, changing
     nothing, for a tree without a bake (before batch 19.2). A tree that bakes
@@ -632,6 +647,10 @@ def install_synthetic_bake(folder: Path) -> bool:
     for flow, key, unit in _ECB_SERIES:
         answer = ecb(f"https://data-api.ecb.europa.eu/service/data/{flow}/{key}").decode()
         bake("ecb", f"{flow}.{key}", de_data.parse_ecb_csv(answer, f"{flow}.{key}", unit))
+    for code, (dataset, chosen) in _EUROSTAT_SERIES.items():
+        params, unit = de_data.EUROSTAT_QUERIES[dataset]
+        answer = json.loads(eurostat(f"{_EUROSTAT_URL}{dataset}", tuple(sorted(params.items()))))
+        bake("eurostat", code, de_data.parse_jsonstat(answer, unit, **chosen))
     baked.DATA_FOLDER = folder
     baked.forget_read_files()
     return True
