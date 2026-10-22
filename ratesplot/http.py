@@ -209,6 +209,9 @@ class _Drawing:
     # A request (cache key) that failed in this drawing -> its failure: not asked
     # again before the drawing ends (``_cached``).
     failed: dict[tuple, Exception] = field(default_factory=dict)
+    # A host that failed as unavailable in this drawing (``_unavailable``) -> its
+    # failure: asked nothing more before the drawing ends (batch 19.3, ``host_turn``).
+    unavailable: dict[str, Exception] = field(default_factory=dict)
     # Its tasks may run side by side (``in_parallel``): ``copies`` is read and then written.
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -277,7 +280,10 @@ def drawing_downloads() -> Iterator[_Drawing]:
     """Log the downloads of one drawing (see above), and end with how many earlier ones it reused.
 
     The window's worker, a web visitor's drawing and the command line's
-    run each wrap their whole drawing in this, the trial pass included.
+    run each wrap their whole drawing in this, the trial pass included;
+    the bake's run too (tools/bake_archives.py, tools/rebake.py), so that a
+    host that fails as unavailable is asked nothing more in it (batch 19.3,
+    ``host_turn``).
     It also ends with a warning for each source whose last good copy was
     drawn (batch 20), once however many times the drawing asked for it:
     written at the end, the trial pass's silence cannot swallow it. The
@@ -384,7 +390,10 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     asks): its failure is raised again, or its copy returned, at once. The
     trial pass of ``plotting.resolve_start`` and the real pass after it are
     one drawing, so a source down was asked twice in a drawing before, each
-    time with its retries.
+    time with its retries. Nor is a request to a host that has failed as
+    unavailable in the drawing (batch 19.3, ``host_turn``): its failure is
+    raised at once, before the download is logged, and the request's copy
+    returned if it has one, as if the request itself had failed.
     """
     with _download_cache_lock:
         if _download_cache is not None and key in _download_cache:
@@ -394,6 +403,8 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
                 return result  # type: ignore[return-value]
     drawing = getattr(_log_state, "drawing", None)
     earlier = drawing.failed.get(key) if drawing is not None else None
+    if earlier is None and drawing is not None:
+        earlier = drawing.unavailable.get(_host_of(key))
     try:
         if earlier is not None:
             # With this call's traceback only: the object is the one raised before, whose
@@ -415,6 +426,11 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
         if _download_cache is not None:
             _download_cache[key] = (time.monotonic(), time.time(), result)
     return result
+
+
+def _host_of(key: tuple) -> str:
+    """The host a download's cache key asks (as ``host_turn`` names it): FRED's for ``("fred", ...)``, else its address's."""
+    return urlsplit(FRED_CSV_URL if key[0] == "fred" else key[1]).netloc
 
 
 class BotCheck(RuntimeError):
@@ -481,18 +497,47 @@ def raise_if_web_page(url: str, body: bytes) -> None:
 # sources see one client asking, not several at once (Terry, 2026-10-21: the
 # program must not become a nuisance to them). A host is the address's
 # network location; a redirect to another host is not held apart.
+#
+# A host that fails as unavailable (a timeout, a refused connection, an
+# outage page, a bot check: ``_unavailable``) is asked nothing more in that
+# drawing (batch 19.3, Terry's decision 52, 2026-10-22): each of its later
+# requests fails at once with the same failure, and is drawn from its last
+# good copy or its bake, as if it had been asked. A failure of one request
+# (not found, an answer that cannot be read) does not stop the others. The
+# next drawing asks again. Before it, a drawing remembered a failed request,
+# not a failed host, so each series of a host that was down was still asked:
+# with FRED hanging, a U.S. chart with --policy made 42 requests, each ended
+# by the 90 s timeout (about an hour; measured 2026-10-22 with a 5 s timeout).
 _host_locks: dict[str, threading.Lock] = {}
 _host_locks_lock = threading.Lock()
 
 
 @contextlib.contextmanager
 def host_turn(url: str) -> Iterator[None]:
-    """Hold ``url``'s host for one request: another thread's request to the same host waits until it ends."""
+    """Hold ``url``'s host for one request: another thread's request to the same host waits until it ends.
+
+    In a drawing (``drawing_downloads``), a host that has failed as
+    unavailable raises its failure again at once, before the request is
+    made; a failure that makes it so is recorded here, before the host is
+    let go, so the request of another thread waiting its turn is not made
+    either. The request's checks of the answer (an outage page, a bot check)
+    belong inside the turn for that reason.
+    """
     host = urlsplit(url).netloc
     with _host_locks_lock:
         lock = _host_locks.setdefault(host, threading.Lock())
+    drawing = getattr(_log_state, "drawing", None)
     with lock:
-        yield
+        down = drawing.unavailable.get(host) if drawing is not None else None
+        if down is not None:
+            # With this call's traceback only, as ``_cached`` raises a request's earlier failure.
+            raise down.with_traceback(None)
+        try:
+            yield
+        except Exception as failure:
+            if drawing is not None and _unavailable(failure):
+                drawing.unavailable.setdefault(host, failure)
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -538,13 +583,35 @@ def _server_error(failure: BaseException) -> bool:
     return isinstance(failure, urllib.error.HTTPError) and failure.code >= 500
 
 
+def _unavailable(failure: BaseException) -> bool:
+    """Whether ``failure`` says its host is not answering now: a timeout, a connection refused or never made, an outage page, a bot check.
+
+    Terry, 2026-10-22 (decision 52): "once a host fails as unavailable
+    (timeout after retries, refused connection, outage page, bot check), ask
+    it nothing more in that drawing". A failure of one request (a 404 or
+    other error status, a 5xx after its retry, a connection dropped twice,
+    an answer that cannot be read) is not the host's.
+    """
+    if isinstance(failure, (BotCheck, SourcePage, requests.Timeout)):
+        return True
+    if _dropped_part_way(failure) or _server_error(failure):
+        return False
+    if isinstance(failure, requests.ConnectionError):  # refused, the name not found: the connection never made
+        return True
+    if isinstance(failure, urllib.error.HTTPError):  # urllib's error status (FRED's)
+        return False
+    # urllib: a URLError holding why the connection was never made, or a timeout while reading.
+    return isinstance(failure, (urllib.error.URLError, TimeoutError))
+
+
 def _with_retries(describe: str, attempt_once: Callable[[], T]) -> T:
     """Call ``attempt_once``, and once more after ``RETRY_WAIT_SECONDS`` if it failed part way or with a server error (see above).
 
     Every other failure is raised at once, and the second attempt's failure
     as it is, so callers see the real exception: a 404 or other 4xx, an
     outage page or a bot check, a refused connection, a timeout: a source
-    that does not answer is not asked again seconds later.
+    that does not answer is not asked again seconds later, and in a drawing
+    is asked nothing more (``host_turn``).
     """
     try:
         return attempt_once()
@@ -573,18 +640,19 @@ def _session_get(
     """
 
     def attempt() -> requests.Response | None:
+        # The answer checked in the host's turn, so an outage page or a bot check marks it unavailable (host_turn).
         with host_turn(url):
             response = session.get(url, params=params, timeout=timeout)
-        # Before the status: the check's own page may be a 400, which would be retried.
-        if any(path in response.url for path in _BOT_CHECK_PATHS):
-            raise BotCheck(urlsplit(url).netloc)
-        if missing_ok and response.status_code == 404:
-            return None
-        response.raise_for_status()
-        # Not after a redirect: that is the source's own answer, which its
-        # caller reads (the Bank of England's error page, uk_data.iadb_series).
-        if not response.history:
-            raise_if_web_page(url, response.content)
+            # Before the status: the check's own page may be a 400, which would be read as the request's own failure.
+            if any(path in response.url for path in _BOT_CHECK_PATHS):
+                raise BotCheck(urlsplit(url).netloc)
+            if missing_ok and response.status_code == 404:
+                return None
+            response.raise_for_status()
+            # Not after a redirect: that is the source's own answer, which its
+            # caller reads (the Bank of England's error page, uk_data.iadb_series).
+            if not response.history:
+                raise_if_web_page(url, response.content)
         return response
 
     def download() -> requests.Response | None:
@@ -627,9 +695,9 @@ def canadian_post(url: str, payload: object, *, timeout: int) -> requests.Respon
         log_download(url)
         with host_turn(url):
             response = CANADIAN_SESSION.post(url, json=payload, timeout=timeout)
-        response.raise_for_status()
-        # Its outage page arrives with status 200 too (2026-10-21; SourcePage).
-        raise_if_web_page(url, response.content)
+            response.raise_for_status()
+            # Its outage page arrives with status 200 too (2026-10-21; SourcePage).
+            raise_if_web_page(url, response.content)
         return response
 
     return _cached(("canadian-post", url, json.dumps(payload, sort_keys=True)), download)
@@ -725,12 +793,14 @@ def fetch_fred_csv(series_id: str, *, since: pd.Timestamp | None = None) -> pd.D
     url = f"{FRED_CSV_URL}?id={series_id}" + (f"&cosd={since:%Y-%m-%d}" if since is not None else "")
 
     def attempt() -> pd.DataFrame:
-        with host_turn(url), urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:
-            body = response.read()
-            # As pandas does for a URL: a gzip-encoded answer is unpacked.
-            if response.headers.get("Content-Encoding") == "gzip":
-                body = gzip.decompress(body)
-        raise_if_web_page(url, body)
+        # The answer checked in FRED's turn, so its outage page marks it unavailable (host_turn).
+        with host_turn(url):
+            with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:
+                body = response.read()
+                # As pandas does for a URL: a gzip-encoded answer is unpacked.
+                if response.headers.get("Content-Encoding") == "gzip":
+                    body = gzip.decompress(body)
+            raise_if_web_page(url, body)
         data = pd.read_csv(io.BytesIO(body))
         if len(data.columns) < 2:
             raise ValueError(f"FRED series {series_id} returned no value column")

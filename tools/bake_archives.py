@@ -72,6 +72,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from ratesplot import http  # noqa: E402
 from ratesplot.bake import (  # noqa: E402
     bake_bbk_history,
     bake_boc_history,
@@ -111,18 +112,20 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--de-discount-csv", type=Path, help="the Bundesbank's discount rate download (BBIN1) already on disk")
     args = parser.parse_args(argv)
     all_baked = True
-    for key, bake in BAKES.items():
-        if args.only in (None, key):
-            if key == "uk":
-                bake(workbook_path=args.uk_workbook)
-            elif key == "de":
-                bake(saved_csv=args.de_csv, saved_discount_csv=args.de_discount_csv)
-            else:
-                # The archives raise when they cannot be baked; a live source's
-                # history returns a SeriesBake per series, each written or not.
-                result = bake()
-                if isinstance(result, list):
-                    all_baked &= all(item.written for item in result)
+    # One pass, as a drawing: a source that does not answer is asked nothing more in it (batch 19.3).
+    with http.drawing_downloads():
+        for key, bake in BAKES.items():
+            if args.only in (None, key):
+                if key == "uk":
+                    bake(workbook_path=args.uk_workbook)
+                elif key == "de":
+                    bake(saved_csv=args.de_csv, saved_discount_csv=args.de_discount_csv)
+                else:
+                    # The archives raise when they cannot be baked; a live source's
+                    # history returns a SeriesBake per series, each written or not.
+                    result = bake()
+                    if isinstance(result, list):
+                        all_baked &= all(item.written for item in result)
     return 0 if all_baked else 1
 
 

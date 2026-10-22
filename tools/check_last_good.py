@@ -27,11 +27,13 @@ charts are drawn three times:
    its national debt, drawn to 2016 without the gross debt, must stop and is named
    without "(pre-1975)".
 
-In passes 2 and 3 every request is counted: within one drawing a request answered with
-an outage page or a bot check is made once, and so is one refused, which is not retried
-(batch 19.3: only a connection dropped part way or a server error is asked once more)
-(Terry, 2026-10-21: the program must not become a nuisance to the servers; the trial pass
-of an automatic start and the real pass asked each failing source again before).
+In passes 2 and 3 every request is counted: within one drawing each failing source is
+asked once (Terry, 2026-10-21: the program must not become a nuisance to the servers; the
+trial pass of an automatic start and the real pass asked each failing source again
+before). Since batch 19.3 a source answering with an outage page or a bot check, or
+refusing the connection, is asked nothing more in the drawing after its first request,
+which is not retried (only a connection dropped part way or a server error is asked once
+more): every series of it is then drawn from its copy or its bake, as if it had been asked.
 
 Usage (from the project root)::
 
@@ -94,6 +96,8 @@ STOPPED_IN_RATES = {"FRED": "DFEDTAR", "ECB": "FM.B.U2.EUR.4F.KR.MRR_MBR.LEV"}
 # The Eurostat series the "rates" case draws (batch 19.2): Germany's quarterly debt, its interest (the
 # annual figures, then the quarters) and its GDP, each of general government; not the levels or population.
 EUROSTAT_DRAWN_IN_RATES = ("gov_10q_ggdebt.S13", "gov_10q_ggnfa.S13", "gov_10dd_edpt1.D41PAY.S13", "namq_10_gdp")
+# Statistics Canada's tables the "rates" case draws: interest, GDP, debt (not population, nor the CMHC rate).
+STATCAN_DRAWN_IN_RATES = ("10100015", "36100104", "36100467")
 # The ONS series the "rates" case draws (batch 19.2): the UK's gross and net debt, its interest and its GDP;
 # not the levels or population.
 ONS_DRAWN_IN_RATES = ("BKPX", "HF6W", "NMYX", "YBHA")
@@ -189,10 +193,13 @@ def failing_urlopen(url, timeout=None) -> _Answer:
 
 
 def check_asked_once(name: str) -> None:
-    """A drawing's requests to failing sources: each made once, a refused one too (not retried since 19.3)."""
-    again = {request[1]: count for request, count in asked.items() if count > 1}
-    check(f"{name}: each failing request made once in the drawing", bool(asked) and not again,
-          again or f"{len(asked)} requests, {sum(asked.values())} attempts")
+    """A drawing's requests to failing sources: each host asked once, as each fails as unavailable (19.3), and not again."""
+    by_host = Counter()
+    for request, count in asked.items():
+        by_host[urlsplit(request[1]).netloc] += count
+    again = {host: count for host, count in by_host.items() if count > 1}
+    check(f"{name}: each failing source asked once in the drawing (19.3)", bool(asked) and not again,
+          again or f"{len(by_host)} hosts, {sum(by_host.values())} attempts")
 
 
 def refused_post(_session, url, json=None, **_kwargs):
@@ -357,20 +364,20 @@ def main() -> int:
                              if "Warning: ONS " in line and "its recent values unavailable" in line} - set(ends))
             check("rates: the ONS's series drawn from their bake, each named with its last date (19.2)",
                   named == sorted(ends) and not others, (named, others))
-            # Statistics Canada: each table the case draws asked once, for its recent part (WDS), never its ZIP,
-            # and drawn from its bake, named with its last date; the CMHC mortgage rate (the 5-year before 1975)
-            # read from its bake alone, not asked.
+            # Statistics Canada: asked once, for a table's recent part (WDS), never a ZIP; its outage page then
+            # stands for every table (19.3); each table the case draws from its bake, named with its last date;
+            # the CMHC mortgage rate (the 5-year before 1975) read from its bake alone, not asked.
             statcan = [request for request in asked if urlsplit(request[1]).netloc == "www150.statcan.gc.ca"]
             by_vectors = {",".join(f'"{vector.lstrip("v")}"' for vector in read.vectors): table
                           for table, read in cdn_data.STATCAN_SERIES_READ.items()}
             tables = sorted(by_vectors.get(dict(request[2]).get("vectorIds"), request[1]) for request in statcan)
             ends = {table: max(baked.read_series("statcan", vector).index[-1] for vector in read.vectors)
-                    for table, read in cdn_data.STATCAN_SERIES_READ.items() if table in tables}
+                    for table, read in cdn_data.STATCAN_SERIES_READ.items() if table in STATCAN_DRAWN_IN_RATES}
             named = sorted(table for table, end in ends.items() if any(
                 f"Statistics Canada table {table}: its recent values unavailable" in line
                 and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
-            check("rates: Statistics Canada asked only for its tables' recent parts, each drawn from its bake, named with its last date (19.2)",
-                  bool(tables) and named == tables and cdn_data.CDN_MORTGAGE_HISTORY_TABLE not in tables
+            check("rates: Statistics Canada asked once, for a table's recent part; each table drawn from its bake, named with its last date (19.2, 19.3)",
+                  len(tables) == 1 and tables[0] in STATCAN_DRAWN_IN_RATES and named == sorted(STATCAN_DRAWN_IN_RATES)
                   and all(request[1] == cdn_data.STATCAN_WDS_RANGE_URL for request in statcan), (tables, named))
             # The Bundesbank's yields: its bot check answers the first request, the only one it is sent; every
             # term then drawn from its bake, the check named once, with the bakes' last date.

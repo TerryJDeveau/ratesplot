@@ -21,7 +21,10 @@ and writes to DIR:
 
 A file unchanged is in neither list. A series whose download failed keeps its file; the
 exit code is then 1, after DIR is written, so the job publishes what did change and then
-shows the run failed.
+shows the run failed. The run asks as a drawing does (batch 19.3): a failed request asked
+once more only for a dropped connection or a server error, and a source that does not
+answer (a timeout, a refused connection, an outage page, a bot check) asked nothing more
+in the run, each of its other series failed with it.
 
 ``python tools/rebake.py --publish DIR [--dry-run]``, in the repository's checkout:
 commits the files of ``append.txt`` and pushes them to main (pulling first if main has moved
@@ -48,6 +51,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from ratesplot import http  # noqa: E402
 from ratesplot.bake import (  # noqa: E402
     SeriesBake,
     bake_bbk_history,
@@ -160,8 +164,10 @@ def write_outputs(out: Path, results: list[tuple[str, SeriesBake]], today: dt.da
 
 def bake(out: Path) -> int:
     results: list[tuple[str, SeriesBake]] = []
-    for _folder, (name, bake_source) in LIVE_BAKES.items():
-        results += [(name, result) for result in bake_source(accept_withdrawn=True)]
+    # One pass, as a drawing: a source that does not answer is asked nothing more in it (19.3).
+    with http.drawing_downloads():
+        for _folder, (name, bake_source) in LIVE_BAKES.items():
+            results += [(name, result) for result in bake_source(accept_withdrawn=True)]
     write_outputs(out, results, dt.datetime.now(dt.timezone.utc).date())
     print((out / "report.md").read_text(encoding="utf-8"))
     return 1 if any(result.error is not None for _, result in results) else 0
