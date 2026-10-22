@@ -48,10 +48,10 @@ Usage (from the project root)::
 The drawing and the sources read the same downloads (the regression cache,
 or one live download each), so the check is of what the program does to
 them, never of a difference between two fetches. Except the Bank of
-England's series, the Bank of Canada's and FRED's (batch 19.2): the drawing
-reads their baked history and asks for the recent part only, and they are
-checked against each source's whole series, so the check covers the bake
-too; a regression cache whose whole downloads are older than the bake then
+England's series, the Bank of Canada's, FRED's and the ECB's (batch 19.2):
+the drawing reads their baked history and asks for the recent part only, and
+they are checked against each source's whole series, so the check covers
+the bake too; a regression cache whose whole downloads are older than the bake then
 lacks the bake's newest values, or has values since revised (run it on a
 copy without them, fetched again).
 Exit code 1 on any FAIL.
@@ -185,7 +185,8 @@ def bundesbank(column: str, frequency: str, **kwargs) -> Source:
 
 
 def ecb(flow: str, key: str, unit: str, **kwargs) -> Source:
-    return Source(f"ECB {flow}.{key}", lambda: _clean(de_data.ecb_series(flow, key, unit)), **kwargs)
+    # The ECB's whole series, not its bake and recent part (``de_data.ecb_series``), which the drawing reads.
+    return Source(f"ECB {flow}.{key}", lambda: _clean(de_data.ecb_download(flow, key, unit)), **kwargs)
 
 
 def built_in(name: str, rows: list, **kwargs) -> Source:

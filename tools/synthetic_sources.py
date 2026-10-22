@@ -432,8 +432,26 @@ def _ecb_change_days(name: str, margin: float) -> pd.Series:
     return rates.loc[rates.ne(rates.shift())]
 
 
+# Every ECB series ``ecb`` answers, as (flow, key, unit): the key rates, EONIA and €STR, the
+# three mortgage bands and the annual debt (rates.DE_*, de_data.ECB_ANNUAL_DEBT).
+_ECB_SERIES = (
+    ("FM", "B.U2.EUR.4F.KR.MRR_FR.LEV", "PCPA"),
+    ("FM", "B.U2.EUR.4F.KR.MRR_MBR.LEV", "PCPA"),
+    ("EON", "D.EONIA_TO.RATE", "PC"),
+    ("EST", "B.EU000A2X2A25.WT", "PC"),
+    ("MIR", "M.DE.B.A2C.I.R.A.2250.EUR.N", "PCPA"),
+    ("MIR", "M.DE.B.A2C.O.R.A.2250.EUR.N", "PCPA"),
+    ("MIR", "M.DE.B.A2C.P.R.A.2250.EUR.N", "PCPA"),
+    ("GFS", "A.N.DE.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
+)
+
+
 def ecb(url: str) -> bytes:
-    """An ECB csvdata answer: one row per observation, KEY, TIME_PERIOD, OBS_VALUE, its unit and multiplier."""
+    """An ECB csvdata answer: one row per observation, KEY, TIME_PERIOD, OBS_VALUE, its unit and multiplier.
+
+    Whole, whatever period it is asked from (``startPeriod``, batch 19.2),
+    as the other baked sources' answers are: the program cuts what it asked for.
+    """
     flow, key = url.split("/service/data/")[1].split("/", 1)
     unit_column, unit, multiplier = "UNIT", "PCPA", 0
     if flow == "FM":
@@ -569,8 +587,8 @@ def _refused(*_args, **_kwargs):
 
 
 # Batch 19.2: the program draws the Bank of England's series, the Bank of
-# Canada's and FRED's from their baked history (ratesplot/data/boe/, data/boc/,
-# data/fred/) and asks the sources only for the recent part. With synthetic answers the bake must
+# Canada's, FRED's and the ECB's from their baked history (ratesplot/data/boe/,
+# data/boc/, data/fred/, data/ecb/) and asks the sources only for the recent part. With synthetic answers the bake must
 # be synthetic too, or a chart would join the real history to a made-up
 # recent part. So each series'
 # synthetic answer is baked to this date, in a folder of its own, and the
@@ -583,7 +601,7 @@ SYNTHETIC_BAKE_END = pd.Timestamp("2026-07-15")
 
 
 def install_synthetic_bake(folder: Path) -> bool:
-    """Bake the synthetic Bank of England, Bank of Canada and FRED series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
+    """Bake the synthetic Bank of England, Bank of Canada, FRED and ECB series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
 
     Through the program's own ``baked.write_series``. Returns False, changing
     nothing, for a tree without a bake (before batch 19.2). A tree that bakes
@@ -610,6 +628,10 @@ def install_synthetic_bake(folder: Path) -> bool:
         bake("boc", code, pd.to_numeric(http.parse_boc_csv(valet(f"{valet_url}{code}/csv", ()).decode()).iloc[:, 0], errors="coerce"))
     for code in _FRED_IDS:
         bake("fred", code, fred(code).set_index("DATE")[code])
+    de_data = importlib.import_module("ratesplot.de_data")
+    for flow, key, unit in _ECB_SERIES:
+        answer = ecb(f"https://data-api.ecb.europa.eu/service/data/{flow}/{key}").decode()
+        bake("ecb", f"{flow}.{key}", de_data.parse_ecb_csv(answer, f"{flow}.{key}", unit))
     baked.DATA_FOLDER = folder
     baked.forget_read_files()
     return True

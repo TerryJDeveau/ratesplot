@@ -148,6 +148,12 @@ DE_MORTGAGE_SERIES = {"1-5": "M.DE.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.DE.B.A2C.
 # rates are given in (a rate per year), for every band of DE_MORTGAGE_SERIES.
 DE_MORTGAGE_FLOW = "MIR"
 DE_MORTGAGE_UNIT = "PCPA"
+# Batch 19.2 (de_data.ecb_series, each call says which): the ECB's key rates
+# are announced and EONIA and €STR observed, so a drawing asks for their last
+# two months; the mortgage rates are statistics the banks report, which the
+# ECB may revise, so their last 24, as the UK's quoted rates and Freddie Mac's.
+# None of the seven changed a value from the regression cache's downloads
+# (2026-10-07 and 2026-10-21) to 2026-10-22 (measured).
 _MORTGAGE_LABELS = {
     "30": "30-Year Mortgage",
     "15": "15-Year Mortgage",
@@ -573,12 +579,12 @@ def de_policy_target() -> RateCurve | None:
     above, and the ECB's corridor is not drawn after 1999 either.
     """
     try:
-        fixed = _clean(ecb_series(*DE_POLICY_FIXED))
+        fixed = _clean(ecb_series(*DE_POLICY_FIXED, revised=False))
     except Exception as exc:
         print(f"  Warning: ECB main refinancing rate ({DE_POLICY_FIXED[1]}) unavailable ({exc}); not drawn.")
         return None
     try:
-        bid = _clean(ecb_series(*DE_POLICY_MINIMUM_BID))
+        bid = _clean(ecb_series(*DE_POLICY_MINIMUM_BID, revised=False))
     except Exception as exc:
         print(f"  Warning: ECB minimum bid rate ({DE_POLICY_MINIMUM_BID[1]}) unavailable ({exc}); "
               "the fixed rate alone, wrong while the tenders were variable (2000-2008).")
@@ -615,7 +621,7 @@ def de_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
     found: dict[str, pd.Series] = {}
     for name, source in (("EONIA", DE_EONIA), ("€STR", DE_ESTR)):
         try:
-            found[name] = _clean(ecb_series(*source))
+            found[name] = _clean(ecb_series(*source, revised=False))
         except Exception as exc:
             print(f"  Warning: ECB {name} ({source[0]}.{source[1]}) unavailable ({exc}).")
     if not found:
@@ -633,7 +639,7 @@ def de_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
 
 def _de_mortgage(term: str) -> pd.Series:
     """Return one German mortgage band's monthly rate, dated by each month's first day."""
-    monthly = ecb_series(DE_MORTGAGE_FLOW, DE_MORTGAGE_SERIES[term], DE_MORTGAGE_UNIT)
+    monthly = ecb_series(DE_MORTGAGE_FLOW, DE_MORTGAGE_SERIES[term], DE_MORTGAGE_UNIT, revised=True)
     return _clean(monthly.set_axis(monthly.index.to_period("M").start_time))
 
 

@@ -45,6 +45,11 @@ start. Values are in euros (and persons); each source's unit is checked
 against the one measured, so a change of unit fails rather than shifting a
 curve a thousandfold. Deutsche Mark figures before 1999 are in euros at
 1.95583, as the ECB and Eurostat publish them.
+
+The ECB's series (batch 19.2, ``ecb_series``): their history is in
+``ratesplot/data/ecb/``, and a drawing asks the ECB only for the recent part,
+from the period holding that date on; if the ECB fails, the baked history
+alone, with a warning.
 """
 
 from __future__ import annotations
@@ -66,11 +71,14 @@ from .config import (
     GDP_COLUMN,
     MILLION,
     POPULATION_COLUMN,
+    RECENT_PART_REVISED,
+    RECENT_PART_UNREVISED,
     THOUSAND,
     YIELD_TERMS,
     PlotConfig,
     component_column,
 )
+from .baked import with_recent_part
 from .de_archive_data import EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY
 from .http import BotCheck, de_get, downloads_of
 from .joins import embedded_frame, ttm_sum
@@ -282,9 +290,25 @@ def ecb_download(flow: str, key: str, unit: str, start: pd.Timestamp | None = No
     return parse_ecb_csv(response.text, f"{flow}.{key}", unit)
 
 
-def ecb_series(flow: str, key: str, unit: str) -> pd.Series:
-    """Return one whole ECB Data Portal series (``parse_ecb_csv``)."""
-    return ecb_download(flow, key, unit)
+def ecb_series(flow: str, key: str, unit: str, *, revised: bool) -> pd.Series:
+    """Return one ECB Data Portal series (``parse_ecb_csv``): its baked history, then its recent part from the ECB.
+
+    Batch 19.2 (``ratesplot.baked``): the history is in
+    ``ratesplot/data/ecb/``, and only the last two months are asked for, or
+    the last 24 if the ECB revises the series (``revised``: the debt, the
+    mortgage rates; each caller says which), from the period holding that
+    date on; a series not yet baked is asked for whole. If the ECB fails,
+    the baked history alone, to its last value, with a warning. Measured
+    2026-10-22: the bake joined to its recent part is the ECB's whole
+    answer, value for value.
+    """
+    return with_recent_part(
+        ECB_BAKED_SOURCE,
+        f"{flow}.{key}",
+        f"ECB {flow}.{key}",
+        lambda start: ecb_download(flow, key, unit, start),
+        RECENT_PART_REVISED if revised else RECENT_PART_UNREVISED,
+    )
 
 
 def parse_jsonstat(data: dict, unit: str, **chosen: str) -> pd.Series:
@@ -478,7 +502,7 @@ def fetch_de_debt(config: PlotConfig) -> pd.DataFrame | None:
     if not config.include_debt:
         return None
     try:
-        annual = ecb_series(*ECB_ANNUAL_DEBT)
+        annual = ecb_series(*ECB_ANNUAL_DEBT, revised=True)
     except Exception as exc:
         print(f"  Warning: ECB annual German debt unavailable ({exc}); drawn from 2000.")
         annual = None

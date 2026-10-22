@@ -258,7 +258,9 @@ def _policy_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     low, high = (rates._fred(code) for code in rates.US_TARGET_RANGE_SERIES)
     widths = (high - low).dropna().round(4).value_counts()
     notes.append("U.S. target range: " + ", ".join(f"{width:g} points wide on {count:,} days" for width, count in widths.items()))
-    eonia, estr = rates._clean(de_data.ecb_series(*rates.DE_EONIA)), rates._clean(de_data.ecb_series(*rates.DE_ESTR))
+    # As the program reads them (batch 19.2): their bake and recent part.
+    eonia = rates._clean(de_data.ecb_series(*rates.DE_EONIA, revised=False))
+    estr = rates._clean(de_data.ecb_series(*rates.DE_ESTR, revised=False))
     gaps = (eonia - estr).dropna().round(4).value_counts()
     notes.append("EONIA less €STR: " + ", ".join(f"{gap:+g} on {count:,} days" for gap, count in gaps.items()))
     return None, "; ".join(notes)
@@ -406,8 +408,9 @@ def _de_column(fetch: Callable[[PlotConfig], pd.DataFrame | None], column: str, 
 
 
 def _de_annual_debt(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
-    # Used only before Eurostat's quarters begin (2000), so its age does not matter.
-    annual = de_data.ecb_series(*de_data.ECB_ANNUAL_DEBT)
+    # Used only before Eurostat's quarters begin (2000), so its age does not matter. As the program
+    # reads it (batch 19.2): its bake and recent part, a WARN if the ECB fails.
+    annual = de_data.ecb_series(*de_data.ECB_ANNUAL_DEBT, revised=True)
     return None, f"{len(annual)} year-ends, {annual.index[0]:%Y} to {annual.index[-1]:%Y}"
 
 
@@ -432,7 +435,7 @@ def _de_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     gap = (fitted - baked).dropna()
     notes.append(f"10-year fitted less public debt yield: {gap.iloc[0]:+.2f} at {gap.index[0]:%Y-%m}, "
                  f"mean {gap.iloc[:12].mean():+.2f} over its first year, {gap.mean():+.2f} over {len(gap)} months")
-    annual = de_data.ecb_series(*de_data.ECB_ANNUAL_DEBT)
+    annual = de_data.ecb_series(*de_data.ECB_ANNUAL_DEBT, revised=True)
     quarters = de_data.eurostat_series("gov_10q_ggdebt", sector=de_data.GENERAL_GOVERNMENT)
     common = annual.index.intersection(quarters.index)
     notes.append(f"debt: ECB year-ends against Eurostat's fourth quarters, largest gap {(annual[common] / quarters[common] - 1).abs().max():.1e} over {len(common)} years")
