@@ -1,0 +1,76 @@
+# The daily re-bake (batch 19.2; Terry, decision 49): every live source's history baked
+# again from the source, so the history built into the program (ratesplot/data/) is at most
+# a day old, and the web page, which starts afresh at each Reboot or wake, draws from it when
+# a source is down.
+#
+# Terry, 2026-10-22: "commit straight to main when a re-bake only adds new values; open a
+# pull request instead when it revises or refuses something." tools/rebake.py sorts the
+# files and publishes them (its docstring has the rules); tools/check_baked.py must pass
+# first. A source that cannot be downloaded keeps its file, and the run is marked failed
+# after the rest is published, so GitHub's failure notice says so.
+#
+# Run on main by the schedule or by hand (Actions, Daily re-bake, Run workflow). A push to
+# the branch rebake-test runs it as a dry run: it bakes and reports, and pushes nothing.
+# The commits it pushes to main reach the web page at its next Reboot or wake.
+
+name: Daily re-bake
+
+on:
+  schedule:
+    # 06:37 UTC each day: off the hour, when GitHub delays scheduled runs most. The hour matters
+    # little: the Bank of England's database gives its yields about two business days late.
+    - cron: "37 6 * * *"
+  workflow_dispatch:
+  push:
+    branches: [rebake-test]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: rebake
+  cancel-in-progress: false
+
+jobs:
+  rebake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install what the bake needs (the versions in requirements.txt)
+        run: grep -E '^(numpy|pandas|requests)==' requirements.txt | xargs python -m pip install --quiet
+
+      - name: Re-bake
+        id: bake
+        run: |
+          set +e
+          python tools/rebake.py --out "$RUNNER_TEMP/rebake"
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/rebake/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check the files
+        run: python tools/check_baked.py
+
+      - name: Publish (new values to main, changed history to a pull request)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/rebake.py --publish "$RUNNER_TEMP/rebake"
+
+      - name: Dry run (not main), what would be published
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git status --short
+          python tools/rebake.py --publish "$RUNNER_TEMP/rebake" --dry-run
+
+      - name: Mark the run failed if a source could not be downloaded
+        if: steps.bake.outputs.status != '0'
+        run: |
+          echo "A source could not be downloaded; its file was kept (the summary names it)."
+          exit 1
