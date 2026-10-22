@@ -7,8 +7,8 @@ Reboot all start with the history in hand, and a source that is down, or
 gone, is still drawn to the bake's last date. Re-baked daily (decision 49)
 by a separate job whose result is committed; the running program never
 writes these files. Begun with the Bank of England's database, 2026-10-21;
-then the Bank of Canada's Valet, FRED, the ECB's Data Portal, Eurostat and
-the ONS, 2026-10-22.
+then the Bank of Canada's Valet, FRED, the ECB's Data Portal, Eurostat, the
+ONS and the Bundesbank, 2026-10-22.
 
 The files: ``ratesplot/data/SOURCE/CODE.csv``, one series each, written
 only by the bake (``ratesplot.bake``, run by ``tools/bake_archives.py``):

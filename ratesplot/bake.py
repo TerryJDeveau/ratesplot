@@ -25,9 +25,10 @@ differently: every value of each series, one data file per series under
 asks only for the recent part. Begun with the Bank of England's database
 (``bake_boe_history``), then the Bank of Canada's Valet (``bake_boc_history``),
 FRED (``bake_fred_history``), the ECB's Data Portal (``bake_ecb_history``),
-Eurostat (``bake_eurostat_history``) and the ONS (``bake_ons_history``), which
+Eurostat (``bake_eurostat_history``), the ONS (``bake_ons_history``), which
 cannot be asked for a recent part: a drawing asks it for the whole series, as
-before, and takes only the recent part of the answer.
+before, and takes only the recent part of the answer; and the Bundesbank's
+time-series database (``bake_bbk_history``).
 """
 
 from __future__ import annotations
@@ -111,16 +112,22 @@ from .config import (
     US_ARCHIVE_END_MARKER,
 )
 from .de_data import (
+    BUNDESBANK_BAKED_SOURCE,
+    BUNDESBANK_TERM_STRUCTURE_FLOW,
+    DE_YIELD_SERIES,
     ECB_ANNUAL_DEBT,
     ECB_BAKED_SOURCE,
     EUROSTAT_BAKED_SOURCE,
     EUROSTAT_QUERIES,
     EUROSTAT_SERIES_READ,
+    TERM_STRUCTURE_FREQUENCIES,
+    bundesbank_download,
     ecb_download,
     eurostat_code,
     eurostat_download,
     parse_bundesbank_csv,
     parse_jsonstat,
+    term_structure_key,
 )
 from .http import canadian_get, de_get, fetch_fred_csv, get_if_published, uk_get
 from .rates import (
@@ -1611,9 +1618,9 @@ def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None
 # daily (Terry, decision 49); each run says what changed in each file, every
 # revision with its size, so a revision is seen before it is committed.
 # Begun with the Bank of England's database (2026-10-21); the Bank of
-# Canada's Valet, FRED, the ECB's Data Portal, Eurostat and the ONS next
-# (2026-10-22). Each source's bake is a call of ``_bake_live_series`` with its
-# list of series and its download.
+# Canada's Valet, FRED, the ECB's Data Portal, Eurostat, the ONS and the
+# Bundesbank next (2026-10-22). Each source's bake is a call of
+# ``_bake_live_series`` with its list of series and its download.
 
 # Each Bank of England database series the program reads, for its file's
 # first line. A series read but not named here stops the bake (KeyError).
@@ -2152,3 +2159,78 @@ def bake_ons_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
 
     titles = {code: _ONS_SERIES_TITLES[code] for code in ons_baked_codes()}
     return _bake_live_series(ONS_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
+
+
+def _bbk_code(column: str, frequency: str) -> str:
+    """The name of a term structure series' baked file: its flow and key (``BBSIS.D.I.ZST…R10XX…``)."""
+    return f"{BUNDESBANK_TERM_STRUCTURE_FLOW}.{term_structure_key(column, frequency)}"
+
+
+# Each Bundesbank series the program reads, by its file's name (its flow and
+# key), for the file's first line: the Bundesbank's own title, as the CSV's
+# second line gives it ("1.0 year" monthly, "1.0 years" daily, as written),
+# read 2026-10-22, and what its values are. A series read but not named here
+# stops the bake (KeyError).
+_TERM_STRUCTURE_TITLE = "Term structure of interest rates on listed Federal securities (method by Svensson)"
+_END_OF_MONTH = "; end-of-month values"
+_DAILY = "; no value on weekends and holidays"
+_BBK_SERIES_TITLES = {
+    _bbk_code("1-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 1.0 year / monthly data{_END_OF_MONTH}",
+    _bbk_code("1-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 1.0 years / daily data{_DAILY}",
+    _bbk_code("2-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 2.0 years / monthly data{_END_OF_MONTH}",
+    _bbk_code("2-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 2.0 years / daily data{_DAILY}",
+    _bbk_code("5-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 5.0 years / monthly data{_END_OF_MONTH}",
+    _bbk_code("5-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 5.0 years / daily data{_DAILY}",
+    _bbk_code("7-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 7.0 years / monthly data{_END_OF_MONTH}",
+    _bbk_code("7-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 7.0 years / daily data{_DAILY}",
+    _bbk_code("10-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 10.0 years / monthly data{_END_OF_MONTH}",
+    _bbk_code("10-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 10.0 years / daily data{_DAILY}",
+    _bbk_code("20-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 20.0 years / monthly data{_END_OF_MONTH}",
+    _bbk_code("20-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 20.0 years / daily data{_DAILY}",
+    _bbk_code("30-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 30.0 years / monthly data{_END_OF_MONTH}",
+    _bbk_code("30-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 30.0 years / daily data{_DAILY}",
+}
+
+
+def bbk_baked_series() -> dict[str, tuple[str, str]]:
+    """Every Bundesbank series the program reads, by its file's name (``FLOW.KEY``): its flow and key. Each term's end-of-month and daily term structure (``de_data``)."""
+    return dict(sorted(
+        (_bbk_code(column, frequency), (BUNDESBANK_TERM_STRUCTURE_FLOW, term_structure_key(column, frequency)))
+        for column in DE_YIELD_SERIES for frequency in TERM_STRUCTURE_FREQUENCIES
+    ))
+
+
+def bbk_baked_codes() -> list[str]:
+    """The names of the Bundesbank's baked files (``bbk_baked_series``), ``FLOW.KEY``."""
+    return sorted(bbk_baked_series())
+
+
+def bake_bbk_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every Bundesbank series the program reads, whole, into ``ratesplot/data/bbk/`` (batch 19.2).
+
+    As every live source is baked (``_bake_live_series``: ``folder``,
+    ``accept_withdrawn``, what is printed and returned). Each series as
+    ``de_data.parse_bundesbank_csv`` reads it: in percent, a month dated by
+    its last day (the term structure's monthly values are end-of-month
+    values), a day by itself, a date without a value (the "." the download
+    writes on weekends and holidays) left out. The whole series is the
+    download the program has always read (``de_data.bundesbank_download``).
+    """
+    print("Baking the Bundesbank's series …")
+    series = bbk_baked_series()
+
+    def download(code: str) -> pd.Series:
+        return bundesbank_download(*series[code])
+
+    def comment(code: str, title: str) -> str:
+        flow, key = series[code]
+        return (
+            f"Deutsche Bundesbank, flow {flow}, series {key}: {title}.\n"
+            "Every value the Bundesbank gives, as ratesplot.de_data reads it: in percent, a month dated by its last day,\n"
+            "a date without a value left out.\n"
+            "Written by tools/bake_archives.py --only bbk (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {code: _BBK_SERIES_TITLES[code] for code in series}
+    return _bake_live_series(BUNDESBANK_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)

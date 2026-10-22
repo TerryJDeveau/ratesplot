@@ -279,6 +279,11 @@ UK_ARCHIVE_END_MARKER = "# END AUTO-GENERATED UK ARCHIVE DATA"
 # ``ratesplot/de_archive_data.py``. Spans measured from Terry's laptop
 # 2026-10-06 (tools/de_fixtures/README.md).
 BUNDESBANK_SERIES_URL = "https://api.statistiken.bundesbank.de/rest/download/{flow}/{key}"
+# The same database's SDMX web service: asked with format=csv&lang=en, the
+# same CSV as the download above (the same text, for a whole series), but it
+# reads startPeriod, which the download ignores (measured 2026-10-22). Batch
+# 19.2 asks it for a series' recent part (``de_data.bundesbank_download``).
+BUNDESBANK_DATA_URL = "https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}"
 # The Bundesbank's old download, where the series of its former database
 # (BBK01) that were never moved to the new one are kept, frozen at 2020-04.
 BUNDESBANK_OLD_SERIES_URL = "https://www.bundesbank.de/statistic-rmi/StatisticDownload"

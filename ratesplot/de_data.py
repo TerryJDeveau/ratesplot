@@ -63,6 +63,7 @@ import re
 import pandas as pd
 
 from .config import (
+    BUNDESBANK_DATA_URL,
     BUNDESBANK_SERIES_URL,
     COMPONENT_LETTERS,
     DATE_COLUMN,
@@ -94,6 +95,21 @@ DE_YIELD_SERIES = {
 }
 BUNDESBANK_TERM_STRUCTURE_FLOW = "BBSIS"
 _TERM_STRUCTURE_KEY = "{frequency}.I.ZST.ZI.EUR.S1311.B.A604.{term}.R.A.A._Z._Z.A"
+# Each term's two series, end-of-month and daily (the key's first part).
+TERM_STRUCTURE_FREQUENCIES = ("M", "D")
+# The Bundesbank's series are baked (batch 19.2) under ``ratesplot/data/bbk/``
+# (``tools/bake_archives.py --only bbk``), each file named by its flow and
+# key: every term's end-of-month and daily series.
+BUNDESBANK_BAKED_SOURCE = "bbk"
+# How ``startPeriod`` is written for each frequency (a key's first part), so
+# that the Bundesbank answers from the period holding the date asked for.
+# Measured 2026-10-22 (all 14 term structure series): a monthly series asked
+# from a day or from its month answers from that month (unlike the ECB, which
+# begins with the next period); a daily series asked from a day answers from
+# that day (a Saturday: from the Monday after), and refuses a month (400,
+# "Period restriction 2026-08 does not match frequency D"). Each in its own
+# period's form, as the ECB's are; a frequency not measured raises.
+_BUNDESBANK_START_FORMS = {"M": "%Y-%m", "D": "%Y-%m-%d"}
 # Each term's first month (its end-of-month value; measured 2026-10-06).
 DE_YIELD_EARLIEST = {
     "1-Year": pd.Timestamp("1972-09-30"), "2-Year": pd.Timestamp("1972-09-30"),
@@ -246,13 +262,48 @@ def parse_bundesbank_csv(text: str) -> pd.Series:
     return values.sort_index()
 
 
-def bundesbank_series(flow: str, key: str) -> pd.Series:
-    """Return one whole series of the Bundesbank's database (``parse_bundesbank_csv``); raises if it is not that series."""
-    response = de_get(BUNDESBANK_SERIES_URL.format(flow=flow, key=key), {"format": "csv", "lang": "en"})
-    values = parse_bundesbank_csv(response.text)
+def term_structure_key(column: str, frequency: str) -> str:
+    """The key of one term's series in the Svensson term structure (flow ``BUNDESBANK_TERM_STRUCTURE_FLOW``): ``frequency`` "M" end-of-month, "D" daily."""
+    return _TERM_STRUCTURE_KEY.format(frequency=frequency, term=DE_YIELD_SERIES[column])
+
+
+def _bundesbank_start_period(key: str, day: pd.Timestamp) -> str:
+    """``startPeriod`` asking series ``key`` for the period holding ``day`` on: ``2026-07`` (monthly), the day itself (daily)."""
+    frequency = key.split(".")[0]
+    if frequency not in _BUNDESBANK_START_FORMS:
+        raise ValueError(f"Bundesbank {key}: no startPeriod form measured for its frequency {frequency!r}")
+    return f"{day:{_BUNDESBANK_START_FORMS[frequency]}}"
+
+
+def bundesbank_download(flow: str, key: str, start: pd.Timestamp | None = None) -> pd.Series:
+    """Ask the Bundesbank for one series (``parse_bundesbank_csv``): every value, or those from the period holding ``start`` on; raises if it is not that series.
+
+    One request (cached and kept as the others are). The whole series is
+    asked for as before batch 19.2, from the download the program has always
+    read (``BUNDESBANK_SERIES_URL``), so its request is the same. That
+    download ignores ``startPeriod`` (measured 2026-10-22, for all 14 term
+    structure series: the whole series every time); a recent part is asked
+    of the SDMX web service (``BUNDESBANK_DATA_URL``), which reads it and
+    answers in the same CSV (asked for everything, the same text as the
+    download). A range with no value is answered with the header alone,
+    which raises ("no dated rows"): a recent part counted from the bake's
+    last value always holds that value.
+    """
+    params = {"format": "csv", "lang": "en"}
+    if start is None:
+        url = BUNDESBANK_SERIES_URL.format(flow=flow, key=key)
+    else:
+        url = BUNDESBANK_DATA_URL.format(flow=flow, key=key)
+        params["startPeriod"] = _bundesbank_start_period(key, start)
+    values = parse_bundesbank_csv(de_get(url, params).text)
     if values.name != f"{flow}.{key}":
         raise ValueError(f"the Bundesbank answered {values.name} for {flow}.{key}")
     return values
+
+
+def bundesbank_series(flow: str, key: str) -> pd.Series:
+    """Return one whole series of the Bundesbank's database (``bundesbank_download``); raises if it is not that series."""
+    return bundesbank_download(flow, key)
 
 
 def parse_ecb_csv(text: str, series_key: str, unit: str) -> pd.Series:
@@ -507,8 +558,7 @@ def de_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
 
 def _term_structure(column: str, frequency: str) -> pd.Series:
     """Return one term of the Bundesbank's Svensson term structure, daily ("D") or end-of-month ("M")."""
-    key = _TERM_STRUCTURE_KEY.format(frequency=frequency, term=DE_YIELD_SERIES[column])
-    return bundesbank_series(BUNDESBANK_TERM_STRUCTURE_FLOW, key)
+    return bundesbank_series(BUNDESBANK_TERM_STRUCTURE_FLOW, term_structure_key(column, frequency))
 
 
 @downloads_of("Bundesbank Federal yields")
