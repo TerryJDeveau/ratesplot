@@ -12,8 +12,9 @@ Offline, in seconds:
   every FRED series (``bake.fred_baked_codes``), every ECB Data Portal
   series (``bake.ecb_baked_codes``), every Eurostat series
   (``bake.eurostat_baked_codes``), every ONS time series
-  (``bake.ons_baked_codes``) and every Bundesbank series
-  (``bake.bbk_baked_codes``);
+  (``bake.ons_baked_codes``), every Bundesbank series
+  (``bake.bbk_baked_codes``) and every Statistics Canada vector
+  (``bake.statcan_baked_codes``);
 * a series written by ``baked.write_series`` reads back float for float,
   its dates without a value too, and its text is the bake's form (comment,
   header, one row per date, empty where there is no value);
@@ -95,6 +96,7 @@ def check_files() -> None:
         ("Eurostat", de_data.EUROSTAT_BAKED_SOURCE, bake.eurostat_baked_codes()),
         ("ONS", uk_data.ONS_BAKED_SOURCE, bake.ons_baked_codes()),
         ("Bundesbank", de_data.BUNDESBANK_BAKED_SOURCE, bake.bbk_baked_codes()),
+        ("Statistics Canada", cdn_data.STATCAN_BAKED_SOURCE, bake.statcan_baked_codes()),
     ):
         found = {path.stem for path in (baked.DATA_FOLDER / source).glob("*.csv")}
         codes = set(read)

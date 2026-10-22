@@ -27,8 +27,9 @@ asks only for the recent part. Begun with the Bank of England's database
 FRED (``bake_fred_history``), the ECB's Data Portal (``bake_ecb_history``),
 Eurostat (``bake_eurostat_history``), the ONS (``bake_ons_history``), which
 cannot be asked for a recent part: a drawing asks it for the whole series, as
-before, and takes only the recent part of the answer; and the Bundesbank's
-time-series database (``bake_bbk_history``).
+before, and takes only the recent part of the answer; the Bundesbank's
+time-series database (``bake_bbk_history``); and Statistics Canada's live
+tables (``bake_statcan_history``), a file per vector read.
 """
 
 from __future__ import annotations
@@ -60,6 +61,10 @@ from .cdn_data import (
     BOC_BILL_SERIES,
     BOC_VALET_FROM,
     FRED_CDN_GDP_SERIES,
+    GFS_VECTORS,
+    STATCAN_BAKED_SOURCE,
+    STATCAN_SERIES_READ,
+    statcan_download,
     statcan_zip_table,
     statcan_zip_table_with_metadata,
     valet_download,
@@ -82,6 +87,8 @@ from .config import (
     CDN_DEBT_COLUMN,
     CDN_FEDERAL_DEBT_COLUMN,
     CDN_INTEREST_COLUMN,
+    CDN_MORTGAGE_HISTORY_TABLE,
+    CDN_MORTGAGE_HISTORY_VECTOR,
     CENSUS_HIST_FIN_URL,
     CENSUS_OLD_ESTIMATES_URL,
     CENSUS_TABLES_URL,
@@ -103,6 +110,13 @@ from .config import (
     MILLION,
     ONS_TIMESERIES_URL,
     POPULATION_COLUMN,
+    STATCAN_CDN_DEBT_TABLE,
+    STATCAN_CDN_DEBT_VECTOR,
+    STATCAN_CDN_GDP_TABLE,
+    STATCAN_CDN_GDP_VECTOR,
+    STATCAN_CDN_INTEREST_TABLE,
+    STATCAN_CDN_POPULATION_TABLE,
+    STATCAN_CDN_POPULATION_VECTOR,
     STATCAN_TABLE_URL,
     THOUSAND,
     UK_ARCHIVE_BEGIN_MARKER,
@@ -2234,3 +2248,80 @@ def bake_bbk_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
 
     titles = {code: _BBK_SERIES_TITLES[code] for code in series}
     return _bake_live_series(BUNDESBANK_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
+
+
+# Each live Statistics Canada table the program reads, for its files' first
+# line: the table's own title (its metadata's Cube Title, read 2026-10-22),
+# with its frequency where the title leaves it out.
+_STATCAN_TABLE_TITLES = {
+    STATCAN_CDN_DEBT_TABLE: "General government gross debt, quarterly",
+    STATCAN_CDN_GDP_TABLE: "Gross domestic product, expenditure-based, Canada, quarterly",
+    STATCAN_CDN_INTEREST_TABLE: "Statement of government operations and balance sheet, government finance statistics, quarterly",
+    STATCAN_CDN_POPULATION_TABLE: "Population estimates, quarterly",
+    CDN_MORTGAGE_HISTORY_TABLE: "Canada Mortgage and Housing Corporation, conventional mortgage lending rate, 5-year term; monthly",
+}
+# Each vector read: Statistics Canada's own series title (WDS
+# getSeriesInfoFromVector, read 2026-10-22); the GFS table's are
+# "Canada;SECTOR;ITEM", which are the labels cdn_data.GFS_VECTORS reads them
+# by. A vector read but not named here stops the bake (KeyError).
+_STATCAN_SERIES_TITLES = {
+    STATCAN_CDN_DEBT_VECTOR: "Canada;Debt",
+    STATCAN_CDN_GDP_VECTOR: "Canada;Current prices;Seasonally adjusted at annual rates;Gross domestic product at market prices",
+    STATCAN_CDN_POPULATION_VECTOR: "Canada",
+    CDN_MORTGAGE_HISTORY_VECTOR: "Canada",
+    **{vector: f"Canada;{sector};{item}" for (sector, item), vector in GFS_VECTORS.items()},
+}
+# A table's unit and scale (cdn_data.StatcanRead), in words.
+_STATCAN_UNIT_WORDS = {("Dollars", 6): "millions of dollars", ("Persons", 0): "persons", ("Percent", 0): "percent"}
+
+
+def statcan_baked_series() -> dict[str, str]:
+    """Every Statistics Canada vector the program reads (``cdn_data.STATCAN_SERIES_READ``), by its file's name (the vector): its table. Debt, GDP, interest, the levels and the population (``cdn_data``); the CMHC mortgage rate (``rates``)."""
+    return dict(sorted((vector, table) for table, read in STATCAN_SERIES_READ.items() for vector in read.vectors))
+
+
+def statcan_baked_codes() -> list[str]:
+    """The names of Statistics Canada's baked files (``statcan_baked_series``), each a vector."""
+    return sorted(statcan_baked_series())
+
+
+def bake_statcan_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every Statistics Canada vector the program reads, whole, into ``ratesplot/data/statcan/`` (batch 19.2).
+
+    As every live source is baked (``_bake_live_series``: ``folder``,
+    ``accept_withdrawn``, what is printed and returned). Each table's ZIP,
+    the download the program has always read, is asked for once, and each
+    vector read of it is then a file of its own, as
+    ``cdn_data.statcan_download`` reads it (its rows found by the table's
+    labels, and checked): dated by each period's first day, as Statistics
+    Canada dates it, in the table's unit, a period without a value left out.
+    """
+    print("Baking Statistics Canada's live tables …")
+    series = statcan_baked_series()
+    answers: dict[str, pd.DataFrame | Exception] = {}
+
+    def download(code: str) -> pd.Series:
+        table = series[code]
+        if table not in answers:
+            try:
+                answers[table] = statcan_download(table)
+            except Exception as exc:
+                answers[table] = exc
+        answer = answers[table]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer[code].dropna()
+
+    def comment(code: str, title: str) -> str:
+        table = series[code]
+        read = STATCAN_SERIES_READ[table]
+        return (
+            f"Statistics Canada, table {table} ({STATCAN_TABLE_URL.format(table_id=table)}), vector {code}: {title}.\n"
+            "Every value the table gives, as ratesplot.cdn_data reads it: dated by each period's first day, as Statistics Canada\n"
+            f"dates it, in {_STATCAN_UNIT_WORDS[(read.unit, read.scale)]}, the table's unit (cdn_data converts millions to dollars).\n"
+            "Written by tools/bake_archives.py --only statcan (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {code: f"{_STATCAN_TABLE_TITLES[table]}: {_STATCAN_SERIES_TITLES[code]}" for code, table in series.items()}
+    return _bake_live_series(STATCAN_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)

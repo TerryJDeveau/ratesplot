@@ -189,11 +189,18 @@ LATEST_QUOTE_RETRIES = 2
 BOC_START_DATE = "2000-12-01"
 CANADIAN_YIELD_HIST_END = pd.Timestamp("2000-12-31")
 
-# Live StatCan tables (downloaded on every run).
+# Live StatCan tables (downloaded on every run), and the vector the program
+# reads of each (cdn_data.STATCAN_SERIES_READ; the GFS table's 22 are
+# cdn_data._GFS_VECTORS). Measured 2026-10-22.
 STATCAN_CDN_DEBT_TABLE = "36100467"       # general government gross debt, quarterly
 STATCAN_CDN_GDP_TABLE = "36100104"        # GDP at market prices, SAAR, quarterly
 STATCAN_CDN_INTEREST_TABLE = "10100015"   # consolidated government interest, quarterly
-STATCAN_CDN_DEBT_FALLBACK_VECTOR = "v111463452"  # WDS vector behind the debt table
+STATCAN_CDN_DEBT_VECTOR = "v111463452"    # "Debt"; also the WDS fallback's vector
+STATCAN_CDN_GDP_VECTOR = "v62305783"      # current prices, SAAR, GDP at market prices
+# The CMHC conventional 5-year mortgage lending rate, monthly from 1951
+# (rates.cdn_mortgage_history), which carries Canada's posted 5-year rate back.
+CDN_MORTGAGE_HISTORY_TABLE = "34100145"
+CDN_MORTGAGE_HISTORY_VECTOR = "v733833"
 
 # Archived (terminated) StatCan tables. They no longer change, so the bake
 # (``tools/bake_archives.py``) downloads them once and writes the required rows
@@ -232,6 +239,7 @@ BOC_FINANCIAL_MARKET_TABLE = "10100122"
 # Population: annual estimates from 1867 (baked), quarterly from 1946 (live).
 HISTORICAL_CDN_POPULATION_TABLE = "17100063"
 STATCAN_CDN_POPULATION_TABLE = "17100009"
+STATCAN_CDN_POPULATION_VECTOR = "v1"
 
 # Archive splice tuning: the median live/archived ratio is estimated over their
 # overlap up to this year, and the last ``ARCHIVE_SPLICE_YEARS`` of the archive

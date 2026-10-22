@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import io
 import zipfile
-from typing import Iterable
+from dataclasses import dataclass
+from typing import Callable, Iterable
 
 import numpy as np
 import pandas as pd
@@ -59,6 +60,8 @@ from .config import (
     CDN_DEBT_COLUMN,
     CDN_FEDERAL_DEBT_COLUMN,
     CDN_INTEREST_COLUMN,
+    CDN_MORTGAGE_HISTORY_TABLE,
+    CDN_MORTGAGE_HISTORY_VECTOR,
     DATE_COLUMN,
     GDP_COLUMN,
     HTTP_POST_TIMEOUT_SECONDS,
@@ -66,11 +69,13 @@ from .config import (
     POPULATION_COLUMN,
     RECENT_PART_REVISED,
     RECENT_PART_UNREVISED,
-    STATCAN_CDN_DEBT_FALLBACK_VECTOR,
     STATCAN_CDN_DEBT_TABLE,
+    STATCAN_CDN_DEBT_VECTOR,
     STATCAN_CDN_GDP_TABLE,
+    STATCAN_CDN_GDP_VECTOR,
     STATCAN_CDN_INTEREST_TABLE,
     STATCAN_CDN_POPULATION_TABLE,
+    STATCAN_CDN_POPULATION_VECTOR,
     STATCAN_TABLE_URL,
     STATCAN_TIMEOUT_SECONDS,
     STATCAN_WDS_URL,
@@ -248,6 +253,102 @@ def boc_valet_series(series_code: str, start: str = BOC_START_DATE, *, revised: 
     return values.loc[values.index >= pd.Timestamp(start)].rename_axis(_VALET_DATES)
 
 
+# The levels in the live GFS table 10-10-0015 (its fifth sector, the CPP and
+# QPP, is not a level of government and is left out, as from "n").
+_GFS_SECTORS = {"f": "Federal government", "p": "Provincial and territorial government", "m": "Local government"}
+_GFS_ITEM_COLUMN = "Statement of government operations and balance sheet"
+# A level's gross debt: all its liabilities except equity, the GFS definition
+# that the aggregate (36-10-0467 "Debt") also follows.
+_GFS_DEBT_ITEMS = (
+    "Special drawing rights (SDRs), liabilities",
+    "Currency and deposits, liabilities",
+    "Debt securities, liabilities",
+    "Loans, liabilities",
+    "Insurance and pension schemes, liabilities",
+    "Other accounts payable, liabilities",
+)
+# The vectors the program reads of the GFS table: the consolidated interest
+# (``fetch_cdn_interest``), and each level's interest and the six liabilities
+# that make its debt (``fetch_cdn_components``). Measured 2026-10-22.
+GFS_VECTORS = {
+    ("Consolidated government", "Interest"): "v52531011",
+    ("Federal government", "Interest"): "v52531068",
+    ("Federal government", "Special drawing rights (SDRs), liabilities"): "v1563966091",
+    ("Federal government", "Currency and deposits, liabilities"): "v52531103",
+    ("Federal government", "Debt securities, liabilities"): "v52531104",
+    ("Federal government", "Loans, liabilities"): "v52531105",
+    ("Federal government", "Insurance and pension schemes, liabilities"): "v52531107",
+    ("Federal government", "Other accounts payable, liabilities"): "v52531108",
+    ("Provincial and territorial government", "Interest"): "v52531125",
+    ("Provincial and territorial government", "Special drawing rights (SDRs), liabilities"): "v1563966095",
+    ("Provincial and territorial government", "Currency and deposits, liabilities"): "v52531160",
+    ("Provincial and territorial government", "Debt securities, liabilities"): "v52531161",
+    ("Provincial and territorial government", "Loans, liabilities"): "v52531162",
+    ("Provincial and territorial government", "Insurance and pension schemes, liabilities"): "v52531164",
+    ("Provincial and territorial government", "Other accounts payable, liabilities"): "v52531165",
+    ("Local government", "Interest"): "v52531182",
+    ("Local government", "Special drawing rights (SDRs), liabilities"): "v1563966099",
+    ("Local government", "Currency and deposits, liabilities"): "v52531217",
+    ("Local government", "Debt securities, liabilities"): "v52531218",
+    ("Local government", "Loans, liabilities"): "v52531219",
+    ("Local government", "Insurance and pension schemes, liabilities"): "v52531221",
+    ("Local government", "Other accounts payable, liabilities"): "v52531222",
+}
+
+
+def _debt_rows(table: pd.DataFrame) -> pd.Series:
+    return table["Estimates"].eq("Debt")
+
+
+def _gdp_rows(table: pd.DataFrame) -> pd.Series:
+    return (
+        table["Estimates"].str.contains("Gross domestic product at market prices", case=False, na=False)
+        & table["Prices"].str.contains("Current prices", case=False, na=False)
+        & table["Seasonal adjustment"].str.contains("Seasonally adjusted at annual rates", case=False, na=False)
+    )
+
+
+def _gfs_rows(sector: str, item: str) -> Callable[[pd.DataFrame], pd.Series]:
+    return lambda table: table["Government sectors"].eq(sector) & table[_GFS_ITEM_COLUMN].eq(item)
+
+
+def _canada_rows(table: pd.DataFrame) -> pd.Series:
+    return table["GEO"].eq("Canada")
+
+
+@dataclass(frozen=True)
+class StatcanRead:
+    """What the program reads of one live Statistics Canada table (``STATCAN_SERIES_READ``).
+
+    ``vectors``: each vector read, and how its rows are found in the whole
+    table, by the table's own labels (the selections the program has always
+    made). ``unit``: the table's ``UOM`` for them; ``scale``: its
+    ``SCALAR_ID`` (6 millions, 0 units), which WDS calls ``scalarFactorCode``.
+    """
+
+    unit: str
+    scale: int
+    vectors: dict[str, Callable[[pd.DataFrame], pd.Series]]
+
+
+# What the program reads of each live Statistics Canada table. Measured
+# 2026-10-22, for all 26 vectors: each selection is one vector, one row per
+# period, every period with a value, in the unit and scale given here. They
+# are baked (batch 19.2) under ``ratesplot/data/statcan/``
+# (``tools/bake_archives.py --only statcan``), a file per vector, named by it;
+# one request answers every vector of a table.
+STATCAN_SERIES_READ = {
+    STATCAN_CDN_DEBT_TABLE: StatcanRead("Dollars", 6, {STATCAN_CDN_DEBT_VECTOR: _debt_rows}),
+    STATCAN_CDN_GDP_TABLE: StatcanRead("Dollars", 6, {STATCAN_CDN_GDP_VECTOR: _gdp_rows}),
+    STATCAN_CDN_INTEREST_TABLE: StatcanRead(
+        "Dollars", 6, {vector: _gfs_rows(sector, item) for (sector, item), vector in GFS_VECTORS.items()}
+    ),
+    STATCAN_CDN_POPULATION_TABLE: StatcanRead("Persons", 0, {STATCAN_CDN_POPULATION_VECTOR: _canada_rows}),
+    CDN_MORTGAGE_HISTORY_TABLE: StatcanRead("Percent", 0, {CDN_MORTGAGE_HISTORY_VECTOR: _canada_rows}),
+}
+STATCAN_BAKED_SOURCE = "statcan"
+
+
 def statcan_zip_table_with_metadata(table_id: str) -> tuple[pd.DataFrame, str]:
     """Download a full Statistics Canada table ZIP and return ``(data, metadata_csv)``.
 
@@ -270,6 +371,42 @@ def statcan_zip_table_with_metadata(table_id: str) -> tuple[pd.DataFrame, str]:
 def statcan_zip_table(table_id: str) -> pd.DataFrame:
     """Download a full Statistics Canada table (CSV inside a ZIP) as a frame."""
     return statcan_zip_table_with_metadata(table_id)[0]
+
+
+def _statcan_vectors(table: pd.DataFrame, table_id: str) -> pd.DataFrame:
+    """The vectors read of a whole Statistics Canada table (``STATCAN_SERIES_READ``), a column each, in the table's unit.
+
+    Each vector's rows are found by the table's labels and checked, not
+    trusted: the vector declared and no other, the declared unit and scale,
+    one row per period; anything else raises. A period is dated by its first
+    day, as Statistics Canada dates it (``REF_DATE`` is ``YYYY-MM``, or
+    ``YYYY-MM-DD`` in 17-10-0009); a row without a value is NaN.
+    """
+    read = STATCAN_SERIES_READ[table_id]
+    columns = {}
+    for vector, rows_of in read.vectors.items():
+        rows = table.loc[rows_of(table)]
+        found = sorted(set(rows["VECTOR"].astype(str)))
+        if found != [vector]:
+            raise ValueError(f"Statistics Canada {table_id}: expected the rows of {vector}, found {found or 'none'}")
+        units = sorted(set(rows["UOM"].astype(str).str.strip())), sorted(set(rows["SCALAR_ID"]))
+        if units != ([read.unit], [read.scale]):
+            raise ValueError(f"Statistics Canada {table_id} {vector}: expected {read.unit} at scale {read.scale}, found {units}")
+        if rows["REF_DATE"].duplicated().any():
+            raise ValueError(f"Statistics Canada {table_id} {vector}: expected one row per period")
+        text = rows["REF_DATE"].astype(str)
+        dates = pd.DatetimeIndex(pd.to_datetime(text.where(text.str.len() > 7, text + "-01")), name=DATE_COLUMN)
+        columns[vector] = pd.Series(pd.to_numeric(rows["VALUE"], errors="coerce").to_numpy(dtype=float), index=dates)
+    return pd.concat(columns, axis=1).sort_index()
+
+
+def statcan_download(table_id: str) -> pd.DataFrame:
+    """Ask Statistics Canada for the vectors read of one live table (``STATCAN_SERIES_READ``): a column each, by date, in the table's unit.
+
+    One request, the table's ZIP (cached and kept as the others are), each
+    vector's rows found by the table's labels (``_statcan_vectors``).
+    """
+    return _statcan_vectors(statcan_zip_table(table_id), table_id)
 
 
 def statcan_wds_vectors(vector_ids: Iterable[str | int], *, latest_n: int = 250) -> pd.DataFrame:
@@ -304,19 +441,15 @@ def statcan_wds_vectors(vector_ids: Iterable[str | int], *, latest_n: int = 250)
     return pd.concat(frames, axis=1).sort_index()
 
 
-def _statcan_quarterly(table: pd.DataFrame, mask: pd.Series, column: str) -> pd.DataFrame:
-    """Select ``mask`` rows of a StatCan table and return ``VALUE`` in dollars.
+def _statcan_quarterly(values: pd.Series, column: str) -> pd.DataFrame:
+    """Return one quarterly StatCan vector (``statcan_download``), in millions of dollars, in dollars as ``column``.
 
-    ``REF_DATE`` is ``YYYY-MM`` for quarterly tables; the result is indexed by
-    quarter start (``QS``), the source's own dating, like the baked histories,
-    so all Canadian macro series share one calendar while they are joined.
-    The fetchers then date the joined series by the quarter's end
+    Indexed by quarter start (``QS``), the source's own dating, like the baked
+    histories, so all Canadian macro series share one calendar while they are
+    joined. The fetchers then date the joined series by the quarter's end
     (``_dated_by_quarter_end``).
     """
-    selected = table.loc[mask, ["REF_DATE", "VALUE"]]
-    dates = pd.DatetimeIndex(pd.to_datetime(selected["REF_DATE"].astype(str) + "-01"), name=DATE_COLUMN)
-    values = pd.to_numeric(selected["VALUE"], errors="coerce") * MILLION
-    return values.rename(column).set_axis(dates).sort_index().to_frame().resample("QS").last()
+    return (values * MILLION).rename(column).to_frame().resample("QS").last()
 
 
 # ---------------------------------------------------------------------------
@@ -427,13 +560,12 @@ def fetch_cdn_debt(config: PlotConfig) -> pd.DataFrame | None:
         return None
 
     try:
-        table = statcan_zip_table(STATCAN_CDN_DEBT_TABLE)
-        modern = _statcan_quarterly(table, table["Estimates"].eq("Debt"), CDN_DEBT_COLUMN)
+        modern = _statcan_quarterly(statcan_download(STATCAN_CDN_DEBT_TABLE)[STATCAN_CDN_DEBT_VECTOR], CDN_DEBT_COLUMN)
     except Exception as exc:
         print(f"  Warning: StatCan debt table failed ({exc}); trying WDS vector fallback …")
         try:
-            wds = statcan_wds_vectors([STATCAN_CDN_DEBT_FALLBACK_VECTOR], latest_n=250)
-            modern = (wds[STATCAN_CDN_DEBT_FALLBACK_VECTOR] * MILLION).rename(CDN_DEBT_COLUMN).to_frame().resample("QS").last()
+            wds = statcan_wds_vectors([STATCAN_CDN_DEBT_VECTOR], latest_n=250)
+            modern = (wds[STATCAN_CDN_DEBT_VECTOR] * MILLION).rename(CDN_DEBT_COLUMN).to_frame().resample("QS").last()
         except Exception as exc2:
             print(f"  Warning: WDS fallback failed ({exc2}); using the baked history only (to 1994).")
             modern = None
@@ -467,13 +599,7 @@ def fetch_cdn_gdp(config: PlotConfig) -> pd.DataFrame | None:
 def _fetch_live_cdn_gdp() -> pd.DataFrame | None:
     """Return live TTM nominal GDP (mean of four SAAR quarters), or None if every source fails."""
     try:
-        table = statcan_zip_table(STATCAN_CDN_GDP_TABLE)
-        mask = (
-            table["Estimates"].str.contains("Gross domestic product at market prices", case=False, na=False)
-            & table["Prices"].str.contains("Current prices", case=False, na=False)
-            & table["Seasonal adjustment"].str.contains("Seasonally adjusted at annual rates", case=False, na=False)
-        )
-        saar = _statcan_quarterly(table, mask, "GDP_SAAR")
+        saar = _statcan_quarterly(statcan_download(STATCAN_CDN_GDP_TABLE)[STATCAN_CDN_GDP_VECTOR], "GDP_SAAR")
     except Exception as exc:
         print(f"  Warning: StatCan GDP table failed ({exc}); trying FRED fallback …")
         try:
@@ -494,11 +620,8 @@ def fetch_cdn_interest(config: PlotConfig) -> pd.DataFrame | None:
         return None
 
     try:
-        table = statcan_zip_table(STATCAN_CDN_INTEREST_TABLE)
-        mask = table["Government sectors"].eq("Consolidated government") & table[
-            "Statement of government operations and balance sheet"
-        ].eq("Interest")
-        quarterly = _statcan_quarterly(table, mask, "Interest_q")
+        consolidated = statcan_download(STATCAN_CDN_INTEREST_TABLE)[GFS_VECTORS[("Consolidated government", "Interest")]]
+        quarterly = _statcan_quarterly(consolidated, "Interest_q")
         # The GFS table reports actual quarterly flows (not annualised), so TTM is a 4-quarter sum.
         modern = quarterly["Interest_q"].rolling(4).sum().rename(CDN_INTEREST_COLUMN).to_frame()
     except Exception as exc:
@@ -522,20 +645,9 @@ def fetch_cdn_interest(config: PlotConfig) -> pd.DataFrame | None:
 # Components: debt and interest by level of government (--debt:LETTERS)
 # ---------------------------------------------------------------------------
 
-# Levels in the live GFS table 10-10-0015 (its fifth sector, the CPP and QPP,
-# is not a level of government and is left out, as from "n").
-_GFS_SECTORS = {"f": "Federal government", "p": "Provincial and territorial government", "m": "Local government"}
-_GFS_ITEM_COLUMN = "Statement of government operations and balance sheet"
-# A level's gross debt: all its liabilities except equity, the GFS definition
-# that the aggregate (36-10-0467 "Debt") also follows.
-_GFS_DEBT_ITEMS = (
-    "Special drawing rights (SDRs), liabilities",
-    "Currency and deposits, liabilities",
-    "Debt securities, liabilities",
-    "Loans, liabilities",
-    "Insurance and pension schemes, liabilities",
-    "Other accounts payable, liabilities",
-)
+# The levels in the live GFS table 10-10-0015, and the items that make a
+# level's debt: ``_GFS_SECTORS`` and ``_GFS_DEBT_ITEMS``, with the vectors read
+# of it (``GFS_VECTORS``), under "Raw source access" above.
 
 
 def _with_non_federal(levels: dict[str, pd.DataFrame | None], column: str) -> dict[str, pd.DataFrame | None]:
@@ -553,11 +665,10 @@ def _embedded_levels(by_level: dict[str, list[tuple[str, float]]], column: str) 
 
 
 def _gfs_levels(table: pd.DataFrame, items: tuple[str, ...], column: str) -> dict[str, pd.DataFrame | None]:
-    """Return each level's quarterly sum of ``items`` from the GFS table, in dollars, plus "n"."""
+    """Return each level's quarterly sum of ``items`` from the GFS table's vectors (``statcan_download``), in dollars, plus "n"."""
     levels: dict[str, pd.DataFrame | None] = {}
     for key, sector in _GFS_SECTORS.items():
-        in_sector = table["Government sectors"].eq(sector)
-        parts = [_statcan_quarterly(table, in_sector & table[_GFS_ITEM_COLUMN].eq(item), column)[column] for item in items]
+        parts = [_statcan_quarterly(table[GFS_VECTORS[(sector, item)]], column)[column] for item in items]
         levels[key] = sum(parts[1:], parts[0]).rename(column).to_frame()
     return _with_non_federal(levels, column)
 
@@ -583,7 +694,7 @@ def fetch_cdn_components(config: PlotConfig) -> pd.DataFrame | None:
     if not letters or not (config.include_debt or config.include_interest):
         return None
     try:
-        table = statcan_zip_table(STATCAN_CDN_INTEREST_TABLE)
+        table = statcan_download(STATCAN_CDN_INTEREST_TABLE)
     except Exception as exc:
         print(f"  Warning: StatCan GFS table failed ({exc}); levels of government shown only to 1994.")
         table = None
@@ -628,12 +739,8 @@ def fetch_cdn_population() -> pd.Series | None:
     """
     history = embedded_frame(EMBEDDED_CDN_POPULATION_HISTORY, POPULATION_COLUMN)
     try:
-        table = statcan_zip_table(STATCAN_CDN_POPULATION_TABLE)
-        selected = table.loc[table["GEO"].eq("Canada"), ["REF_DATE", "VALUE", "SCALAR_FACTOR"]]
-        if set(selected["SCALAR_FACTOR"].astype(str).str.strip()) != {"units"} or selected["REF_DATE"].duplicated().any():
-            raise ValueError("expected one row per quarter, in persons")
-        dates = pd.DatetimeIndex(pd.to_datetime(selected["REF_DATE"]), name=DATE_COLUMN)
-        live = pd.Series(pd.to_numeric(selected["VALUE"], errors="coerce").to_numpy(), index=dates).sort_index().dropna()
+        # Canada's rows, one per quarter, in persons (checked by statcan_download).
+        live = statcan_download(STATCAN_CDN_POPULATION_TABLE)[STATCAN_CDN_POPULATION_VECTOR].dropna().rename(None)
     except Exception as exc:
         print(f"  Warning: StatCan population table failed ({exc}); using the baked estimates only (to 1977).")
         live = None

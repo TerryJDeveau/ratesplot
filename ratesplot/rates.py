@@ -19,9 +19,11 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from .cdn_data import BOC_VALET_FROM, boc_valet_series, statcan_zip_table
+from .cdn_data import BOC_VALET_FROM, boc_valet_series, statcan_download
 from .config import (
     CANADIAN_YIELD_HIST_END,
+    CDN_MORTGAGE_HISTORY_TABLE,
+    CDN_MORTGAGE_HISTORY_VECTOR,
     DATE_COLUMN,
     MORTGAGE_MARGINS,
     MORTGAGE_OWN_COLORS,
@@ -105,7 +107,6 @@ _CDN_REVISED_SERIES = {CDN_MORTGAGE_SERIES["5v"]}
 # the UK's quoted rates. None of the eight changed a value from the regression
 # cache's downloads (2026-10-06 to 2026-10-21) to 2026-10-22 (measured).
 _US_REVISED_SERIES = {US_MORTGAGE_SERIES["30"], US_MORTGAGE_SERIES["15"]}
-CDN_MORTGAGE_HISTORY_TABLE = "34100145"
 # The UK (batch 3), from the Bank of England's database (IADB), measured from
 # Terry's laptop 2026-10-06: Bank Rate daily from 1975, and before it its
 # changes since 1833 (the millennium dataset, baked). Mortgages: the Bank's
@@ -646,18 +647,12 @@ def _de_mortgage(term: str) -> pd.Series:
 def cdn_mortgage_history() -> pd.Series:
     """Return the CMHC conventional 5-year mortgage lending rate, monthly from 1951 (StatCan 34-10-0145).
 
-    The table is checked, not trusted: Canada only, in percent, one row per
-    month; anything else raises (and the caller warns). Each month is dated
-    by its first day.
+    The table's Canada rows, checked, not trusted (``cdn_data.statcan_download``):
+    the one vector declared, in percent, one row per month; anything else
+    raises (and the caller warns). Each month is dated by its first day.
     """
-    table = statcan_zip_table(CDN_MORTGAGE_HISTORY_TABLE)
-    selected = table.loc[table["GEO"].eq("Canada")] if "GEO" in table.columns else table
-    if "UOM" in selected.columns and set(selected["UOM"].astype(str).str.strip()) != {"Percent"}:
-        raise ValueError(f"expected percent, found units {sorted(set(selected['UOM'].astype(str)))}")
-    if selected.empty or selected["REF_DATE"].duplicated().any():
-        raise ValueError("expected one row per month for Canada")
-    dates = pd.DatetimeIndex(pd.to_datetime(selected["REF_DATE"].astype(str) + "-01"))
-    return _clean(pd.Series(selected["VALUE"].to_numpy(), index=dates))
+    values = statcan_download(CDN_MORTGAGE_HISTORY_TABLE)[CDN_MORTGAGE_HISTORY_VECTOR]
+    return _clean(values.rename(None).rename_axis(None))
 
 
 def _mortgage_style(term: str) -> dict:
