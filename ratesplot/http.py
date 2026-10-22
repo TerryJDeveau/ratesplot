@@ -679,8 +679,10 @@ def get_if_published(
     )
 
 
-def fetch_fred_csv(series_id: str, *, max_retries: int = DEFAULT_FRED_RETRIES) -> pd.DataFrame:
-    """Download one FRED series as a two-column ``DATE`` / ``series_id`` frame.
+def fetch_fred_csv(
+    series_id: str, *, since: pd.Timestamp | None = None, max_retries: int = DEFAULT_FRED_RETRIES
+) -> pd.DataFrame:
+    """Download one FRED series as a two-column ``DATE`` / ``series_id`` frame: every row, or those from ``since`` on.
 
     FRED is intentionally read as ``pandas.read_csv`` reads a URL (urllib's
     ``urlopen``) rather than through a ``requests.Session``. Routing FRED
@@ -693,9 +695,14 @@ def fetch_fred_csv(series_id: str, *, max_retries: int = DEFAULT_FRED_RETRIES) -
 
     Args:
         series_id: FRED series identifier, such as ``"DGS10"`` or ``"GDP"``.
+        since: The first date asked for (FRED's ``cosd``): FRED answers from
+            the period holding it (a quarterly series from that quarter's
+            first day), every row after. The recent part of a baked series
+            (batch 19.2, ``us_data.fred_series``); None, the whole series
+            (the bake, and the checks against FRED itself).
         max_retries: Complete read attempts before the last exception is raised.
     """
-    url = f"{FRED_CSV_URL}?id={series_id}"
+    url = f"{FRED_CSV_URL}?id={series_id}" + (f"&cosd={since:%Y-%m-%d}" if since is not None else "")
 
     def attempt() -> pd.DataFrame:
         with host_turn(url), urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:
@@ -719,7 +726,8 @@ def fetch_fred_csv(series_id: str, *, max_retries: int = DEFAULT_FRED_RETRIES) -
         return _with_retries(series_id, attempt, max_retries=max_retries)
 
     # Callers modify the frame they get, so each receives its own copy of the cached one.
-    return _cached(("fred", series_id), download).copy()
+    key = ("fred", series_id) if since is None else ("fred", series_id, f"{since:%Y-%m-%d}")
+    return _cached(key, download).copy()
 
 
 def parse_boc_csv(response_text: str, key: str = "date") -> pd.DataFrame:

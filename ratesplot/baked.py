@@ -7,22 +7,26 @@ Reboot all start with the history in hand, and a source that is down, or
 gone, is still drawn to the bake's last date. Re-baked daily (decision 49)
 by a separate job whose result is committed; the running program never
 writes these files. Begun with the Bank of England's database, 2026-10-21;
-then the Bank of Canada's Valet, 2026-10-22.
+then the Bank of Canada's Valet and FRED, 2026-10-22.
 
 The files: ``ratesplot/data/SOURCE/CODE.csv``, one series each, written
 only by the bake (``ratesplot.bake``, run by ``tools/bake_archives.py``):
 comment lines starting ``#`` (what the series is), then the header
-``date,value`` and one row for each date the source has a value, oldest
-first, dated ``YYYY-MM-DD``, the value as Python writes a float (``repr``:
-the shortest text that reads back as the same number; ``write_series``
-checks that it does). Plain text, not compressed: a daily re-bake adds a
+``date,value`` and one row for each date the source gives, oldest first,
+dated ``YYYY-MM-DD``, the value as Python writes a float (``repr``: the
+shortest text that reads back as the same number; ``write_series`` checks
+that it does). A row with no value is a date the source lists without one:
+FRED's daily yields have a row for every weekday, empty on a market
+holiday, and the program's gap-filling counts those rows (``us_data``), so
+the bake keeps them (read as NaN). The other sources' bakes leave such
+dates out. Plain text, not compressed: a daily re-bake adds a
 few lines, which git stores as a small change, where a compressed file
 would be stored whole again every day. Nothing in a file says when it was
 baked, so a file changes only when its source has new or revised values;
 its last date says how far it reaches.
 
 A drawing asks the source only for the recent part (``with_recent_part``):
-from a while before the bake's last date (``config.RECENT_PART_UNREVISED``
+from a while before the bake's last value (``config.RECENT_PART_UNREVISED``
 or ``RECENT_PART_REVISED``, the source's own), so that late values and
 revisions in that span arrive. The baked values and the recent part are
 one series, so they meet without a ramp, unlike the joins of different
@@ -60,16 +64,17 @@ def parse_series(text: str, code: str) -> pd.Series:
     float whose ``repr`` the bake wrote: the very float the live download
     gave. pandas' own conversion from text can be a unit in the last place
     off for a value written with 17 digits (``0.30000000000000004`` reads as
-    0.3; tools/check_baked.py).
+    0.3; tools/check_baked.py). A row with no value reads as NaN (a date the
+    source lists without one); a value written that is not a number, "nan"
+    among them, raises.
     """
-    frame = pd.read_csv(io.StringIO(text), comment="#", dtype=str)
+    frame = pd.read_csv(io.StringIO(text), comment="#", dtype=str, keep_default_na=False)
     if list(frame.columns) != ["date", "value"]:
         raise ValueError(f"baked {code}: expected the columns date,value, got {list(frame.columns)}")
-    if frame["value"].isna().any():
-        raise ValueError(f"baked {code}: a row without a value")
     dates = pd.DatetimeIndex(pd.to_datetime(frame["date"], format="%Y-%m-%d"), name=DATE_COLUMN)
-    values = pd.Series([float(text) for text in frame["value"]], index=dates, dtype=float, name=code)
-    if values.isna().any():
+    written = [text for text in frame["value"] if text != ""]
+    values = pd.Series([float(text) if text != "" else float("nan") for text in frame["value"]], index=dates, dtype=float, name=code)
+    if values.count() != len(written):
         raise ValueError(f"baked {code}: a value that is not a number")
     if not dates.is_monotonic_increasing or dates.has_duplicates:
         raise ValueError(f"baked {code}: its dates are not in order, each once")
@@ -77,24 +82,24 @@ def parse_series(text: str, code: str) -> pd.Series:
 
 
 def format_series(series: pd.Series, comment: str) -> str:
-    """The text of a baked file: ``comment`` (one ``#`` line per line), the header, a row per value."""
+    """The text of a baked file: ``comment`` (one ``#`` line per line), the header, a row per date (an empty value for NaN)."""
     lines = [f"# {line}".rstrip() for line in comment.splitlines()] + [_HEADER]
-    lines += [f"{day:%Y-%m-%d},{float(value)!r}" for day, value in series.dropna().items()]
+    lines += [f"{day:%Y-%m-%d}," + ("" if pd.isna(value) else repr(float(value))) for day, value in series.items()]
     return "\n".join(lines) + "\n"
 
 
 def write_series(path: Path, series: pd.Series, comment: str) -> None:
     """Write ``series`` as a baked file at ``path``, replacing the one there at once (the bake and the harnesses only).
 
-    The text is read back first and must give ``series`` exactly (its dates
-    and every float), so a file is never written that would draw anything
-    else. Written in text mode, as the bake writes the data modules: CRLF on
-    Windows, LF elsewhere; git stores LF either way.
+    The text is read back first and must give ``series`` exactly (its dates,
+    the dates without a value, and every float), so a file is never written
+    that would draw anything else. Written in text mode, as the bake writes
+    the data modules: CRLF on Windows, LF elsewhere; git stores LF either way.
     """
     text = format_series(series, comment)
-    expected = series.dropna().astype(float).rename(series.name)
+    expected = series.astype(float).rename(series.name)
     back = parse_series(text, str(series.name))
-    if not back.index.equals(expected.index) or not (back.to_numpy() == expected.to_numpy()).all():
+    if not back.index.equals(expected.index) or not back.equals(expected):
         raise ValueError(f"baked {series.name}: its text does not read back as the series downloaded")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
@@ -146,16 +151,18 @@ def with_recent_part(
     If the recent part fails, the baked history alone, with a warning naming
     ``label`` and the bake's last date (decision 45). The request's last good
     copy (batch 20), where there is one, is drawn before that, by the
-    download cache, which names it at the drawing's end.
+    download cache, which names it at the drawing's end. The bake's last date
+    is its last with a value (a row without one, FRED's, is not counted).
     """
     baked = read_series(source, code)
-    if baked is None or baked.empty:
+    if baked is None or baked.count() == 0:
         return fetch(None)
-    start = baked.index[-1] - recent
+    last = baked.last_valid_index()
+    start = last - recent
     try:
         live = fetch(start)
     except Exception as exc:
-        print(f"  Warning: {label}: its recent values unavailable ({exc}); drawn from its baked history, to {baked.index[-1]:%Y-%m-%d}.")
+        print(f"  Warning: {label}: its recent values unavailable ({exc}); drawn from its baked history, to {last:%Y-%m-%d}.")
         return baked
     return pd.concat([baked.loc[baked.index < start], live.loc[live.index >= start]])
 

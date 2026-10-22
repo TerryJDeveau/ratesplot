@@ -4,29 +4,34 @@
 Offline, in seconds:
 
 * every file under ``ratesplot/data/`` reads (``baked.parse_series``): the
-  bake's form, its dates in order and each once, every value a number;
+  bake's form, its dates in order and each once, every value a number or
+  none (a date the source lists without one, FRED's);
 * every Bank of England database series the program reads
   (``bake.boe_baked_codes``) has a file, and every file there is one of them;
-  so does every Bank of Canada Valet series (``bake.boc_baked_codes``);
+  so does every Bank of Canada Valet series (``bake.boc_baked_codes``) and
+  every FRED series (``bake.fred_baked_codes``);
 * a series written by ``baked.write_series`` reads back float for float,
-  and its text is the bake's form (comment, header, one row per value);
+  its dates without a value too, and its text is the bake's form (comment,
+  header, one row per date, empty where there is no value);
 * ``baked.with_recent_part``, with made-up answers from the source: the bake,
   then the recent part from its first date (a value the source has revised
   there is the source's; the values before it that a source sends when it
   ignores the date asked for, left out); the source failing: the bake alone,
   with a warning naming the series and its last date; no bake: the whole
-  series asked for, as before 19.2;
+  series asked for, as before 19.2; a bake whose last row has no value
+  counted from its last value, its rows without one kept;
 * ``baked.frame_with_recent_part``, the same for a group of series asked for
   in one request (the Bank of Canada's benchmark yields): one request, from
   the earliest bake's last date less the recent part; only the columns read;
   the answer failing or lacking one of them: the bakes alone;
 * the re-bake's report (``bake.bake_changes``): new values, each revised value
   with its size, dates within the bake that it lacked; a download that lacks
-  dates the file has, refused.
+  dates the file has, refused; a date without a value on both sides
+  unchanged, a value given or taken from one, revised.
 
 The live checks: ``tools/check_sources.py`` draws through the bake and its
 recent part; ``tools/check_drawn_values.py`` checks every drawn value against
-the Bank of England's whole series; ``tools/check_uk_parsers.py`` the warning
+each baked source's whole series; ``tools/check_uk_parsers.py`` the warning
 when the database redirects.
 
 Usage (from the project root)::
@@ -49,7 +54,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, baked, cdn_data, uk_data  # noqa: E402
+from ratesplot import bake, baked, cdn_data, uk_data, us_data  # noqa: E402
 from ratesplot.config import DATE_COLUMN  # noqa: E402
 
 RESULTS: list[bool] = []
@@ -73,14 +78,15 @@ def check_files() -> None:
     for path in files:
         try:
             values = baked.parse_series(path.read_text(encoding="utf-8"), path.stem)
-            if values.empty:
-                problems.append(f"{path.name}: empty")
+            if values.count() == 0:
+                problems.append(f"{path.name}: no values")
         except Exception as exc:
             problems.append(f"{path.name}: {exc}")
     check(f"every baked file reads in the bake's form ({len(files)} files)", bool(files) and not problems, problems)
     for name, source, read in (
         ("Bank of England", uk_data.BOE_BAKED_SOURCE, bake.boe_baked_codes()),
         ("Bank of Canada", cdn_data.BOC_BAKED_SOURCE, bake.boc_baked_codes()),
+        ("FRED", us_data.FRED_BAKED_SOURCE, bake.fred_baked_codes()),
     ):
         found = {path.stem for path in (baked.DATA_FOLDER / source).glob("*.csv")}
         codes = set(read)
@@ -101,12 +107,22 @@ def check_written(folder: Path) -> None:
     check("its text: the comment, the header, a row per value as Python writes the float",
           lines == ["# a made-up series", "# its second line", "date,value", "2020-01-01,5.3714", "2020-01-02,0.30000000000000004",
                     "2020-02-01,4.0", "2020-03-31,1e-05", "2021-01-01,-0.25"], lines)
+    # FRED's form: a date it lists without a value (a holiday), here the second and the last.
+    holidays = series({"2020-01-01": 1.5, "2020-01-02": float("nan"), "2020-01-03": 1.25, "2020-01-06": float("nan")}, "H")
+    path = folder / "written" / "H.csv"
+    baked.write_series(path, holidays, "made up")
+    text = path.read_text(encoding="utf-8")
+    back = baked.parse_series(text, "H")
+    check("dates without a value: written as rows with an empty value, read back as NaN on the same dates",
+          text.splitlines() == ["# made up", "date,value", "2020-01-01,1.5", "2020-01-02,", "2020-01-03,1.25", "2020-01-06,"]
+          and back.equals(holidays) and back.index.equals(holidays.index), text.splitlines())
     for bad, why in (
         ("date,value\n2020-01-02,1.0\n2020-01-01,2.0\n", "dates out of order"),
         ("date,value\n2020-01-01,1.0\n2020-01-01,2.0\n", "a date twice"),
-        ("date,value\n2020-01-01,\n", "a row without a value"),
         ("date,price\n2020-01-01,1.0\n", "another header"),
         ("date,value\n2020-01-01,n/a\n", "a value that is not a number"),
+        ("date,value\n2020-01-01,nan\n", "the text nan"),
+        ("date,value\n,1.0\n", "a row without a date"),
     ):
         try:
             baked.parse_series(bad, "X")
@@ -154,10 +170,40 @@ def check_join(folder: Path) -> None:
         asked.clear()
         whole = baked.with_recent_part("made-up", "Y", "made-up Y", answering, pd.DateOffset(months=2))
         check("no bake: the whole series asked for, as before 19.2", asked == [None] and len(whole) == 5, asked)
+        check_blank_join(folder)
         check_group_join(folder, history)
     finally:
         baked.DATA_FOLDER = real_folder
         baked.forget_read_files()
+
+
+def check_blank_join(folder: Path) -> None:
+    """``baked.with_recent_part`` on FRED's form: dates without a value in the bake, its last row one of them."""
+    nan = float("nan")
+    bake_b = series({"2026-01-30": 1.0, "2026-06-29": nan, "2026-06-30": 2.0, "2026-07-31": 3.0, "2026-08-03": nan}, "B")
+    baked.write_series(folder / "made-up" / "B.csv", bake_b, "made up")
+    asked: list[pd.Timestamp | None] = []
+
+    def answering(start: pd.Timestamp | None) -> pd.Series:
+        asked.append(start)
+        return series({"2026-06-29": nan, "2026-06-30": 2.0, "2026-07-31": 3.0, "2026-08-03": nan, "2026-08-04": 4.0}, "B")
+
+    joined = baked.with_recent_part("made-up", "B", "made-up B", answering, pd.DateOffset(months=2))
+    check("a bake ending in a date without a value: the recent part counted from its last value",
+          asked == [pd.Timestamp("2026-05-31")], asked)
+    expected = series({"2026-01-30": 1.0, "2026-06-29": nan, "2026-06-30": 2.0, "2026-07-31": 3.0, "2026-08-03": nan, "2026-08-04": 4.0}, "B")
+    check("... the dates without a value kept, the bake's and the source's", joined.equals(expected) and joined.index.equals(expected.index),
+          joined.to_dict())
+
+    def failing(start: pd.Timestamp | None) -> pd.Series:
+        raise ConnectionError("refused by check_baked")
+
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        alone = baked.with_recent_part("made-up", "B", "made-up B", failing, pd.DateOffset(months=2))
+    said = printed.getvalue().strip()
+    check("... the source failing: the bake alone, named to its last value",
+          alone.equals(bake_b) and said.endswith("drawn from its baked history, to 2026-07-31."), said)
 
 
 def check_group_join(folder: Path, history: pd.Series) -> None:
@@ -238,6 +284,21 @@ def check_report() -> None:
     check("report: the first 20 revisions listed, then their count and the largest",
           len(lines) == 22 and lines[20] == "and 4 more revised, to 2026-12-01; the largest change 0.5" and lines[21] == "0 new, 24 revised",
           lines[19:])
+    # FRED's form: dates without a value.
+    nan = float("nan")
+    blank = series({"2026-01-01": 1.0, "2026-01-02": nan, "2026-01-05": 2.0})
+    changes = bake.bake_changes(None, blank)
+    check("report: a new file counts its values, not its dates without one", changes.lines == ["new file, 2 values"], changes.lines)
+    changes = bake.bake_changes(blank, blank.copy())
+    check("report: a date without a value on both sides is unchanged",
+          changes.lines == ["0 new, 0 revised"] and not changes.history_changed, changes.lines)
+    changes = bake.bake_changes(blank, series({"2026-01-01": nan, "2026-01-02": 1.5, "2026-01-05": 2.0, "2026-01-06": nan}))
+    check("report: a value taken away and one given where there was none, revised; a new date without a value, new",
+          changes.history_changed and changes.lines == [
+              "revised 2026-01-01: 1.0 -> no value",
+              "revised 2026-01-02: no value -> 1.5",
+              "1 new (2026-01-06 to 2026-01-06), 2 revised",
+          ], changes.lines)
 
 
 def main() -> int:

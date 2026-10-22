@@ -23,7 +23,8 @@ its own data module. The live sources' history (batch 19.2) is baked
 differently: every value of each series, one data file per series under
 ``ratesplot/data/`` (``ratesplot.baked``), re-baked daily, so that a drawing
 asks only for the recent part. Begun with the Bank of England's database
-(``bake_boe_history``), then the Bank of Canada's Valet (``bake_boc_history``).
+(``bake_boe_history``), then the Bank of Canada's Valet (``bake_boc_history``)
+and FRED (``bake_fred_history``).
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ from .cdn_data import (
     BOC_BENCHMARK_GROUP,
     BOC_BILL_SERIES,
     BOC_VALET_FROM,
+    FRED_CDN_GDP_SERIES,
     statcan_zip_table,
     statcan_zip_table_with_metadata,
     valet_download,
@@ -105,7 +107,7 @@ from .config import (
     US_ARCHIVE_END_MARKER,
 )
 from .de_data import parse_bundesbank_csv
-from .http import canadian_get, de_get, get_if_published, uk_get
+from .http import canadian_get, de_get, fetch_fred_csv, get_if_published, uk_get
 from .rates import (
     CDN_BANK_RATE_SERIES,
     CDN_CORRA_SERIES,
@@ -115,8 +117,26 @@ from .rates import (
     UK_MARKET_SERIES,
     UK_MORTGAGE_SERIES,
     UK_POLICY_SERIES,
+    US_MARKET_SERIES,
+    US_MONTHLY_EFFECTIVE_SERIES,
+    US_MORTGAGE_SERIES,
+    US_TARGET_RANGE_SERIES,
+    US_TARGET_SERIES,
 )
 from .uk_data import BOE_BAKED_SOURCE, UK_YIELD_SERIES, iadb_download
+from .us_data import (
+    FRED_BAKED_SOURCE,
+    US_DEBT_SERIES_ID,
+    US_FEDERAL_INTEREST_SERIES_ID,
+    US_GDP_SERIES_ID,
+    US_INTEREST_SERIES_ID,
+    US_LOCAL_INTEREST_SERIES_ID,
+    US_POPULATION_SERIES_ID,
+    US_STATE_INTEREST_SERIES_ID,
+    US_STATE_LOCAL_DEBT_SERIES_ID,
+    US_STATE_LOCAL_INTEREST_SERIES_ID,
+    US_YIELD_SERIES,
+)
 
 # Balance-sheet members that constitute marketable debt securities.
 DEBT_SECURITY_CATEGORIES = ("Short-term paper", "Bonds")
@@ -1561,7 +1581,7 @@ def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None
 # daily (Terry, decision 49); each run says what changed in each file, every
 # revision with its size, so a revision is seen before it is committed.
 # Begun with the Bank of England's database (2026-10-21); the Bank of
-# Canada's Valet next (2026-10-22). Each source's bake is a call of
+# Canada's Valet and FRED next (2026-10-22). Each source's bake is a call of
 # ``_bake_live_series`` with its list of series and its download.
 
 # Each Bank of England database series the program reads, for its file's
@@ -1599,7 +1619,9 @@ class SeriesChanges:
     ``lost``: baked dates the download lacks; the download may be cut short,
     or the source may have withdrawn values. ``filled``: dates within the
     bake's span that it lacked. ``revised``: values whose float differs at
-    all. ``added``: dates after the bake's last. The last line sums them up.
+    all, a value given where the bake had a date without one (FRED's empty
+    rows), and a value the source no longer gives on a date it still lists.
+    ``added``: dates after the bake's last. The last line sums them up.
     """
 
     new_file: bool = False
@@ -1620,22 +1642,33 @@ class SeriesChanges:
         return bool(len(self.revised) or len(self.filled) or len(self.lost))
 
 
+def _revision_line(day: pd.Timestamp, old: float, new: float) -> str:
+    """One revised value: the two floats as written and the change, or which of them is a date without a value."""
+    if pd.isna(old):
+        return f"revised {day:%Y-%m-%d}: no value -> {float(new)!r}"
+    if pd.isna(new):
+        return f"revised {day:%Y-%m-%d}: {float(old)!r} -> no value"
+    return f"revised {day:%Y-%m-%d}: {float(old)!r} -> {float(new)!r} ({new - old:+.6g})"
+
+
 def bake_changes(old: pd.Series | None, new: pd.Series) -> SeriesChanges:
-    """What re-baking one series changes, from its baked values (``old``; None: no file yet) to the download (``new``)."""
+    """What re-baking one series changes, from its baked values (``old``; None: no file yet) to the download (``new``).
+
+    Dates without a value (FRED's empty rows) are dates like the others; on
+    one date two of them are the same, and one beside a value is a revision.
+    """
     if old is None:
-        return SeriesChanges(new_file=True, added=new.index, lines=[f"new file, {len(new):,} values"])
+        return SeriesChanges(new_file=True, added=new.index, lines=[f"new file, {new.count():,} values"])
     lost = old.index.difference(new.index)
     kept = old.index.intersection(new.index)
-    revised = kept[old.loc[kept].to_numpy() != new.loc[kept].to_numpy()]
+    before, after = old.loc[kept].to_numpy(), new.loc[kept].to_numpy()
+    revised = kept[(before != after) & ~(pd.isna(before) & pd.isna(after))]
     inserted = new.index.difference(old.index)
     added = inserted[inserted > old.index[-1]]
     filled = inserted[inserted <= old.index[-1]]
     changes = SeriesChanges(added=added, revised=revised, filled=filled, lost=lost)
     lines = [changes.refused] if changes.refused else []
-    lines += [
-        f"revised {day:%Y-%m-%d}: {float(old[day])!r} -> {float(new[day])!r} ({new[day] - old[day]:+.6g})"
-        for day in revised[:_REVISIONS_LISTED]
-    ]
+    lines += [_revision_line(day, old[day], new[day]) for day in revised[:_REVISIONS_LISTED]]
     if len(revised) > _REVISIONS_LISTED:
         largest = (new.loc[revised] - old.loc[revised]).abs().max()
         lines.append(f"and {len(revised) - _REVISIONS_LISTED:,} more revised, to {revised[-1]:%Y-%m-%d}; the largest change {largest:.6g}")
@@ -1674,7 +1707,8 @@ def _bake_live_series(
     """Bake each series of ``titles`` (code -> its title), whole, into ``ratesplot/data/SOURCE/``: the bake of every live source.
 
     ``download(code)`` asks the source for every value of one series,
-    without missing days; ``comment(code, title)`` is its file's comment.
+    without missing days (and, FRED's, with the dates it lists without a
+    value, as NaN); ``comment(code, title)`` is its file's comment.
     ``folder`` writes the files there instead. Each series is a file and is
     written on its own. One whose download fails keeps its file as it was;
     so does one whose download lacks baked dates (``SeriesChanges.refused``),
@@ -1693,7 +1727,7 @@ def _bake_live_series(
             result.error = str(exc) or type(exc).__name__
             print(f"  {code}: not baked ({result.error}); its file is left as it was.")
             continue
-        result.values, result.last = len(new), new.index[-1]
+        result.values, result.last = new.count(), new.last_valid_index()
         old = baked.parse_series(path.read_text(encoding="utf-8"), code) if path.exists() else None
         result.changes = changes = bake_changes(old, new)
         if changes.refused and not accept_withdrawn:
@@ -1701,7 +1735,8 @@ def _bake_live_series(
             continue
         baked.write_series(path, new, comment(code, title))
         result.written = True
-        print(f"  {code}: {len(new):,} values, {new.index[0]:%Y-%m-%d} to {new.index[-1]:%Y-%m-%d}; {changes.lines[-1]}")
+        print(f"  {code}: {new.count():,} values, {new.index[0]:%Y-%m-%d} to {new.last_valid_index():%Y-%m-%d}"
+              + (f" ({len(new) - new.count():,} dates without one)" if new.hasnans else "") + f"; {changes.lines[-1]}")
         for line in changes.lines[:-1]:
             print(f"      {line}")
     return results
@@ -1796,3 +1831,79 @@ def bake_boc_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
 
     titles = {code: _BOC_SERIES_TITLES[code] for code in boc_baked_codes()}
     return _bake_live_series(BOC_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
+
+
+# Each FRED series the program reads, for its file's first line: FRED's own
+# title and frequency, read from each series' page 2026-10-22. A series read
+# but not named here stops the bake (KeyError).
+_FRED_SERIES_TITLES = {
+    "DGS1MO": "Market Yield on U.S. Treasury Securities at 1-Month Constant Maturity, Quoted on an Investment Basis; daily",
+    "DGS3MO": "Market Yield on U.S. Treasury Securities at 3-Month Constant Maturity, Quoted on an Investment Basis; daily",
+    "DGS6MO": "Market Yield on U.S. Treasury Securities at 6-Month Constant Maturity, Quoted on an Investment Basis; daily",
+    "DGS1": "Market Yield on U.S. Treasury Securities at 1-Year Constant Maturity, Quoted on an Investment Basis; daily",
+    "DGS2": "Market Yield on U.S. Treasury Securities at 2-Year Constant Maturity, Quoted on an Investment Basis; daily",
+    "DGS5": "Market Yield on U.S. Treasury Securities at 5-Year Constant Maturity, Quoted on an Investment Basis; daily",
+    "DGS7": "Market Yield on U.S. Treasury Securities at 7-Year Constant Maturity, Quoted on an Investment Basis; daily",
+    "DGS10": "Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis; daily",
+    "DGS20": "Market Yield on U.S. Treasury Securities at 20-Year Constant Maturity, Quoted on an Investment Basis; daily",
+    "DGS30": "Market Yield on U.S. Treasury Securities at 30-Year Constant Maturity, Quoted on an Investment Basis; daily",
+    "GFDEBTN": "Federal Debt: Total Public Debt; quarterly, end of period",
+    "SLGSDODNS": "State and Local Governments; Debt Securities and Loans; Liability, Level; quarterly, end of period",
+    "A180RC1Q027SBEA": "Government current expenditures: Interest payments; quarterly",
+    "A091RC1Q027SBEA": "Federal government current expenditures: Interest payments; quarterly",
+    "B111RC1Q027SBEA": "State and local government current receipts: Interest payments; quarterly",
+    "W756RC1A027NBEA": "State government current expenditures: Interest payments; annual",
+    "W856RC1A027NBEA": "Local government current expenditures: Interest payments; annual",
+    "GDP": "Gross Domestic Product; quarterly",
+    "B230RC0Q173SBEA": "Population; quarterly",
+    "FEDFUNDS": "Federal Funds Effective Rate; monthly",
+    "DFEDTAR": "Federal Funds Target Rate (DISCONTINUED); daily, 7-day",
+    "DFEDTARL": "Federal Funds Target Range - Lower Limit; daily, 7-day",
+    "DFEDTARU": "Federal Funds Target Range - Upper Limit; daily, 7-day",
+    "DFF": "Federal Funds Effective Rate; daily, 7-day",
+    "MORTGAGE30US": "30-Year Fixed Rate Mortgage Average in the United States; weekly, ending Thursday",
+    "MORTGAGE15US": "15-Year Fixed Rate Mortgage Average in the United States; weekly, ending Thursday",
+    "DPRIME": "Bank Prime Loan Rate; daily",
+    "NGDPSAXDCCAQ": "Nominal Gross Domestic Product (GDP) for Canada; quarterly",
+}
+
+
+def fred_baked_codes() -> list[str]:
+    """Every FRED series the program reads: the yields, debt, interest, GDP and population (``us_data``), the policy, mortgage and prime rates (``rates``), Canada's GDP (``cdn_data``, when Statistics Canada fails)."""
+    return sorted({
+        *US_YIELD_SERIES.values(), US_DEBT_SERIES_ID, US_STATE_LOCAL_DEBT_SERIES_ID, US_INTEREST_SERIES_ID,
+        US_FEDERAL_INTEREST_SERIES_ID, US_STATE_LOCAL_INTEREST_SERIES_ID, US_STATE_INTEREST_SERIES_ID,
+        US_LOCAL_INTEREST_SERIES_ID, US_GDP_SERIES_ID, US_POPULATION_SERIES_ID,
+        US_MONTHLY_EFFECTIVE_SERIES, US_TARGET_SERIES, *US_TARGET_RANGE_SERIES, US_MARKET_SERIES, *US_MORTGAGE_SERIES.values(),
+        FRED_CDN_GDP_SERIES,
+    })
+
+
+def bake_fred_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every FRED series the program reads, whole, into ``ratesplot/data/fred/`` (batch 19.2).
+
+    As every live source is baked (``_bake_live_series``: ``folder``,
+    ``accept_withdrawn``, what is printed and returned). Each series is
+    FRED's every row, dated as FRED dates it, the dates FRED lists without a
+    value included (each market holiday in the daily yields and the prime
+    rate; 1946 to 1951 in state and local debt): the U.S. yields' gap-filling
+    counts them (``us_data._US_YIELD_FILL_ROWS``). Measured 2026-10-22, for
+    all 28 series: FRED's answer from a date is the whole series from the
+    period holding that date on, blank rows included.
+    """
+    print("Baking the FRED series …")
+
+    def download(code: str) -> pd.Series:
+        return fetch_fred_csv(code).set_index(DATE_COLUMN)[code].astype(float)
+
+    def comment(code: str, title: str) -> str:
+        return (
+            f"FRED (Federal Reserve Bank of St. Louis), series {code}: {title}.\n"
+            "Every row FRED gives, dated as FRED dates it (a month, quarter or year by its first day);\n"
+            "a row without a value is a date FRED lists without one.\n"
+            "Written by tools/bake_archives.py --only fred (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {code: _FRED_SERIES_TITLES[code] for code in fred_baked_codes()}
+    return _bake_live_series(FRED_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)

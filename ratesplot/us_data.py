@@ -99,6 +99,11 @@ US_LOCAL_INTEREST_SERIES_ID = "W856RC1A027NBEA"
 US_GDP_SERIES_ID = "GDP"                    # nominal GDP, SAAR $ billions
 US_POPULATION_SERIES_ID = "B230RC0Q173SBEA"  # population (mid-period), thousands, quarterly from 1947
 
+# FRED's series are baked (batch 19.2) under ``ratesplot/data/fred/``
+# (``tools/bake_archives.py --only fred``): the U.S. series here and in
+# ``rates``, and Canada's GDP (``cdn_data``, when Statistics Canada fails).
+FRED_BAKED_SOURCE = "fred"
+
 
 def us_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
     """Return the first observation of the U.S. inputs, by name, for the coverage warning.

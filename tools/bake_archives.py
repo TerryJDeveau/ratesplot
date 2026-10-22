@@ -28,6 +28,8 @@ the BEGIN/END markers of
   printed, each revised value with its size (the first 20 of a series).
 * ``ratesplot/data/boc/``: the Bank of Canada's Valet series, in the same way
   (batch 19.2's second source).
+* ``ratesplot/data/fred/``: FRED's series, in the same way (the third), with
+  the dates FRED lists without a value kept as rows without one.
 
 Nothing is written for a country's archive module unless every one of its
 sources is extracted and the new module compiles.
@@ -41,8 +43,8 @@ only read the modules and the files.
 
 Usage (from the project root)::
 
-    python tools/bake_archives.py            # every nation, and boe and boc
-    python tools/bake_archives.py --only us  # or cdn, uk, de, boe, boc
+    python tools/bake_archives.py            # every nation, and boe, boc and fred
+    python tools/bake_archives.py --only us  # or cdn, uk, de, boe, boc, fred
     python tools/bake_archives.py --only uk --uk-workbook a-millennium-of-macroeconomic-data-for-the-uk.xlsx
     python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv
 """
@@ -60,6 +62,7 @@ from ratesplot.bake import (  # noqa: E402
     bake_boc_history,
     bake_boe_history,
     bake_canadian_archives,
+    bake_fred_history,
     bake_german_archives,
     bake_uk_archives,
     bake_us_archives,
@@ -72,12 +75,13 @@ BAKES = {
     "de": bake_german_archives,
     "boe": bake_boe_history,
     "boc": bake_boc_history,
+    "fred": bake_fred_history,
 }
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation's archives, or one live source's history (boe, boc)")
+    parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation's archives, or one live source's history (boe, boc, fred)")
     parser.add_argument("--uk-workbook", type=Path, help="the UK millennium workbook already on disk (not downloaded)")
     parser.add_argument("--de-csv", type=Path, help="the Bundesbank's WU0004 download already on disk (not downloaded)")
     parser.add_argument("--de-discount-csv", type=Path, help="the Bundesbank's discount rate download (BBIN1) already on disk")
