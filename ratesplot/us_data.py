@@ -112,15 +112,17 @@ US_POPULATION_SERIES_ID = "B230RC0Q173SBEA"  # population (mid-period), thousand
 FRED_BAKED_SOURCE = "fred"
 
 
-def fred_series(series_id: str, *, revised: bool) -> pd.DataFrame:
+def fred_series(series_id: str, *, revised: bool, stopped: pd.Timestamp | None = None) -> pd.DataFrame:
     """Return one FRED series as ``http.fetch_fred_csv`` gives it (a ``DATE`` column and ``series_id``): its baked history, then its recent part.
 
     Batch 19.2 (``ratesplot.baked``): the history is in
     ``ratesplot/data/fred/``, and only the last two months are asked for, or
     the last 24 if FRED's source revises the series (``revised``: GDP,
     debt, interest, population, the surveys' mortgage rates; each caller
-    says which); a series not yet baked is asked for whole. If FRED fails,
-    the baked history alone, to its last value, with a warning. The rows
+    says which); a series not yet baked is asked for whole. A series that
+    has stopped (``stopped``, its last value's date, declared by the caller:
+    batch 19.3) is its bake alone, with no request (``baked.with_recent_part``).
+    If FRED fails, the baked history alone, to its last value, with a warning. The rows
     FRED lists without a value (its holidays) are kept, as in a whole
     download: the yields' gap-filling counts them (``_US_YIELD_FILL_ROWS``).
     Measured 2026-10-22: the bake joined to its recent part is FRED's whole
@@ -132,7 +134,8 @@ def fred_series(series_id: str, *, revised: bool) -> pd.DataFrame:
         return frame.set_index(DATE_COLUMN)[series_id]
 
     values = with_recent_part(
-        FRED_BAKED_SOURCE, series_id, f"FRED {series_id}", fetch, RECENT_PART_REVISED if revised else RECENT_PART_UNREVISED
+        FRED_BAKED_SOURCE, series_id, f"FRED {series_id}", fetch, RECENT_PART_REVISED if revised else RECENT_PART_UNREVISED,
+        stopped=stopped,
     )
     return values.rename(series_id).rename_axis(DATE_COLUMN).reset_index()
 

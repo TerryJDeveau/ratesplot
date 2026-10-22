@@ -387,14 +387,17 @@ def ecb_download(flow: str, key: str, unit: str, start: pd.Timestamp | None = No
     return parse_ecb_csv(response.text, f"{flow}.{key}", unit)
 
 
-def ecb_series(flow: str, key: str, unit: str, *, revised: bool) -> pd.Series:
+def ecb_series(flow: str, key: str, unit: str, *, revised: bool, stopped: pd.Timestamp | None = None) -> pd.Series:
     """Return one ECB Data Portal series (``parse_ecb_csv``): its baked history, then its recent part from the ECB.
 
     Batch 19.2 (``ratesplot.baked``): the history is in
     ``ratesplot/data/ecb/``, and only the last two months are asked for, or
     the last 24 if the ECB revises the series (``revised``: the debt, the
     mortgage rates; each caller says which), from the period holding that
-    date on; a series not yet baked is asked for whole. If the ECB fails,
+    date on; a series not yet baked is asked for whole. A series that has
+    stopped (``stopped``, its last value's date, declared by the caller:
+    batch 19.3) is its bake alone, with no request (``baked.with_recent_part``).
+    If the ECB fails,
     the baked history alone, to its last value, with a warning. Measured
     2026-10-22: the bake joined to its recent part is the ECB's whole
     answer, value for value.
@@ -405,6 +408,7 @@ def ecb_series(flow: str, key: str, unit: str, *, revised: bool) -> pd.Series:
         f"ECB {flow}.{key}",
         lambda start: ecb_download(flow, key, unit, start),
         RECENT_PART_REVISED if revised else RECENT_PART_UNREVISED,
+        stopped=stopped,
     )
 
 

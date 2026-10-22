@@ -66,6 +66,12 @@ US_MARKET_SERIES = "DFF"
 US_MONTHLY_EFFECTIVE_SERIES = "FEDFUNDS"
 US_TARGET_SERIES = "DFEDTAR"
 US_TARGET_RANGE_SERIES = ("DFEDTARL", "DFEDTARU")
+# A series whose source has stopped is declared with the date of its last
+# value, and drawn from its bake alone, with no request and no warning (batch
+# 19.3, Terry's decision 51, 2026-10-22; ``baked.with_recent_part``): before
+# it, every U.S. chart with --policy asked FRED for DFEDTAR's last two months
+# of 2008. The others: the ECB's minimum bid rate and EONIA, below.
+US_TARGET_ENDED = pd.Timestamp("2008-12-15")
 # Canada's target: the Bank Rate until 1996-02-22, when the Bank of Canada set
 # it at the top of its operating band for the overnight rate, a quarter point
 # above the target at the band's middle; then that target. The Bank Rate
@@ -139,11 +145,13 @@ UK_TRACKER_FROM = pd.Timestamp("1997-01-01")
 # reported from 2003), dated by each month's first day as the UK's are.
 DE_POLICY_FIXED = ("FM", "B.U2.EUR.4F.KR.MRR_FR.LEV", "PCPA")
 DE_POLICY_MINIMUM_BID = ("FM", "B.U2.EUR.4F.KR.MRR_MBR.LEV", "PCPA")
+DE_MINIMUM_BID_ENDED = pd.Timestamp("2008-10-08")  # stopped (batch 19.3: see US_TARGET_ENDED)
 # Germany's market rate (batch 9.1), the euro area's: the euro overnight index
 # average (EONIA, daily 1999-01-04 to 2021-12-31) until the euro short-term
 # rate (€STR) begins, daily from 2019-10-01. EONIA was €STR plus 0.085 points
 # on every day both were published, so the line steps down 0.085 at the join.
 DE_EONIA = ("EON", "D.EONIA_TO.RATE", "PC")
+DE_EONIA_ENDED = pd.Timestamp("2021-12-31")  # stopped (batch 19.3: see US_TARGET_ENDED)
 DE_ESTR = ("EST", "B.EU000A2X2A25.WT", "PC")
 DE_MORTGAGE_SERIES = {"1-5": "M.DE.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.DE.B.A2C.O.R.A.2250.EUR.N", "over10": "M.DE.B.A2C.P.R.A.2250.EUR.N"}
 # The ECB's flow of the MFI interest rate statistics and the unit its mortgage
@@ -152,8 +160,10 @@ DE_MORTGAGE_FLOW = "MIR"
 DE_MORTGAGE_UNIT = "PCPA"
 # Batch 19.2 (de_data.ecb_series, each call says which): the ECB's key rates
 # are announced and EONIA and €STR observed, so a drawing asks for their last
-# two months; the mortgage rates are statistics the banks report, which the
-# ECB may revise, so their last 24, as the UK's quoted rates and Freddie Mac's.
+# two months (since 19.3 not EONIA's or the minimum bid rate's: they have
+# stopped, and are drawn from their bake alone); the mortgage rates are
+# statistics the banks report, which the ECB may revise, so their last 24, as
+# the UK's quoted rates and Freddie Mac's.
 # None of the seven changed a value from the regression cache's downloads
 # (2026-10-07 and 2026-10-21) to 2026-10-22 (measured).
 _MORTGAGE_LABELS = {
@@ -376,9 +386,9 @@ def _valet(series_code: str) -> pd.Series:
     return _clean(boc_valet_series(series_code, start=BOC_VALET_FROM, revised=series_code in _CDN_REVISED_SERIES))
 
 
-def _fred(series_id: str) -> pd.Series:
-    """Return one whole FRED series, cleaned (``_clean``): its baked history and recent part (batch 19.2)."""
-    frame = fred_series(series_id, revised=series_id in _US_REVISED_SERIES)
+def _fred(series_id: str, stopped: pd.Timestamp | None = None) -> pd.Series:
+    """Return one whole FRED series, cleaned (``_clean``): its baked history and recent part (batch 19.2); a series ``stopped``, its bake alone (19.3)."""
+    frame = fred_series(series_id, revised=series_id in _US_REVISED_SERIES, stopped=stopped)
     return _clean(frame.set_index("DATE")[series_id])
 
 
@@ -399,7 +409,7 @@ def us_policy_target() -> RateCurve | None:
     """
     low_code, high_code = US_TARGET_RANGE_SERIES
     try:
-        target, low, high = _fred(US_TARGET_SERIES), _fred(low_code), _fred(high_code)
+        target, low, high = _fred(US_TARGET_SERIES, US_TARGET_ENDED), _fred(low_code), _fred(high_code)
     except Exception as exc:
         print(f"  Warning: fed funds target ({US_TARGET_SERIES}, {low_code}, {high_code}) unavailable ({exc}); not drawn.")
         return None
@@ -586,7 +596,7 @@ def de_policy_target() -> RateCurve | None:
         print(f"  Warning: ECB main refinancing rate ({DE_POLICY_FIXED[1]}) unavailable ({exc}); not drawn.")
         return None
     try:
-        bid = _clean(ecb_series(*DE_POLICY_MINIMUM_BID, revised=False))
+        bid = _clean(ecb_series(*DE_POLICY_MINIMUM_BID, revised=False, stopped=DE_MINIMUM_BID_ENDED))
     except Exception as exc:
         print(f"  Warning: ECB minimum bid rate ({DE_POLICY_MINIMUM_BID[1]}) unavailable ({exc}); "
               "the fixed rate alone, wrong while the tenders were variable (2000-2008).")
@@ -621,9 +631,9 @@ def de_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
     2021-12-31, €STR begins 2019-10-01).
     """
     found: dict[str, pd.Series] = {}
-    for name, source in (("EONIA", DE_EONIA), ("€STR", DE_ESTR)):
+    for name, source, stopped in (("EONIA", DE_EONIA, DE_EONIA_ENDED), ("€STR", DE_ESTR, None)):
         try:
-            found[name] = _clean(ecb_series(*source, revised=False))
+            found[name] = _clean(ecb_series(*source, revised=False, stopped=stopped))
         except Exception as exc:
             print(f"  Warning: ECB {name} ({source[0]}.{source[1]}) unavailable ({exc}).")
     if not found:

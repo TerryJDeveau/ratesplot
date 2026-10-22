@@ -145,6 +145,7 @@ def with_recent_part(
     recent: pd.DateOffset,
     *,
     passes: tuple[type[Exception], ...] = (),
+    stopped: pd.Timestamp | None = None,
 ) -> pd.Series:
     """Return series ``code``: its baked history, then its recent part asked for live.
 
@@ -165,10 +166,23 @@ def with_recent_part(
     then says what it draws: the Bundesbank's bot check, which
     ``de_data.fetch_de_yields`` names once for all its series, asking the
     Bundesbank nothing more in that drawing.
+
+    A series whose source has stopped is its bake alone, with no request and
+    no warning (batch 19.3, Terry's decision 51, 2026-10-22): ``stopped``,
+    the date of its last value, declared by the caller beside the series
+    (as decision 44 declares how a rate holds), never read from the dates,
+    which cannot tell a stopped series from one published late (FRED's
+    annual state and local interest is dated 2025-01-01 and is live). The
+    daily job re-bakes it as every other series, so a revision, or the
+    series starting again, still reaches the bake (tools/check_baked.py
+    checks that each bake ends on its declared date). Not baked, it is
+    asked for whole, as any series not yet baked.
     """
     baked = read_series(source, code)
     if baked is None or baked.count() == 0:
         return fetch(None)
+    if stopped is not None:
+        return baked
     last = baked.last_valid_index()
     start = last - recent
     try:

@@ -24,7 +24,10 @@ Offline, in seconds:
   ignores the date asked for, left out); the source failing: the bake alone,
   with a warning naming the series and its last date; no bake: the whole
   series asked for, as before 19.2; a bake whose last row has no value
-  counted from its last value, its rows without one kept;
+  counted from its last value, its rows without one kept; a series declared
+  stopped (19.3): its bake alone, nothing asked or said;
+* each series declared stopped in ``rates`` (19.3): its bake ends on the
+  date declared;
 * ``baked.frame_with_recent_part``, the same for a group of series asked for
   in one request (the Bank of Canada's benchmark yields): one request, from
   the earliest bake's last date less the recent part; only the columns read;
@@ -59,7 +62,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, baked, cdn_data, de_data, uk_data, us_data  # noqa: E402
+from ratesplot import bake, baked, cdn_data, de_data, rates, uk_data, us_data  # noqa: E402
 from ratesplot.config import DATE_COLUMN  # noqa: E402
 
 RESULTS: list[bool] = []
@@ -180,6 +183,18 @@ def check_join(folder: Path) -> None:
         asked.clear()
         whole = baked.with_recent_part("made-up", "Y", "made-up Y", answering, pd.DateOffset(months=2))
         check("no bake: the whole series asked for, as before 19.2", asked == [None] and len(whole) == 5, asked)
+
+        # A series whose source has stopped (19.3): its bake alone, the source not asked, nothing said.
+        asked.clear()
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            alone = baked.with_recent_part("made-up", "X", "made-up X", answering, pd.DateOffset(months=2),
+                                           stopped=pd.Timestamp("2026-09-30"))
+        check("a series declared stopped: its bake alone, the source not asked, nothing said (19.3)",
+              alone.equals(history) and not asked and not printed.getvalue(), (asked, printed.getvalue()))
+        whole = baked.with_recent_part("made-up", "Y", "made-up Y", answering, pd.DateOffset(months=2),
+                                       stopped=pd.Timestamp("2026-09-30"))
+        check("... not baked: the whole series asked for, as any series not yet baked", asked == [None] and len(whole) == 5, asked)
         check_blank_join(folder)
         check_group_join(folder, history)
     finally:
@@ -311,8 +326,26 @@ def check_report() -> None:
           ], changes.lines)
 
 
+def check_stopped_declared() -> None:
+    """Each series declared stopped (19.3, beside its series in ``rates``): its bake ends on the declared date.
+
+    One that does not has been revised, or has started again: its declaration
+    is then to be looked at (the drawing reads its bake alone, the new values too).
+    """
+    declared = {
+        (us_data.FRED_BAKED_SOURCE, rates.US_TARGET_SERIES): rates.US_TARGET_ENDED,
+        (de_data.ECB_BAKED_SOURCE, ".".join(rates.DE_POLICY_MINIMUM_BID[:2])): rates.DE_MINIMUM_BID_ENDED,
+        (de_data.ECB_BAKED_SOURCE, ".".join(rates.DE_EONIA[:2])): rates.DE_EONIA_ENDED,
+    }
+    ends = {key: baked.read_series(*key).last_valid_index() for key in declared}
+    wrong = {"/".join(key): f"{ends[key]:%Y-%m-%d}, declared {end:%Y-%m-%d}" for key, end in declared.items() if ends[key] != end}
+    check(f"the {len(declared)} series declared stopped: each bake ends on its declared date (19.3)", not wrong,
+          wrong or "; ".join(f"{'/'.join(key)} {end:%Y-%m-%d}" for key, end in declared.items()))
+
+
 def main() -> int:
     check_files()
+    check_stopped_declared()
     with tempfile.TemporaryDirectory(prefix="ratesplot_check_baked_") as temporary:
         check_written(Path(temporary))
         check_join(Path(temporary))

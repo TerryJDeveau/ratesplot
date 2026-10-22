@@ -79,15 +79,18 @@ CASES = {
 # Canada's GDP (NGDPSAXDCCAQ) since 19.2's Statistics Canada stage: Statistics Canada's GDP is drawn
 # from its own bake when it fails, so FRED's copy, the fallback for a table that cannot be had, is not asked.
 FRED_DRAWN_IN_RATES = (
-    "DGS3MO", "DGS2", "DGS5", "DGS10", "DGS30", "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU",
+    "DGS3MO", "DGS2", "DGS5", "DGS10", "DGS30", "FEDFUNDS", "DFEDTARL", "DFEDTARU",
     "MORTGAGE30US", "GFDEBTN", "SLGSDODNS", "GDP", "A180RC1Q027SBEA",
 )
 # The ECB series the "rates" case draws (batch 19.2): Germany's policy rate (fixed, then the minimum
 # bid), its three mortgage bands and its year-end debt before 2000; not EONIA or €STR (the market rate).
 ECB_DRAWN_IN_RATES = (
-    "FM.B.U2.EUR.4F.KR.MRR_FR.LEV", "FM.B.U2.EUR.4F.KR.MRR_MBR.LEV", "MIR.M.DE.B.A2C.I.R.A.2250.EUR.N",
+    "FM.B.U2.EUR.4F.KR.MRR_FR.LEV", "MIR.M.DE.B.A2C.I.R.A.2250.EUR.N",
     "MIR.M.DE.B.A2C.O.R.A.2250.EUR.N", "MIR.M.DE.B.A2C.P.R.A.2250.EUR.N", "GFS.A.N.DE.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T",
 )
+# The series the "rates" case draws whose source has stopped (19.3, declared in ``rates``): FRED's fed funds
+# target to 2008 and the ECB's minimum bid rate; each drawn from its bake alone, never asked, never named.
+STOPPED_IN_RATES = {"FRED": "DFEDTAR", "ECB": "FM.B.U2.EUR.4F.KR.MRR_MBR.LEV"}
 # The Eurostat series the "rates" case draws (batch 19.2): Germany's quarterly debt, its interest (the
 # annual figures, then the quarters) and its GDP, each of general government; not the levels or population.
 EUROSTAT_DRAWN_IN_RATES = ("gov_10q_ggdebt.S13", "gov_10q_ggnfa.S13", "gov_10dd_edpt1.D41PAY.S13", "namq_10_gdp")
@@ -334,6 +337,14 @@ def main() -> int:
                              if "Warning: ECB " in line and "its recent values unavailable" in line} - set(ends))
             check("rates: the ECB's series drawn from their bake, each named with its last date (19.2)",
                   named == sorted(ends) and not others, (named, others))
+            # The stopped series: not asked (FRED's address names its series, "?id=DFEDTAR&"; the ECB's its key),
+            # not named in a warning.
+            stopped_asked = sorted(request[1] for request in asked
+                                   if f"id={STOPPED_IN_RATES['FRED']}&" in request[1] or STOPPED_IN_RATES["ECB"].split(".", 1)[1] in request[1])
+            stopped_named = [line for line in log.splitlines()
+                             if any(f"{source} {code}:" in line for source, code in STOPPED_IN_RATES.items())]
+            check("rates: the series declared stopped drawn from their bake alone, not asked, not named (19.3)",
+                  not stopped_asked and not stopped_named, (stopped_asked, stopped_named))
             ends = {code: baked.read_series("eurostat", code).index[-1] for code in EUROSTAT_DRAWN_IN_RATES}
             named = sorted(code for code, end in ends.items() if any(
                 f"Eurostat {code}: its recent values unavailable" in line
