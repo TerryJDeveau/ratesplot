@@ -8,11 +8,13 @@ Statistics for the UK; the Deutsche Bundesbank, the ECB and Eurostat for Germany
 before the sources' own series (back to 1867 for Canadian federal debt, to about 1700 for the UK's
 national debt and GDP, to 1956 for Germany's 10-year yield) is built into the code. So is the
 history of the series the program reads from the Bank of England's database, the Bank of
-Canada's Valet, FRED and the ECB's Data Portal (`ratesplot/data/boe/`, `ratesplot/data/boc/`,
-`ratesplot/data/fred/`, `ratesplot/data/ecb/`, one file per series): of each, a drawing asks the
-source only for the last two months, or the last 24 for a series that may be revised (the Bank of
-England's quoted mortgage rates, the Bank of Canada's brokers' variable rate, FRED's GDP, debt,
-interest, population and mortgage rates, and the ECB's German debt and mortgage rates).
+Canada's Valet, FRED, the ECB's Data Portal and Eurostat (`ratesplot/data/boe/`,
+`ratesplot/data/boc/`, `ratesplot/data/fred/`, `ratesplot/data/ecb/`, `ratesplot/data/eurostat/`,
+one file per series): of each, a drawing asks the source only for the last two months, or the
+last 24 for a series that may be revised (the Bank of England's quoted mortgage rates, the Bank of
+Canada's brokers' variable rate, FRED's GDP, debt, interest, population and mortgage rates, the
+ECB's German debt and mortgage rates, and every Eurostat series: Germany's debt, interest, GDP and
+population).
 A job on GitHub (`.github/workflows/rebake.yml`, run each day at 06:37 UTC) bakes that history
 again: a series whose only change is new values is committed straight to `main`; one whose
 history changed (a value revised, a date added within it, dates the source no longer gives) goes
@@ -42,8 +44,8 @@ in place of its data), the chart is drawn from the last good copy of that downlo
 kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_good` on Windows,
 `~/.cache/ratesplot/last_good` elsewhere). The message log names the source and the copy's date;
 the web page says so above the charts, and the window in its status line. A Bank of England,
-Bank of Canada, FRED or ECB series with no copy kept is drawn from its history built into the
-code, to its last date, with a warning. A chart whose source has failed with no copy kept is left out and named,
+Bank of Canada, FRED, ECB or Eurostat series with no copy kept is drawn from its history built
+into the code, to its last date, with a warning. A chart whose source has failed with no copy kept is left out and named,
 and the other charts are drawn. The web page's server keeps its copies only until it restarts. A
 curve on the right axis whose source has stopped (or is left with only its baked history) ends a
 year after its last figure instead of running on flat to the end of the chart.
@@ -99,5 +101,5 @@ last good copies with every source cut off, and `check_baked.py`, the built-in h
 and how a drawing joins them to what it asks for)
 and the bake of the historical data (`bake_archives.py`), which also writes `ratesplot/data/`:
 the live sources' history, one file per series (`bake_archives.py --only boe`, `--only boc`,
-`--only fred`, `--only ecb`), re-baked by running it again or by the daily job (`rebake.py`);
-nothing else writes there.
+`--only fred`, `--only ecb`, `--only eurostat`), re-baked by running it again or by the daily job
+(`rebake.py`); nothing else writes there.
