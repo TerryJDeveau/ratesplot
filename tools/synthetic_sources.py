@@ -23,7 +23,9 @@ synthetic answer (the Treasury, CNBC) raises, as a failed download would,
 and the program falls back with its usual warning. The series end in
 September 2026, past the regression set's pinned end, so a pinned chart
 never asks for them. ``install_synthetic_cache`` puts ``synth`` behind the
-regression tool's disk cache and refuses every real request.
+regression tool's disk cache and refuses every real request, and gives the
+program a synthetic bake of the series it has baked (batch 19.2,
+``install_synthetic_bake``).
 
 Add a source here when the program reads a new one (its key is printed by
 the "no synthetic answer" line).
@@ -32,6 +34,7 @@ the "no synthetic answer" line).
 from __future__ import annotations
 
 import hashlib
+import importlib
 import io
 import itertools
 import json
@@ -549,12 +552,46 @@ def _refused(*_args, **_kwargs):
     raise requests.ConnectionError("synthetic data only: real requests are refused")
 
 
+# Batch 19.2: the program draws the Bank of England's series from their baked
+# history (ratesplot/data/boe/) and asks the database only for the recent
+# part. With synthetic answers the bake must be synthetic too, or a chart
+# would join the real history to a made-up recent part. So each series'
+# synthetic answer is baked to this date, in a folder of its own, and the
+# program reads it from there: the join is drawn, and gives exactly the
+# whole synthetic answer, which an older tree (no bake) draws, so the two
+# compare byte for byte. ``synth`` answers the recent part with the whole
+# series, which the program trims, as a source that ignores the date asked
+# for is.
+SYNTHETIC_BAKE_END = pd.Timestamp("2026-07-15")
+
+
+def install_synthetic_bake(folder: Path) -> bool:
+    """Bake the synthetic Bank of England series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
+
+    Through the program's own ``baked.write_series``. Returns False, changing
+    nothing, for a tree without a bake (before batch 19.2).
+    """
+    try:
+        baked = importlib.import_module("ratesplot.baked")
+    except ModuleNotFoundError:
+        return False
+    uk_data = importlib.import_module("ratesplot.uk_data")
+    for code in _IADB_SERIES:
+        whole = uk_data.parse_iadb_csv(iadb((("SeriesCodes", code),)).decode())[code].dropna().rename(code)
+        path = folder / uk_data.BOE_BAKED_SOURCE / f"{code}.csv"
+        baked.write_series(path, whole.loc[:SYNTHETIC_BAKE_END], f"synthetic {code}, tools/synthetic_sources.py")
+    baked.DATA_FOLDER = folder
+    baked.forget_read_files()
+    return True
+
+
 def install_synthetic_cache(http_module, cache_dir: Path) -> bool:
     """Answer every download from ``synth`` (kept as pickles in ``cache_dir``), and refuse every real request.
 
     The same interface as ``regress_charts.install_disk_cache``: returns
     False, changing nothing, for a tree older than the program's download
-    cache. ``cache_dir`` must not be the real download cache.
+    cache. ``cache_dir`` must not be the real download cache. The synthetic
+    bake goes in its ``baked`` folder (``install_synthetic_bake``).
     """
     if not hasattr(http_module, "_cached"):
         return False
@@ -573,6 +610,7 @@ def install_synthetic_cache(http_module, cache_dir: Path) -> bool:
         return result
 
     http_module._cached = cached
+    install_synthetic_bake(cache_dir / "baked")
     # The quotes (not cached), the bake and anything else that would reach out.
     requests.Session.get = _refused  # type: ignore[assignment]
     requests.Session.post = _refused  # type: ignore[assignment]

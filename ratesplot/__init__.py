@@ -55,7 +55,8 @@ plotting, http}; web -> {cli (its token matching), frontend, options,
 plotting, http}; cli -> {options, plotting, http}; frontend -> {options,
 config}; plotting -> {axes, legend, endlabels, regression, measures, rates,
 cdn_data, us_data, uk_data, de_data, joins, latest} -> {frames, http} -> config;
-{cdn_data, uk_data, de_data} -> joins; rates -> {cdn_data, uk_data, de_data, http};
+{cdn_data, uk_data, de_data} -> joins; uk_data -> baked -> config;
+rates -> {cdn_data, uk_data, de_data, http};
 plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
 regression -> occupancy; options -> config. Data modules never import

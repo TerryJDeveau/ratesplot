@@ -67,6 +67,8 @@ from .config import (
     MILLION,
     ONS_TIMESERIES_URL,
     POPULATION_COLUMN,
+    RECENT_PART_REVISED,
+    RECENT_PART_UNREVISED,
     THOUSAND,
     UK_DEBT_COLUMN,
     UK_INTEREST_COLUMN,
@@ -76,6 +78,7 @@ from .config import (
     PlotConfig,
     component_column,
 )
+from .baked import with_recent_part
 from .http import downloads_of, uk_get
 from .joins import chain, embedded_frame, ttm_sum
 from .uk_archive_data import (
@@ -89,6 +92,9 @@ from .uk_archive_data import (
 # The Bank of England database's series are baked (batch 19.2) under
 # ``ratesplot/data/boe/`` (``tools/bake_archives.py --only boe``).
 BOE_BAKED_SOURCE = "boe"
+# ``Datefrom`` names the month in English (``iadb_date``); strftime's %b
+# would follow the machine's locale.
+_ENGLISH_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 # Chart column -> IADB code of the Bank of England's daily nominal par yield,
 # and its first day (measured 2026-10-06).
@@ -173,6 +179,11 @@ def parse_iadb_csv(text: str) -> pd.DataFrame:
     return values.sort_index()
 
 
+def iadb_date(day: pd.Timestamp) -> str:
+    """A date as the database's ``Datefrom`` takes it, ``20/Aug/2026``; the month's name in English whatever the locale."""
+    return f"{day.day:02d}/{_ENGLISH_MONTHS[day.month - 1]}/{day.year}"
+
+
 def iadb_download(code: str, date_from: str = BOE_IADB_FROM) -> pd.Series:
     """Ask the Bank of England database for one series from ``date_from`` on (its every value by default); without missing days.
 
@@ -201,9 +212,22 @@ def iadb_download(code: str, date_from: str = BOE_IADB_FROM) -> pd.Series:
     return frame[code].dropna().rename(code)
 
 
-def iadb_series(code: str) -> pd.Series:
-    """Return one Bank of England database series, every value from ``BOE_IADB_FROM`` on, without missing days."""
-    return iadb_download(code)
+def iadb_series(code: str, *, revised: bool = False) -> pd.Series:
+    """Return one Bank of England database series, without missing days: its baked history, then its recent part from the database.
+
+    Batch 19.2 (``ratesplot.baked``): the history is in
+    ``ratesplot/data/boe/``, and only the last two months are asked for
+    (``revised``: 24 months, for a series the Bank may revise); a series not
+    yet baked is asked for whole, from ``BOE_IADB_FROM``. If the database
+    fails, the baked history alone, to its last date, with a warning.
+    """
+    return with_recent_part(
+        BOE_BAKED_SOURCE,
+        code,
+        f"Bank of England {code}",
+        lambda start: iadb_download(code) if start is None else iadb_download(code, iadb_date(start)),
+        RECENT_PART_REVISED if revised else RECENT_PART_UNREVISED,
+    )
 
 
 def _ons_date(row: dict, frequency: str) -> pd.Timestamp:
@@ -293,9 +317,11 @@ def fetch_uk_yields(config: PlotConfig) -> pd.DataFrame:
 
     The columns are the chosen ones the UK has (``config.fetched_yield_columns``),
     trimmed to the window. ``attrs[YIELD_HISTORY_ATTR]`` gives each column's
-    last month of history (drawn as steps). A term whose daily series fails
-    is drawn from its history alone, with a warning; one without a history
-    is then left out. A chosen term the UK does not have is named.
+    last month of history (drawn as steps). A daily series whose recent part
+    fails is drawn from its bake (batch 19.2, ``iadb_series``); one neither
+    baked nor answered leaves the term drawn from its monthly history alone,
+    or left out where it has none, with a warning. A chosen term the UK does
+    not have is named.
     """
     chosen = [column for column in config.fetched_yield_columns if column in UK_YIELD_SERIES]
     absent = [column for column in config.yield_columns if column not in UK_YIELD_SERIES]

@@ -9,7 +9,8 @@ parser and compares a value read off the response by eye.
 
 * the Bank of England database's CSV (daily and monthly), and the two
   answers it must refuse: its described layout and a redirect to its error
-  page;
+  page; with the redirect, a baked series drawn from its bake alone, with a
+  warning (batch 19.2);
 * each kind of ONS series: months, quarters, the units £m, £bn (HF6W),
   none (MDYT) and thousands, a changed unit refused, and a four-quarter sum against the
   ONS's own annual figure;
@@ -28,7 +29,9 @@ Exit code 1 if any check fails.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
+import io
 import json
 import sys
 from pathlib import Path
@@ -39,7 +42,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, latest, uk_data  # noqa: E402
+from ratesplot import bake, baked, latest, uk_data  # noqa: E402
 from ratesplot.config import CNBC_QUOTE_URL  # noqa: E402
 
 FIXTURES = ROOT / "tools" / "uk_fixtures"
@@ -86,11 +89,19 @@ def check_iadb() -> None:
         return response
 
     real_get, uk_data.uk_get = uk_data.uk_get, redirected
+    printed = io.StringIO()
     try:
-        message = raises(uk_data.iadb_series, "IUDMNPY")
+        message = raises(uk_data.iadb_download, "IUDMNPY")
+        with contextlib.redirect_stdout(printed):
+            series = uk_data.iadb_series("IUDMNPY")
     finally:
         uk_data.uk_get = real_get
     check("IADB: a redirect raises, naming the page", message is not None and "ErrorPage" in message, message)
+    bake_ = baked.read_series(uk_data.BOE_BAKED_SOURCE, "IUDMNPY")
+    said = printed.getvalue()
+    check("IADB (19.2): the recent part redirected, the 10-year is its bake alone, with a warning naming it and its last date",
+          bake_ is not None and series.equals(bake_) and "Bank of England IUDMNPY: its recent values unavailable" in said
+          and f"drawn from its baked history, to {bake_.index[-1]:%Y-%m-%d}." in said, said.strip())
 
 
 def ons(cdid: str) -> dict:

@@ -470,8 +470,11 @@ def _joined(history: pd.Series, live: pd.Series) -> pd.Series:
 def uk_policy_target() -> RateCurve | None:
     """Return the Bank of England's official Bank Rate: its changes since 1833 (baked), then daily from 1975.
 
-    If the database fails, the baked changes alone (to 2017), with a warning;
-    None if there is neither.
+    The daily values are the database's baked history and its recent part
+    (batch 19.2): if the database fails, the bake to its last date, with a
+    warning (``uk_data.iadb_series``). Only a series neither baked nor
+    answered leaves the millennium's changes alone (to 2017), with a
+    warning; None if there is neither.
     """
     history = _baked(EMBEDDED_UK_BANK_RATE_HISTORY)
     try:
@@ -487,7 +490,7 @@ def uk_policy_target() -> RateCurve | None:
 
 
 def uk_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
-    """Return SONIA, the sterling overnight market's average (from 1997-01-02), or None with a warning if the database fails."""
+    """Return SONIA, the sterling overnight market's average (from 1997-01-02); None, with a warning, if it is neither baked nor answered."""
     try:
         values = _clean(iadb_series(UK_MARKET_SERIES))
     except Exception as exc:
@@ -504,11 +507,13 @@ def _uk_mortgage(term: str) -> pd.Series:
     2026-10-08, batch 10.1: it read "Variable Mortgage Rate, quoted SVR from
     1995-01"): before the 1990s nearly every UK mortgage was at a standard
     variable rate, so "SVR" fits the whole line; --help says where it joins.
-    The tracker is Bank Rate itself, daily (``_uk_tracker``).
+    The tracker is Bank Rate itself, daily (``_uk_tracker``). The quoted
+    rates are the results of a survey, which the Bank may revise: each
+    drawing asks for their last 24 months (batch 19.2), not two.
     """
     if term == "tracker":
         return _uk_tracker()
-    monthly = iadb_series(UK_MORTGAGE_SERIES[term])
+    monthly = iadb_series(UK_MORTGAGE_SERIES[term], revised=True)
     values = _clean(monthly.set_axis(monthly.index.to_period("M").start_time))
     history = _baked(EMBEDDED_UK_MORTGAGE_HISTORY) if term == "svr" else values.iloc[:0]
     if not history.empty and not values.empty and history.index[0] < values.index[0]:
@@ -520,9 +525,10 @@ def _uk_tracker() -> pd.Series:
     """Return Bank Rate from ``UK_TRACKER_FROM`` on, the rate a tracker follows (its margin is added by ``mortgage_rate``).
 
     The Bank of England's daily Bank Rate (``UK_POLICY_SERIES``), the value
-    in effect on ``UK_TRACKER_FROM`` dated by it. From the database only, not
-    the baked changes (to 2017): a tracker drawn from them would be carried
-    on from 2017 as an announced rate is.
+    in effect on ``UK_TRACKER_FROM`` dated by it. From the database only (its
+    baked history and recent part, batch 19.2), not the millennium's changes
+    (to 2017): a tracker drawn from them would be carried on from 2017 as an
+    announced rate is.
     """
     bank = _clean(iadb_series(UK_POLICY_SERIES))
     before = bank.loc[bank.index <= UK_TRACKER_FROM]

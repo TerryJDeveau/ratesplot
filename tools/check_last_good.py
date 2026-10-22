@@ -17,7 +17,9 @@ charts are drawn three times:
    history alone must stop: no curve on the right axis keeps its last value for more than
    ``joins.MACRO_CARRY_LIMIT`` (Canada's debt, left with its history to 1994, ran on flat
    to the day before 2026-10-21); and the UK's national debt, drawn to 2016 without the
-   gross debt, is named without "(pre-1975)".
+   gross debt, is named without "(pre-1975)". The Bank of England's series, baked
+   (batch 19.2; a synthetic bake here), are drawn to the bake's last date, each with a
+   warning naming it and that date.
 
 In passes 2 and 3 every request is counted: within one drawing a request answered with
 an outage page or a bot check is made once, the Statistics Canada WDS post (not retried)
@@ -51,7 +53,7 @@ import requests  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 import synthetic_sources  # noqa: E402
-from ratesplot import cli, http  # noqa: E402
+from ratesplot import baked, cli, http  # noqa: E402
 from ratesplot import web  # noqa: E402  (imported first: it turns on the page's caches, undone below)
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.frontend import png_bytes  # noqa: E402
@@ -214,6 +216,7 @@ def main() -> int:
     folder = Path(tempfile.mkdtemp(prefix="ratesplot_last_good_"))
     http.enable_last_good_copies(folder)
     print(f"[last good] copies in {folder}")
+    synthetic_sources.install_synthetic_bake(Path(tempfile.mkdtemp(prefix="ratesplot_baked_")))
 
     print("[last good] pass 1: every source answers")
     requests.Session.get = answering_get  # type: ignore[assignment]
@@ -257,8 +260,17 @@ def main() -> int:
     flat: dict[str, float] = {}
     for name, tokens in CASES.items():
         asked.clear()
-        pngs, not_drawn, copies, _log, case_flat = draw(tokens)
+        pngs, not_drawn, copies, log, case_flat = draw(tokens)
         check_asked_once(name)
+        if name == "rates":
+            # Every Bank of England series the case draws (not SONIA, the market rate), each with its bake's last date.
+            ends = {code: baked.read_series("boe", code).index[-1]
+                    for code in ("IUDSNPY", "IUDMNPY", "IUDLNPY", "IUDBEDR", "IUMBV34", "IUMBV37", "IUMBV42", "IUMTLMV")}
+            named = sorted(code for code, end in ends.items() if any(
+                f"Bank of England {code}: its recent values unavailable" in line
+                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
+            check("rates: the Bank of England's series drawn from their bake, each named with its last date (19.2)",
+                  named == sorted(ends), named)
         differs = sorted(key for key in first[name] if pngs.get(key) != first[name][key])
         check(f"{name}: not drawn, or drawn otherwise, without them", bool(differs), f"differ or missing: {differs}")
         flat.update((f"{name}, {curve}", days) for curve, days in case_flat.items())

@@ -130,6 +130,16 @@ RETRY_BACKOFF_BASE_SECONDS = 2
 # after a quiet hour waits for the downloads (about 10 s). Intraday quotes
 # are never kept (``http.latest_get(cached=False)``).
 DOWNLOAD_MAX_AGE_SECONDS = 3600
+# The live sources' baked history (batch 19.2, ``ratesplot.baked``): how far
+# before a baked series' last date each drawing asks its source again, so
+# that late values and revisions in that span arrive. Terry's figures in
+# 19.2's plan: about two months for market and announced rates, which are
+# not revised, and 24 months for figures that are (GDP, debt, interest,
+# population; survey results such as quoted mortgage rates). None of the
+# Bank of England's nine series changed a value between 2026-10-06 and
+# 2026-10-21 (measured).
+RECENT_PART_UNREVISED = pd.DateOffset(months=2)
+RECENT_PART_REVISED = pd.DateOffset(months=24)
 
 FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 BOC_GROUP_URL = "https://www.bankofcanada.ca/valet/observations/group/{group}/csv"

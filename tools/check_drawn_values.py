@@ -47,7 +47,10 @@ Usage (from the project root)::
 
 The drawing and the sources read the same downloads (the regression cache,
 or one live download each), so the check is of what the program does to
-them, never of a difference between two fetches. Exit code 1 on any FAIL.
+them, never of a difference between two fetches. Except the Bank of
+England's series (batch 19.2): the drawing reads their baked history and
+asks for the recent part only, and they are checked against the database's
+whole series, so the check covers the bake too. Exit code 1 on any FAIL.
 """
 
 from __future__ import annotations
@@ -164,7 +167,8 @@ def valet_group(group: str, code: str, **kwargs) -> Source:
 
 
 def iadb(code: str, **kwargs) -> Source:
-    return Source(f"Bank of England {code}", lambda: _clean(uk_data.iadb_series(code)), **kwargs)
+    # The database's whole series, not its bake and recent part (``iadb_series``), which the drawing reads.
+    return Source(f"Bank of England {code}", lambda: _clean(uk_data.iadb_download(code)), **kwargs)
 
 
 def bundesbank(column: str, frequency: str, **kwargs) -> Source:
