@@ -20,7 +20,11 @@ cdn_data          Bank of Canada / Statistics Canada fetch, splice and align
 cdn_archive_data  baked historical CDN rows: debt, GDP, interest, population, yield
                   stand-ins (rewritten by tools/bake_archives.py)
 cdn_hist_yields   transcribed Bank of Canada historical yield tables (1919-2000)
-bake              the bake of the historical data (run by tools/bake_archives.py)
+bake              the bake of the historical data (run by tools/bake_archives.py), and of
+                  the live sources' history into data/
+baked             the live sources' history as data files (data/SOURCE/CODE.csv, batch
+                  19.2): their form, their reading, and each joined to the recent part a
+                  drawing asks for (begun with the Bank of England's database)
 us_data           FRED fetch for U.S. yields and macro series
 latest            --cur: newer values than the regular series (Treasury daily yields and
                   debt, intraday quotes)

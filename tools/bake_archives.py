@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake the historical data into the code: rewrite the generated blocks of the archive data modules.
+"""Bake the historical data into the code: the archive data modules' generated blocks, and the live sources' data files.
 
 Downloads the terminated and historical sources (see ``ratesplot/bake.py``),
 extracts the rows the charts need and writes them as Python literals between
@@ -20,20 +20,27 @@ the BEGIN/END markers of
   Bundesbank's discount rate 1948-1998 on the days it changed (batch 9.6).
   ``--de-csv FILE`` and ``--de-discount-csv FILE`` read the downloads
   already saved (tools/de_fixtures).
+* ``ratesplot/data/boe/``: the Bank of England database's series, every value
+  of each, one file per series (batch 19.2: the live sources' history, of
+  which a drawing then asks only for the recent part; ``ratesplot/baked.py``).
+  A series whose download fails, or lacks dates its file has, keeps its file
+  as it was, and the run ends with exit code 1. What changed in each file is
+  printed, each revised value with its size (the first 20 of a series).
 
-Nothing is written for a country unless every one of its sources is extracted
-and the new module compiles.
+Nothing is written for a country's archive module unless every one of its
+sources is extracted and the new module compiles.
 
 This is a maintenance step, not an option of the program (it was
 ``--bake-archives`` until 2026-09-27): run it when an extraction changes or a
 source is added (the Census publishes a new fiscal year each summer), check
 the charts, and commit the regenerated module with the change that needed it.
-Normal runs only read the modules.
+The live sources' history is re-baked daily (Terry, decision 49). Normal runs
+only read the modules and the files.
 
 Usage (from the project root)::
 
-    python tools/bake_archives.py            # every nation
-    python tools/bake_archives.py --only us  # or cdn, uk, de
+    python tools/bake_archives.py            # every nation, and boe
+    python tools/bake_archives.py --only us  # or cdn, uk, de, boe
     python tools/bake_archives.py --only uk --uk-workbook a-millennium-of-macroeconomic-data-for-the-uk.xlsx
     python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv
 """
@@ -47,18 +54,31 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot.bake import bake_canadian_archives, bake_german_archives, bake_uk_archives, bake_us_archives  # noqa: E402
+from ratesplot.bake import (  # noqa: E402
+    bake_boe_history,
+    bake_canadian_archives,
+    bake_german_archives,
+    bake_uk_archives,
+    bake_us_archives,
+)
 
-BAKES = {"cdn": bake_canadian_archives, "us": bake_us_archives, "uk": bake_uk_archives, "de": bake_german_archives}
+BAKES = {
+    "cdn": bake_canadian_archives,
+    "us": bake_us_archives,
+    "uk": bake_uk_archives,
+    "de": bake_german_archives,
+    "boe": bake_boe_history,
+}
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation only")
+    parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation's archives, or one live source's history (boe)")
     parser.add_argument("--uk-workbook", type=Path, help="the UK millennium workbook already on disk (not downloaded)")
     parser.add_argument("--de-csv", type=Path, help="the Bundesbank's WU0004 download already on disk (not downloaded)")
     parser.add_argument("--de-discount-csv", type=Path, help="the Bundesbank's discount rate download (BBIN1) already on disk")
     args = parser.parse_args(argv)
+    all_baked = True
     for key, bake in BAKES.items():
         if args.only in (None, key):
             if key == "uk":
@@ -66,8 +86,10 @@ def main(argv: list[str]) -> int:
             elif key == "de":
                 bake(saved_csv=args.de_csv, saved_discount_csv=args.de_discount_csv)
             else:
-                bake()
-    return 0
+                # The archives raise when they cannot be baked; a live source's
+                # history returns False when a series kept its old file.
+                all_baked &= bake() is not False
+    return 0 if all_baked else 1
 
 
 if __name__ == "__main__":

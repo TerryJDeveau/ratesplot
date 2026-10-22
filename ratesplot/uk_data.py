@@ -86,6 +86,10 @@ from .uk_archive_data import (
     EMBEDDED_UK_POPULATION_HISTORY,
 )
 
+# The Bank of England database's series are baked (batch 19.2) under
+# ``ratesplot/data/boe/`` (``tools/bake_archives.py --only boe``).
+BOE_BAKED_SOURCE = "boe"
+
 # Chart column -> IADB code of the Bank of England's daily nominal par yield,
 # and its first day (measured 2026-10-06).
 UK_YIELD_SERIES = {"5-Year": "IUDSNPY", "10-Year": "IUDMNPY", "20-Year": "IUDLNPY"}
@@ -169,16 +173,18 @@ def parse_iadb_csv(text: str) -> pd.DataFrame:
     return values.sort_index()
 
 
-def iadb_series(code: str) -> pd.Series:
-    """Return one Bank of England database series, every value from ``BOE_IADB_FROM`` on, without missing days.
+def iadb_download(code: str, date_from: str = BOE_IADB_FROM) -> pd.Series:
+    """Ask the Bank of England database for one series from ``date_from`` on (its every value by default); without missing days.
 
-    A request the database cannot serve (an unknown code, a start it
-    refuses) is redirected to its error page, which a browser shows as a
-    page: here it raises, naming the page, rather than being read as data.
+    One request (cached and kept as the others are). A request the database
+    cannot serve (an unknown code, a start it refuses) is redirected to its
+    error page, which a browser shows as a page: here it raises, naming the
+    page, rather than being read as data. So does an answer with no values:
+    no series the program reads is empty from any date it asks for.
     """
     params = {
         "csv.x": "yes",
-        "Datefrom": BOE_IADB_FROM,
+        "Datefrom": date_from,
         "Dateto": "now",
         "SeriesCodes": code,
         "CSVF": "TN",
@@ -193,6 +199,11 @@ def iadb_series(code: str) -> pd.Series:
     if code not in frame.columns:
         raise ValueError(f"the Bank of England database returned no {code} column ({list(frame.columns)})")
     return frame[code].dropna().rename(code)
+
+
+def iadb_series(code: str) -> pd.Series:
+    """Return one Bank of England database series, every value from ``BOE_IADB_FROM`` on, without missing days."""
+    return iadb_download(code)
 
 
 def _ons_date(row: dict, frequency: str) -> pd.Timestamp:

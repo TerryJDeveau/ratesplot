@@ -17,6 +17,13 @@ Two layers of history are baked, each joined to the next at run time (see
   from 1867, all governments from 1933), the Bank of Canada's term-band yields
   (stand-ins for the 2- and 5-year benchmarks before they begin) and the
   annual population estimates from 1867.
+
+The UK's, the U.S.' and Germany's archives are baked the same way, each into
+its own data module. The live sources' history (batch 19.2) is baked
+differently: every value of each series, one data file per series under
+``ratesplot/data/`` (``ratesplot.baked``), re-baked daily, so that a drawing
+asks only for the recent part. Begun with the Bank of England's database
+(``bake_boe_history``).
 """
 
 from __future__ import annotations
@@ -37,6 +44,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import baked
 from .cdn_data import statcan_zip_table, statcan_zip_table_with_metadata
 from .config import (
     ARCHIVE_BEGIN_MARKER,
@@ -51,6 +59,7 @@ from .config import (
     ARCHIVED_CDN_PROV_LOCAL_DEBT_URL,
     ARCHIVED_CDN_PROVINCIAL_DEBT_TABLE,
     BOC_FINANCIAL_MARKET_TABLE,
+    BOE_IADB_FROM,
     CDN_DEBT_COLUMN,
     CDN_FEDERAL_DEBT_COLUMN,
     CDN_INTEREST_COLUMN,
@@ -84,6 +93,8 @@ from .config import (
 )
 from .de_data import parse_bundesbank_csv
 from .http import canadian_get, de_get, get_if_published, uk_get
+from .rates import UK_MARKET_SERIES, UK_MORTGAGE_SERIES, UK_POLICY_SERIES
+from .uk_data import BOE_BAKED_SOURCE, UK_YIELD_SERIES, iadb_download
 
 # Balance-sheet members that constitute marketable debt securities.
 DEBT_SECURITY_CATEGORIES = ("Short-term paper", "Bonds")
@@ -1517,3 +1528,112 @@ def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None
     print(f"Embedded the Bundesbank's yield on public debt securities and its discount rate into {source_path}")
     print(f"  EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY {len(data):5,} values, {data.index[0]:%Y-%m-%d} to {data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_DISCOUNT_RATE_CHANGES     {len(discount_data):5,} changes, {discount_data.index[0]:%Y-%m-%d} to {discount_data.index[-1]:%Y-%m-%d}")
+
+
+# ---------------------------------------------------------------------------
+# The live sources' history as data files (batch 19.2)
+# ---------------------------------------------------------------------------
+# Unlike the archives above, these sources are live: the bake writes every
+# value each series has, one file per series under ratesplot/data/
+# (``ratesplot.baked``), and a drawing asks only for the recent part. Re-baked
+# daily (Terry, decision 49); each run says what changed in each file, every
+# revision with its size, so a revision is seen before it is committed.
+# Begun with the Bank of England's database (2026-10-21).
+
+# Each Bank of England database series the program reads, for its file's
+# first line. A series read but not named here stops the bake (KeyError).
+_BOE_SERIES_TITLES = {
+    "IUDSNPY": "nominal par yield, 5 years, from the Bank's fitted curve; daily",
+    "IUDMNPY": "nominal par yield, 10 years, from the Bank's fitted curve; daily",
+    "IUDLNPY": "nominal par yield, 20 years, from the Bank's fitted curve; daily",
+    "IUDBEDR": "Official Bank Rate; daily",
+    "IUDSOIA": "SONIA, the Sterling Overnight Index Average; daily",
+    "IUMBV34": "quoted rate on a 2-year fixed-rate mortgage at 75% loan to value; monthly",
+    "IUMBV37": "quoted rate on a 3-year fixed-rate mortgage at 75% loan to value; monthly",
+    "IUMBV42": "quoted rate on a 5-year fixed-rate mortgage at 75% loan to value; monthly",
+    "IUMTLMV": "quoted standard variable mortgage rate; monthly",
+}
+# How many revised values a re-bake lists one by one before giving only their count.
+_REVISIONS_LISTED = 20
+
+
+def boe_baked_codes() -> list[str]:
+    """Every Bank of England database series the program reads: the yields (``uk_data``), Bank Rate, SONIA and the mortgage rates (``rates``)."""
+    return sorted({*UK_YIELD_SERIES.values(), UK_POLICY_SERIES, UK_MARKET_SERIES, *UK_MORTGAGE_SERIES.values()})
+
+
+def _dates_text(dates: pd.Index, most: int = 5) -> str:
+    shown = ", ".join(f"{day:%Y-%m-%d}" for day in dates[:most])
+    return shown + (", …" if len(dates) > most else "")
+
+
+def bake_changes(old: pd.Series | None, new: pd.Series) -> tuple[list[str], str | None]:
+    """What re-baking one series changes: lines that say so, and the reason to refuse it, if any.
+
+    Refused: a download that lacks dates the file has. It may be cut short,
+    or the source may have withdrawn values; a person looks before the
+    history loses anything (deleting the file accepts the download as it
+    is). A value is revised if its float differs at all.
+    """
+    if old is None:
+        return [f"new file, {len(new):,} values"], None
+    lost = old.index.difference(new.index)
+    if len(lost):
+        return [], f"{len(lost):,} baked dates are not in the download ({_dates_text(lost)})"
+    before = new.loc[old.index]
+    revised = old.index[old.to_numpy() != before.to_numpy()]
+    inserted = new.index.difference(old.index)
+    added = inserted[inserted > old.index[-1]]
+    filled = inserted[inserted <= old.index[-1]]
+    lines = [
+        f"revised {day:%Y-%m-%d}: {float(old[day])!r} -> {float(new[day])!r} ({new[day] - old[day]:+.6g})"
+        for day in revised[:_REVISIONS_LISTED]
+    ]
+    if len(revised) > _REVISIONS_LISTED:
+        largest = (before.loc[revised] - old.loc[revised]).abs().max()
+        lines.append(f"and {len(revised) - _REVISIONS_LISTED:,} more revised, to {revised[-1]:%Y-%m-%d}; the largest change {largest:.6g}")
+    if len(filled):
+        lines.append(f"{len(filled):,} values on dates within the bake that it lacked ({_dates_text(filled)})")
+    lines.append(
+        f"{len(added):,} new" + (f" ({added[0]:%Y-%m-%d} to {added[-1]:%Y-%m-%d})" if len(added) else "")
+        + f", {len(revised):,} revised"
+    )
+    return lines, None
+
+
+def bake_boe_history(folder: Path | None = None) -> bool:
+    """Bake every Bank of England database series the program reads, whole, into ``ratesplot/data/boe/`` (batch 19.2).
+
+    ``folder`` writes the files there instead. Each series is a file and is
+    written on its own: one whose download fails, or is refused
+    (``bake_changes``), keeps its file as it was, and the bake returns
+    False. What changed in each file is printed.
+    """
+    print("Baking the Bank of England database's series …")
+    ok = True
+    for code in boe_baked_codes():
+        title = _BOE_SERIES_TITLES[code]
+        path = folder / f"{code}.csv" if folder is not None else baked.data_file(BOE_BAKED_SOURCE, code)
+        try:
+            new = iadb_download(code)
+        except Exception as exc:
+            print(f"  {code}: not baked ({exc}); its file is left as it was.")
+            ok = False
+            continue
+        old = baked.parse_series(path.read_text(encoding="utf-8"), code) if path.exists() else None
+        lines, refused = bake_changes(old, new)
+        if refused:
+            print(f"  {code}: not baked: {refused}; its file is left as it was.")
+            ok = False
+            continue
+        comment = (
+            f"Bank of England database (IADB), series {code}: {title}.\n"
+            f"Every value the database gives from {BOE_IADB_FROM} on, dated as the database dates it.\n"
+            "Written by tools/bake_archives.py --only boe (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+        baked.write_series(path, new, comment)
+        print(f"  {code}: {len(new):,} values, {new.index[0]:%Y-%m-%d} to {new.index[-1]:%Y-%m-%d}; {lines[-1]}")
+        for line in lines[:-1]:
+            print(f"      {line}")
+    return ok
