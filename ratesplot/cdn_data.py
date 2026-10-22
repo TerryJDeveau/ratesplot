@@ -78,6 +78,8 @@ from .config import (
     STATCAN_CDN_POPULATION_VECTOR,
     STATCAN_TABLE_URL,
     STATCAN_TIMEOUT_SECONDS,
+    STATCAN_WDS_RANGE_END,
+    STATCAN_WDS_RANGE_URL,
     STATCAN_WDS_URL,
     YIELD_COLUMNS,
     YIELD_TERMS,
@@ -336,7 +338,7 @@ class StatcanRead:
 # period, every period with a value, in the unit and scale given here. They
 # are baked (batch 19.2) under ``ratesplot/data/statcan/``
 # (``tools/bake_archives.py --only statcan``), a file per vector, named by it;
-# one request answers every vector of a table.
+# one request answers every vector of a table (``statcan_table``).
 STATCAN_SERIES_READ = {
     STATCAN_CDN_DEBT_TABLE: StatcanRead("Dollars", 6, {STATCAN_CDN_DEBT_VECTOR: _debt_rows}),
     STATCAN_CDN_GDP_TABLE: StatcanRead("Dollars", 6, {STATCAN_CDN_GDP_VECTOR: _gdp_rows}),
@@ -400,13 +402,79 @@ def _statcan_vectors(table: pd.DataFrame, table_id: str) -> pd.DataFrame:
     return pd.concat(columns, axis=1).sort_index()
 
 
-def statcan_download(table_id: str) -> pd.DataFrame:
-    """Ask Statistics Canada for the vectors read of one live table (``STATCAN_SERIES_READ``): a column each, by date, in the table's unit.
+def _statcan_wds_range(table_id: str, start: pd.Timestamp) -> pd.DataFrame:
+    """Ask Statistics Canada's WDS for every vector read of one live table from ``start`` on: a column each, as ``_statcan_vectors`` gives them.
 
-    One request, the table's ZIP (cached and kept as the others are), each
-    vector's rows found by the table's labels (``_statcan_vectors``).
+    One request for all of the table's vectors (cached and kept as the
+    others are), by reference period. Measured 2026-10-22, for all 26: asked
+    from a period's first day, the table's values from that period on, float
+    for float; from a day inside a period, from the next one, as the ECB and
+    Eurostat answer. A recent part starts on a period's first day (the bake's
+    last date less whole months), so nothing is lost at the join. Each
+    answer's scale is checked against the table's; a vector refused, missing,
+    or without a value from ``start`` raises, naming it.
     """
-    return _statcan_vectors(statcan_zip_table(table_id), table_id)
+    read = STATCAN_SERIES_READ[table_id]
+    params = {
+        "vectorIds": ",".join(f'"{vector.lstrip("v")}"' for vector in read.vectors),
+        "startRefPeriod": f"{start:%Y-%m-%d}",
+        "endReferencePeriod": STATCAN_WDS_RANGE_END,
+    }
+    with downloads_of(f"Statistics Canada table {table_id}"):
+        answer = canadian_get(STATCAN_WDS_RANGE_URL, params, timeout=STATCAN_TIMEOUT_SECONDS).json()
+    columns: dict[str, pd.Series] = {}
+    for item in answer:
+        if item.get("status") != "SUCCESS" or not isinstance(item.get("object"), dict):
+            raise ValueError(f"Statistics Canada's WDS refused a vector of {table_id} ({item.get('object')})")
+        vector, points = f"v{item['object']['vectorId']}", item["object"].get("vectorDataPoint") or []
+        if not points:
+            raise ValueError(f"Statistics Canada gave no values of {vector} from {start:%Y-%m-%d}")
+        scales = sorted({point["scalarFactorCode"] for point in points})
+        if scales != [read.scale]:
+            raise ValueError(f"Statistics Canada {table_id} {vector}: expected scale {read.scale}, found {scales}")
+        dates = pd.DatetimeIndex(pd.to_datetime([point["refPer"] for point in points], format="%Y-%m-%d"), name=DATE_COLUMN)
+        columns[vector] = pd.Series([float("nan") if point["value"] is None else float(point["value"]) for point in points], index=dates)
+    missing = [vector for vector in read.vectors if vector not in columns]
+    if missing:
+        raise ValueError(f"Statistics Canada's WDS gave no answer for {', '.join(missing)} of {table_id}")
+    return pd.concat({vector: columns[vector] for vector in read.vectors}, axis=1).sort_index()
+
+
+def statcan_download(table_id: str, start: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Ask Statistics Canada for the vectors read of one live table (``STATCAN_SERIES_READ``): a column each, every period, or those from ``start`` on, in the table's unit.
+
+    One request (cached and kept as the others are). Whole, the table's ZIP,
+    as before batch 19.2 (its request the same), each vector's rows found by
+    the table's labels (``_statcan_vectors``); a ZIP is always the whole
+    table. From a date, the WDS, every vector read of the table in one
+    request (``_statcan_wds_range``).
+    """
+    if start is None:
+        return _statcan_vectors(statcan_zip_table(table_id), table_id)
+    return _statcan_wds_range(table_id, start)
+
+
+def statcan_table(table_id: str) -> pd.DataFrame:
+    """Return the vectors read of one live Statistics Canada table, a column each, in the table's unit: their baked history, then their recent part.
+
+    Batch 19.2 (``ratesplot.baked``): the history is in
+    ``ratesplot/data/statcan/``, and only the last 24 months are asked for
+    (debt, GDP, interest and population, statistics Statistics Canada
+    revises), every vector of the table in one request, from the earliest of
+    their bakes' last dates less 24 months (``baked.frame_with_recent_part``,
+    as a Eurostat dataset); a table with a vector not baked is asked for
+    whole, its ZIP. If Statistics Canada fails, the baked history alone, to
+    its last date, with a warning naming the table. Measured 2026-10-22: the
+    bake joined to its recent part is the whole table's values, float for
+    float, for all 26 vectors.
+    """
+    return frame_with_recent_part(
+        STATCAN_BAKED_SOURCE,
+        list(STATCAN_SERIES_READ[table_id].vectors),
+        f"Statistics Canada table {table_id}",
+        lambda start: statcan_download(table_id, start),
+        RECENT_PART_REVISED,
+    )
 
 
 def statcan_wds_vectors(vector_ids: Iterable[str | int], *, latest_n: int = 250) -> pd.DataFrame:
@@ -442,7 +510,7 @@ def statcan_wds_vectors(vector_ids: Iterable[str | int], *, latest_n: int = 250)
 
 
 def _statcan_quarterly(values: pd.Series, column: str) -> pd.DataFrame:
-    """Return one quarterly StatCan vector (``statcan_download``), in millions of dollars, in dollars as ``column``.
+    """Return one quarterly StatCan vector (``statcan_table``), in millions of dollars, in dollars as ``column``.
 
     Indexed by quarter start (``QS``), the source's own dating, like the baked
     histories, so all Canadian macro series share one calendar while they are
@@ -560,7 +628,8 @@ def fetch_cdn_debt(config: PlotConfig) -> pd.DataFrame | None:
         return None
 
     try:
-        modern = _statcan_quarterly(statcan_download(STATCAN_CDN_DEBT_TABLE)[STATCAN_CDN_DEBT_VECTOR], CDN_DEBT_COLUMN)
+        # Baked (batch 19.2): a failure here is the whole table's, with no bake to draw.
+        modern = _statcan_quarterly(statcan_table(STATCAN_CDN_DEBT_TABLE)[STATCAN_CDN_DEBT_VECTOR], CDN_DEBT_COLUMN)
     except Exception as exc:
         print(f"  Warning: StatCan debt table failed ({exc}); trying WDS vector fallback …")
         try:
@@ -599,7 +668,7 @@ def fetch_cdn_gdp(config: PlotConfig) -> pd.DataFrame | None:
 def _fetch_live_cdn_gdp() -> pd.DataFrame | None:
     """Return live TTM nominal GDP (mean of four SAAR quarters), or None if every source fails."""
     try:
-        saar = _statcan_quarterly(statcan_download(STATCAN_CDN_GDP_TABLE)[STATCAN_CDN_GDP_VECTOR], "GDP_SAAR")
+        saar = _statcan_quarterly(statcan_table(STATCAN_CDN_GDP_TABLE)[STATCAN_CDN_GDP_VECTOR], "GDP_SAAR")
     except Exception as exc:
         print(f"  Warning: StatCan GDP table failed ({exc}); trying FRED fallback …")
         try:
@@ -620,7 +689,7 @@ def fetch_cdn_interest(config: PlotConfig) -> pd.DataFrame | None:
         return None
 
     try:
-        consolidated = statcan_download(STATCAN_CDN_INTEREST_TABLE)[GFS_VECTORS[("Consolidated government", "Interest")]]
+        consolidated = statcan_table(STATCAN_CDN_INTEREST_TABLE)[GFS_VECTORS[("Consolidated government", "Interest")]]
         quarterly = _statcan_quarterly(consolidated, "Interest_q")
         # The GFS table reports actual quarterly flows (not annualised), so TTM is a 4-quarter sum.
         modern = quarterly["Interest_q"].rolling(4).sum().rename(CDN_INTEREST_COLUMN).to_frame()
@@ -665,7 +734,7 @@ def _embedded_levels(by_level: dict[str, list[tuple[str, float]]], column: str) 
 
 
 def _gfs_levels(table: pd.DataFrame, items: tuple[str, ...], column: str) -> dict[str, pd.DataFrame | None]:
-    """Return each level's quarterly sum of ``items`` from the GFS table's vectors (``statcan_download``), in dollars, plus "n"."""
+    """Return each level's quarterly sum of ``items`` from the GFS table's vectors (``statcan_table``), in dollars, plus "n"."""
     levels: dict[str, pd.DataFrame | None] = {}
     for key, sector in _GFS_SECTORS.items():
         parts = [_statcan_quarterly(table[GFS_VECTORS[(sector, item)]], column)[column] for item in items]
@@ -694,7 +763,7 @@ def fetch_cdn_components(config: PlotConfig) -> pd.DataFrame | None:
     if not letters or not (config.include_debt or config.include_interest):
         return None
     try:
-        table = statcan_download(STATCAN_CDN_INTEREST_TABLE)
+        table = statcan_table(STATCAN_CDN_INTEREST_TABLE)
     except Exception as exc:
         print(f"  Warning: StatCan GFS table failed ({exc}); levels of government shown only to 1994.")
         table = None
@@ -740,7 +809,7 @@ def fetch_cdn_population() -> pd.Series | None:
     history = embedded_frame(EMBEDDED_CDN_POPULATION_HISTORY, POPULATION_COLUMN)
     try:
         # Canada's rows, one per quarter, in persons (checked by statcan_download).
-        live = statcan_download(STATCAN_CDN_POPULATION_TABLE)[STATCAN_CDN_POPULATION_VECTOR].dropna().rename(None)
+        live = statcan_table(STATCAN_CDN_POPULATION_TABLE)[STATCAN_CDN_POPULATION_VECTOR].dropna().rename(None)
     except Exception as exc:
         print(f"  Warning: StatCan population table failed ({exc}); using the baked estimates only (to 1977).")
         live = None

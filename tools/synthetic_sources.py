@@ -4,7 +4,7 @@ The cloud copy of this project (Claude Code on the web) has so far had FRED,
 the Bank of Canada, Statistics Canada, the Treasury and CNBC all refused by
 its network policy (2026-10-06). The values here are made up, smooth
 plausible paths plus seeded noise, but they are deterministic and in each
-source's own format (FRED frames, Valet CSV, StatCan table ZIPs), so:
+source's own format (FRED frames, Valet CSV, StatCan table ZIPs and WDS JSON), so:
 
 * two program trees fed the same synthetic data can be compared byte for
   byte (``tools/regress_charts.py --synthetic``, ``tools/verify_web.py
@@ -272,14 +272,49 @@ def _zip(table_id: str, frame: pd.DataFrame) -> bytes:
     return buffer.getvalue()
 
 
+# The vector of each series of the synthetic tables that the program reads: the real ones
+# (cdn_data.STATCAN_SERIES_READ, measured 2026-10-22), so that a selection by the table's labels
+# finds the vector declared, as in the real tables (19.2's Statistics Canada stage). A series not
+# read gets a made-up vector from 900000001 on. Each table also has its unit and scale (UOM,
+# SCALAR_FACTOR, SCALAR_ID), as the real ones.
+_STATCAN_GFS_VECTORS = {
+    ("Consolidated government", "Interest"): "v52531011",
+    ("Federal government", "Interest"): "v52531068",
+    ("Federal government", "Special drawing rights (SDRs), liabilities"): "v1563966091",
+    ("Federal government", "Currency and deposits, liabilities"): "v52531103",
+    ("Federal government", "Debt securities, liabilities"): "v52531104",
+    ("Federal government", "Loans, liabilities"): "v52531105",
+    ("Federal government", "Insurance and pension schemes, liabilities"): "v52531107",
+    ("Federal government", "Other accounts payable, liabilities"): "v52531108",
+    ("Provincial and territorial government", "Interest"): "v52531125",
+    ("Provincial and territorial government", "Special drawing rights (SDRs), liabilities"): "v1563966095",
+    ("Provincial and territorial government", "Currency and deposits, liabilities"): "v52531160",
+    ("Provincial and territorial government", "Debt securities, liabilities"): "v52531161",
+    ("Provincial and territorial government", "Loans, liabilities"): "v52531162",
+    ("Provincial and territorial government", "Insurance and pension schemes, liabilities"): "v52531164",
+    ("Provincial and territorial government", "Other accounts payable, liabilities"): "v52531165",
+    ("Local government", "Interest"): "v52531182",
+    ("Local government", "Special drawing rights (SDRs), liabilities"): "v1563966099",
+    ("Local government", "Currency and deposits, liabilities"): "v52531217",
+    ("Local government", "Debt securities, liabilities"): "v52531218",
+    ("Local government", "Loans, liabilities"): "v52531219",
+    ("Local government", "Insurance and pension schemes, liabilities"): "v52531221",
+    ("Local government", "Other accounts payable, liabilities"): "v52531222",
+}
+_MILLIONS = {"UOM": "Dollars", "SCALAR_FACTOR": "millions", "SCALAR_ID": 6}
+_UNITS = {"SCALAR_FACTOR": "units", "SCALAR_ID": 0}
+_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145")
+
+
 def statcan(table_id: str) -> bytes:
-    """Return a StatCan table ZIP with the columns and members the program selects on (millions; percent)."""
+    """Return a StatCan table ZIP with the columns and members the program selects on (millions; persons; percent)."""
     quarters = pd.date_range("1990-01-01", "2026-04-01", freq="QS")
     ref = [f"{d:%Y-%m}" for d in quarters]
     if table_id == "36100467":
         values = _growth(quarters, 780_000, 3_600_000, "cdn_debt")
-        frame = pd.DataFrame({"REF_DATE": ref, "GEO": "Canada", "Estimates": "Debt", "VALUE": np.round(values, 0)})
-        other = frame.assign(Estimates="Gross debt to GDP", VALUE=60.0)
+        frame = pd.DataFrame({"REF_DATE": ref, "GEO": "Canada", "Estimates": "Debt", **_MILLIONS, "VECTOR": "v111463452",
+                              "VALUE": np.round(values, 0)})
+        other = frame.assign(Estimates="Gross debt to GDP", UOM="Percent", **_UNITS, VECTOR="v900000001", VALUE=60.0)
         return _zip(table_id, pd.concat([frame, other]))
     if table_id == "36100104":
         q = pd.date_range("1961-01-01", "2026-04-01", freq="QS")
@@ -287,7 +322,7 @@ def statcan(table_id: str) -> bytes:
         frame = pd.DataFrame({
             "REF_DATE": [f"{d:%Y-%m}" for d in q], "GEO": "Canada",
             "Prices": "Current prices", "Seasonal adjustment": "Seasonally adjusted at annual rates",
-            "Estimates": "Gross domestic product at market prices", "VALUE": np.round(values, 0),
+            "Estimates": "Gross domestic product at market prices", **_MILLIONS, "VECTOR": "v62305783", "VALUE": np.round(values, 0),
         })
         return _zip(table_id, frame)
     if table_id == "10100015":
@@ -305,28 +340,61 @@ def statcan(table_id: str) -> bytes:
             "Insurance and pension schemes, liabilities": (100_000, 500_000),
             "Other accounts payable, liabilities": (40_000, 200_000),
         }
+        made_up = itertools.count(900000002)
         for sector, share in sectors.items():
             for item, (first, last) in items.items():
                 values = _growth(quarters, first * share, last * share, sector + item)
                 rows.append(pd.DataFrame({
                     "REF_DATE": ref, "GEO": "Canada", "Government sectors": sector,
-                    "Statement of government operations and balance sheet": item, "VALUE": np.round(values, 0),
+                    "Statement of government operations and balance sheet": item, **_MILLIONS,
+                    "VECTOR": _STATCAN_GFS_VECTORS.get((sector, item)) or f"v{next(made_up)}", "VALUE": np.round(values, 0),
                 }))
         return _zip(table_id, pd.concat(rows))
     if table_id == "17100009":
         q = pd.date_range("1946-01-01", "2026-07-01", freq="QS")
         values = _growth(q, 12_000_000, 41_700_000, "cdn_pop")
-        frame = pd.DataFrame({"REF_DATE": [f"{d:%Y-%m}" for d in q], "GEO": "Canada", "SCALAR_FACTOR": "units", "VALUE": np.round(values, 0)})
+        frame = pd.DataFrame({"REF_DATE": [f"{d:%Y-%m}" for d in q], "GEO": "Canada", "UOM": "Persons", **_UNITS, "VECTOR": "v1",
+                              "VALUE": np.round(values, 0)})
         return _zip(table_id, frame)
     if table_id == "34100145":
         months = pd.date_range("1951-01-01", "2026-08-01", freq="MS")
         values = _yield_path("cdn_mortgage5", months, 10, _CDN_OFFSET) + 2.0
         frame = pd.DataFrame({
             "REF_DATE": [f"{d:%Y-%m}" for d in months], "GEO": "Canada", "DGUID": "2016A000011124",
-            "UOM": "Percent", "SCALAR_FACTOR": "units", "VALUE": values,
+            "UOM": "Percent", **_UNITS, "VECTOR": "v733833", "VALUE": values,
         })
         return _zip(table_id, frame)
     raise KeyError(f"no synthetic StatCan table {table_id}")
+
+
+def _statcan_rows(vector: str) -> pd.DataFrame:
+    """The rows of one vector in the synthetic tables, as the table's CSV gives them."""
+    for table_id in _STATCAN_TABLES:
+        with zipfile.ZipFile(io.BytesIO(statcan(table_id))) as archive:
+            table = pd.read_csv(io.BytesIO(archive.read(f"{table_id}.csv")), low_memory=False)
+        rows = table.loc[table["VECTOR"].eq(vector)]
+        if not rows.empty:
+            return rows
+    raise KeyError(f"no synthetic StatCan vector {vector}")
+
+
+def statcan_wds(params: tuple) -> bytes:
+    """Return a WDS answer to getDataFromVectorByReferencePeriodRange: each vector asked, whole whatever its start (the program trims).
+
+    In WDS's own form (``cdn_data._statcan_wds_range``): a list of {"status", "object"}, each object
+    with its vectorId and vectorDataPoint list (refPer, value, scalarFactorCode, ...).
+    """
+    asked = dict(params)["vectorIds"].replace('"', "").split(",")
+    answer = []
+    for vector_id in asked:
+        rows = _statcan_rows(f"v{vector_id}")
+        points = [
+            {"refPer": ref if len(ref) > 7 else f"{ref}-01", "value": float(value), "decimals": 0,
+             "scalarFactorCode": int(scale), "symbolCode": 0, "statusCode": 0}
+            for ref, value, scale in zip(rows["REF_DATE"].astype(str), rows["VALUE"], rows["SCALAR_ID"])
+        ]
+        answer.append({"status": "SUCCESS", "object": {"vectorId": int(vector_id), "vectorDataPoint": points}})
+    return json.dumps(answer).encode()
 
 
 # The UK (batch 3): gilt yields run this far above the U.S. ones; the Bank
@@ -591,6 +659,8 @@ def synth(key: tuple):
         return _response(valet(url, params))
     if "statcan.gc.ca/n1/tbl/csv/" in url:
         return _response(statcan(url.rsplit("/", 1)[-1].split("-")[0]))
+    if "statcan.gc.ca/t1/wds/rest/getDataFromVectorByReferencePeriodRange" in url:
+        return _response(statcan_wds(params))
     if "bankofengland.co.uk/boeapps/database" in url:
         return _response(iadb(params))
     if "ons.gov.uk" in url:
@@ -609,9 +679,9 @@ def _refused(*_args, **_kwargs):
 
 
 # Batch 19.2: the program draws the Bank of England's series, the Bank of
-# Canada's, FRED's, the ECB's, Eurostat's, the ONS's and the Bundesbank's from their baked history
-# (ratesplot/data/boe/, data/boc/, data/fred/, data/ecb/, data/eurostat/, data/ons/, data/bbk/) and takes
-# from the sources only the recent part
+# Canada's, FRED's, the ECB's, Eurostat's, the ONS's, the Bundesbank's and Statistics Canada's from their
+# baked history (ratesplot/data/boe/, data/boc/, data/fred/, data/ecb/, data/eurostat/, data/ons/,
+# data/bbk/, data/statcan/) and takes from the sources only the recent part
 # (the ONS is asked for the whole series, which it always sends). With synthetic answers the bake must
 # be synthetic too, or a chart would join the real history to a made-up
 # recent part. So each series'
@@ -625,7 +695,7 @@ SYNTHETIC_BAKE_END = pd.Timestamp("2026-07-15")
 
 
 def install_synthetic_bake(folder: Path) -> bool:
-    """Bake the synthetic Bank of England, Bank of Canada, FRED, ECB, Eurostat, ONS and Bundesbank series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
+    """Bake the synthetic Bank of England, Bank of Canada, FRED, ECB, Eurostat, ONS, Bundesbank and Statistics Canada series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
 
     Through the program's own ``baked.write_series``. Returns False, changing
     nothing, for a tree without a bake (before batch 19.2). A tree that bakes
@@ -672,6 +742,15 @@ def install_synthetic_bake(folder: Path) -> bool:
                 key = de_data.term_structure_key(column, frequency)
                 answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
                 bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer))
+    # Statistics Canada's live tables, each vector read, selected by the program's own labels (a tree before
+    # 19.2's Statistics Canada stage has no STATCAN_SERIES_READ, and reads no Statistics Canada file).
+    cdn_data = importlib.import_module("ratesplot.cdn_data")
+    if hasattr(cdn_data, "STATCAN_SERIES_READ"):
+        for table_id in cdn_data.STATCAN_SERIES_READ:
+            with zipfile.ZipFile(io.BytesIO(statcan(table_id))) as archive:
+                table = pd.read_csv(io.BytesIO(archive.read(f"{table_id}.csv")), low_memory=False)
+            for vector, values in cdn_data._statcan_vectors(table, table_id).items():
+                bake(cdn_data.STATCAN_BAKED_SOURCE, vector, values)
     baked.DATA_FOLDER = folder
     baked.forget_read_files()
     return True

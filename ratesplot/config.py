@@ -146,6 +146,11 @@ BOC_GROUP_URL = "https://www.bankofcanada.ca/valet/observations/group/{group}/cs
 BOC_SERIES_URL = "https://www.bankofcanada.ca/valet/observations/{series_code}/csv"
 STATCAN_TABLE_URL = "https://www150.statcan.gc.ca/n1/tbl/csv/{table_id}-eng.zip"
 STATCAN_WDS_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorsAndLatestNPeriods"
+# Vectors' values from a date (a table's recent part, batch 19.2), by
+# reference period. The end is required (406 without one); 9999-12-31, after
+# any period, is accepted (measured 2026-10-22).
+STATCAN_WDS_RANGE_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorByReferencePeriodRange"
+STATCAN_WDS_RANGE_END = "9999-12-31"
 
 _BROWSER_HEADERS = {
     "User-Agent": (
@@ -189,9 +194,10 @@ LATEST_QUOTE_RETRIES = 2
 BOC_START_DATE = "2000-12-01"
 CANADIAN_YIELD_HIST_END = pd.Timestamp("2000-12-31")
 
-# Live StatCan tables (downloaded on every run), and the vector the program
-# reads of each (cdn_data.STATCAN_SERIES_READ; the GFS table's 22 are
-# cdn_data._GFS_VECTORS). Measured 2026-10-22.
+# Live StatCan tables, and the vector the program reads of each
+# (cdn_data.STATCAN_SERIES_READ; the GFS table's 22 are cdn_data.GFS_VECTORS).
+# Measured 2026-10-22. Their history is baked (batch 19.2): a drawing asks
+# Statistics Canada's WDS for the last 24 months only.
 STATCAN_CDN_DEBT_TABLE = "36100467"       # general government gross debt, quarterly
 STATCAN_CDN_GDP_TABLE = "36100104"        # GDP at market prices, SAAR, quarterly
 STATCAN_CDN_INTEREST_TABLE = "10100015"   # consolidated government interest, quarterly

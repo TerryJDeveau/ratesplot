@@ -8,7 +8,7 @@ gone, is still drawn to the bake's last date. Re-baked daily (decision 49)
 by a separate job whose result is committed; the running program never
 writes these files. Begun with the Bank of England's database, 2026-10-21;
 then the Bank of Canada's Valet, FRED, the ECB's Data Portal, Eurostat, the
-ONS and the Bundesbank, 2026-10-22.
+ONS, the Bundesbank and Statistics Canada, 2026-10-22.
 
 The files: ``ratesplot/data/SOURCE/CODE.csv``, one series each, written
 only by the bake (``ratesplot.bake``, run by ``tools/bake_archives.py``):
@@ -36,7 +36,8 @@ first date, the source's from it on. A source that cannot be asked for part
 of a series (the ONS) is asked for the whole, and only its values from that
 date on are taken. The Bundesbank's download is always whole too, but the
 same database's SDMX web service can be asked from a date, so its recent
-part is asked of that.
+part is asked of that; so are Statistics Canada's tables, whose ZIPs are
+whole and whose WDS answers each vector from a date.
 """
 
 from __future__ import annotations

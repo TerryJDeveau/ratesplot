@@ -19,7 +19,8 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from .cdn_data import BOC_VALET_FROM, boc_valet_series, statcan_download
+from .baked import read_series
+from .cdn_data import BOC_VALET_FROM, STATCAN_BAKED_SOURCE, boc_valet_series, statcan_download
 from .config import (
     CANADIAN_YIELD_HIST_END,
     CDN_MORTGAGE_HISTORY_TABLE,
@@ -647,11 +648,18 @@ def _de_mortgage(term: str) -> pd.Series:
 def cdn_mortgage_history() -> pd.Series:
     """Return the CMHC conventional 5-year mortgage lending rate, monthly from 1951 (StatCan 34-10-0145).
 
-    The table's Canada rows, checked, not trusted (``cdn_data.statcan_download``):
-    the one vector declared, in percent, one row per month; anything else
-    raises (and the caller warns). Each month is dated by its first day.
+    Batch 19.2: drawn from its bake alone (``ratesplot/data/statcan/``),
+    with no request. The chart draws it only before Canada's posted 5-year
+    rate begins (Valet's, 1975-01-01, ``mortgage_rate``), so a recent part
+    would never be drawn; the daily job re-bakes it, as every series. Not
+    baked: the table's Canada rows, checked, not trusted
+    (``cdn_data.statcan_download``): the one vector declared, in percent,
+    one row per month; anything else raises (and the caller warns). Each
+    month is dated by its first day.
     """
-    values = statcan_download(CDN_MORTGAGE_HISTORY_TABLE)[CDN_MORTGAGE_HISTORY_VECTOR]
+    values = read_series(STATCAN_BAKED_SOURCE, CDN_MORTGAGE_HISTORY_VECTOR)
+    if values is None:
+        values = statcan_download(CDN_MORTGAGE_HISTORY_TABLE)[CDN_MORTGAGE_HISTORY_VECTOR]
     return _clean(values.rename(None).rename_axis(None))
 
 

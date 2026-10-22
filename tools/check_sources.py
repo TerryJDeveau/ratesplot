@@ -302,7 +302,8 @@ def _spread_crosscheck(series_id: str, pair: tuple[str, str]) -> Callable[[PlotC
 
 def _cmhc_history(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     # Used only before the weekly posted rate begins (1975), so its age does not matter.
-    history = rates.cdn_mortgage_history()
+    # The table whole: the drawing reads its bake alone, with no request (batch 19.2).
+    history = cdn_data.statcan_download(rates.CDN_MORTGAGE_HISTORY_TABLE)[rates.CDN_MORTGAGE_HISTORY_VECTOR]
     return None, f"{len(history)} months, {history.index[0]:%Y-%m} to {history.index[-1]:%Y-%m}"
 
 

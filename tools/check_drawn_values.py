@@ -192,6 +192,11 @@ def ecb(flow: str, key: str, unit: str, **kwargs) -> Source:
     return Source(f"ECB {flow}.{key}", lambda: _clean(de_data.ecb_download(flow, key, unit)), **kwargs)
 
 
+def statcan(table: str, vector: str, name: str, **kwargs) -> Source:
+    # The table's ZIP, whole, not the vector's bake (``rates.cdn_mortgage_history``), which the drawing reads.
+    return Source(f"StatCan {table} ({name})", lambda: _clean(cdn_data.statcan_download(table)[vector]), **kwargs)
+
+
 def built_in(name: str, rows: list, **kwargs) -> Source:
     """History built into the program (baked or transcribed), as ``joins.embedded_frame`` reads it."""
 
@@ -302,7 +307,7 @@ def mortgage_sources(term: str, nation: str) -> list[Source]:
     if nation == "cdn":
         sources = [valet(rates.CDN_MORTGAGE_SERIES[term], **held)]
         if term == "5":
-            sources.append(Source(f"StatCan {rates.CDN_MORTGAGE_HISTORY_TABLE} (CMHC rate)", rates.cdn_mortgage_history, carry_days=MONTHLY_CARRY_DAYS))
+            sources.append(statcan(rates.CDN_MORTGAGE_HISTORY_TABLE, rates.CDN_MORTGAGE_HISTORY_VECTOR, "CMHC rate", carry_days=MONTHLY_CARRY_DAYS))
         return sources
     if nation == "uk":
         sources = [iadb(rates.UK_MORTGAGE_SERIES[term], monthly=True, carry_days=MONTHLY_CARRY_DAYS)]

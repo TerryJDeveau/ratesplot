@@ -17,8 +17,10 @@ charts are drawn three times:
    history alone must stop: no curve on the right axis keeps its last value for more than
    ``joins.MACRO_CARRY_LIMIT`` (Canada's debt, left with its history to 1994, ran on flat
    to the day before 2026-10-21). The Bank of England's series, the Bank of Canada's,
-   FRED's, the ECB's, Eurostat's and the ONS's, baked (batch 19.2; a synthetic bake here),
-   are drawn to the bake's last date, each with a warning naming it and that date. The
+   FRED's, the ECB's, Eurostat's, the ONS's and Statistics Canada's tables, baked (batch
+   19.2; a synthetic bake here), are drawn to the bake's last date, each with a warning
+   naming it and that date; Statistics Canada is asked only for its tables' recent parts
+   (WDS), never the CMHC mortgage rate, which is drawn from its bake unasked. The
    Bundesbank's too, but its bot check is named once, after its first request, the only
    one it is sent in the drawing (its other series drawn from their bake unasked). The
    UK's chart is drawn once more without the ONS's bake (as before 19.2's ONS stage):
@@ -73,11 +75,12 @@ CASES = {
     "levels": ["-c", "-u", "--e:2026-09-01", "-s:1990", "--debt:fp", "-p"],
 }
 
-# The FRED series the "rates" case draws (batch 19.2): in pass 3 each from its bake, named. Canada's
-# GDP among them: Statistics Canada fails, and FRED's copy of it is the fallback.
+# The FRED series the "rates" case draws (batch 19.2): in pass 3 each from its bake, named. Not
+# Canada's GDP (NGDPSAXDCCAQ) since 19.2's Statistics Canada stage: Statistics Canada's GDP is drawn
+# from its own bake when it fails, so FRED's copy, the fallback for a table that cannot be had, is not asked.
 FRED_DRAWN_IN_RATES = (
     "DGS3MO", "DGS2", "DGS5", "DGS10", "DGS30", "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU",
-    "MORTGAGE30US", "GFDEBTN", "SLGSDODNS", "GDP", "A180RC1Q027SBEA", "NGDPSAXDCCAQ",
+    "MORTGAGE30US", "GFDEBTN", "SLGSDODNS", "GDP", "A180RC1Q027SBEA",
 )
 # The ECB series the "rates" case draws (batch 19.2): Germany's policy rate (fixed, then the minimum
 # bid), its three mortgage bands and its year-end debt before 2000; not EONIA or €STR (the market rate).
@@ -93,6 +96,10 @@ EUROSTAT_DRAWN_IN_RATES = ("gov_10q_ggdebt.S13", "gov_10q_ggnfa.S13", "gov_10dd_
 ONS_DRAWN_IN_RATES = ("BKPX", "HF6W", "NMYX", "YBHA")
 # The UK's chart of the "rates" case, drawn again in pass 3 without the ONS's bake.
 UK_RATES = ["--na:gb", *CASES["rates"][1:]]
+# The cases every source of which is baked (batch 19.2): in pass 3 drawn from the bake alone, byte for byte
+# as in pass 1 (the synthetic bake reaches past what they draw). "levels" since Statistics Canada's stage:
+# Canada's levels and population from its tables, the U.S.' from FRED's series.
+DRAWN_FROM_THE_BAKE_ALONE = ("levels",)
 
 # The pages measured on 2026-10-21 (their heads; the program reads only the start and title).
 FRED_PAGE = (
@@ -343,6 +350,21 @@ def main() -> int:
                              if "Warning: ONS " in line and "its recent values unavailable" in line} - set(ends))
             check("rates: the ONS's series drawn from their bake, each named with its last date (19.2)",
                   named == sorted(ends) and not others, (named, others))
+            # Statistics Canada: each table the case draws asked once, for its recent part (WDS), never its ZIP,
+            # and drawn from its bake, named with its last date; the CMHC mortgage rate (the 5-year before 1975)
+            # read from its bake alone, not asked.
+            statcan = [request for request in asked if urlsplit(request[1]).netloc == "www150.statcan.gc.ca"]
+            by_vectors = {",".join(f'"{vector.lstrip("v")}"' for vector in read.vectors): table
+                          for table, read in cdn_data.STATCAN_SERIES_READ.items()}
+            tables = sorted(by_vectors.get(dict(request[2]).get("vectorIds"), request[1]) for request in statcan)
+            ends = {table: max(baked.read_series("statcan", vector).index[-1] for vector in read.vectors)
+                    for table, read in cdn_data.STATCAN_SERIES_READ.items() if table in tables}
+            named = sorted(table for table, end in ends.items() if any(
+                f"Statistics Canada table {table}: its recent values unavailable" in line
+                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
+            check("rates: Statistics Canada asked only for its tables' recent parts, each drawn from its bake, named with its last date (19.2)",
+                  bool(tables) and named == tables and cdn_data.CDN_MORTGAGE_HISTORY_TABLE not in tables
+                  and all(request[1] == cdn_data.STATCAN_WDS_RANGE_URL for request in statcan), (tables, named))
             # The Bundesbank's yields: its bot check answers the first request, the only one it is sent; every
             # term then drawn from its bake, the check named once, with the bakes' last date.
             end = max(baked.read_series("bbk", path.stem).index[-1] for path in (baked.DATA_FOLDER / "bbk").glob("*.csv"))
@@ -354,7 +376,10 @@ def main() -> int:
                   and f"The German yields drawn from their baked history, to {end:%Y-%m-%d}." in said[0],
                   (to_bundesbank, said, per_series))
         differs = sorted(key for key in first[name] if pngs.get(key) != first[name][key])
-        check(f"{name}: not drawn, or drawn otherwise, without them", bool(differs), f"differ or missing: {differs}")
+        if name in DRAWN_FROM_THE_BAKE_ALONE:
+            check(f"{name}: drawn without them as in pass 1, byte for byte, from the bake alone (19.2)", not differs, f"differ or missing: {differs}")
+        else:
+            check(f"{name}: not drawn, or drawn otherwise, without them", bool(differs), f"differ or missing: {differs}")
         flat.update((f"{name}, {curve}", days) for curve, days in case_flat.items())
     # The UK's chart without the ONS's bake too, as before 19.2's ONS stage: its gross debt is not drawn, so the
     # national debt runs on alone to 2016, past 1975.
