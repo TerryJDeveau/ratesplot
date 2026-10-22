@@ -38,7 +38,7 @@ import re
 import tempfile
 import textwrap
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -1555,6 +1555,7 @@ _BOE_SERIES_TITLES = {
 }
 # How many revised values a re-bake lists one by one before giving only their count.
 _REVISIONS_LISTED = 20
+_NO_DATES = pd.DatetimeIndex([])
 
 
 def boe_baked_codes() -> list[str]:
@@ -1567,64 +1568,105 @@ def _dates_text(dates: pd.Index, most: int = 5) -> str:
     return shown + (", …" if len(dates) > most else "")
 
 
-def bake_changes(old: pd.Series | None, new: pd.Series) -> tuple[list[str], str | None]:
-    """What re-baking one series changes: lines that say so, and the reason to refuse it, if any.
+@dataclass
+class SeriesChanges:
+    """What re-baking one series changes (``bake_changes``): its dates by kind, and lines that say so.
 
-    Refused: a download that lacks dates the file has. It may be cut short,
-    or the source may have withdrawn values; a person looks before the
-    history loses anything (deleting the file accepts the download as it
-    is). A value is revised if its float differs at all.
+    ``lost``: baked dates the download lacks; the download may be cut short,
+    or the source may have withdrawn values. ``filled``: dates within the
+    bake's span that it lacked. ``revised``: values whose float differs at
+    all. ``added``: dates after the bake's last. The last line sums them up.
     """
+
+    new_file: bool = False
+    added: pd.DatetimeIndex = field(default_factory=lambda: _NO_DATES)
+    revised: pd.DatetimeIndex = field(default_factory=lambda: _NO_DATES)
+    filled: pd.DatetimeIndex = field(default_factory=lambda: _NO_DATES)
+    lost: pd.DatetimeIndex = field(default_factory=lambda: _NO_DATES)
+    lines: list[str] = field(default_factory=list)
+
+    @property
+    def refused(self) -> str | None:
+        """Why a person should look before the file is written: baked dates the download lacks; None if there are none."""
+        return f"{len(self.lost):,} baked dates are not in the download ({_dates_text(self.lost)})" if len(self.lost) else None
+
+    @property
+    def history_changed(self) -> bool:
+        """A value revised, a date added within the bake, or baked dates withdrawn: more than new values at its end."""
+        return bool(len(self.revised) or len(self.filled) or len(self.lost))
+
+
+def bake_changes(old: pd.Series | None, new: pd.Series) -> SeriesChanges:
+    """What re-baking one series changes, from its baked values (``old``; None: no file yet) to the download (``new``)."""
     if old is None:
-        return [f"new file, {len(new):,} values"], None
+        return SeriesChanges(new_file=True, added=new.index, lines=[f"new file, {len(new):,} values"])
     lost = old.index.difference(new.index)
-    if len(lost):
-        return [], f"{len(lost):,} baked dates are not in the download ({_dates_text(lost)})"
-    before = new.loc[old.index]
-    revised = old.index[old.to_numpy() != before.to_numpy()]
+    kept = old.index.intersection(new.index)
+    revised = kept[old.loc[kept].to_numpy() != new.loc[kept].to_numpy()]
     inserted = new.index.difference(old.index)
     added = inserted[inserted > old.index[-1]]
     filled = inserted[inserted <= old.index[-1]]
-    lines = [
+    changes = SeriesChanges(added=added, revised=revised, filled=filled, lost=lost)
+    lines = [changes.refused] if changes.refused else []
+    lines += [
         f"revised {day:%Y-%m-%d}: {float(old[day])!r} -> {float(new[day])!r} ({new[day] - old[day]:+.6g})"
         for day in revised[:_REVISIONS_LISTED]
     ]
     if len(revised) > _REVISIONS_LISTED:
-        largest = (before.loc[revised] - old.loc[revised]).abs().max()
+        largest = (new.loc[revised] - old.loc[revised]).abs().max()
         lines.append(f"and {len(revised) - _REVISIONS_LISTED:,} more revised, to {revised[-1]:%Y-%m-%d}; the largest change {largest:.6g}")
     if len(filled):
         lines.append(f"{len(filled):,} values on dates within the bake that it lacked ({_dates_text(filled)})")
     lines.append(
         f"{len(added):,} new" + (f" ({added[0]:%Y-%m-%d} to {added[-1]:%Y-%m-%d})" if len(added) else "")
-        + f", {len(revised):,} revised"
+        + f", {len(revised):,} revised" + (f", {len(lost):,} withdrawn" if len(lost) else "")
     )
-    return lines, None
+    changes.lines = lines
+    return changes
 
 
-def bake_boe_history(folder: Path | None = None) -> bool:
+@dataclass
+class SeriesBake:
+    """One series' bake (``bake_boe_history``): its file, what changed, and whether the file was written."""
+
+    source: str
+    code: str
+    path: Path
+    changes: SeriesChanges | None = None  # None: the download failed (``error``)
+    error: str | None = None
+    written: bool = False
+    values: int = 0  # in the download
+    last: pd.Timestamp | None = None  # the download's last date
+
+
+def bake_boe_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
     """Bake every Bank of England database series the program reads, whole, into ``ratesplot/data/boe/`` (batch 19.2).
 
     ``folder`` writes the files there instead. Each series is a file and is
-    written on its own: one whose download fails, or is refused
-    (``bake_changes``), keeps its file as it was, and the bake returns
-    False. What changed in each file is printed.
+    written on its own. One whose download fails keeps its file as it was;
+    so does one whose download lacks baked dates (``SeriesChanges.refused``),
+    unless ``accept_withdrawn``: the daily job (tools/rebake.py) writes it
+    then, for a pull request a person merges or not. What changed in each
+    file is printed, and returned, a ``SeriesBake`` per series.
     """
     print("Baking the Bank of England database's series …")
-    ok = True
+    results = []
     for code in boe_baked_codes():
         title = _BOE_SERIES_TITLES[code]
         path = folder / f"{code}.csv" if folder is not None else baked.data_file(BOE_BAKED_SOURCE, code)
+        result = SeriesBake(BOE_BAKED_SOURCE, code, path)
+        results.append(result)
         try:
             new = iadb_download(code)
         except Exception as exc:
-            print(f"  {code}: not baked ({exc}); its file is left as it was.")
-            ok = False
+            result.error = str(exc) or type(exc).__name__
+            print(f"  {code}: not baked ({result.error}); its file is left as it was.")
             continue
+        result.values, result.last = len(new), new.index[-1]
         old = baked.parse_series(path.read_text(encoding="utf-8"), code) if path.exists() else None
-        lines, refused = bake_changes(old, new)
-        if refused:
-            print(f"  {code}: not baked: {refused}; its file is left as it was.")
-            ok = False
+        result.changes = changes = bake_changes(old, new)
+        if changes.refused and not accept_withdrawn:
+            print(f"  {code}: not baked: {changes.refused}; its file is left as it was.")
             continue
         comment = (
             f"Bank of England database (IADB), series {code}: {title}.\n"
@@ -1633,7 +1675,8 @@ def bake_boe_history(folder: Path | None = None) -> bool:
             "not edited by hand."
         )
         baked.write_series(path, new, comment)
-        print(f"  {code}: {len(new):,} values, {new.index[0]:%Y-%m-%d} to {new.index[-1]:%Y-%m-%d}; {lines[-1]}")
-        for line in lines[:-1]:
+        result.written = True
+        print(f"  {code}: {len(new):,} values, {new.index[0]:%Y-%m-%d} to {new.index[-1]:%Y-%m-%d}; {changes.lines[-1]}")
+        for line in changes.lines[:-1]:
             print(f"      {line}")
-    return ok
+    return results

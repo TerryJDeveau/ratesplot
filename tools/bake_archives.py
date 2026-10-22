@@ -87,8 +87,10 @@ def main(argv: list[str]) -> int:
                 bake(saved_csv=args.de_csv, saved_discount_csv=args.de_discount_csv)
             else:
                 # The archives raise when they cannot be baked; a live source's
-                # history returns False when a series kept its old file.
-                all_baked &= bake() is not False
+                # history returns a SeriesBake per series, each written or not.
+                result = bake()
+                if isinstance(result, list):
+                    all_baked &= all(item.written for item in result)
     return 0 if all_baked else 1
 
 

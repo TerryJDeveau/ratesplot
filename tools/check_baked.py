@@ -152,24 +152,31 @@ def check_join(folder: Path) -> None:
 
 def check_report() -> None:
     old = series({"2026-01-01": 1.0, "2026-02-01": 2.0, "2026-03-01": 3.0})
-    lines, refused = bake.bake_changes(None, old)
-    check("report: a new file", lines == ["new file, 3 values"] and refused is None, lines)
-    lines, refused = bake.bake_changes(old, old.copy())
-    check("report: nothing new", lines == ["0 new, 0 revised"] and refused is None, lines)
+    changes = bake.bake_changes(None, old)
+    check("report: a new file", changes.lines == ["new file, 3 values"] and changes.new_file and not changes.history_changed,
+          changes.lines)
+    changes = bake.bake_changes(old, old.copy())
+    check("report: nothing new", changes.lines == ["0 new, 0 revised"] and not changes.history_changed and not len(changes.added),
+          changes.lines)
     new = series({"2026-01-01": 1.0, "2026-01-15": 1.5, "2026-02-01": 2.25, "2026-03-01": 3.0, "2026-04-01": 4.0, "2026-05-01": 5.0})
-    lines, refused = bake.bake_changes(old, new)
+    changes = bake.bake_changes(old, new)
     check("report: each revised value with its size, a date the bake lacked, the new values",
-          refused is None and lines == [
+          changes.refused is None and changes.history_changed and changes.lines == [
               "revised 2026-02-01: 2.0 -> 2.25 (+0.25)",
               "1 values on dates within the bake that it lacked (2026-01-15)",
               "2 new (2026-04-01 to 2026-05-01), 1 revised",
-          ], lines)
-    lines, refused = bake.bake_changes(old, series({"2026-01-01": 1.0, "2026-03-01": 3.0, "2026-04-01": 4.0}))
-    check("report: a download lacking a baked date refused, the date named",
-          lines == [] and refused == "1 baked dates are not in the download (2026-02-01)", refused)
+          ], changes.lines)
+    changes = bake.bake_changes(old, series({"2026-01-01": 1.0, "2026-02-01": 2.0, "2026-03-01": 3.0, "2026-04-01": 4.0}))
+    check("report: new values alone change no history", not changes.history_changed and list(changes.added) == [pd.Timestamp("2026-04-01")],
+          changes.lines)
+    changes = bake.bake_changes(old, series({"2026-01-01": 1.0, "2026-03-01": 3.0, "2026-04-01": 4.0}))
+    check("report: a download lacking a baked date refused, the date named, and reported withdrawn",
+          changes.refused == "1 baked dates are not in the download (2026-02-01)" and changes.history_changed
+          and changes.lines == ["1 baked dates are not in the download (2026-02-01)", "1 new (2026-04-01 to 2026-04-01), 0 revised, 1 withdrawn"],
+          changes.lines)
     many_old = series({f"2025-{month:02d}-01": float(month) for month in range(1, 13)} | {f"2026-{month:02d}-01": float(month) for month in range(1, 13)})
     many_new = many_old + 0.5
-    lines, _refused = bake.bake_changes(many_old, many_new)
+    lines = bake.bake_changes(many_old, many_new).lines
     check("report: the first 20 revisions listed, then their count and the largest",
           len(lines) == 22 and lines[20] == "and 4 more revised, to 2026-12-01; the largest change 0.5" and lines[21] == "0 new, 24 revised",
           lines[19:])
