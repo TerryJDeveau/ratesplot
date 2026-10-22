@@ -6,14 +6,15 @@ country. The data come from their sources each time: Statistics Canada, the Bank
 the U.S. Treasury and the U.S. Census Bureau; the Bank of England and the Office for National
 Statistics for the UK; the Deutsche Bundesbank, the ECB and Eurostat for Germany. The history
 before the sources' own series (back to 1867 for Canadian federal debt, to about 1700 for the UK's
-national debt and GDP, to 1956 for Germany's 10-year yield) is built into the code. So is the Bank
-of England's own history of the series the program reads (`ratesplot/data/boe/`, one file per
-series): of each, a drawing asks the Bank only for the last two months (the last 24 for its
-mortgage rates, which it may revise). A job on GitHub (`.github/workflows/rebake.yml`, run each
-day at 06:37 UTC) bakes that history again: a series whose only change is new values is committed
-straight to `main`; one whose history changed (a value revised, a date added within it, dates the
-Bank no longer gives) goes to a pull request from the branch `rebake-review`, and merging it
-accepts the change.
+national debt and GDP, to 1956 for Germany's 10-year yield) is built into the code. So is the
+history of the series the program reads from the Bank of England's database and the Bank of
+Canada's Valet (`ratesplot/data/boe/`, `ratesplot/data/boc/`, one file per series): of each, a
+drawing asks the bank only for the last two months (the last 24 for the Bank of England's quoted
+mortgage rates and the Bank of Canada's brokers' variable rate, which may be revised). A job on
+GitHub (`.github/workflows/rebake.yml`, run each day at 06:37 UTC) bakes that history again: a
+series whose only change is new values is committed straight to `main`; one whose history changed
+(a value revised, a date added within it, dates the source no longer gives) goes to a pull
+request from the branch `rebake-review`, and merging it accepts the change.
 
 ## Three ways to run it
 
@@ -38,12 +39,12 @@ When a source does not answer (it is down, or sends a web page such as its maint
 in place of its data), the chart is drawn from the last good copy of that download, which is
 kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_good` on Windows,
 `~/.cache/ratesplot/last_good` elsewhere). The message log names the source and the copy's date;
-the web page says so above the charts, and the window in its status line. A Bank of England
-series with no copy kept is drawn from its history built into the code, to its last date, with a
-warning. A chart whose source has failed with no copy kept is left out and named, and the other
-charts are drawn. The web page's server keeps its copies only until it restarts. A curve on the
-right axis whose source has stopped (or is left with only its baked history) ends a year after
-its last figure instead of running on flat to the end of the chart.
+the web page says so above the charts, and the window in its status line. A Bank of England or
+Bank of Canada series with no copy kept is drawn from its history built into the code, to its last
+date, with a warning. A chart whose source has failed with no copy kept is left out and named,
+and the other charts are drawn. The web page's server keeps its copies only until it restarts. A
+curve on the right axis whose source has stopped (or is left with only its baked history) ends a
+year after its last figure instead of running on flat to the end of the chart.
 
 The nations' sources are fetched side by side, but each source's server gets one request at
 a time from the program, and a request that fails is not made again until the next drawing.
@@ -95,5 +96,5 @@ what the regression segments' labels cover, `check_last_good.py`, the charts dra
 last good copies with every source cut off, and `check_baked.py`, the built-in history's files
 and how a drawing joins them to what it asks for)
 and the bake of the historical data (`bake_archives.py`), which also writes `ratesplot/data/`:
-the live sources' history, one file per series (`bake_archives.py --only boe`), re-baked by
-running it again or by the daily job (`rebake.py`); nothing else writes there.
+the live sources' history, one file per series (`bake_archives.py --only boe`, `--only boc`),
+re-baked by running it again or by the daily job (`rebake.py`); nothing else writes there.
