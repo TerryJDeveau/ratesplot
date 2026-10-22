@@ -48,7 +48,8 @@ Usage (from the project root)::
 The drawing and the sources read the same downloads (the regression cache,
 or one live download each), so the check is of what the program does to
 them, never of a difference between two fetches. Except the Bank of
-England's series, the Bank of Canada's, FRED's and the ECB's (batch 19.2):
+England's series, the Bank of Canada's, FRED's, the ECB's and the
+Bundesbank's (batch 19.2):
 the drawing reads their baked history and asks for the recent part only, and
 they are checked against each source's whole series, so the check covers
 the bake too; a regression cache whose whole downloads are older than the bake then
@@ -181,7 +182,9 @@ def iadb(code: str, **kwargs) -> Source:
 def bundesbank(column: str, frequency: str, **kwargs) -> Source:
     key = de_data.DE_YIELD_SERIES[column]
     name = f"Bundesbank {key}, {'end of month' if frequency == 'M' else 'daily'}"
-    return Source(name, lambda: _clean(de_data._term_structure(column, frequency)), **kwargs)
+    # The Bundesbank's whole series, not its bake and recent part (``de_data.bundesbank_series``), which the drawing reads.
+    flow, series = de_data.BUNDESBANK_TERM_STRUCTURE_FLOW, de_data.term_structure_key(column, frequency)
+    return Source(name, lambda: _clean(de_data.bundesbank_download(flow, series)), **kwargs)
 
 
 def ecb(flow: str, key: str, unit: str, **kwargs) -> Source:

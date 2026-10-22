@@ -19,6 +19,8 @@ charts are drawn three times:
    to the day before 2026-10-21). The Bank of England's series, the Bank of Canada's,
    FRED's, the ECB's, Eurostat's and the ONS's, baked (batch 19.2; a synthetic bake here),
    are drawn to the bake's last date, each with a warning naming it and that date. The
+   Bundesbank's too, but its bot check is named once, after its first request, the only
+   one it is sent in the drawing (its other series drawn from their bake unasked). The
    UK's chart is drawn once more without the ONS's bake (as before 19.2's ONS stage):
    its national debt, drawn to 2016 without the gross debt, must stop and is named
    without "(pre-1975)".
@@ -341,6 +343,16 @@ def main() -> int:
                              if "Warning: ONS " in line and "its recent values unavailable" in line} - set(ends))
             check("rates: the ONS's series drawn from their bake, each named with its last date (19.2)",
                   named == sorted(ends) and not others, (named, others))
+            # The Bundesbank's yields: its bot check answers the first request, the only one it is sent; every
+            # term then drawn from its bake, the check named once, with the bakes' last date.
+            end = max(baked.read_series("bbk", path.stem).index[-1] for path in (baked.DATA_FOLDER / "bbk").glob("*.csv"))
+            to_bundesbank = sum(count for request, count in asked.items() if urlsplit(request[1]).netloc == "api.statistiken.bundesbank.de")
+            said = [line for line in log.splitlines() if "sent a bot check instead of data" in line]
+            per_series = [line for line in log.splitlines() if "Warning: Bundesbank " in line]
+            check("rates: the Bundesbank asked once, its bot check named once, the yields drawn from their bake to its last date (19.2)",
+                  to_bundesbank == 1 and len(said) == 1 and not per_series
+                  and f"The German yields drawn from their baked history, to {end:%Y-%m-%d}." in said[0],
+                  (to_bundesbank, said, per_series))
         differs = sorted(key for key in first[name] if pngs.get(key) != first[name][key])
         check(f"{name}: not drawn, or drawn otherwise, without them", bool(differs), f"differ or missing: {differs}")
         flat.update((f"{name}, {curve}", days) for curve, days in case_flat.items())

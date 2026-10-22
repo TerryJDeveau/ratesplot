@@ -34,7 +34,9 @@ one series, so they meet without a ramp, unlike the joins of different
 sources (``joins.chain``): the bake's values before the recent part's
 first date, the source's from it on. A source that cannot be asked for part
 of a series (the ONS) is asked for the whole, and only its values from that
-date on are taken.
+date on are taken. The Bundesbank's download is always whole too, but the
+same database's SDMX web service can be asked from a date, so its recent
+part is asked of that.
 """
 
 from __future__ import annotations
@@ -140,6 +142,8 @@ def with_recent_part(
     label: str,
     fetch: Callable[[pd.Timestamp | None], pd.Series],
     recent: pd.DateOffset,
+    *,
+    passes: tuple[type[Exception], ...] = (),
 ) -> pd.Series:
     """Return series ``code``: its baked history, then its recent part asked for live.
 
@@ -149,13 +153,17 @@ def with_recent_part(
     the bake's last date, so a bake left behind (a re-bake that stopped, a
     copy not updated) is still followed by every newer value. Values before
     ``start`` in the answer are left out: a source that sends more than it
-    was asked for (the Bundesbank's) changes nothing.
+    was asked for (the ONS's, always whole) changes nothing.
 
     If the recent part fails, the baked history alone, with a warning naming
     ``label`` and the bake's last date (decision 45). The request's last good
     copy (batch 20), where there is one, is drawn before that, by the
     download cache, which names it at the drawing's end. The bake's last date
     is its last with a value (a row without one, FRED's, is not counted).
+    A failure of a type in ``passes`` is raised to the caller instead, which
+    then says what it draws: the Bundesbank's bot check, which
+    ``de_data.fetch_de_yields`` names once for all its series, asking the
+    Bundesbank nothing more in that drawing.
     """
     baked = read_series(source, code)
     if baked is None or baked.count() == 0:
@@ -164,6 +172,8 @@ def with_recent_part(
     start = last - recent
     try:
         live = fetch(start)
+    except passes:
+        raise
     except Exception as exc:
         print(f"  Warning: {label}: its recent values unavailable ({exc}); drawn from its baked history, to {last:%Y-%m-%d}.")
         return baked

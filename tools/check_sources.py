@@ -343,7 +343,7 @@ def _de_discount(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     or a bake gone wrong: re-bake (``tools/bake_archives.py --only de``).
     """
     flow, key = bake.DE_DISCOUNT_RATE_SERIES
-    month_end = de_data.bundesbank_series(flow, key)
+    month_end = de_data.bundesbank_download(flow, key)  # the Bundesbank's whole series (not baked)
     changes = pd.Series({pd.Timestamp(date): value for date, value in de_archive_data.EMBEDDED_DE_DISCOUNT_RATE_CHANGES})
     in_effect = changes.reindex(month_end.index, method="ffill")
     differ = month_end[in_effect.to_numpy() != month_end.to_numpy()]
@@ -553,7 +553,8 @@ CHECKS: tuple[Check, ...] = (
     Check("ons_population", "ONS EBAQ UK population", QUARTERLY, _uk_population),
     Check("cnbc_uk", "CNBC quote feed, UK gilt yields, 5 10 20 years (unofficial)", QUOTES, _quotes("uk", tuple(uk_data.UK_YIELD_SERIES))),
     Check("uk_joins", "UK history against the live series where they meet (a measurement)", None, _uk_joins),
-    # Germany (batch 4).
+    # Germany (batch 4). The yields as the program reads them (batch 19.2): their bake and recent part, a
+    # WARN if the Bundesbank fails or sends its bot check; de_joins reads the 10-year so too.
     Check("bbk_yields", "Bundesbank Svensson yields 1 2 5 7 10 20 30 years (daily)", DAILY, _de_yields),
     Check("ecb_policy", "ECB main refinancing rate, fixed and minimum bid (--policy)", None, _rate(rates.de_policy_target)),
     # Batch 9.6: the Bundesbank's discount rate before 1999, baked.

@@ -51,7 +51,11 @@ The ECB's series (batch 19.2, ``ecb_series``): their history is in
 from the period holding that date on; if the ECB fails, the baked history
 alone, with a warning. Eurostat's alike (``eurostat_series``), in
 ``ratesplot/data/eurostat/``, each dataset's recent part asked for once for
-all its series.
+all its series. The Bundesbank's alike (``bundesbank_series``), in
+``ratesplot/data/bbk/``, the recent part asked of its SDMX web service, which
+reads a start date where its download does not; a bot check (``BotCheck``)
+that no last good copy answers for is named once, and the Bundesbank asked
+nothing more in that drawing.
 """
 
 from __future__ import annotations
@@ -81,7 +85,7 @@ from .config import (
     PlotConfig,
     component_column,
 )
-from .baked import frame_with_recent_part, with_recent_part
+from .baked import frame_with_recent_part, read_series, with_recent_part
 from .de_archive_data import EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY
 from .http import BotCheck, de_get, downloads_of
 from .joins import embedded_frame, ttm_sum
@@ -302,8 +306,25 @@ def bundesbank_download(flow: str, key: str, start: pd.Timestamp | None = None) 
 
 
 def bundesbank_series(flow: str, key: str) -> pd.Series:
-    """Return one whole series of the Bundesbank's database (``bundesbank_download``); raises if it is not that series."""
-    return bundesbank_download(flow, key)
+    """Return one series of the Bundesbank's database (``parse_bundesbank_csv``): its baked history, then its recent part from the Bundesbank.
+
+    Batch 19.2 (``ratesplot.baked``): the history is in
+    ``ratesplot/data/bbk/``, and only the last two months are asked for
+    (market yields, not revised), from the period holding that date on; a
+    series not baked is asked for whole. If the Bundesbank fails,
+    the baked history alone, to its last value, with a warning; but a bot
+    check is raised (``BotCheck``), for the caller to name once. Measured
+    2026-10-22: the bake joined to its recent part is the Bundesbank's whole
+    answer, value for value.
+    """
+    return with_recent_part(
+        BUNDESBANK_BAKED_SOURCE,
+        f"{flow}.{key}",
+        f"Bundesbank {flow}.{key}",
+        lambda start: bundesbank_download(flow, key, start),
+        RECENT_PART_UNREVISED,
+        passes=(BotCheck,),
+    )
 
 
 def parse_ecb_csv(text: str, series_key: str, unit: str) -> pd.Series:
@@ -557,8 +578,14 @@ def de_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
 
 
 def _term_structure(column: str, frequency: str) -> pd.Series:
-    """Return one term of the Bundesbank's Svensson term structure, daily ("D") or end-of-month ("M")."""
+    """Return one term of the Bundesbank's Svensson term structure, daily ("D") or end-of-month ("M"): its bake and recent part."""
     return bundesbank_series(BUNDESBANK_TERM_STRUCTURE_FLOW, term_structure_key(column, frequency))
+
+
+def _baked_term(column: str, frequency: str) -> pd.Series:
+    """Return one term's series from its bake alone, without asking the Bundesbank; no values if it has no bake."""
+    series = read_series(BUNDESBANK_BAKED_SOURCE, f"{BUNDESBANK_TERM_STRUCTURE_FLOW}.{term_structure_key(column, frequency)}")
+    return _NO_VALUES if series is None else series
 
 
 @downloads_of("Bundesbank Federal yields")
@@ -569,8 +596,12 @@ def fetch_de_yields(config: PlotConfig) -> pd.DataFrame:
     securities (1956-1972). The columns are the chosen ones Germany has
     (``config.fetched_yield_columns``), trimmed to the window;
     ``attrs[YIELD_HISTORY_ATTR]`` gives each column's last monthly date
-    (drawn as steps). A part that fails is left out with a warning, and
-    the term drawn from the rest; a term with nothing left is left out.
+    (drawn as steps). A part whose recent values fail is drawn from its
+    bake alone, with a warning (``bundesbank_series``); a part without a
+    bake that fails is left out with a warning, and the term drawn from the
+    rest; a term with nothing left is left out. A bot check is named once,
+    and the Bundesbank asked nothing more in the drawing: that part and
+    every later one drawn from its bake.
     """
     chosen = [column for column in config.fetched_yield_columns if column in DE_YIELD_SERIES]
     absent = [column for column in config.yield_columns if column not in DE_YIELD_SERIES]
@@ -581,27 +612,25 @@ def fetch_de_yields(config: PlotConfig) -> pd.DataFrame:
 
     columns: dict[str, pd.Series] = {}
     history_through: dict[str, pd.Timestamp] = {}
-    checked = False  # the Bundesbank sent a bot check: no more requests
+    bot_check: BotCheck | None = None  # the Bundesbank sent one: no more requests
+    bake_ends: list[pd.Timestamp] = []  # after it, the last date of each bake drawn
     for column in chosen:
         parts: dict[str, pd.Series] = {}
         for frequency, name in (("M", "end-of-month"), ("D", "daily")):
-            if checked:
-                parts[frequency] = _NO_VALUES
-                continue
-            try:
-                parts[frequency] = _term_structure(column, frequency)
-            except BotCheck as exc:
-                # Every other request meets the same check: one warning that
-                # names it (Terry's VPN, 2026-10-08), not one per term.
-                print(
-                    f"  Warning: the Bundesbank ({exc.host}) sent a bot check instead of data; a VPN can "
-                    "cause this. No German yield downloaded: only the built-in history is drawn."
-                )
-                checked = True
-                parts[frequency] = _NO_VALUES
-            except Exception as exc:
-                print(f"  Warning: Bundesbank {column} yield, {name} ({DE_YIELD_SERIES[column]}) unavailable ({exc}); drawn without it.")
-                parts[frequency] = _NO_VALUES
+            if bot_check is None:
+                try:
+                    parts[frequency] = _term_structure(column, frequency)
+                except BotCheck as exc:
+                    # Every other request would meet the same check (Terry's VPN,
+                    # 2026-10-08): one warning that names it, below, not one per term.
+                    bot_check = exc
+                except Exception as exc:
+                    print(f"  Warning: Bundesbank {column} yield, {name} ({DE_YIELD_SERIES[column]}) unavailable ({exc}); drawn without it.")
+                    parts[frequency] = _NO_VALUES
+            if bot_check is not None:
+                parts[frequency] = _baked_term(column, frequency)
+                if not parts[frequency].empty:
+                    bake_ends.append(parts[frequency].index[-1])
         baked = embedded_frame(_YIELD_HISTORY.get(column, []), column)
         baked = baked[column] if baked is not None else None
         if baked is not None and not parts["M"].empty:
@@ -618,6 +647,10 @@ def fetch_de_yields(config: PlotConfig) -> pd.DataFrame:
             history_through[column] = monthly.index[-1]
         columns[column] = pd.concat([monthly, daily]).rename(column)
 
+    if bot_check is not None:
+        drawn = (f"The German yields drawn from their baked history, to {max(bake_ends):%Y-%m-%d}." if bake_ends
+                 else "No German yield downloaded: only the built-in history is drawn.")
+        print(f"  Warning: the Bundesbank ({bot_check.host}) sent a bot check instead of data; a VPN can cause this. {drawn}")
     if not columns:
         return pd.DataFrame()
     frame = pd.concat(columns.values(), axis=1).sort_index()

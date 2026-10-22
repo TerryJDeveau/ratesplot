@@ -25,7 +25,8 @@ bake              the bake of the historical data (run by tools/bake_archives.py
 baked             the live sources' history as data files (data/SOURCE/CODE.csv, batch
                   19.2): their form, their reading, and each joined to the recent part a
                   drawing asks for (the Bank of England's database, the Bank of
-                  Canada's Valet, FRED, the ECB's Data Portal, Eurostat, the ONS)
+                  Canada's Valet, FRED, the ECB's Data Portal, Eurostat, the ONS, the
+                  Bundesbank)
 us_data           FRED fetch for U.S. yields and macro series; every FRED series read
                   through its bake and recent part (fred_series, also for rates and cdn_data)
 latest            --cur: newer values than the regular series (Treasury daily yields and
@@ -36,8 +37,9 @@ uk_data           Bank of England database / ONS fetch for the UK's yields and m
                   series (batch 3); both sources' series read through their bake and
                   recent part (iadb_series, also for rates; ons_series)
 de_data           Bundesbank / ECB / Eurostat fetch for Germany's yields and macro
-                  series (batch 4); the ECB's and Eurostat's series read through their
-                  bake and recent part (ecb_series, also for rates; eurostat_series)
+                  series (batch 4); the Bundesbank's, the ECB's and Eurostat's series
+                  read through their bake and recent part (bundesbank_series;
+                  ecb_series, also for rates; eurostat_series)
 de_archive_data   baked German history: the Bundesbank's yield on public debt
                   securities before 1972 (rewritten by tools/bake_archives.py)
 uk_archive_data   baked UK history from the Bank of England's "A millennium of

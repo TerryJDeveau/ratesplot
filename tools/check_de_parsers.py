@@ -26,7 +26,10 @@ the saved responses do not hold.
   the levels against the total, population at unification);
 * CNBC's German quotes: every symbol the chart asks for is there and readable;
 * the joined curves: yields, debt, interest, GDP, population, levels, and
-  (``rates``) the policy rate and the mortgage rates.
+  (``rates``) the policy rate and the mortgage rates;
+* the Bundesbank's bot check (batch 19.2): asked once in a drawing and named
+  once; with the bake, every term drawn from it to its last date; without
+  it, the built-in history alone, as before.
 
 The live check of the same sources is ``tools/check_sources.py``.
 
@@ -39,6 +42,8 @@ Exit code 1 if any check fails.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
 import tempfile
@@ -53,6 +58,7 @@ sys.path.insert(0, str(ROOT))
 
 from ratesplot import bake, baked, de_archive_data, de_data, latest, rates  # noqa: E402
 from ratesplot.config import CNBC_QUOTE_URL, PlotConfig, component_column  # noqa: E402
+from ratesplot.http import BotCheck  # noqa: E402
 
 RAW = ROOT / "tools" / "de_fixtures" / "raw"
 RESULTS: list[bool] = []
@@ -270,6 +276,53 @@ def check_fetchers() -> None:
         no_bake.cleanup()
 
 
+def check_bot_check() -> None:
+    """The Bundesbank answering with its bot check (batch 19.2): asked once, named once; the yields from the bake, else the built-in history."""
+    asked: list[str] = []
+
+    def bot_checked_get(url: str, params: dict | None = None, **_kwargs) -> requests.Response:
+        if "api.statistiken.bundesbank.de" in url:
+            asked.append(url)
+            raise BotCheck("api.statistiken.bundesbank.de")
+        return saved_get(url, params)
+
+    def draw() -> tuple[pd.DataFrame, list[str]]:
+        asked.clear()
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            yields = de_data.fetch_de_yields(PlotConfig(start=pd.Timestamp("1950-01-01"), yield_terms=de_data.DE_YIELD_TERMS))
+        return yields, [line.strip() for line in printed.getvalue().splitlines() if "Warning" in line]
+
+    flow = de_data.BUNDESBANK_TERM_STRUCTURE_FLOW
+    codes = {(column, frequency): f"{flow}.{de_data.term_structure_key(column, frequency)}"
+             for column in de_data.DE_YIELD_SERIES for frequency in de_data.TERM_STRUCTURE_FREQUENCIES}
+    real_get, de_data.de_get = de_data.de_get, bot_checked_get
+    real_folder, no_bake = baked.DATA_FOLDER, tempfile.TemporaryDirectory(prefix="ratesplot_no_bake_")
+    try:
+        yields, warnings = draw()
+        bakes = {pair: baked.read_series(de_data.BUNDESBANK_BAKED_SOURCE, code) for pair, code in codes.items()}
+        end = max(series.index[-1] for series in bakes.values())
+        check("bot check, with the bake: one request, one warning naming it and the bake's last date",
+              len(asked) == 1 and len(warnings) == 1 and "sent a bot check instead of data" in warnings[0]
+              and f"The German yields drawn from their baked history, to {end:%Y-%m-%d}." in warnings[0], (asked, warnings))
+        # On the bake's own dates (the frame has every term's dates, a gap of a day or two filled).
+        check("bot check, with the bake: the seven terms, each daily part its bake's",
+              list(yields.columns) == list(de_data.DE_YIELD_SERIES)
+              and all((yields[column].reindex(bakes[(column, "D")].index).to_numpy() == bakes[(column, "D")].to_numpy()).all()
+                      for column in de_data.DE_YIELD_SERIES), list(yields.columns))
+        baked.DATA_FOLDER = Path(no_bake.name)
+        baked.forget_read_files()
+        yields, warnings = draw()
+        check("bot check, without the bake: one request, the built-in 10-year alone, as before 19.2",
+              len(asked) == 1 and list(yields.columns) == ["10-Year"] and len(warnings) == 1
+              and warnings[0].endswith("No German yield downloaded: only the built-in history is drawn."), (asked, warnings))
+    finally:
+        de_data.de_get = real_get
+        baked.DATA_FOLDER = real_folder
+        baked.forget_read_files()
+        no_bake.cleanup()
+
+
 def daily_value(code: str, day: str) -> float:
     return de_data.parse_bundesbank_csv(text(f"bbk_ts_d_{code}.csv")).loc[day]
 
@@ -292,7 +345,7 @@ def check_cnbc() -> None:
 
 
 def main() -> int:
-    for group in (check_bundesbank, check_discount_rate, check_ecb, check_eurostat, check_fetchers, check_cnbc):
+    for group in (check_bundesbank, check_discount_rate, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
         group()
     passed = sum(RESULTS)
     print(f"[de parsers] {passed} of {len(RESULTS)} checks passed")

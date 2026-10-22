@@ -39,6 +39,7 @@ import io
 import itertools
 import json
 import pickle
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -406,8 +407,14 @@ _BUNDESBANK_TERMS = {
 
 
 def bundesbank(url: str) -> bytes:
-    """A Bundesbank series CSV: its key and metadata lines, then ``date,value,flag`` ("." on days without a value)."""
-    key = url.split("/rest/download/")[1].replace("/", ".", 1)
+    """A Bundesbank series CSV: its key and metadata lines, then ``date,value,flag`` ("." on days without a value).
+
+    The same answer from its download (``/rest/download/``) and its SDMX web
+    service (``/rest/data/``, batch 19.2), whole, whatever period it is asked
+    from (``startPeriod``), as the other baked sources' answers are: the
+    program cuts what it asked for.
+    """
+    key = re.split(r"/rest/(?:download|data)/", url)[1].replace("/", ".", 1)
     frequency, term = key.split(".")[1], key.split(".")[9]
     years, first_month, first_day = _BUNDESBANK_TERMS[term]
     if frequency == "M":
@@ -588,7 +595,7 @@ def synth(key: tuple):
         return _response(iadb(params))
     if "ons.gov.uk" in url:
         return _response(ons(url.split("/timeseries/")[1].split("/")[0].upper()))
-    if "api.statistiken.bundesbank.de/rest/download/" in url:
+    if "api.statistiken.bundesbank.de/rest/download/" in url or "api.statistiken.bundesbank.de/rest/data/" in url:
         return _response(bundesbank(url))
     if "data-api.ecb.europa.eu/service/data/" in url:
         return _response(ecb(url))
@@ -602,8 +609,9 @@ def _refused(*_args, **_kwargs):
 
 
 # Batch 19.2: the program draws the Bank of England's series, the Bank of
-# Canada's, FRED's, the ECB's, Eurostat's and the ONS's from their baked history (ratesplot/data/boe/,
-# data/boc/, data/fred/, data/ecb/, data/eurostat/, data/ons/) and takes from the sources only the recent part
+# Canada's, FRED's, the ECB's, Eurostat's, the ONS's and the Bundesbank's from their baked history
+# (ratesplot/data/boe/, data/boc/, data/fred/, data/ecb/, data/eurostat/, data/ons/, data/bbk/) and takes
+# from the sources only the recent part
 # (the ONS is asked for the whole series, which it always sends). With synthetic answers the bake must
 # be synthetic too, or a chart would join the real history to a made-up
 # recent part. So each series'
@@ -617,7 +625,7 @@ SYNTHETIC_BAKE_END = pd.Timestamp("2026-07-15")
 
 
 def install_synthetic_bake(folder: Path) -> bool:
-    """Bake the synthetic Bank of England, Bank of Canada, FRED, ECB, Eurostat and ONS series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
+    """Bake the synthetic Bank of England, Bank of Canada, FRED, ECB, Eurostat, ONS and Bundesbank series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
 
     Through the program's own ``baked.write_series``. Returns False, changing
     nothing, for a tree without a bake (before batch 19.2). A tree that bakes
@@ -655,6 +663,15 @@ def install_synthetic_bake(folder: Path) -> bool:
     # The frequency the program reads of each (uk_data.ONS_SERIES_READ): months where the synthetic series has them.
     for cdid, (*_spec, has_months) in _ONS_SERIES.items():
         bake("ons", cdid, uk_data.parse_ons_series(json.loads(ons(cdid)), cdid, "months" if has_months else "quarters"))
+    # The Bundesbank's term structure, each term's end-of-month and daily series (a tree before 19.2's
+    # Bundesbank stage has no term_structure_key, and reads no Bundesbank file).
+    if hasattr(de_data, "term_structure_key"):
+        flow = de_data.BUNDESBANK_TERM_STRUCTURE_FLOW
+        for column in de_data.DE_YIELD_SERIES:
+            for frequency in de_data.TERM_STRUCTURE_FREQUENCIES:
+                key = de_data.term_structure_key(column, frequency)
+                answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
+                bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer))
     baked.DATA_FOLDER = folder
     baked.forget_read_files()
     return True
