@@ -79,8 +79,9 @@ from .config import (
     PlotConfig,
     component_column,
 )
-from .http import canadian_get, canadian_post, downloads_of, fetch_fred_csv, parse_boc_csv
+from .http import canadian_get, canadian_post, downloads_of, parse_boc_csv
 from .joins import align_macro, chain, dated_by_quarter_end, embedded_frame
+from .us_data import fred_series
 
 # The Bank of Canada's Valet series are baked (batch 19.2) under
 # ``ratesplot/data/boc/`` (``tools/bake_archives.py --only boc``).
@@ -476,7 +477,8 @@ def _fetch_live_cdn_gdp() -> pd.DataFrame | None:
     except Exception as exc:
         print(f"  Warning: StatCan GDP table failed ({exc}); trying FRED fallback …")
         try:
-            fred = fetch_fred_csv(FRED_CDN_GDP_SERIES).set_index(DATE_COLUMN)
+            # Baked, and revised as GDP is (batch 19.2): 24 months asked for.
+            fred = fred_series(FRED_CDN_GDP_SERIES, revised=True).set_index(DATE_COLUMN)
             saar = (fred.iloc[:, 0] * MILLION).rename("GDP_SAAR").to_frame().resample("QS").last()
         except Exception as exc2:
             print(f"  Warning: FRED GDP fallback failed ({exc2}).")

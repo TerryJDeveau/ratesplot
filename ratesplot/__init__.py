@@ -25,8 +25,9 @@ bake              the bake of the historical data (run by tools/bake_archives.py
 baked             the live sources' history as data files (data/SOURCE/CODE.csv, batch
                   19.2): their form, their reading, and each joined to the recent part a
                   drawing asks for (the Bank of England's database, the Bank of
-                  Canada's Valet)
-us_data           FRED fetch for U.S. yields and macro series
+                  Canada's Valet, FRED)
+us_data           FRED fetch for U.S. yields and macro series; every FRED series read
+                  through its bake and recent part (fred_series, also for rates and cdn_data)
 latest            --cur: newer values than the regular series (Treasury daily yields and
                   debt, intraday quotes)
 us_archive_data   baked Census counts of U.S. state and local debt apart
@@ -56,9 +57,9 @@ plotting, http}; web -> {cli (its token matching), frontend, options,
 plotting, http}; cli -> {options, plotting, http}; frontend -> {options,
 config}; plotting -> {axes, legend, endlabels, regression, measures, rates,
 cdn_data, us_data, uk_data, de_data, joins, latest} -> {frames, http} -> config;
-{cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data} -> baked -> config;
-rates -> {cdn_data, uk_data, de_data, http};
-plotting, gui, web, http -> console;
+{cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data, us_data} -> baked -> config;
+rates -> {cdn_data, uk_data, us_data, de_data, http}; cdn_data -> us_data (FRED's
+Canadian GDP); plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
 regression -> occupancy; options -> config. Data modules never import
 plotting. Nothing imports web or gui, and cli imports gui only when the

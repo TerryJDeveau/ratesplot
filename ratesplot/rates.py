@@ -42,9 +42,10 @@ from .config import (
 from .de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES
 from .de_data import ecb_series
 from .de_data import YIELD_HISTORY_ATTR as DE_YIELD_HISTORY_ATTR
-from .http import downloads_of, fetch_fred_csv
+from .http import downloads_of
 from .uk_archive_data import EMBEDDED_UK_BANK_RATE_HISTORY, EMBEDDED_UK_MORTGAGE_HISTORY
 from .uk_data import YIELD_HISTORY_ATTR, iadb_series
+from .us_data import fred_series
 
 # Policy rates (--policy:LIST; batch 9.1, Terry's decision 27, 2026-10-13):
 # each central bank's official rate ("target", the default) and the overnight
@@ -99,6 +100,11 @@ CDN_MORTGAGE_SERIES = {"5": "V80691335", "3": "V80691334", "1": "V80691333", "5v
 # last 24 (RECENT_PART_REVISED), as the UK's quoted rates (survey results).
 # None of the 20 changed a value from late September to 2026-10-22 (measured).
 _CDN_REVISED_SERIES = {CDN_MORTGAGE_SERIES["5v"]}
+# FRED's (us_data.fred_series): the policy and prime rates are announced or
+# observed, two months; Freddie Mac's mortgage rates are a survey's, 24, as
+# the UK's quoted rates. None of the eight changed a value from the regression
+# cache's downloads (2026-10-06 to 2026-10-21) to 2026-10-22 (measured).
+_US_REVISED_SERIES = {US_MORTGAGE_SERIES["30"], US_MORTGAGE_SERIES["15"]}
 CDN_MORTGAGE_HISTORY_TABLE = "34100145"
 # The UK (batch 3), from the Bank of England's database (IADB), measured from
 # Terry's laptop 2026-10-06: Bank Rate daily from 1975, and before it its
@@ -359,8 +365,8 @@ def _valet(series_code: str) -> pd.Series:
 
 
 def _fred(series_id: str) -> pd.Series:
-    """Return one whole FRED series, cleaned (``_clean``)."""
-    frame = fetch_fred_csv(series_id)
+    """Return one whole FRED series, cleaned (``_clean``): its baked history and recent part (batch 19.2)."""
+    frame = fred_series(series_id, revised=series_id in _US_REVISED_SERIES)
     return _clean(frame.set_index("DATE")[series_id])
 
 
@@ -372,9 +378,12 @@ def _parts(*named: tuple[pd.Series, str, str]) -> tuple[tuple[pd.Timestamp, str,
 def us_policy_target() -> RateCurve | None:
     """Return the federal funds target: a band between its range's limits from 2008-12-16, one rate from 1982-09-27, the effective rate's monthly average before.
 
-    None, with a warning, if the target or either limit of its range fails
-    (the 2008 target would be carried on to today); drawn from the target's
-    first day, with a warning, if the monthly average fails.
+    Each is its baked history and recent part (batch 19.2): if FRED fails,
+    the bake to its last value, with a warning (``us_data.fred_series``).
+    For a series neither baked nor answered: None, with a warning, if it is
+    the target or either limit of its range (the 2008 target would be
+    carried on to today); drawn from the target's first day, with a warning,
+    if it is the monthly average.
     """
     low_code, high_code = US_TARGET_RANGE_SERIES
     try:
@@ -404,7 +413,7 @@ def us_policy_target() -> RateCurve | None:
 
 
 def us_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
-    """Return the effective federal funds rate (FRED DFF), or None with a warning if FRED fails."""
+    """Return the effective federal funds rate (FRED DFF); None, with a warning, if it is neither baked nor answered."""
     try:
         values = _fred(US_MARKET_SERIES)
     except Exception as exc:
@@ -654,8 +663,9 @@ def _mortgage_style(term: str) -> dict:
 def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) -> RateCurve | None:
     """Return one mortgage term's rate (``config.MORTGAGE_TERMS``) for ``country``, or None with a warning if its source fails.
 
-    A baked series (the Bank of England's, the Bank of Canada's: batch 19.2)
-    is drawn from its bake when its source fails, with the bake's warning.
+    A baked series (the Bank of England's, the Bank of Canada's, FRED's:
+    batch 19.2) is drawn from its bake when its source fails, with the
+    bake's warning.
     ``country``: one of the term's countries, its only one when not given
     (the prime rate is Canada's and the U.S.'). Canada's 5-year: the posted
     weekly rate, carried back before it begins by the monthly CMHC rate

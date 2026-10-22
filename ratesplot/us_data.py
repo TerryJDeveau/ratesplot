@@ -8,6 +8,10 @@ describes (``frames.at_quarter_end``). State and local apart are yearly (BEA
 interest, and Census debt baked into ``us_archive_data``); they split the
 quarterly state-and-local figures (``_split_state_and_local_interest``,
 ``_split_state_and_local_debt``).
+
+Every FRED series the program reads is baked (batch 19.2, ``fred_series``):
+its history is in ``ratesplot/data/fred/``, and a drawing asks FRED only for
+the recent part; ``rates`` and ``cdn_data`` read theirs through it too.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .baked import with_recent_part
 from .config import (
     BILLION,
     COMPONENT_LETTERS,
@@ -22,6 +27,8 @@ from .config import (
     GDP_COLUMN,
     MILLION,
     POPULATION_COLUMN,
+    RECENT_PART_REVISED,
+    RECENT_PART_UNREVISED,
     THOUSAND,
     US_DEBT_COLUMN,
     US_INTEREST_COLUMN,
@@ -105,6 +112,31 @@ US_POPULATION_SERIES_ID = "B230RC0Q173SBEA"  # population (mid-period), thousand
 FRED_BAKED_SOURCE = "fred"
 
 
+def fred_series(series_id: str, *, revised: bool) -> pd.DataFrame:
+    """Return one FRED series as ``http.fetch_fred_csv`` gives it (a ``DATE`` column and ``series_id``): its baked history, then its recent part.
+
+    Batch 19.2 (``ratesplot.baked``): the history is in
+    ``ratesplot/data/fred/``, and only the last two months are asked for, or
+    the last 24 if FRED's source revises the series (``revised``: GDP,
+    debt, interest, population, the surveys' mortgage rates; each caller
+    says which); a series not yet baked is asked for whole. If FRED fails,
+    the baked history alone, to its last value, with a warning. The rows
+    FRED lists without a value (its holidays) are kept, as in a whole
+    download: the yields' gap-filling counts them (``_US_YIELD_FILL_ROWS``).
+    Measured 2026-10-22: the bake joined to its recent part is FRED's whole
+    answer, row for row.
+    """
+
+    def fetch(since: pd.Timestamp | None) -> pd.Series:
+        frame = fetch_fred_csv(series_id, since=since)
+        return frame.set_index(DATE_COLUMN)[series_id]
+
+    values = with_recent_part(
+        FRED_BAKED_SOURCE, series_id, f"FRED {series_id}", fetch, RECENT_PART_REVISED if revised else RECENT_PART_UNREVISED
+    )
+    return values.rename(series_id).rename_axis(DATE_COLUMN).reset_index()
+
+
 def us_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
     """Return the first observation of the U.S. inputs, by name, for the coverage warning.
 
@@ -136,8 +168,9 @@ def fetch_us_yields(config: PlotConfig) -> pd.DataFrame:
     if not chosen:
         return pd.DataFrame()
 
+    # Yields are market quotes, not revised: two months asked for (batch 19.2).
     frames = [
-        fetch_fred_csv(US_YIELD_SERIES[label]).set_index(DATE_COLUMN).rename(columns={US_YIELD_SERIES[label]: label})
+        fred_series(US_YIELD_SERIES[label], revised=False).set_index(DATE_COLUMN).rename(columns={US_YIELD_SERIES[label]: label})
         for label in chosen
     ]
     data = pd.concat(frames, axis=1).sort_index().ffill(limit=_US_YIELD_FILL_ROWS).reset_index()
@@ -146,14 +179,14 @@ def fetch_us_yields(config: PlotConfig) -> pd.DataFrame:
 
 @downloads_of("FRED population")
 def fetch_us_population() -> pd.Series | None:
-    """Return the U.S. population (persons, quarterly, from 1947) for -p, or None if FRED fails.
+    """Return the U.S. population (persons, quarterly, from 1947) for -p, or None if it is neither baked nor answered by FRED.
 
     BEA's mid-period population, the one it divides by for per-capita GDP.
     It starts with the GDP and interest series (1947), so nothing earlier is
     needed; debt starts later (1966).
     """
     try:
-        frame = fetch_fred_csv(US_POPULATION_SERIES_ID)
+        frame = fred_series(US_POPULATION_SERIES_ID, revised=True)
     except Exception as exc:
         print(f"  Warning: U.S. population ({US_POPULATION_SERIES_ID}) unavailable ({exc}).")
         return None
@@ -163,16 +196,16 @@ def fetch_us_population() -> pd.Series | None:
 
 
 def _fetch_fred_quarterly(series_id: str, column: str, multiplier: int) -> pd.DataFrame:
-    """Fetch one quarterly FRED series and return ``[DATE, column]`` in dollars, dated by each quarter's end."""
-    frame = fetch_fred_csv(series_id)
+    """Fetch one quarterly FRED series (debt or GDP, revised: ``fred_series``) and return ``[DATE, column]`` in dollars, dated by each quarter's end."""
+    frame = fred_series(series_id, revised=True)
     frame[column] = frame[series_id] * multiplier
     frame[DATE_COLUMN] = at_quarter_end(frame[DATE_COLUMN])
     return frame[[DATE_COLUMN, column]]
 
 
 def _fetch_billions(series_id: str) -> pd.Series:
-    """Fetch one FRED series in $ billions and return it in dollars, indexed by date."""
-    frame = fetch_fred_csv(series_id)
+    """Fetch one FRED series in $ billions (interest, revised: ``fred_series``) and return it in dollars, indexed by date."""
+    frame = fred_series(series_id, revised=True)
     dates = pd.DatetimeIndex(frame[DATE_COLUMN], name=DATE_COLUMN)
     return pd.Series(frame[series_id].to_numpy(dtype=float) * BILLION, index=dates, name=series_id)
 

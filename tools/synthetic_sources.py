@@ -136,8 +136,17 @@ def _quarter_points(values: np.ndarray) -> np.ndarray:
     return np.maximum(np.round(values * 4) / 4, 0.0)
 
 
+# Every FRED series ``fred`` answers.
+_FRED_IDS = ("FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", *_GROWTH, *_DAILY_START)
+
+
 def fred(series_id: str) -> pd.DataFrame:
-    """Return one FRED series as ``http.fetch_fred_csv`` returns it: ``DATE`` and the series' values."""
+    """Return one FRED series as ``http.fetch_fred_csv`` returns it: ``DATE`` and the series' values.
+
+    Whole, whatever date it is asked from (a key ``("fred", ID, SINCE)``,
+    batch 19.2), as the Bank of England's and Valet's are: the program cuts
+    what it asked for.
+    """
     if series_id == "FEDFUNDS":
         # The effective rate's monthly average (batch 9.1).
         dates = pd.date_range("1954-07-01", "2026-09-01", freq="MS")
@@ -559,9 +568,9 @@ def _refused(*_args, **_kwargs):
     raise requests.ConnectionError("synthetic data only: real requests are refused")
 
 
-# Batch 19.2: the program draws the Bank of England's series and the Bank of
-# Canada's from their baked history (ratesplot/data/boe/, data/boc/) and asks
-# the sources only for the recent part. With synthetic answers the bake must
+# Batch 19.2: the program draws the Bank of England's series, the Bank of
+# Canada's and FRED's from their baked history (ratesplot/data/boe/, data/boc/,
+# data/fred/) and asks the sources only for the recent part. With synthetic answers the bake must
 # be synthetic too, or a chart would join the real history to a made-up
 # recent part. So each series'
 # synthetic answer is baked to this date, in a folder of its own, and the
@@ -574,11 +583,11 @@ SYNTHETIC_BAKE_END = pd.Timestamp("2026-07-15")
 
 
 def install_synthetic_bake(folder: Path) -> bool:
-    """Bake the synthetic Bank of England and Bank of Canada series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
+    """Bake the synthetic Bank of England, Bank of Canada and FRED series, to ``SYNTHETIC_BAKE_END``, into ``folder``, and have the program read its bake there.
 
     Through the program's own ``baked.write_series``. Returns False, changing
     nothing, for a tree without a bake (before batch 19.2). A tree that bakes
-    only the Bank of England's reads no Valet files, and draws as before.
+    fewer sources reads none of the others' files, and draws them as before.
     """
     try:
         baked = importlib.import_module("ratesplot.baked")
@@ -599,6 +608,8 @@ def install_synthetic_bake(folder: Path) -> bool:
         bake("boc", code, pd.to_numeric(group[code], errors="coerce"))
     for code in _VALET_SERIES:
         bake("boc", code, pd.to_numeric(http.parse_boc_csv(valet(f"{valet_url}{code}/csv", ()).decode()).iloc[:, 0], errors="coerce"))
+    for code in _FRED_IDS:
+        bake("fred", code, fred(code).set_index("DATE")[code])
     baked.DATA_FOLDER = folder
     baked.forget_read_files()
     return True

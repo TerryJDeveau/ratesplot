@@ -48,11 +48,12 @@ Usage (from the project root)::
 The drawing and the sources read the same downloads (the regression cache,
 or one live download each), so the check is of what the program does to
 them, never of a difference between two fetches. Except the Bank of
-England's series and the Bank of Canada's (batch 19.2): the drawing reads
-their baked history and asks for the recent part only, and they are checked
-against each source's whole series, so the check covers the bake too; a
-regression cache whose whole downloads are older than the bake then lacks
-the bake's newest values (run it on a copy without them, fetched again).
+England's series, the Bank of Canada's and FRED's (batch 19.2): the drawing
+reads their baked history and asks for the recent part only, and they are
+checked against each source's whole series, so the check covers the bake
+too; a regression cache whose whole downloads are older than the bake then
+lacks the bake's newest values, or has values since revised (run it on a
+copy without them, fetched again).
 Exit code 1 on any FAIL.
 """
 
@@ -155,6 +156,7 @@ def _clean(values: pd.Series) -> pd.Series:
 
 def fred(series_id: str, **kwargs) -> Source:
     def read() -> pd.Series:
+        # FRED's whole series, not its bake and recent part (``us_data.fred_series``), which the drawing reads.
         frame = http.fetch_fred_csv(series_id)
         return _clean(frame.set_index(frame.columns[0])[series_id])
 

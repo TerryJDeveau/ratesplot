@@ -124,7 +124,8 @@ def _last(series: pd.Series | pd.DataFrame | None) -> pd.Timestamp | None:
 
 def _fred(series_id: str, *, quarterly: bool) -> Callable[[PlotConfig], tuple[pd.Timestamp | None, str]]:
     def run(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
-        frame = fetch_fred_csv(series_id).set_index("DATE")[series_id]
+        # As the program reads it (batch 19.2): its bake and recent part, a WARN if FRED fails.
+        frame = us_data.fred_series(series_id, revised=True).set_index("DATE")[series_id]
         last = _last(frame)
         if last is None:
             return None, "no values"

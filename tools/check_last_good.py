@@ -17,9 +17,9 @@ charts are drawn three times:
    history alone must stop: no curve on the right axis keeps its last value for more than
    ``joins.MACRO_CARRY_LIMIT`` (Canada's debt, left with its history to 1994, ran on flat
    to the day before 2026-10-21); and the UK's national debt, drawn to 2016 without the
-   gross debt, is named without "(pre-1975)". The Bank of England's series and the Bank
-   of Canada's, baked (batch 19.2; a synthetic bake here), are drawn to the bake's last
-   date, each with a warning naming it and that date.
+   gross debt, is named without "(pre-1975)". The Bank of England's series, the Bank
+   of Canada's and FRED's, baked (batch 19.2; a synthetic bake here), are drawn to the
+   bake's last date, each with a warning naming it and that date.
 
 In passes 2 and 3 every request is counted: within one drawing a request answered with
 an outage page or a bot check is made once, the Statistics Canada WDS post (not retried)
@@ -67,6 +67,13 @@ CASES = {
     "rates": ["--na:ca,us,gb,de", "--e:2026-09-01", "-s:2000", "--policy", "--mo", "--sp"],
     "levels": ["-c", "-u", "--e:2026-09-01", "-s:1990", "--debt:fp", "-p"],
 }
+
+# The FRED series the "rates" case draws (batch 19.2): in pass 3 each from its bake, named. Canada's
+# GDP among them: Statistics Canada fails, and FRED's copy of it is the fallback.
+FRED_DRAWN_IN_RATES = (
+    "DGS3MO", "DGS2", "DGS5", "DGS10", "DGS30", "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU",
+    "MORTGAGE30US", "GFDEBTN", "SLGSDODNS", "GDP", "A180RC1Q027SBEA", "NGDPSAXDCCAQ",
+)
 
 # The pages measured on 2026-10-21 (their heads; the program reads only the start and title).
 FRED_PAGE = (
@@ -125,7 +132,8 @@ def answering_get(_session, url, params=None, **_kwargs) -> requests.Response:
 
 
 def answering_urlopen(url, timeout=None) -> _Answer:
-    return _Answer(synthetic_sources.fred(url.split("?id=", 1)[1]).to_csv(index=False).encode())
+    # The series' whole synthetic answer, whatever date it is asked from (``&cosd=``, batch 19.2).
+    return _Answer(synthetic_sources.fred(url.split("?id=", 1)[1].split("&", 1)[0]).to_csv(index=False).encode())
 
 
 # Requests made to failing sources, by (how it failed, address, parameters); reset per drawing.
@@ -282,6 +290,16 @@ def main() -> int:
                 and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
             check("rates: the Bank of Canada's series drawn from their bake, each named with its last date (19.2)",
                   named == sorted(ends), named)
+            # FRED's the case draws: the five yields, the policy rate's four parts, the 30-year mortgage rate,
+            # debt (federal, state and local), GDP and interest, Canada's GDP (not DFF, the market rate).
+            ends = {code: baked.read_series("fred", code).last_valid_index() for code in FRED_DRAWN_IN_RATES}
+            named = sorted(code for code, end in ends.items() if any(
+                f"FRED {code}: its recent values unavailable" in line
+                and f"drawn from its baked history, to {end:%Y-%m-%d}." in line for line in log.splitlines()))
+            others = sorted({line.split("FRED ", 1)[1].split(":", 1)[0] for line in log.splitlines()
+                             if "Warning: FRED " in line and "its recent values unavailable" in line} - set(ends))
+            check("rates: FRED's series drawn from their bake, each named with its last date (19.2)",
+                  named == sorted(ends) and not others, (named, others))
         differs = sorted(key for key in first[name] if pngs.get(key) != first[name][key])
         check(f"{name}: not drawn, or drawn otherwise, without them", bool(differs), f"differ or missing: {differs}")
         flat.update((f"{name}, {curve}", days) for curve, days in case_flat.items())
