@@ -9,8 +9,9 @@ Offline, in seconds:
 * every Bank of England database series the program reads
   (``bake.boe_baked_codes``) has a file, and every file there is one of them;
   so does every Bank of Canada Valet series (``bake.boc_baked_codes``),
-  every FRED series (``bake.fred_baked_codes``) and every ECB Data Portal
-  series (``bake.ecb_baked_codes``);
+  every FRED series (``bake.fred_baked_codes``), every ECB Data Portal
+  series (``bake.ecb_baked_codes``) and every Eurostat series
+  (``bake.eurostat_baked_codes``);
 * a series written by ``baked.write_series`` reads back float for float,
   its dates without a value too, and its text is the bake's form (comment,
   header, one row per date, empty where there is no value);
@@ -89,6 +90,7 @@ def check_files() -> None:
         ("Bank of Canada", cdn_data.BOC_BAKED_SOURCE, bake.boc_baked_codes()),
         ("FRED", us_data.FRED_BAKED_SOURCE, bake.fred_baked_codes()),
         ("ECB", de_data.ECB_BAKED_SOURCE, bake.ecb_baked_codes()),
+        ("Eurostat", de_data.EUROSTAT_BAKED_SOURCE, bake.eurostat_baked_codes()),
     ):
         found = {path.stem for path in (baked.DATA_FOLDER / source).glob("*.csv")}
         codes = set(read)

@@ -23,8 +23,9 @@ its own data module. The live sources' history (batch 19.2) is baked
 differently: every value of each series, one data file per series under
 ``ratesplot/data/`` (``ratesplot.baked``), re-baked daily, so that a drawing
 asks only for the recent part. Begun with the Bank of England's database
-(``bake_boe_history``), then the Bank of Canada's Valet (``bake_boc_history``)
-and FRED (``bake_fred_history``).
+(``bake_boe_history``), then the Bank of Canada's Valet (``bake_boc_history``),
+FRED (``bake_fred_history``), the ECB's Data Portal (``bake_ecb_history``) and
+Eurostat (``bake_eurostat_history``).
 """
 
 from __future__ import annotations
@@ -106,7 +107,18 @@ from .config import (
     US_ARCHIVE_BEGIN_MARKER,
     US_ARCHIVE_END_MARKER,
 )
-from .de_data import ECB_ANNUAL_DEBT, ECB_BAKED_SOURCE, ecb_download, parse_bundesbank_csv
+from .de_data import (
+    ECB_ANNUAL_DEBT,
+    ECB_BAKED_SOURCE,
+    EUROSTAT_BAKED_SOURCE,
+    EUROSTAT_QUERIES,
+    EUROSTAT_SERIES_READ,
+    ecb_download,
+    eurostat_code,
+    eurostat_download,
+    parse_bundesbank_csv,
+    parse_jsonstat,
+)
 from .http import canadian_get, de_get, fetch_fred_csv, get_if_published, uk_get
 from .rates import (
     CDN_BANK_RATE_SERIES,
@@ -1588,7 +1600,7 @@ def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None
 # daily (Terry, decision 49); each run says what changed in each file, every
 # revision with its size, so a revision is seen before it is committed.
 # Begun with the Bank of England's database (2026-10-21); the Bank of
-# Canada's Valet, FRED and the ECB's Data Portal next (2026-10-22). Each
+# Canada's Valet, FRED, the ECB's Data Portal and Eurostat next (2026-10-22). Each
 # source's bake is a call of ``_bake_live_series`` with its list of series and
 # its download.
 
@@ -1983,3 +1995,88 @@ def bake_ecb_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
 
     titles = {code: _ECB_SERIES_TITLES[code] for code in series}
     return _bake_live_series(ECB_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
+
+
+# Each Eurostat series the program reads, by its file's name
+# (``de_data.eurostat_code``), for the file's first line: Eurostat's own labels
+# of the dataset and of the categories the query and the reader choose, and the
+# frequency, read from each dataset's answer 2026-10-22. A series read but not
+# named here stops the bake (KeyError).
+_EUROSTAT_SERIES_TITLES = {
+    "gov_10q_ggdebt.S13": "Quarterly government debt: Government consolidated gross debt, General government; quarterly",
+    "gov_10q_ggdebt.S1311": "Quarterly government debt: Government consolidated gross debt, Central government; quarterly",
+    "gov_10q_ggdebt.S1312": "Quarterly government debt: Government consolidated gross debt, State government; quarterly",
+    "gov_10q_ggdebt.S1313": "Quarterly government debt: Government consolidated gross debt, Local government; quarterly",
+    "gov_10q_ggnfa.S13": "Quarterly non-financial accounts for general government: Interest, expenditure, General government, "
+                         "unadjusted; quarterly",
+    "gov_10q_ggnfa.S1311": "Quarterly non-financial accounts for general government: Interest, expenditure, Central government, "
+                           "unadjusted; quarterly",
+    "gov_10q_ggnfa.S1312": "Quarterly non-financial accounts for general government: Interest, expenditure, State government, "
+                           "unadjusted; quarterly",
+    "gov_10q_ggnfa.S1313": "Quarterly non-financial accounts for general government: Interest, expenditure, Local government, "
+                           "unadjusted; quarterly",
+    "gov_10dd_edpt1.D41PAY.S13": "Government deficit/surplus, debt and associated data: Interest, expenditure, General government; annual",
+    "namq_10_gdp": "Gross domestic product (GDP) and main components (output, expenditure and income) - quarterly data: "
+                   "Gross domestic product at market prices, current prices, unadjusted; quarterly",
+    "namq_10_pe": "Population and employment - national accounts - quarterly data: Total population national concept, "
+                  "unadjusted; quarterly",
+    "demo_pjan": "Population on 1 January by age and sex: Total, both sexes; annual, the count on 1 January of each year "
+                 "(dated here by the year's last day, as every period is; de_data dates it by 1 January)",
+}
+
+
+def eurostat_baked_series() -> dict[str, tuple[str, dict[str, str]]]:
+    """Every Eurostat series the program reads (``de_data.EUROSTAT_SERIES_READ``), by its file's name (``de_data.eurostat_code``): its dataset and the categories chosen."""
+    return dict(sorted((eurostat_code(dataset, **chosen), (dataset, chosen)) for dataset, read in EUROSTAT_SERIES_READ.items() for chosen in read))
+
+
+def eurostat_baked_codes() -> list[str]:
+    """The names of Eurostat's baked files (``eurostat_baked_series``)."""
+    return sorted(eurostat_baked_series())
+
+
+def bake_eurostat_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every Eurostat series the program reads, whole, into ``ratesplot/data/eurostat/`` (batch 19.2).
+
+    As every live source is baked (``_bake_live_series``: ``folder``,
+    ``accept_withdrawn``, what is printed and returned). One request answers
+    every series of a dataset: each dataset is asked for once, and each
+    series read of it is then a file of its own (the sectors of the debt and
+    the interest; the dataset's other sectors and items are not read, and not
+    baked). Each series as ``de_data.parse_jsonstat`` reads it: dated by each
+    period's last day (the 1 January counts too, which ``de_data`` dates by
+    1 January), in the dataset's unit, a period without a value left out.
+    """
+    print("Baking the Eurostat series …")
+    series = eurostat_baked_series()
+    answers: dict[str, dict | Exception] = {}
+
+    def download(code: str) -> pd.Series:
+        dataset, chosen = series[code]
+        if dataset not in answers:
+            try:
+                answers[dataset] = eurostat_download(dataset)
+            except Exception as exc:
+                answers[dataset] = exc
+        answer = answers[dataset]
+        if isinstance(answer, Exception):
+            raise answer
+        values = parse_jsonstat(answer, EUROSTAT_QUERIES[dataset][1], **chosen)
+        if values.empty:
+            raise ValueError(f"Eurostat {dataset} {chosen} has no values")
+        return values
+
+    def comment(code: str, title: str) -> str:
+        dataset, chosen = series[code]
+        params, unit = EUROSTAT_QUERIES[dataset]
+        query = " ".join(f"{name}={value}" for name, value in {**params, **chosen}.items())
+        return (
+            f"Eurostat, dataset {dataset} ({query}): {title}.\n"
+            f"Every value Eurostat gives, as ratesplot.de_data reads it: dated by each period's last day, in {unit},\n"
+            "the dataset's unit (de_data converts it to euros or persons).\n"
+            "Written by tools/bake_archives.py --only eurostat (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {code: _EUROSTAT_SERIES_TITLES[code] for code in series}
+    return _bake_live_series(EUROSTAT_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)

@@ -148,10 +148,33 @@ EUROSTAT_QUERIES = {
     "demo_pjan": ({"geo": "DE", "sex": "T", "age": "TOTAL"}, "NR"),
 }
 _EUROSTAT_MULTIPLIER = {"MIO_EUR": MILLION, "CP_MEUR": MILLION, "THS_PER": THOUSAND, "NR": 1}
+# Each dataset's frequency (its one ``freq`` category), measured 2026-10-22;
+# an answer of another raises (``eurostat_download``), since how
+# ``sinceTimePeriod`` is written depends on it (``_eurostat_since``).
+_EUROSTAT_FREQUENCIES = {
+    "gov_10q_ggdebt": "Q", "gov_10q_ggnfa": "Q", "gov_10dd_edpt1": "A", "namq_10_gdp": "Q", "namq_10_pe": "Q", "demo_pjan": "A",
+}
 # Levels of government (--debt:LETTERS): Eurostat's subsectors of each.
 # "n" is the Länder and local government together.
 _LEVEL_SECTORS = {"f": ("S1311",), "n": ("S1312", "S1313"), "p": ("S1312",), "m": ("S1313",)}
 GENERAL_GOVERNMENT = "S13"
+# The annual interest payable (gov_10dd_edpt1, whose query gives every item and sector).
+_ANNUAL_INTEREST = {"sector": GENERAL_GOVERNMENT, "na_item": "D41PAY"}
+# Every series the program reads of each dataset: the categories chosen
+# (``eurostat_series``' keyword arguments; none for a dataset of one series).
+# These are baked (batch 19.2) under ``ratesplot/data/eurostat/``
+# (``tools/bake_archives.py --only eurostat``), a file each, named by
+# ``eurostat_code``; one request answers all of a dataset's.
+_SECTORS_READ = tuple(sorted({GENERAL_GOVERNMENT, *(sector for sectors in _LEVEL_SECTORS.values() for sector in sectors)}))
+EUROSTAT_SERIES_READ: dict[str, tuple[dict[str, str], ...]] = {
+    "gov_10q_ggdebt": tuple({"sector": sector} for sector in _SECTORS_READ),
+    "gov_10q_ggnfa": tuple({"sector": sector} for sector in _SECTORS_READ),
+    "gov_10dd_edpt1": (_ANNUAL_INTEREST,),
+    "namq_10_gdp": ({},),
+    "namq_10_pe": ({},),
+    "demo_pjan": ({},),
+}
+EUROSTAT_BAKED_SOURCE = "eurostat"
 
 # A quarter's population is dated this many days after the quarter begins:
 # about its middle, as the UK's is.
@@ -360,6 +383,48 @@ def parse_jsonstat(data: dict, unit: str, **chosen: str) -> pd.Series:
     return pd.Series(numbers, index=pd.DatetimeIndex(periods, name=DATE_COLUMN), dtype=float).sort_index()
 
 
+def eurostat_code(dataset: str, **chosen: str) -> str:
+    """The name of a Eurostat series' baked file: its dataset, then the category chosen in each dimension, by the dimension's name (``gov_10dd_edpt1.D41PAY.S13``)."""
+    return ".".join([dataset, *(chosen[dimension] for dimension in sorted(chosen))])
+
+
+def _eurostat_since(dataset: str, day: pd.Timestamp) -> str:
+    """``sinceTimePeriod`` asking ``dataset`` for the period holding ``day`` on: ``2024-Q2`` (quarterly), ``2023`` (annual).
+
+    Measured 2026-10-22, for all six datasets: asked from a day, Eurostat
+    answers from the first period beginning on or after it, as the ECB does
+    (debt asked from 2024-06-30 begins with 2024-Q3, the annual interest
+    asked from 2023-12-31 with 2024); asked in the period's own form, from
+    that period; ``2024Q2`` is refused (400). A frequency not measured raises.
+    """
+    frequency = _EUROSTAT_FREQUENCIES[dataset]
+    if frequency == "Q":
+        return f"{day.year}-Q{day.quarter}"
+    if frequency == "A":
+        return f"{day.year}"
+    raise ValueError(f"Eurostat {dataset}: no sinceTimePeriod form measured for its frequency {frequency!r}")
+
+
+def eurostat_download(dataset: str, start: pd.Timestamp | None = None) -> dict:
+    """Ask Eurostat for one dataset (``EUROSTAT_QUERIES``): its JSON-stat answer, every period, or those from the period holding ``start`` on.
+
+    One request (cached and kept as the others are), which answers every
+    series of the dataset. The whole dataset is asked for as before batch
+    19.2 (the query alone), so its request is the same. An answer whose
+    frequency is not the one measured raises. Eurostat answers a range it
+    has no period in with an answer of no periods (status 200), which
+    ``parse_jsonstat`` reads as no values.
+    """
+    params, _unit = EUROSTAT_QUERIES[dataset]
+    if start is not None:
+        params = params | {"sinceTimePeriod": _eurostat_since(dataset, start)}
+    data = de_get(EUROSTAT_DATASET_URL.format(dataset=dataset), params).json()
+    frequencies = list(data.get("dimension", {}).get("freq", {}).get("category", {}).get("index", {}))
+    if frequencies != [_EUROSTAT_FREQUENCIES[dataset]]:
+        raise ValueError(f"Eurostat {dataset}: expected the frequency {_EUROSTAT_FREQUENCIES[dataset]!r}, found {frequencies}")
+    return data
+
+
 def eurostat_series(dataset: str, **chosen: str) -> pd.Series:
     """Return one series of a Eurostat dataset (``EUROSTAT_QUERIES``), in euros or persons; raises if it has none.
 
@@ -367,8 +432,7 @@ def eurostat_series(dataset: str, **chosen: str) -> pd.Series:
     cache is keyed by the query, the same for every sector).
     """
     params, unit = EUROSTAT_QUERIES[dataset]
-    data = de_get(EUROSTAT_DATASET_URL.format(dataset=dataset), params).json()
-    values = parse_jsonstat(data, unit, **chosen)
+    values = parse_jsonstat(eurostat_download(dataset), unit, **chosen)
     if values.empty:
         raise ValueError(f"Eurostat {dataset} {chosen} has no values")
     return values * _EUROSTAT_MULTIPLIER[unit]
@@ -536,7 +600,7 @@ def fetch_de_interest(config: PlotConfig) -> pd.DataFrame | None:
     if not config.include_interest:
         return None
     try:
-        annual = eurostat_series("gov_10dd_edpt1", sector=GENERAL_GOVERNMENT, na_item="D41PAY")
+        annual = eurostat_series("gov_10dd_edpt1", **_ANNUAL_INTEREST)
     except Exception as exc:
         print(f"  Warning: Eurostat annual German interest unavailable ({exc}); drawn from 2002.")
         annual = None
