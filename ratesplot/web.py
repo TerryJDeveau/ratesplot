@@ -18,8 +18,8 @@ What it is
     kept, greyed texts ignored and left out of the address; each
     nation's own choices (``frontend.NATION_OPTIONS``: its yield terms,
     spreads and mortgage terms, only those its chart can draw, and its axis
-    limits) in a sidebar section of its own, each limit with its unit
-    (batch 18.1); a value
+    limits) in a sidebar section of its own, each limit with its unit and an
+    "All" tick that copies it to every nation (batch 18); a value
     that belongs to a flag (the regression tolerance) greyed while the flag
     is off, and ignored then; a blank text field showing the value in effect
     in grey, as its placeholder (``frontend.field_hints``: the start found,
@@ -118,10 +118,13 @@ from .config import (  # noqa: E402
 from .console import this_thread_output_to  # noqa: E402
 from .frontend import (  # noqa: E402
     LIMIT_COLUMNS,
+    LIMITS,
     NATION_OPTIONS,
     TAB_TITLES,
     ChartGeometry,
     Choices,
+    all_tick,
+    all_tick_offered,
     bound_keys,
     bounds_in_other_units,
     choice_refusal,
@@ -137,6 +140,7 @@ from .frontend import (  # noqa: E402
     idle_nation_keys,
     level_letters,
     level_text,
+    limit_copies,
     limit_unit,
     move_dates_updates,
     nation_boxes,
@@ -148,6 +152,7 @@ from .frontend import (  # noqa: E402
     reset_choices,
     saved_log_name,
     saved_png_name,
+    settled_all_ticks,
     size_boxes_at_fault,
     starting_choices,
     with_leading_zero,
@@ -196,8 +201,8 @@ _DEFAULT_PLACEHOLDER = "automatic"
 # prime rate's): narrow, a number of points, so it stays on the box's row in
 # the sidebar.
 _MARGIN_FIELD_PX = 110
-# A nation's axis limit field, with its unit on its right (batch 18.1):
-# narrow enough for both to share a row in half the sidebar.
+# A nation's axis limit field, with its unit and its "All" box on its right
+# (batch 18): narrow enough for the three to share a row in half the sidebar.
 _LIMIT_FIELD_PX = 80
 _DRAWING_LOCK = threading.Lock()
 # How many zoom and pan steps "Back" can undo (as in the window); the view
@@ -218,6 +223,7 @@ _VALUE = "value:"    # + option name, or a nation's choice key ("us:max"): a tex
 _LEVEL = "level:"    # + nation key + ":" + letter: one of a nation's "By level" boxes (batch 10.5)
 _CHOICE = "choice:"  # + choice key + ":" + value: one tick box of a list option (Option.choices)
 _CHOICE_OTHERS = "choice_others:"  # + choice key: the values given that no offered box has
+_ALL = "all:"        # + a nation's limit key ("us:max"): its "All" box, one tick for every nation's (batch 18.2)
 _READY = "ready"     # the controls have been set from the address
 _ADDRESS_PROBLEMS = "address_problems"
 _NOTICE = "notice"   # a message from a control's callback, shown once
@@ -466,6 +472,19 @@ def _load_choices(choices: Choices) -> None:
                 _size_boxes_from_text(key)
     for option in _gui_options(kind_is_value=False):
         st.session_state[_FLAG + option.name] = bool(flags.get(option.name, False))
+    _set_all_ticks({name: bool(flags.get(all_tick(name), False)) for name in LIMITS})
+
+
+def _limit_keys(name: str) -> list[str]:
+    """Every nation's field of limit ``name`` ("cdn:max", "us:max", ...)."""
+    return [nation_choice(nation, by_name(name)) for nation in NATIONS]
+
+
+def _set_all_ticks(ticks: dict[str, bool]) -> None:
+    """Tick or untick each limit's "All" (name -> ticked) in every nation's section: one tick, shown in each (batch 18.2)."""
+    for name, ticked in ticks.items():
+        for key in _limit_keys(name):
+            st.session_state[_ALL + key] = ticked
 
 
 def _snapshot() -> Choices:
@@ -483,6 +502,9 @@ def _snapshot() -> Choices:
         else:
             payloads[key] = st.session_state.get(_VALUE + key, "")
     flags = {option.name: bool(st.session_state.get(_FLAG + option.name, False)) for option in _gui_options(False)}
+    # The "All" ticks, as the window keeps them (batch 18.2): every nation's box shows the one tick.
+    for name in LIMITS:
+        flags[all_tick(name)] = any(st.session_state.get(_ALL + key, False) for key in _limit_keys(name))
     return payloads, flags
 
 
@@ -611,11 +633,12 @@ def _apply_view(updates: dict[str, str], key: str | None = None) -> None:
     nation = next((nation for nation in NATIONS if nation.key == key), None)
     own = {option.name for option in NATION_OPTIONS}
     updates = {nation_choice(nation, option_of(name)) if nation and name in own else name: text for name, text in updates.items()}
-    payloads = _snapshot()[0]
+    payloads, flags = _snapshot()
     if all(payloads.get(name, "") == text for name, text in updates.items()):
         return
     _remember_view()
-    for name, text in updates.items():
+    # A limit whose "All" is ticked goes into every nation's field (batch 18.2).
+    for name, text in {**updates, **limit_copies(updates, flags)}.items():
         st.session_state[_VALUE + name] = text
 
 
@@ -710,6 +733,36 @@ def _field_typed(key: str) -> None:
     """
     st.session_state[_VALUE + key] = with_leading_zero(st.session_state.get(_VALUE + key, ""))
     _field_changed(key)
+    # A limit whose "All" is ticked goes into every nation's box (batch 18.2);
+    # a blank unticks it instead, when the page settles (``_settle_all_ticks``).
+    # A text box reports only on Enter or when left, as decision 47 asks.
+    payloads, flags = _snapshot()
+    for other, text in limit_copies({key: payloads[key]}, flags).items():
+        st.session_state[_VALUE + other] = text
+
+
+def _all_changed(key: str) -> None:
+    """The "All" box beside ``key``'s limit field ticked or unticked: the same in every nation's section (batch 18.2).
+
+    Ticked, the field's value goes into every other nation's field of the
+    limit (``frontend.limit_copies``); unticked, each keeps its value, as in
+    the window (``gui._all_ticked``).
+    """
+    ticked = bool(st.session_state.get(_ALL + key, False))
+    _set_all_ticks({option_of(key).name: ticked})
+    payloads, flags = _snapshot()
+    for other, text in limit_copies({key: payloads[key]}, flags).items():
+        st.session_state[_VALUE + other] = text
+
+
+def _settle_all_ticks() -> None:
+    """Untick the "All" ticks whose rule no longer holds (``frontend.settled_all_ticks``), before the controls are laid out.
+
+    One nation ticked, a field blanked (the page has only what a field
+    reported on Enter or when left), Top and Bottom out of % of GDP.
+    """
+    payloads, flags = _snapshot()
+    _set_all_ticks({name: settled_all_ticks(payloads, flags)[all_tick(name)] for name in LIMITS})
 
 
 def _red_if_wrong(label: str, wrong: bool) -> str:
@@ -980,6 +1033,7 @@ def _controls() -> None:
     )
     buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch")
     st.session_state[_HINTS] = _field_hints()
+    _settle_all_ticks()  # before the "All" boxes are laid out, which fixes their state for this run
     for key, title, members in control_blocks():
         if title:
             bar.subheader(title, divider="gray")
@@ -1037,8 +1091,8 @@ def _nation_controls(bar, nation: Nation) -> None:
     government (batch 10.5), in the window's
     order (``frontend.panel_lists``), then its axis limits as in the window: the yield axis's Max above
     its Min, beside the right axis's Top above its Bottom (Terry, 2026-10-12;
-    ``LIMIT_COLUMNS``), each field with its unit on its right (batch 18.1,
-    ``_limit_control``).
+    ``LIMIT_COLUMNS``), each field with its unit and its "All" box on its
+    right (batch 18, ``_limit_control``).
     """
     bar.subheader(f"{nation.name} only", divider="gray")
     for option in panel_lists(nation):
@@ -1052,23 +1106,39 @@ def _nation_controls(bar, nation: Nation) -> None:
 
 
 def _limit_control(where, nation: Nation, option: Option) -> None:
-    """A nation's axis limit field, then right of it its unit, as in the window (batch 18.1).
+    """A nation's axis limit field, then right of it its unit and its "All" box, as in the window (batch 18).
 
     Terry, 2026-10-14: the unit symbol "immediately to the right" of the box
     (``frontend.limit_unit``: "%", the nation's currency, blank for % of
-    GDP), the two in a row aligned at the bottom.
+    GDP), then an "All" tick that copies the value to every nation's field
+    and keeps them alike while ticked (``_all_changed``), greyed where it
+    cannot be given (``frontend.all_tick_offered``). The three in a row
+    aligned at the bottom, so the unit and the box sit level with the field.
     """
     key = nation_choice(nation, option)
-    flags = _snapshot()[1]
+    payloads, flags = _snapshot()
     row = where.container(horizontal=True, vertical_alignment="bottom", gap="small")
     _value_control(row, option, key=key, width=_LIMIT_FIELD_PX)
-    # Kept as wide as the widest symbol ("C$"), and raised from the row's
-    # bottom to the middle of the field: the field's own element runs on
-    # below it (measured 2026-10-23, Streamlit 1.64: the symbol's middle
-    # 15 px below the field's at 0.5rem). In an HTML block, where Markdown
-    # takes no "$" for the start of a formula and an escape would show.
+    # Kept as wide as the widest symbol ("C$"), so the "All" boxes line up,
+    # and raised from the row's bottom to the middle of the field: the
+    # field's own element runs on below it (measured 2026-10-23, Streamlit
+    # 1.64: the symbol's middle 15 px below the field's at 0.5rem). In an
+    # HTML block, where Markdown takes no "$" for the start of a formula and
+    # an escape would show.
     symbol = limit_unit(nation, option.name, flags) or "&nbsp;"
     row.markdown(f'<div style="padding-bottom: 1.4rem">{symbol}</div>', unsafe_allow_html=True, width=20)
+    row.checkbox(
+        "All",
+        key=_ALL + key,
+        on_change=_all_changed,
+        args=(key,),
+        disabled=not all_tick_offered(payloads, flags, key),
+        help=(
+            f"This {option.label} for every nation's chart. Ticked, the value goes into every nation's field, and a value "
+            "entered in any of them goes into the others; unticked, each keeps its own. Greyed while the field is blank "
+            "or only one nation is ticked; for Top and Bottom, unless they are % of GDP."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

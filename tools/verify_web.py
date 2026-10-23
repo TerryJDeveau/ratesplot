@@ -1062,7 +1062,7 @@ def check_batch17(check: Check) -> None:
 
 
 def check_batch18(check: Check) -> None:
-    """Batch 18.1: each limit's unit on its right."""
+    """Batch 18.1 and 18.2: each limit's unit on its right, and the "All" tick that copies it to every nation."""
     at = new_page("--na:ca,us --e:2026-09-01 -s:2015")
     check("no exception", not at.exception, at.exception)
     labels = {name: at.text_input(key=f"value:us:{name}").label for name in ("max", "min", "top", "bottom")}
@@ -1076,10 +1076,55 @@ def check_batch18(check: Check) -> None:
     shown = units(at)
     check("the units: % beside Max and Min, each nation's currency beside Top and Bottom",
           shown == ["%", "C$", "%", "C$", "%", "$", "%", "$", "%", "£", "%", "£", "%", "€", "%", "€"], shown)
+    alls = [box.key for box in at.checkbox if box.key and box.key.startswith("all:")]
+    check("an All box beside each of the 16 limits", len(alls) == 16, alls)
+    check("every All box greyed while its field is blank", all(at.checkbox(key=key).disabled for key in alls))
+
+    def values(name: str) -> list[str]:
+        return [at.text_input(key=f"value:{key}:{name}").value for key in NATION_KEYS]
+
+    at.text_input(key="value:us:max").input("8")
+    at.run()
+    check("a value entered: its All active, the others greyed",
+          not at.checkbox(key="all:us:max").disabled and at.checkbox(key="all:cdn:max").disabled)
+    at.checkbox(key="all:us:max").check()
+    at.run()
+    check("All ticked: every nation's Max 8, every Max's All ticked",
+          values("max") == ["8"] * 4 and all(at.checkbox(key=f"all:{key}:max").value for key in NATION_KEYS), values("max"))
+    check("All ticked: written once, --max:8", "--max:8" in address(at) and "--us:max" not in address(at), address(at))
+    at.text_input(key="value:cdn:max").input("7")
+    at.run()
+    check("a value entered in another nation's field goes into every one", values("max") == ["7"] * 4, values("max"))
+    at.text_input(key="value:cdn:max").input("")
+    at.run()
+    check("a field blanked: its All unticked in every section, the others' values kept",
+          not any(at.checkbox(key=f"all:{key}:max").value for key in NATION_KEYS) and values("max") == ["", "7", "7", "7"],
+          values("max"))
+    check("a field blanked: its own All greyed, the others' active",
+          at.checkbox(key="all:cdn:max").disabled and not at.checkbox(key="all:us:max").disabled)
+    at.text_input(key="value:us:top").input("40t")
+    at.run()
+    check("Top in dollars: its All greyed", at.checkbox(key="all:us:top").disabled)
     at.checkbox(key="flag:relative").check()
     at.run()
+    at.text_input(key="value:us:top").input("150%")
+    at.run()
     check("-r: Top's and Bottom's unit blank, Max's and Min's %", units(at) == ["%", "&nbsp;"] * 8, units(at))
+    at.checkbox(key="all:us:top").check()
+    at.run()
+    check("-r: All on Top copies 150% to every nation", values("top") == ["150%"] * 4 and "--top:150%" in address(at), values("top"))
+    at.checkbox(key="flag:relative").uncheck()
+    at.run()
+    check("the measure changed: Top cleared, its All unticked", values("top") == [""] * 4 and not at.checkbox(key="all:us:top").value,
+          values("top"))
+    at.checkbox(key="flag:cdn").uncheck()
+    at.run()
+    check("one nation: every All greyed", all(at.checkbox(key=key).disabled for key in alls))
     check("no exception", not at.exception, at.exception)
+    page = new_page("--na:ca,us --max:8 --e:2026-09-01 -s:2015")
+    check("from an address with --max:8: Max's All ticked", page.checkbox(key="all:cdn:max").value, address(page))
+    page = new_page("-u --max:8 --e:2026-09-01 -s:2015")
+    check("one nation: not ticked", not page.checkbox(key="all:us:max").value, address(page))
 
 
 PAGE_CHECKS = (

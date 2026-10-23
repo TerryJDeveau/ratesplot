@@ -32,7 +32,9 @@ Controls
     mortgage terms, the UK's aggregate debts and its levels of government as
     tick boxes, and its axis limits) are in a panel under its tab, keyed
     "NATION:OPTION", as many to a row as fit (batch 10). Right of each axis
-    limit box its unit ("%", the nation's currency; batch 18.1). The controls scroll when the
+    limit box its unit ("%", the nation's currency) and an "All" tick that
+    copies its value to every nation's box and keeps them alike while
+    ticked (batch 18, ``frontend.settled_all_ticks``). The controls scroll when the
     window is too short for them; Refresh, Save PNG and Save log file sit in
     a bar under them that does not, so they are always in sight (the log's
     button under the other two when the column is narrow). A handle between the
@@ -110,13 +112,17 @@ from . import http
 from .config import DOWNLOAD_MAX_AGE_SECONDS, NATIONS, Nation, PlotConfig
 from .console import this_thread_output_to
 from .frontend import (
+    ALL_TICKS,
     GREYABLE_OPTIONS,
     LIMIT_COLUMNS,
+    LIMITS,
     NATION_OPTIONS,
     STATE_VERSION,
     TAB_TITLES,
     ChartGeometry,
     Choices,
+    all_tick,
+    all_tick_offered,
     bound_keys,
     bounds_in_other_units,
     choice_refusal,
@@ -132,6 +138,7 @@ from .frontend import (
     idle_nation_keys,
     level_letters,
     level_text,
+    limit_copies,
     limit_unit,
     load_state,
     nation_boxes,
@@ -147,6 +154,7 @@ from .frontend import (
     saved_log_name,
     saved_png_name,
     scale_dates_updates,
+    settled_all_ticks,
     size_boxes_at_fault,
     starting_choices,
     with_leading_zero,
@@ -802,8 +810,16 @@ class RatesPlotApp:
         # The grey values of the text fields (keyed as payload_vars), and of the size boxes.
         self.hints: dict[str, _Hint] = {}
         self.size_hints: list[_Hint] = []
-        # Right of each nation's axis limit box, keyed as its field ("us:max"): its unit (batch 18.1).
+        # Right of each nation's axis limit box (batch 18), keyed as its
+        # field ("us:max"): its unit, and its "All" box, whose tick is one
+        # flag for every nation's box of the limit ("all-max", in flag_vars).
         self.unit_labels: dict[str, ttk.Label] = {}
+        self.all_boxes: dict[str, ttk.Checkbutton] = {}
+        for tick in ALL_TICKS:
+            self.flag_vars[tick] = tk.BooleanVar(value=False)
+        # Limit boxes blanked by typing, not yet by Return or by leaving the
+        # box: their "All" waits (decision 47).
+        self._blanked: set[str] = set()
 
         # Per-country preview state, keyed by Country.key.
         self.tabs: dict[str, ttk.Frame] = {}
@@ -850,6 +866,9 @@ class RatesPlotApp:
         self.status = tk.StringVar(value="Starting …")
 
         self._build_layout()
+        # A click anywhere settles a limit box blanked by typing (decision 47):
+        # a click on a widget that takes no focus leaves the box no FocusOut.
+        self.root.bind_all("<ButtonPress>", self._clicked_anywhere, add="+")
         self._set_column_width(state.get("column_width"))
         self._load_choices(choices)
         for name, keep in state.get("keep_ratio", {}).items():
@@ -1408,15 +1427,32 @@ class RatesPlotApp:
                 self._add_limit_extras(cell, key)
 
     def _add_limit_extras(self, cell: ttk.Frame, key: str) -> None:
-        """Right of a nation's limit box (``key``, "us:max"): its unit symbol (batch 18.1).
+        """Right of a nation's limit box (``key``, "us:max"): its unit symbol, then its "All" box (batch 18).
 
-        Terry, 2026-10-14: the unit "immediately to the right" of the box.
-        It follows the measure (``_update_dependent_controls``); its width is
-        the widest symbol's ("C$"), so the boxes of a column line up.
+        Terry, 2026-10-14: the unit "immediately to the right" of the box,
+        and right of it "an additional tick-box ... with the label “All”".
+        The unit follows the measure (``_update_dependent_controls``); its
+        width is the widest symbol's ("C$"), so the "All" boxes of a column
+        line up. Return in the box, leaving it, or a click anywhere else
+        (``_clicked_anywhere``) settles a blank typed in it: its "All" is
+        unticked and greyed only then (decision 47).
         """
         unit = ttk.Label(cell, width=2)
         unit.grid(row=0, column=2, sticky="w", padx=(2, 0))
         self.unit_labels[key] = unit
+        name = option_of(key).name
+        box = ttk.Checkbutton(cell, text="All", variable=self.flag_vars[all_tick(name)], command=lambda: self._all_ticked(key))
+        box.grid(row=0, column=3, sticky="w", padx=(4, 0))
+        self.all_boxes[key] = box
+        _Tooltip(
+            box,
+            f"All: this {option_of(key).label} for every nation's chart. Ticked, the value goes into every nation's box,\n"
+            "and a value typed into any of them goes into the others; unticked, each keeps its own.\n"
+            "Greyed while the box is blank or only one nation is ticked; for Top and Bottom, unless they are % of GDP.",
+        )
+        entry = self.value_entries[key]
+        entry.bind("<Return>", lambda _event: self._limit_settled(key), add="+")
+        entry.bind("<FocusOut>", lambda _event: self._limit_settled(key), add="+")
 
     # -- choices ------------------------------------------------------------
 
@@ -1433,6 +1469,7 @@ class RatesPlotApp:
                     self.flag_vars[name].set(value)
         finally:
             self._loading = False
+        self._blanked.clear()  # the boxes' texts are the choices' now
         self._update_dependent_controls()
 
     def _snapshot(self) -> Choices:
@@ -1527,10 +1564,61 @@ class RatesPlotApp:
             hint.update()
 
     def _update_limit_extras(self) -> None:
-        """Each limit box's unit for the measure (batch 18.1)."""
+        """Each limit box's unit for the measure, and the "All" ticks and boxes by their rules (batch 18).
+
+        A tick no longer allowed is unticked (``frontend.settled_all_ticks``):
+        one nation ticked, a box blanked (once Return is typed in it or it is
+        left: ``_blanked`` counts as not blank), Top and Bottom out of % of
+        GDP. A box is greyed where its tick cannot be given
+        (``frontend.all_tick_offered``).
+        """
+        payloads, flags = self._snapshot()
+        for tick, ticked in settled_all_ticks(payloads, flags, self._blanked).items():
+            if self.flag_vars[tick].get() != ticked:
+                self.flag_vars[tick].set(ticked)
         flags = self._snapshot()[1]
+        for key, box in self.all_boxes.items():
+            box.state(["!disabled"] if all_tick_offered(payloads, flags, key, self._blanked) else ["disabled"])
         for key, label in self.unit_labels.items():
             label.configure(text=limit_unit(nation_of(key), option_of(key).name, flags))
+
+    def _set_texts(self, texts: dict[str, str]) -> None:
+        """Set fields' texts without a drawing for each (the caller asks for one)."""
+        self._loading = True
+        try:
+            for key, text in texts.items():
+                self.payload_vars[key].set(text)
+        finally:
+            self._loading = False
+
+    def _all_ticked(self, key: str) -> None:
+        """The "All" box beside ``key``'s limit box ticked or unticked; its tick is every nation's (batch 18.2).
+
+        Ticked, the box's value goes into every other nation's box of the
+        limit (``frontend.limit_copies``); unticked, each box keeps the value
+        it has. Terry, 2026-10-14: "ticking/unticking that tick-box would
+        also cross-populate that action to all the other pages", and
+        "Unticking a tick-box, though, would not be the same as blanking out
+        the ... value".
+        """
+        payloads, flags = self._snapshot()
+        copies = limit_copies({key: payloads[key]}, flags)
+        self._set_texts(copies)
+        if copies:
+            self._append_log(f"--- {option_of(key).label} {payloads[key].strip()} for every nation (All)\n")
+        self._update_dependent_controls()
+        self.request_redraw()
+
+    def _limit_settled(self, key: str) -> None:
+        """A limit box settled: Return typed in it, or left (decision 47); a blank in it now unticks its "All"."""
+        if key in self._blanked:
+            self._blanked.discard(key)
+            self._update_limit_extras()
+
+    def _clicked_anywhere(self, event: tk.Event) -> None:
+        """A click settles every limit box blanked by typing but the one clicked (Terry: "a click anywhere else")."""
+        for key in [key for key in self._blanked if self.value_entries[key] is not event.widget]:
+            self._limit_settled(key)
 
     def _show_hints(self) -> None:
         """Give each blank field the value in effect, from the charts on screen (``frontend.field_hints``)."""
@@ -1555,6 +1643,20 @@ class RatesPlotApp:
     def _text_changed(self, key: str) -> None:
         if self._loading:
             return
+        if nation_of(key) is not None and option_of(key).name in LIMITS:
+            # A limit box: with its "All" ticked, its value goes into every
+            # other nation's at once (batch 18.2). A blank waits for Return or
+            # for the box to be left (decision 47): it may be a step in typing
+            # a new value.
+            text = self.payload_vars[key].get()
+            if text.strip():
+                self._blanked.discard(key)
+                self._set_texts(limit_copies({key: text}, self._snapshot()[1]))
+            else:
+                self._blanked.add(key)
+            # A value typed into a blank box can be copied at once; a box
+            # blanked counts as not blank yet (``_blanked``).
+            self._update_limit_extras()
         if key in self._changed:
             self._changed.remove(key)
         self._changed.append(key)
@@ -1934,15 +2036,16 @@ class RatesPlotApp:
             nation_choice(nation, by_name(name)) if nation and name in own else name: text for name, text in updates.items()
         }
         self._remember_step()
-        self._loading = True
-        try:
-            for name, text in updates.items():
-                self.payload_vars[name].set(text)
-        finally:
-            self._loading = False
+        # A limit whose "All" is ticked goes into every nation's box (batch 18.2).
+        copies = limit_copies(updates, self._snapshot()[1])
+        self._set_texts({**updates, **copies})
         prefix = f"{nation.name}: " if nation and any(":" in name for name in updates) else ""
         changed = prefix + ", ".join(f"{option_of(name).label} {text or '(today)'}" for name, text in updates.items())
+        copied = sorted({option_of(key).label for key in copies}, key=[by_name(name).label for name in LIMITS].index)
+        if copied:
+            changed += f" ({' and '.join(copied)} for every nation: All)"
         self._append_log(f"--- {verb.lower()}: {changed}\n")
+        self._update_dependent_controls()
         self.request_redraw()
 
     def _remember_step(self, preview: bool = False) -> None:

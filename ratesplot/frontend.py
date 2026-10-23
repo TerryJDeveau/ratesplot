@@ -26,7 +26,8 @@ may not have it) and the two cannot drift apart:
 * the nation boxes: what Reset leaves of them (``reset_choices``), and which
   tab is made current after a drawing (``current_tab``);
 * each nation's axis limits: the unit symbol right of each box
-  (``limit_unit``, batch 18.1).
+  (``limit_unit``), and the "All" tick that copies a limit to every nation
+  (``all_tick_offered``, ``limit_copies``, ``settled_all_ticks``; batch 18).
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -129,7 +130,8 @@ CONTROL_BLOCKS: tuple[tuple[str, str | None, tuple[str, ...]], ...] = (
 # Each nation's axis limits as laid out under its tab: a column per axis,
 # Max above Min, Top above Bottom (Terry, 2026-10-12).
 LIMIT_COLUMNS = (("max", "min"), ("top", "bottom"))
-# The yield axis's limits.
+# The limits in that order (Max, Min, Top, Bottom), and the yield axis's.
+LIMITS = tuple(name for column in LIMIT_COLUMNS for name in column)
 _YIELD_LIMITS = LIMIT_COLUMNS[0]
 
 
@@ -328,6 +330,7 @@ def starting_choices(
 
     def combine(use_state: bool) -> Choices:
         payloads, flags = choices_from_config(PlotConfig())
+        flags.update(dict.fromkeys(ALL_TICKS, False))  # the "All" ticks (batch 18.2), remembered with the flags
         if use_state:
             remembered = {name: text for name, text in state.get("payloads", {}).items() if isinstance(text, str)}
             for name, text in spread_to_nations(remembered).items():
@@ -396,6 +399,17 @@ def starting_choices(
                 for bound in bound_keys():
                     if bound in payloads and bound not in cli_payloads and bound.split(":")[-1] not in cli_payloads:
                         payloads[bound] = ""
+        # A limit given for every chart (--max:8) is what a ticked "All"
+        # writes (batch 18.2), so it ticks its "All" where every nation's box
+        # shows it; one given for a nation (--us:max:9) unticks a remembered
+        # one, whose boxes it changed. Then the rules (``settled_all_ticks``).
+        for name in LIMITS:
+            keys = [nation_choice(nation, by_name(name)) for nation in NATIONS]
+            if name in cli_payloads:
+                flags[all_tick(name)] = len({payloads[key] for key in keys}) == 1
+            elif any(key in cli_payloads for key in keys):
+                flags[all_tick(name)] = False
+        flags.update(settled_all_ticks(payloads, flags))
         return payloads, flags
 
     choices = combine(use_state=bool(state))
@@ -427,7 +441,8 @@ def reset_choices(flags: Mapping[str, bool]) -> Choices:
     """
     payloads, defaults = choices_from_config(PlotConfig())
     kept = {name: bool(flags[name]) for name in nation_boxes() if name in flags}
-    return payloads, {**defaults, **kept}
+    # Every limit blank, so no "All" ticked (batch 18.2).
+    return payloads, {**defaults, **dict.fromkeys(ALL_TICKS, False), **kept}
 
 
 def current_tab(shown: Sequence[str], current: str | None, ticked: str | None = None) -> str | None:
@@ -445,7 +460,7 @@ def current_tab(shown: Sequence[str], current: str | None, ticked: str | None = 
 
 
 # ---------------------------------------------------------------------------
-# The axis limits under each tab: unit symbols (batch 18.1)
+# The axis limits under each tab: unit symbols and the "All" tick (batch 18)
 # ---------------------------------------------------------------------------
 
 
@@ -468,6 +483,90 @@ def limit_unit(nation: Nation, name: str, flags: Mapping[str, bool]) -> str:
     if name in _YIELD_LIMITS:
         return "%"
     return "" if _relative_in_effect(flags) else nation.currency_symbol
+
+
+def all_tick(name: str) -> str:
+    """Return the flag key of limit ``name``'s "All" tick ("all-max"): one tick, shown beside every nation's box of the limit (batch 18.2).
+
+    Kept with the flags, so Back, Reset and the window's remembered settings
+    keep it. No option has the name, so nothing reads it as one; nor does a
+    chart or the command line depend on it: the boxes it fills say what is
+    drawn, and a limit every nation's box shows alike is written once, for
+    every chart (``--max:8``, ``options.command_line_tokens``).
+    """
+    return f"all-{name}"
+
+
+ALL_TICKS = tuple(all_tick(name) for name in LIMITS)
+
+
+def nations_ticked(flags: Mapping[str, bool]) -> int:
+    """Return how many nation boxes are ticked."""
+    return sum(1 for name in nation_boxes() if flags.get(name, False))
+
+
+def all_tick_offered(payloads: Mapping[str, str], flags: Mapping[str, bool], key: str, blanked: Collection[str] = ()) -> bool:
+    """True when the "All" box beside a nation's limit box ``key`` ("us:max") can be ticked; greyed otherwise.
+
+    Terry, 2026-10-14: greyed "unless the corresponding value-box is
+    non-blank (non-auto-generated) and there is more than one nation
+    selected". A box blanked by typing (``blanked``) counts as not blank
+    until Return is typed in it or it is left (decision 47). Greyed too
+    while its box is (Top and Bottom with no right-axis curve), and Top
+    and Bottom while they are amounts, in each nation's own currency: 20t
+    copied from the U.S.'s box would be 20 trillion euros in Germany's
+    (18.3 marks a value with its currency). Under -r they are percentages
+    of GDP, the same on every chart.
+    """
+    name = option_of(key).name
+    if not (payloads.get(key, "").strip() or key in blanked):
+        return False
+    if nations_ticked(flags) < 2 or name in idle_controls(flags):
+        return False
+    return name in _YIELD_LIMITS or _relative_in_effect(flags)
+
+
+def limit_copies(updates: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
+    """Return the texts the other nations' boxes take from the limits in ``updates`` (key -> text) whose "All" is ticked.
+
+    Terry, 2026-10-14: "when on, anything entered in the respective
+    value-box would instantly override anything in the corresponding
+    value-box on all the other national pages". Every nation's box, its
+    chart drawn or not, so that the limit is written once, for every chart.
+    A blank is not copied: blanking a box unticks its "All" instead, and
+    leaves the others' values (``settled_all_ticks``).
+    """
+    copies: dict[str, str] = {}
+    for key, text in updates.items():
+        nation, option = nation_of(key), option_of(key)
+        if nation is None or option.name not in LIMITS or not text.strip() or not flags.get(all_tick(option.name), False):
+            continue
+        copies.update({nation_choice(other, option): text.strip() for other in NATIONS if other is not nation})
+    return copies
+
+
+def settled_all_ticks(payloads: Mapping[str, str], flags: Mapping[str, bool], blanked: Collection[str] = ()) -> dict[str, bool]:
+    """Return every "All" tick after a change: unticked where its rule no longer holds (batch 18.2).
+
+    A tick stays while more than one nation is ticked, while every nation's
+    box of its limit holds a value (a box blanked by typing, ``blanked``,
+    counting as not blank until Return is typed in it or it is left,
+    decision 47), and for Top and Bottom while they are percentages of GDP
+    (``all_tick_offered``); a greyed limit keeps its tick, as a greyed
+    field keeps its text. Terry, 2026-10-14: "Blanking out one value-box
+    automatically unticks the corresponding “All” tick-box ... and unticks
+    it on all the other nations too, but it doesn't blank out the
+    corresponding value-boxes of the other nations". A change of measure
+    clears Top and Bottom, and so unticks theirs.
+    """
+    idle = idle_controls(flags)
+    ticks: dict[str, bool] = {}
+    for name in LIMITS:
+        keys = [nation_choice(nation, by_name(name)) for nation in NATIONS]
+        filled = all(payloads.get(key, "").strip() or key in blanked for key in keys)
+        amounts = name not in _YIELD_LIMITS and name not in idle and not _relative_in_effect(flags)
+        ticks[all_tick(name)] = bool(flags.get(all_tick(name), False)) and filled and nations_ticked(flags) >= 2 and not amounts
+    return ticks
 
 
 # ---------------------------------------------------------------------------
