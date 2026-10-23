@@ -90,8 +90,14 @@ Top and Bottom may be given in any of the four currencies, its code first: `--to
 `$` on a PowerShell or bash command line needs quotes). Each chart converts such a limit into its
 own currency at the exchange rate of its end date, the latest on or before it, and the message
 log says which rate it used: a chart with a fixed end draws the same every time, one ending today
-follows the rate. The rates are FRED's: the Canadian dollar and the pound daily from 1971, the
-euro from 1999, and before it the Deutsche mark at its fixed 1.95583 per euro.
+follows the rate. The rates are FRED's from 1971: the Canadian dollar and the pound daily, the
+euro from 1999, and before it the Deutsche mark at its fixed 1.95583 per euro. Before 1971 they
+are older rates built into the program: the pound against the U.S. dollar monthly from 1791 (the
+Bank of England's millennium dataset); the Canadian dollar from 1858, at its gold par with the
+pound to 1912, then each year's average to 1962 (*Historical Statistics of Canada*), then monthly
+through the pound; the mark from June 1948, at its official parities to 1962, then monthly
+through the pound. A limit whose currency has no rate yet at its chart's end date is left to the
+axis, with a warning.
 
 ## Setting up
 
