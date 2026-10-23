@@ -5,8 +5,11 @@ Package layout
 config            constants, per-country metadata, HTTP session, PlotConfig; the
                   nations (Nation, NATIONS) and the choices each may have its own of
 frames            small DataFrame helpers shared by the layers below
-http              retrying GET helper, FRED CSV reader, BoC CSV parser, session download cache,
-                  the message log's line for each real download, one request at a time per host
+http              GET helpers (a failed request asked once more only if dropped or 5xx; a
+                  source that does not answer asked nothing more in the drawing), FRED CSV
+                  reader, BoC CSV parser, session download cache, the message log's line for
+                  each real download and one warning per source that fails, "NOT DRAWN",
+                  one request at a time per host
 console           printed output routed by thread (the message log; the trial pass discarded)
 axes              y-axis configuration, limit padding, currency and percent formatters
 legend            legend auto-placement, title/subtitle/layout finishing
@@ -63,7 +66,7 @@ plotting, http}; web -> {cli (its token matching), frontend, options,
 plotting, http}; cli -> {options, plotting, http}; frontend -> {options,
 config}; plotting -> {axes, legend, endlabels, regression, measures, rates,
 cdn_data, us_data, uk_data, de_data, joins, latest} -> {frames, http} -> config;
-{cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data, us_data, de_data} -> baked -> config;
+{cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data, us_data, de_data} -> baked -> {http, config};
 rates -> {cdn_data, uk_data, us_data, de_data, baked, http}; cdn_data -> us_data (FRED's
 Canadian GDP); plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
