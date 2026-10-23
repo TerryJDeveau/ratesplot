@@ -94,7 +94,6 @@ import os
 import struct
 import threading
 import time
-import traceback
 from dataclasses import dataclass
 
 import matplotlib
@@ -1068,8 +1067,8 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
         try:
             drawn = resolve_start(config)
         except Exception as exc:  # shown on the page and in the log, never swallowed
-            error = f"{type(exc).__name__}: {exc}"
-            lines.append(traceback.format_exc())
+            error, trace = http.not_drawn(exc)
+            lines.extend([trace or "", http.not_drawn_line("the charts", error)])
         else:
             for country in COUNTRIES:
                 if not getattr(drawn, country.show_field):
@@ -1077,8 +1076,10 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
                 try:
                     figure = build_figure(country, drawn)
                 except Exception as exc:  # that chart alone; shown on the page and in the log
-                    failed[country.key] = f"{type(exc).__name__}: {exc}"
-                    lines.append(traceback.format_exc())
+                    # One line, "NOT DRAWN: ...", for a source not answering; the traceback too for anything else (batch 19.4).
+                    why, trace = http.not_drawn(exc)
+                    failed[country.key] = why
+                    lines.extend([trace or "", http.not_drawn_line(f"the {TAB_TITLES[country.key]} chart", why)])
                     continue
                 pngs[country.key] = png_bytes(figure)
                 # Measured after savefig, so the axes positions are the final rendered ones (as in the window).

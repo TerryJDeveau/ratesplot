@@ -14,6 +14,7 @@ import pickle
 import re
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -621,9 +622,17 @@ def host_turn(url: str) -> Iterator[None]:
         try:
             yield
         except Exception as failure:
+            if not hasattr(failure, _HOST_ATTRIBUTE):
+                # Which source failed, for a chart not drawn (``source_failure``); urllib's errors do not say.
+                with contextlib.suppress(AttributeError):
+                    setattr(failure, _HOST_ATTRIBUTE, host)
             if drawing is not None and _unavailable(failure):
                 drawing.unavailable.setdefault(host, failure)
             raise
+
+
+# The attribute ``host_turn`` gives a failure: the host it was asking.
+_HOST_ATTRIBUTE = "ratesplot_host"
 
 
 # ---------------------------------------------------------------------------
@@ -707,6 +716,46 @@ def _with_retries(describe: str, attempt_once: Callable[[], T]) -> T:
         print(f"  {describe} failed ({failure}); asked once more in {RETRY_WAIT_SECONDS} s …")
     time.sleep(RETRY_WAIT_SECONDS)
     return attempt_once()
+
+
+# ---------------------------------------------------------------------------
+# A chart not drawn (batch 19.4)
+# ---------------------------------------------------------------------------
+# Terry, 2026-10-22, on follow-up 27 (decision 53), after the window wrote a
+# whole traceback for the U.S. chart FRED's outage had left out, which read
+# as a crash: "One line, but can it be bolded or in red, or something to make
+# it more visible in a log of messages usually not inspected closely?" So a
+# chart not drawn gets one line, "NOT DRAWN: the United States chart: FRED:
+# ...", which the window shows red and bold; on the page, whose log is plain
+# text, and in a saved log file, its first words stand out. The traceback is
+# kept for an unexpected error, which it is needed to fix, before the line.
+NOT_DRAWN = "NOT DRAWN"
+
+
+def source_failure(failure: BaseException) -> tuple[str, str] | None:
+    """``(the source's name, why)`` if ``failure``, or one it was raised from or while handling, is a source not answering (``_unavailable``); else None."""
+    seen: set[int] = set()
+    current: BaseException | None = failure
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if _unavailable(current):
+            host = getattr(current, _HOST_ATTRIBUTE, None) or getattr(current, "host", None)
+            return (source_name(host) if host else "a source", _why(current))
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def not_drawn(failure: BaseException) -> tuple[str, str | None]:
+    """Why a chart was not drawn, and the traceback to log before its line (``not_drawn_line``): none for a source not answering."""
+    found = source_failure(failure)
+    if found is not None:
+        return f"{found[0]}: {found[1]}", None
+    return f"{type(failure).__name__}: {failure}", "".join(traceback.format_exception(failure))
+
+
+def not_drawn_line(what: str, why: str) -> str:
+    """``NOT DRAWN: the United States chart: FRED: timed out`` (``what``, "the United States chart" or "the charts"), with its newline."""
+    return f"{NOT_DRAWN}: {what}: {why}\n"
 
 
 def _session_get(

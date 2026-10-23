@@ -98,7 +98,6 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-import traceback
 from tkinter import filedialog, ttk
 
 import pandas as pd
@@ -181,6 +180,8 @@ _DEFAULT_PREVIEW = "fit"
 # Initial window size as a fraction of the screen (when nothing is remembered).
 _SCREEN_FRACTION = 0.9
 _ERROR_FOREGROUND = "#b00020"
+# The message log's tag for a chart not drawn: red and bold (batch 19.4).
+_NOT_DRAWN_TAG = "not drawn"
 # A blank field's grey value (``_Hint``), on the field's own background.
 _HINT_FOREGROUND = "#8c8c8c"
 _FIELD_BACKGROUND = "SystemWindow" if sys.platform == "win32" else "white"
@@ -885,7 +886,10 @@ class RatesPlotApp:
         ttk.Label(bar, text="Command line:").grid(row=0, column=0, sticky="w")
         ttk.Entry(bar, textvariable=self.command, state="readonly").grid(row=0, column=1, sticky="ew", padx=4)
         ttk.Button(bar, text="Copy", command=self._copy_command).grid(row=0, column=2)
-        ttk.Label(bar, textvariable=self.status, anchor="w").grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.status_label = ttk.Label(bar, textvariable=self.status, anchor="w")
+        self.status_label.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        # Red only while it names a chart not drawn (batch 19.4, ``_render_finished``): any new text is the usual colour.
+        self.status.trace_add("write", lambda *_args: self.status_label.configure(foreground=""))
 
         self.root.bind("<F5>", lambda _event: self._refresh())
         self.root.bind("<Control-s>", lambda _event: self._save_png())
@@ -1312,6 +1316,8 @@ class RatesPlotApp:
         frame = ttk.LabelFrame(panel, text="Message log", padding=4)
         frame.pack(fill="both", expand=True)
         self.log = tk.Text(frame, width=24, height=8, wrap="word", state="disabled", font=("Consolas", 9))
+        # A chart not drawn: its line red and bold, to stand out in a log not usually read closely (batch 19.4).
+        self.log.tag_configure(_NOT_DRAWN_TAG, foreground=_ERROR_FOREGROUND, font=("Consolas", 9, "bold"))
         scroll = ttk.Scrollbar(frame, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         self.log.pack(side="left", fill="both", expand=True)
@@ -1607,15 +1613,19 @@ class RatesPlotApp:
             try:
                 drawn = resolve_start(config)
             except Exception as exc:  # reported in the window and log, never swallowed
-                self.messages.put(("failed", config, f"{type(exc).__name__}: {exc}", traceback.format_exc()))
+                why, trace = http.not_drawn(exc)
+                self.messages.put(("failed", config, why, trace, http.not_drawn_line("the charts", why)))
                 return
             not_drawn: dict[str, str] = {}
             for country in countries:
                 try:
                     figure = build_figure(country, drawn)
                 except Exception as exc:  # that chart alone; reported in the window and log
-                    not_drawn[country.key] = f"{type(exc).__name__}: {exc}"
-                    self.messages.put(("not drawn", country.key, traceback.format_exc()))
+                    # One line for a source not answering; the traceback too for anything else (batch 19.4).
+                    why, trace = http.not_drawn(exc)
+                    not_drawn[country.key] = why
+                    line = http.not_drawn_line(f"the {TAB_TITLES.get(country.key, country.key)} chart", why)
+                    self.messages.put(("not drawn", country.key, trace, line))
                     continue
                 png = png_bytes(figure)
                 # Measured after savefig, so the axes positions are the final rendered ones.
@@ -1634,12 +1644,16 @@ class RatesPlotApp:
                 elif kind == "chart":
                     self._show_chart(message[1], message[2], message[3])
                 elif kind == "not drawn":
-                    self._append_log(message[2])
+                    if message[2] is not None:
+                        self._append_log(message[2])
+                    self._append_log(message[3], _NOT_DRAWN_TAG)
                     self._clear_chart(message[1])
                 elif kind == "done":
                     self._render_finished(message[1], None, message[2], message[3], message[4])
                 elif kind == "failed":
-                    self._append_log(message[3])
+                    if message[3] is not None:
+                        self._append_log(message[3])
+                    self._append_log(message[4], _NOT_DRAWN_TAG)
                     self._render_finished(message[1], message[2])
         except queue.Empty:
             pass
@@ -1688,12 +1702,15 @@ class RatesPlotApp:
             if failures or from_copies:
                 parts = [f"Drawn: {names}." if drawn else "", f"{failures}." if failures else "", from_copies]
                 self.status.set(" ".join(part for part in parts if part) + " (details in the message log)")
+                if failures:
+                    self.status_label.configure(foreground=_ERROR_FOREGROUND)
             else:
                 self.status.set(f"Drawn: {names} at {config.width_px} x {config.height_px} px.")
             self._show_hints()
             self._remember()
         else:
             self.status.set(f"Drawing failed: {error} (details in the message log)")
+            self.status_label.configure(foreground=_ERROR_FOREGROUND)
         pending, self.pending = self.pending, None
         forced, self._pending_forced = self._pending_forced, False
         if pending is not None and (pending[0] != self.shown_config or forced):
@@ -1938,9 +1955,9 @@ class RatesPlotApp:
 
     # -- actions ------------------------------------------------------------
 
-    def _append_log(self, text: str) -> None:
+    def _append_log(self, text: str, tag: str | None = None) -> None:
         self.log.configure(state="normal")
-        self.log.insert("end", text)
+        self.log.insert("end", text, (tag,) if tag else ())
         self.log.see("end")
         self.log.configure(state="disabled")
         last_line = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")

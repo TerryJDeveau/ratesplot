@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import traceback
 
 from .config import NATIONS, Nation, PlotConfig, nation_by_code, nation_by_key
 from .options import (
@@ -30,7 +29,8 @@ from .options import (
     spells,
     switch_of,
 )
-from .http import drawing_downloads, enable_download_cache, enable_last_good_copies
+from .http import drawing_downloads, enable_download_cache, enable_last_good_copies, not_drawn_line
+from .http import not_drawn as why_not_drawn
 from .plotting import resolve_start, run_cdn, run_de, run_uk, run_us
 
 
@@ -282,7 +282,8 @@ def main(argv: list[str] | None = None) -> None:
             enable_download_cache()
             config = resolve_start(config)
         # Each chart on its own: one whose source is down (FRED's maintenance
-        # page, 2026-10-21) is named with its traceback, and the rest drawn.
+        # page, 2026-10-21) is named in one line, "NOT DRAWN: ..." (batch 19.4;
+        # the traceback too for an unexpected error), and the rest drawn.
         not_drawn = []
         for shown, run, name in (
             (config.show_cdn, run_cdn, "Canada"),
@@ -295,8 +296,10 @@ def main(argv: list[str] | None = None) -> None:
             try:
                 run(config)
             except Exception as exc:  # named here and at the end, never swallowed
-                traceback.print_exc()
-                print(f"Warning: the {name} chart was not drawn ({type(exc).__name__}: {exc}).\n")
+                why, trace = why_not_drawn(exc)
+                if trace is not None:
+                    sys.stderr.write(trace)
+                print(not_drawn_line(f"the {name} chart", why))
                 not_drawn.append(name)
     if not_drawn:
         print(f"Charts not drawn: {', '.join(not_drawn)}.")

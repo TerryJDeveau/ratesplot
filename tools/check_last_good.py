@@ -248,6 +248,44 @@ def check_reach(what: str, warned: dict[str, list[str]], source: str, ends: dict
           named == sorted(ends) and not others and len(warned.get(source, [])) == 1, (named, others))
 
 
+def check_not_drawn() -> None:
+    """A chart not drawn (19.4): one line, "NOT DRAWN: ...", naming the chart, the source and why; the traceback only for an unexpected error.
+
+    With no bake at all (as before 19.2) and no copies, while every source fails, the default
+    case's charts cannot be drawn: the page names each in one line, without a traceback. Then
+    a chart that fails for an unexpected reason (a stand-in that raises) keeps its traceback.
+    """
+    none_baked = Path(tempfile.mkdtemp(prefix="ratesplot_baked_none_"))
+    with_bake, baked.DATA_FOLDER = baked.DATA_FOLDER, none_baked
+    baked.forget_read_files()
+    config = cli.parse_args(["--no-gui", *CASES["default"], "-s:2000"])
+    try:
+        drawing = web._draw(config, tuple(CASES["default"]))
+    finally:
+        baked.DATA_FOLDER = with_bake
+        baked.forget_read_files()
+    lines = [line for line in drawing.log.splitlines() if line.startswith("NOT DRAWN: ")]
+    check("no bake, no copy: each chart not drawn named in one line with its source and why, no traceback (19.4)",
+          sorted(drawing.failed) == ["cdn", "us"] and len(lines) == 2 and "Traceback" not in drawing.log
+          and any(line.startswith("NOT DRAWN: the United States chart: FRED: ") for line in lines)
+          and all(drawing.failed[key] in drawing.log for key in drawing.failed), (sorted(drawing.failed), lines))
+
+    def unexpected(country, drawn):
+        if country.key == "us":
+            raise RuntimeError("raised by check_last_good")
+        return real_build(country, drawn)
+
+    real_build, web.build_figure = web.build_figure, unexpected
+    try:
+        drawing = web._draw(config, tuple(CASES["default"]))
+    finally:
+        web.build_figure = real_build
+    lines = [line for line in drawing.log.splitlines() if line.startswith("NOT DRAWN: ")]
+    check("an unexpected error: its traceback, then its one line (19.4)",
+          lines == ["NOT DRAWN: the United States chart: RuntimeError: raised by check_last_good"]
+          and "Traceback" in drawing.log and drawing.log.index("Traceback") < drawing.log.index(lines[0]), lines)
+
+
 def refused_post(_session, url, json=None, **_kwargs):
     asked[("post", url, repr(json))] += 1
     raise requests.ConnectionError("StatCan WDS: cut off by check_last_good")
@@ -442,6 +480,7 @@ def main() -> int:
     national = [curve for curve in flat if "National Debt" in curve]
     check("the baked history alone: the UK's national debt, past 1975 without the gross debt, named without (pre-1975)",
           national == ["uk without the ONS's bake, uk: UK National Debt"], national)
+    check_not_drawn()
 
     print(f"[last good] {'all checks passed' if not failures else f'{failures} FAILED'}")
     return 1 if failures else 0
