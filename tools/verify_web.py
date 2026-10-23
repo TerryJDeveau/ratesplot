@@ -983,9 +983,9 @@ def check_batch105(check: Check) -> None:
     check("no exception", not at.exception, at.exception)
     wanted = {
         "cdn": ["Federal", "Provincial", "Municipal", "Non-federal"],
-        "us": ["Federal", "State", "Local", "Non-federal"],
+        "us": ["Federal", "State", "Local", "State & Local"],
         "uk": ["Central", "Local"],
-        "de": ["Federal", "States", "Local", "States and local"],
+        "de": ["Federal", "Länder", "Local", "Länder & Local"],
     }
     captions = {
         key: [box.label for box in at.checkbox if box.key and box.key.startswith(f"level:{key}:")] for key in NATION_KEYS

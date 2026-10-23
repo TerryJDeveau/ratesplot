@@ -593,7 +593,10 @@ class Nation:
     # Its levels of government (--debt:LETTERS; batch 10.5, Terry
     # 2026-10-13: "offering only the series that nation has"): the boxes in
     # its panel, (letter, caption), named for its governments, in the
-    # plan's order; and letters that mean one of them on its chart
+    # plan's order, each caption its legend's name of the level
+    # (``CountryMetadata.level_names``; Terry, 2026-10-23: "Länder" and
+    # "State & Local", not the plan's "States" and "Non-federal"); and
+    # letters that mean one of them on its chart
     # (synonym, letter): the UK's "n", all but central government, is its
     # local government, "m".
     level_boxes: tuple[tuple[str, str], ...] = ()
@@ -670,7 +673,7 @@ NATIONS: tuple[Nation, ...] = (
     Nation(
         "us", "United States", ("us",), tuple(term for term in YIELD_TERMS if term != "3y"), "U.S.",
         market_timezone="America/New_York",
-        level_boxes=(("f", "Federal"), ("p", "State"), ("m", "Local"), ("n", "Non-federal")),
+        level_boxes=(("f", "Federal"), ("p", "State"), ("m", "Local"), ("n", "State & Local")),
     ),
     # Batch 3: drawn only when asked for, so every existing command line
     # draws what it drew. Its own defaults, since the defaults for every
@@ -703,7 +706,7 @@ NATIONS: tuple[Nation, ...] = (
     Nation(
         "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "5y", "7y", "10y", "20y", "30y"), "German",
         shown_by_default=False, list_only_codes=("de",), market_timezone="Europe/Berlin",
-        level_boxes=(("f", "Federal"), ("p", "States"), ("m", "Local"), ("n", "States and local")),
+        level_boxes=(("f", "Federal"), ("p", "Länder"), ("m", "Local"), ("n", "Länder & Local")),
         own_defaults=(
             ("yield_terms", ("2y", "5y", "10y", "30y")),
             ("mortgage_terms", ("1-5", "5-10", "over10")),

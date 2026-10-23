@@ -1063,7 +1063,8 @@ def _check_nation_terms(nation: Nation, field: str, values: Mapping[str, object]
     if field == "components":
         lacking = [letter for letter in values[field] if letter not in nation.level_letters]
         if lacking:
-            levels = ", ".join(f"{letter} {caption.lower()}" for letter, caption in nation.level_boxes)
+            # As the boxes name them: "Länder" keeps its capital.
+            levels = ", ".join(f"{letter} {caption}" for letter, caption in nation.level_boxes)
             raise ValueError(f"{nation.name} has no level {lacking[0]} (its levels: {levels})")
         return
     if field == "debt_aggregates":
