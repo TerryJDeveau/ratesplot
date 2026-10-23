@@ -54,6 +54,7 @@ sys.path.insert(0, str(ROOT))
 from ratesplot import bake, baked, latest, uk_data  # noqa: E402
 from ratesplot.config import (  # noqa: E402
     CNBC_QUOTE_URL,
+    DEBT_AGGREGATES,
     GDP_COLUMN,
     ONS_TIMESERIES_URL,
     RECENT_PART_REVISED,
@@ -180,7 +181,8 @@ def check_fetchers() -> None:
     baked.forget_read_files()
     printed = io.StringIO()
     try:
-        config = PlotConfig(start=pd.Timestamp("1950-01-01"), end=pd.Timestamp("2026-10-07"))
+        # Both aggregate debts: net debt is asked for only when chosen (batch 10.4).
+        config = PlotConfig(start=pd.Timestamp("1950-01-01"), end=pd.Timestamp("2026-10-07"), debt_aggregates=DEBT_AGGREGATES)
         with contextlib.redirect_stdout(printed):
             debt = uk_data.fetch_uk_debt(config)
             gdp = uk_data.fetch_uk_gdp(config)
