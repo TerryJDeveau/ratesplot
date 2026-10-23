@@ -31,7 +31,8 @@ Controls
     (``frontend.NATION_OPTIONS``: its yield terms, spreads, policy and
     mortgage terms, the UK's aggregate debts and its levels of government as
     tick boxes, and its axis limits) are in a panel under its tab, keyed
-    "NATION:OPTION", as many to a row as fit (batch 10). The controls scroll when the
+    "NATION:OPTION", as many to a row as fit (batch 10). Right of each axis
+    limit box its unit ("%", the nation's currency; batch 18.1). The controls scroll when the
     window is too short for them; Refresh, Save PNG and Save log file sit in
     a bar under them that does not, so they are always in sight (the log's
     button under the other two when the column is narrow). A handle between the
@@ -131,8 +132,10 @@ from .frontend import (
     idle_nation_keys,
     level_letters,
     level_text,
+    limit_unit,
     load_state,
     nation_boxes,
+    nation_of,
     option_help_lines,
     option_of,
     pan_updates,
@@ -799,6 +802,8 @@ class RatesPlotApp:
         # The grey values of the text fields (keyed as payload_vars), and of the size boxes.
         self.hints: dict[str, _Hint] = {}
         self.size_hints: list[_Hint] = []
+        # Right of each nation's axis limit box, keyed as its field ("us:max"): its unit (batch 18.1).
+        self.unit_labels: dict[str, ttk.Label] = {}
 
         # Per-country preview state, keyed by Country.key.
         self.tabs: dict[str, ttk.Frame] = {}
@@ -1398,7 +1403,20 @@ class RatesPlotApp:
                 cell = ttk.Frame(limits)
                 cell.grid(row=place, column=axis, sticky="e", padx=(0, 10))
                 option = by_name(name)
-                self._add_value_control(cell, 0, option, entry_width=7, pady=1, key=nation_choice(nation, option))
+                key = nation_choice(nation, option)
+                self._add_value_control(cell, 0, option, entry_width=7, pady=1, key=key)
+                self._add_limit_extras(cell, key)
+
+    def _add_limit_extras(self, cell: ttk.Frame, key: str) -> None:
+        """Right of a nation's limit box (``key``, "us:max"): its unit symbol (batch 18.1).
+
+        Terry, 2026-10-14: the unit "immediately to the right" of the box.
+        It follows the measure (``_update_dependent_controls``); its width is
+        the widest symbol's ("C$"), so the boxes of a column line up.
+        """
+        unit = ttk.Label(cell, width=2)
+        unit.grid(row=0, column=2, sticky="w", padx=(2, 0))
+        self.unit_labels[key] = unit
 
     # -- choices ------------------------------------------------------------
 
@@ -1497,13 +1515,22 @@ class RatesPlotApp:
                 self.value_entries[key].state(state)
             if key in self.value_labels:
                 self.value_labels[key].state(state)
+            if key in self.unit_labels:
+                self.unit_labels[key].state(state)
             if key in self.choice_editors:
                 self.choice_editors[key].set_state(state)
             if key in self.level_editors:
                 self.level_editors[key].set_state(state)
+        self._update_limit_extras()
         # A greyed field shows no grey value; one no longer greyed shows it again.
         for hint in (*self.hints.values(), *self.size_hints):
             hint.update()
+
+    def _update_limit_extras(self) -> None:
+        """Each limit box's unit for the measure (batch 18.1)."""
+        flags = self._snapshot()[1]
+        for key, label in self.unit_labels.items():
+            label.configure(text=limit_unit(nation_of(key), option_of(key).name, flags))
 
     def _show_hints(self) -> None:
         """Give each blank field the value in effect, from the charts on screen (``frontend.field_hints``)."""

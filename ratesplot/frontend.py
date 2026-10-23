@@ -24,7 +24,9 @@ may not have it) and the two cannot drift apart:
 * what a blank field shows in grey: the value in effect (``field_hints``);
   a typed number's 0 before its point (``with_leading_zero``);
 * the nation boxes: what Reset leaves of them (``reset_choices``), and which
-  tab is made current after a drawing (``current_tab``).
+  tab is made current after a drawing (``current_tab``);
+* each nation's axis limits: the unit symbol right of each box
+  (``limit_unit``, batch 18.1).
 """
 
 from __future__ import annotations
@@ -127,6 +129,8 @@ CONTROL_BLOCKS: tuple[tuple[str, str | None, tuple[str, ...]], ...] = (
 # Each nation's axis limits as laid out under its tab: a column per axis,
 # Max above Min, Top above Bottom (Terry, 2026-10-12).
 LIMIT_COLUMNS = (("max", "min"), ("top", "bottom"))
+# The yield axis's limits.
+_YIELD_LIMITS = LIMIT_COLUMNS[0]
 
 
 def control_blocks() -> list[tuple[str, str | None, list[Option]]]:
@@ -441,6 +445,32 @@ def current_tab(shown: Sequence[str], current: str | None, ticked: str | None = 
 
 
 # ---------------------------------------------------------------------------
+# The axis limits under each tab: unit symbols (batch 18.1)
+# ---------------------------------------------------------------------------
+
+
+def _relative_in_effect(flags: Mapping[str, bool]) -> bool:
+    """True when the right axis is a percentage of GDP: -r ticked, with debt or interest to act on (``idle_controls``)."""
+    return flags.get("relative", False) and "relative" not in idle_controls(flags)
+
+
+def limit_unit(nation: Nation, name: str, flags: Mapping[str, bool]) -> str:
+    """Return the unit symbol shown right of ``nation``'s limit box ``name`` (batch 18.1): "%", its currency's ("C$"), or "".
+
+    Terry, 2026-10-14: "include a units symbol immediately to the right of
+    any of these axis limit value-boxes that has an associated unit
+    symbol": the yield axis's "%", moved there from the left of Max and
+    Min, and right of Top and Bottom the nation's currency, per capita too.
+    "For other axis units that have no useful symbol, like CPI or
+    debt-to-GDP ratio, ... leave the symbol blank": Top and Bottom under -r,
+    where a value is a percentage of GDP typed with its own "%" ("150%").
+    """
+    if name in _YIELD_LIMITS:
+        return "%"
+    return "" if _relative_in_effect(flags) else nation.currency_symbol
+
+
+# ---------------------------------------------------------------------------
 # Levels, help text, and the drawn chart as a file
 # ---------------------------------------------------------------------------
 
@@ -569,7 +599,7 @@ def field_problems(payloads: Mapping[str, str], flags: Mapping[str, bool], chang
 
 
 def problem_text(key: str, message: str) -> str:
-    """Name the field a problem is in, for the "Not drawn" line: "Canada, Max %: ..."."""
+    """Name the field a problem is in, for the "Not drawn" line: "Canada, Max: ..."."""
     nation = nation_of(key)
     return f"{nation.name + ', ' if nation else ''}{option_of(key).label}: {message}"
 

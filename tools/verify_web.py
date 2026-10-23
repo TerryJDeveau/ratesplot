@@ -46,6 +46,7 @@ import datetime
 import hashlib
 import io
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Callable
@@ -563,7 +564,8 @@ def check_nation_sections(check: Check) -> None:
     check("the same value for both is written once", "--max:9" in address(page) and "--us:max" not in address(page), address(page))
     page.text_input(key="value:cdn:min").input("x")
     page.run()
-    check("a bad nation field: reported with its nation", any("Canada, Min %" in e.value for e in page.error), [e.value for e in page.error])
+    # The label "Min" since batch 18.1, its "%" right of the field.
+    check("a bad nation field: reported with its nation", any("Canada, Min:" in e.value for e in page.error), [e.value for e in page.error])
 
 
 def check_uk(check: Check) -> None:
@@ -714,7 +716,7 @@ def check_wrong_fields(check: Check) -> None:
     page.run()
     check(
         "Min typed above Max: not drawn, the line names Canada's Min",
-        any("Canada, Min %: yield min (5.0) must be less than max (3.0)" in e for e in errors(page)), errors(page),
+        any("Canada, Min: yield min (5.0) must be less than max (3.0)" in e for e in errors(page)), errors(page),
     )
     check("Min's label red, Max's not", red(page, "value:cdn:min") and not red(page, "value:cdn:max"),
           (page.text_input(key="value:cdn:min").label, page.text_input(key="value:cdn:max").label))
@@ -1059,10 +1061,32 @@ def check_batch17(check: Check) -> None:
     check("no exception, two charts", not at.exception and charts_shown(at) == 2, (at.exception, charts_shown(at)))
 
 
+def check_batch18(check: Check) -> None:
+    """Batch 18.1: each limit's unit on its right."""
+    at = new_page("--na:ca,us --e:2026-09-01 -s:2015")
+    check("no exception", not at.exception, at.exception)
+    labels = {name: at.text_input(key=f"value:us:{name}").label for name in ("max", "min", "top", "bottom")}
+    check("the labels without %", labels == {"max": "Max", "min": "Min", "top": "Top", "bottom": "Bottom"}, labels)
+
+    def units(page: AppTest) -> list[str]:
+        """The unit symbols right of the limit fields, in order (each in its HTML block, ``web._limit_control``)."""
+        found = (re.fullmatch(r'<div style="padding-bottom: [^"]*">(.*)</div>', m.value) for m in page.markdown)
+        return [match.group(1) for match in found if match]
+
+    shown = units(at)
+    check("the units: % beside Max and Min, each nation's currency beside Top and Bottom",
+          shown == ["%", "C$", "%", "C$", "%", "$", "%", "$", "%", "£", "%", "£", "%", "€", "%", "€"], shown)
+    at.checkbox(key="flag:relative").check()
+    at.run()
+    check("-r: Top's and Bottom's unit blank, Max's and Min's %", units(at) == ["%", "&nbsp;"] * 8, units(at))
+    check("no exception", not at.exception, at.exception)
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
+    check_batch18,
 )
 
 

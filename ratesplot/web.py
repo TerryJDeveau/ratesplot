@@ -18,7 +18,8 @@ What it is
     kept, greyed texts ignored and left out of the address; each
     nation's own choices (``frontend.NATION_OPTIONS``: its yield terms,
     spreads and mortgage terms, only those its chart can draw, and its axis
-    limits) in a sidebar section of its own; a value
+    limits) in a sidebar section of its own, each limit with its unit
+    (batch 18.1); a value
     that belongs to a flag (the regression tolerance) greyed while the flag
     is off, and ignored then; a blank text field showing the value in effect
     in grey, as its placeholder (``frontend.field_hints``: the start found,
@@ -136,6 +137,7 @@ from .frontend import (  # noqa: E402
     idle_nation_keys,
     level_letters,
     level_text,
+    limit_unit,
     move_dates_updates,
     nation_boxes,
     option_help_lines,
@@ -194,6 +196,9 @@ _DEFAULT_PLACEHOLDER = "automatic"
 # prime rate's): narrow, a number of points, so it stays on the box's row in
 # the sidebar.
 _MARGIN_FIELD_PX = 110
+# A nation's axis limit field, with its unit on its right (batch 18.1):
+# narrow enough for both to share a row in half the sidebar.
+_LIMIT_FIELD_PX = 80
 _DRAWING_LOCK = threading.Lock()
 # How many zoom and pan steps "Back" can undo (as in the window); the view
 # before the first one is always kept, for Unzoom.
@@ -1032,7 +1037,8 @@ def _nation_controls(bar, nation: Nation) -> None:
     government (batch 10.5), in the window's
     order (``frontend.panel_lists``), then its axis limits as in the window: the yield axis's Max above
     its Min, beside the right axis's Top above its Bottom (Terry, 2026-10-12;
-    ``LIMIT_COLUMNS``).
+    ``LIMIT_COLUMNS``), each field with its unit on its right (batch 18.1,
+    ``_limit_control``).
     """
     bar.subheader(f"{nation.name} only", divider="gray")
     for option in panel_lists(nation):
@@ -1042,8 +1048,27 @@ def _nation_controls(bar, nation: Nation) -> None:
             _choices_control(bar, option, nation)
     for row in zip(*LIMIT_COLUMNS):  # (max, top), then (min, bottom)
         for column, name in zip(bar.columns(2), row):
-            option = by_name(name)
-            _value_control(column, option, key=nation_choice(nation, option))
+            _limit_control(column, nation, by_name(name))
+
+
+def _limit_control(where, nation: Nation, option: Option) -> None:
+    """A nation's axis limit field, then right of it its unit, as in the window (batch 18.1).
+
+    Terry, 2026-10-14: the unit symbol "immediately to the right" of the box
+    (``frontend.limit_unit``: "%", the nation's currency, blank for % of
+    GDP), the two in a row aligned at the bottom.
+    """
+    key = nation_choice(nation, option)
+    flags = _snapshot()[1]
+    row = where.container(horizontal=True, vertical_alignment="bottom", gap="small")
+    _value_control(row, option, key=key, width=_LIMIT_FIELD_PX)
+    # Kept as wide as the widest symbol ("C$"), and raised from the row's
+    # bottom to the middle of the field: the field's own element runs on
+    # below it (measured 2026-10-23, Streamlit 1.64: the symbol's middle
+    # 15 px below the field's at 0.5rem). In an HTML block, where Markdown
+    # takes no "$" for the start of a formula and an escape would show.
+    symbol = limit_unit(nation, option.name, flags) or "&nbsp;"
+    row.markdown(f'<div style="padding-bottom: 1.4rem">{symbol}</div>', unsafe_allow_html=True, width=20)
 
 
 # ---------------------------------------------------------------------------

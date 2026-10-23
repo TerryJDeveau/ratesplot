@@ -552,6 +552,13 @@ SPREAD_AXIS_LABEL = "Yield and Spread (%)"
 # Nations: what each one has (batch 2, 2026-10-06)
 # ---------------------------------------------------------------------------
 
+# The nations' currencies, by ISO 4217 code, and the symbol each chart's
+# right axis writes its amounts with (``CountryMetadata.currency_prefix``),
+# which the window and the page also show right of a nation's Top and Bottom
+# boxes (batch 18.1, Terry 2026-10-14: "a $ (or other national currency
+# symbol) drawn to the right of the Top/Bot value boxes").
+CURRENCY_SYMBOLS = {"CAD": "C$", "USD": "$", "GBP": "£", "EUR": "€"}
+
 
 @dataclass(frozen=True)
 class Nation:
@@ -601,6 +608,13 @@ class Nation:
     # local government, "m".
     level_boxes: tuple[tuple[str, str], ...] = ()
     level_synonyms: tuple[tuple[str, str], ...] = ()
+    # The currency its amounts are in (a key of CURRENCY_SYMBOLS).
+    currency: str = ""
+
+    @property
+    def currency_symbol(self) -> str:
+        """The symbol its chart writes its amounts with ("C$"), shown right of its Top and Bottom boxes."""
+        return CURRENCY_SYMBOLS[self.currency]
 
     @property
     def level_letters(self) -> tuple[str, ...]:
@@ -667,12 +681,12 @@ NATIONS: tuple[Nation, ...] = (
     # U.S.: all but the 3-year (FRED's DGS3 exists, but was not asked for).
     Nation(
         "cdn", "Canada", ("ca", "cdn"), tuple(term for term in YIELD_TERMS if term != "20y"), "Canadian",
-        market_timezone="America/Toronto",
+        market_timezone="America/Toronto", currency="CAD",
         level_boxes=(("f", "Federal"), ("p", "Provincial"), ("m", "Municipal"), ("n", "Non-federal")),
     ),
     Nation(
         "us", "United States", ("us",), tuple(term for term in YIELD_TERMS if term != "3y"), "U.S.",
-        market_timezone="America/New_York",
+        market_timezone="America/New_York", currency="USD",
         level_boxes=(("f", "Federal"), ("p", "State"), ("m", "Local"), ("n", "State & Local")),
     ),
     # Batch 3: drawn only when asked for, so every existing command line
@@ -685,7 +699,7 @@ NATIONS: tuple[Nation, ...] = (
     # when mortgages are ticked"), the 10y-5y and 20y-10y spreads.
     Nation(
         "uk", "United Kingdom", ("gb", "uk"), ("5y", "10y", "20y"), "UK", shown_by_default=False,
-        market_timezone="Europe/London", debt_aggregates=DEBT_AGGREGATES,
+        market_timezone="Europe/London", currency="GBP", debt_aggregates=DEBT_AGGREGATES,
         # Central and local government: the devolved governments are inside
         # central government in its accounts (CountryMetadata UK, uk_data).
         level_boxes=(("f", "Central"), ("m", "Local")), level_synonyms=(("n", "m"),),
@@ -705,7 +719,7 @@ NATIONS: tuple[Nation, ...] = (
     # UK's; its usual fixation, 5 to 10 years, alone before).
     Nation(
         "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "5y", "7y", "10y", "20y", "30y"), "German",
-        shown_by_default=False, list_only_codes=("de",), market_timezone="Europe/Berlin",
+        shown_by_default=False, list_only_codes=("de",), market_timezone="Europe/Berlin", currency="EUR",
         level_boxes=(("f", "Federal"), ("p", "Länder"), ("m", "Local"), ("n", "Länder & Local")),
         own_defaults=(
             ("yield_terms", ("2y", "5y", "10y", "30y")),
@@ -1108,7 +1122,7 @@ def _join_title_parts(parts: list[str]) -> str:
 CDN = CountryMetadata(
     key="cdn",
     country_name="Canada",
-    currency_prefix="C$",
+    currency_prefix=CURRENCY_SYMBOLS["CAD"],
     currency_label="Nominal Units (CAD – Log Scale)",
     per_capita_label="Nominal Units per Capita (CAD – Log Scale)",
     # The titles name the nation by its adjective, the legend by CDN (batch 22).
@@ -1130,7 +1144,7 @@ CDN = CountryMetadata(
 US = CountryMetadata(
     key="us",
     country_name="United States",
-    currency_prefix="$",
+    currency_prefix=CURRENCY_SYMBOLS["USD"],
     currency_label="Nominal Units (USD – Log Scale)",
     per_capita_label="Nominal Units per Capita (USD – Log Scale)",
     yield_title="U.S. Treasury Yields",
@@ -1152,7 +1166,7 @@ US = CountryMetadata(
 UK = CountryMetadata(
     key="uk",
     country_name="United Kingdom",
-    currency_prefix="£",
+    currency_prefix=CURRENCY_SYMBOLS["GBP"],
     currency_label="Nominal Units (GBP – Log Scale)",
     per_capita_label="Nominal Units per Capita (GBP – Log Scale)",
     # The Bank of England's fitted par yields (monthly averages of gilt
@@ -1187,7 +1201,7 @@ UK = CountryMetadata(
 DE = CountryMetadata(
     key="de",
     country_name="Germany",
-    currency_prefix="€",
+    currency_prefix=CURRENCY_SYMBOLS["EUR"],
     currency_label="Nominal Units (EUR – Log Scale)",
     per_capita_label="Nominal Units per Capita (EUR – Log Scale)",
     # The Bundesbank's Svensson term structure: zero-coupon yields fitted to

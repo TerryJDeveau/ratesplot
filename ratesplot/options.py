@@ -923,15 +923,17 @@ OPTIONS: tuple[Option, ...] = (
         names=("end",), parse=partial(parse_date_spec, kind="end"), check=check_date_range,
         label="End", format=format_date, editor="date",
     ),
-    # "--m:" could be either, so it is refused as ambiguous.
+    # "--m:" could be either, so it is refused as ambiguous. The labels have
+    # no "%" since batch 18.1: the window and the page show it right of the
+    # box (``frontend.limit_unit``; Terry, 2026-10-14).
     Option(
         "min", Kind.VALUE, ("yield_ymin",), "yield", "--min:VAL / --mn:VAL", "lower bound",
-        names=("minimum", "mn"), parse=partial(parse_yield_bound, kind="min"), label="Min %", format=format_yield_bound,
+        names=("minimum", "mn"), parse=partial(parse_yield_bound, kind="min"), label="Min", format=format_yield_bound,
     ),
     Option(
         "max", Kind.VALUE, ("yield_ymax",), "yield", "--max:VAL / --mx:VAL", "upper bound",
         names=("maximum", "mx"), parse=partial(parse_yield_bound, kind="max"), check=check_yield_bounds,
-        label="Max %", format=format_yield_bound,
+        label="Max", format=format_yield_bound,
     ),
     Option(
         "top", Kind.VALUE, ("macro_top",), "dollar", "--top:VAL / --t:VAL", "upper bound",
