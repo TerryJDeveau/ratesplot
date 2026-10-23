@@ -827,9 +827,22 @@ class CountryMetadata:
     net_debt_column: str | None = None
     net_debt_label: str = ""
     net_debt_title: str = ""
-    # The word the title phrases name the nation by ("CDN", "US", "UK",
-    # "German"), kept only in a title's first phrase (batch 21, title_for).
+    # The word the title phrases name the nation by, its adjective
+    # ("Canadian", "German"; "US" and "UK" as they are), kept only in a
+    # title's first phrase (batch 21, title_for). Terry, 2026-10-22 (batch
+    # 22, decision 50): "the long-form adjectival form is to be preferred in
+    # general ... only using the abbreviation when useful to keep the title
+    # font size from having to shrink by a lot". The legend's labels keep
+    # their own wording ("Aggregate CDN Public Debt").
     title_nation: str = ""
+    # The short form put in place of ``title_nation`` in the first phrase
+    # where the adjective would shrink the title a lot (title_for's
+    # ``short``, chosen by legend.finish_legend_and_title): "CDN" for Canada
+    # (Terry: "CDN is preferred, but for other nations use the international
+    # standard"), for every other nation its ISO 3166-1 three-letter code
+    # ("DEU"). "" for a nation whose word is short already ("US", "UK").
+    # A nation added later gets both forms (decision 50).
+    title_short: str = ""
     # Components (--debt:LETTERS): the name of each level, and the wording
     # around a name ("{}" is replaced by it, or in a title by nothing).
     level_names: tuple[tuple[str, str], ...] = (
@@ -895,7 +908,13 @@ class CountryMetadata:
         return tuple((key, enabled, column, _with_suffix(label, suffix)) for key, enabled, column, label in specs)
 
     def title_for(
-        self, *, yields_drawn: bool, macro_keys_drawn: Iterable[str], config: PlotConfig, rate_titles: Iterable[str] = ()
+        self,
+        *,
+        yields_drawn: bool,
+        macro_keys_drawn: Iterable[str],
+        config: PlotConfig,
+        rate_titles: Iterable[str] = (),
+        short: bool = False,
     ) -> str:
         """Compose the chart title from the series that were actually drawn.
 
@@ -904,8 +923,8 @@ class CountryMetadata:
         Federal debt alone is named only when the aggregate is not drawn.
         Under -r and -p the macro phrase is qualified and set off from the
         yields by a semicolon, since the qualifier does not apply to them:
-        ``"CDN Benchmark Yields; Aggregate Public Debt & Interest Outlays
-        as % of TTM GDP"``. ``rate_titles`` name the yield axis's other
+        ``"Canadian Benchmark Yields; Aggregate Public Debt & Interest
+        Outlays as % of TTM GDP"``. ``rate_titles`` name the yield axis's other
         curves drawn (``ratesplot.rates``), after the yields, in the order
         given (the spreads first, ``plotting.draw_country``): "U.S. Treasury
         Yields, Spreads, Policy Rate, Aggregate Public Debt …".
@@ -915,14 +934,19 @@ class CountryMetadata:
         that pertains to the tab that it is plotted on included somewhere near
         the beginning of the main title"): "Canada: Policy Rate", "United
         States: TTM GDP & Interest Outlays". The yield and debt phrases name
-        it ("CDN Benchmark Yields", "Aggregate US Public Debt"), so a title
-        beginning with one has no such prefix.
+        it ("Canadian Benchmark Yields", "Aggregate US Public Debt"), so a
+        title beginning with one has no such prefix.
 
         The nation is named once (batch 21, Terry 2026-10-21: "once the
         country is identified in the main title, don't repeat it"): every
-        phrase after the first drops it ("Aggregate CDN Public Debt" becomes
-        "Aggregate Public Debt"), and so after "Canada: " does every phrase.
-        The legend keeps its labels, which name each series whole.
+        phrase after the first drops it ("Aggregate Canadian Public Debt"
+        becomes "Aggregate Public Debt"), and so after "Canada: " does every
+        phrase. The legend keeps its labels, which name each series whole.
+
+        ``short``: the first phrase names the nation by ``title_short``
+        ("CDN Benchmark Yields"), the form drawn only where the adjective
+        would shrink the title a lot (batch 22, decision 50). A nation with
+        no short form, or a title beginning "Canada: ", is the same either way.
         """
         drawn = set(macro_keys_drawn)
         if "debt" in drawn:
@@ -935,12 +959,13 @@ class CountryMetadata:
             "interest": self.interest_title,
         }
         # Component lines ("debt_f", "interest_p" …). A single level is named,
-        # "Federal CDN Public Debt"; with more, the legend names them and the
-        # title ends "… by Level of Government" (after the -r / -p qualifier,
-        # set off by a comma). Debt and interest split alike are named once,
-        # after GDP: "TTM GDP & CDN Public Debt and Interest Outlays by Level
-        # of Government", "Federal CDN Public Debt and Interest Outlays" (the
-        # phrases as built; "CDN" is dropped below unless it comes first).
+        # "Federal Canadian Public Debt"; with more, the legend names them and
+        # the title ends "… by Level of Government" (after the -r / -p
+        # qualifier, set off by a comma). Debt and interest split alike are
+        # named once, after GDP: "TTM GDP & Canadian Public Debt and Interest
+        # Outlays by Level of Government", "Federal Canadian Public Debt and
+        # Interest Outlays" (the phrases as built; "Canadian" is dropped below
+        # unless it comes first).
         levels = {
             kind: [letter for letter in COMPONENT_LETTERS if f"{kind}_{letter}" in drawn] for kind in ("debt", "interest")
         }
@@ -969,9 +994,11 @@ class CountryMetadata:
         # The nation named once: the first phrase keeps it (when it names it,
         # nothing else does); every later phrase that names it drops it.
         parts = [
-            part if index == 0 or part not in naming else _without_nation(part, self.title_nation)
+            part if index == 0 or part not in naming else _nation_word_replaced(part, self.title_nation, "")
             for index, part in enumerate(parts)
         ]
+        if short and self.title_short and not nation:
+            parts[0] = _nation_word_replaced(parts[0], self.title_nation, self.title_short)
         yield_parts, macro_parts = parts[: len(yield_parts)], parts[len(yield_parts) :]
         title_suffix = _measure_suffixes(config)[1]
         if title_suffix and macro_parts:
@@ -980,12 +1007,17 @@ class CountryMetadata:
         return nation + _join_title_parts(parts) + levels_suffix
 
 
-def _without_nation(phrase: str, nation: str) -> str:
-    """Return a title phrase without the word that names the nation: "Aggregate CDN Public Debt" -> "Aggregate Public Debt"."""
+def _nation_word_replaced(phrase: str, nation: str, word: str) -> str:
+    """Return a title phrase with the word that names the nation replaced by ``word``, or dropped when it is "".
+
+    "Aggregate Canadian Public Debt" -> "Aggregate Public Debt" (``word`` "")
+    or "Aggregate CDN Public Debt" (``word`` "CDN").
+    """
     words = phrase.split(" ")
     if nation not in words:
         raise ValueError(f"title phrase {phrase!r} does not name the nation by {nation!r}")
-    words.remove(nation)
+    at = words.index(nation)
+    words[at : at + 1] = [word] if word else []
     return " ".join(words)
 
 
@@ -1002,18 +1034,20 @@ CDN = CountryMetadata(
     currency_prefix="C$",
     currency_label="Nominal Units (CAD – Log Scale)",
     per_capita_label="Nominal Units per Capita (CAD – Log Scale)",
-    yield_title="CDN Benchmark Yields",
-    title_nation="CDN",
+    # The titles name the nation by its adjective, the legend by CDN (batch 22).
+    yield_title="Canadian Benchmark Yields",
+    title_nation="Canadian",
+    title_short="CDN",
     debt_column=CDN_DEBT_COLUMN,
     debt_label="Aggregate CDN Public Debt",
-    debt_title="Aggregate CDN Public Debt",
+    debt_title="Aggregate Canadian Public Debt",
     interest_column=CDN_INTEREST_COLUMN,
     interest_label="TTM Interest Payable",
     federal_debt_column=CDN_FEDERAL_DEBT_COLUMN,
     federal_debt_label="Federal CDN Public Debt (pre-1933)",
-    federal_debt_title="Federal CDN Public Debt",
+    federal_debt_title="Federal Canadian Public Debt",
     component_debt_label="{} CDN Public Debt",
-    component_debt_title="{} CDN Public Debt",
+    component_debt_title="{} Canadian Public Debt",
 )
 
 US = CountryMetadata(
@@ -1081,6 +1115,7 @@ DE = CountryMetadata(
     # the Federal securities' prices; the title says which kind they are.
     yield_title="German Federal Yields (Svensson fitted)",
     title_nation="German",
+    title_short="DEU",
     debt_column=DE_DEBT_COLUMN,
     debt_label="German General Government Gross Debt",
     debt_title="German General Government Gross Debt",

@@ -43,6 +43,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from matplotlib.legend import Legend
 from matplotlib.lines import Line2D
 from matplotlib.text import Text
@@ -90,6 +91,14 @@ _TITLE_MAX_WIDTH_FRACTION = 0.98
 # Each shrink of a title still too wide takes at least this much off its
 # size, so the fitting loop always reaches the next smaller pixel size.
 _TITLE_MIN_SHRINK = 0.99
+# A title naming its nation by its adjective ("Canadian") is drawn with the
+# short form ("CDN") instead only where the adjective would take it below
+# this fraction of the size font_scale gives it, and the short form is
+# drawn larger (_place_title). Terry, 2026-10-22 (decision 50): the
+# abbreviation only "when useful to keep the title font size from having to
+# shrink by a lot". The 90 % is Claude's call (the alternatives: 95 %,
+# abbreviating sooner, or 80 %, later).
+_TITLE_ABBREVIATE_BELOW = 0.90
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +352,43 @@ def _shrink_title_to_fit(title_artist: Text) -> None:
         title_width = title_artist.get_window_extent(figure.canvas.get_renderer()).width
 
 
+def _place_title(figure: Figure, title: str, short_title: str | None, scale: float) -> Text:
+    """Put ``title`` at the top of ``figure`` at the size ``scale`` gives it, shrunk to fit; return the title.
+
+    ``short_title`` (the nation by its short form) takes its place only where
+    ``title`` would have to shrink below ``_TITLE_ABBREVIATE_BELOW`` of that
+    size and the short form is drawn larger: laid out again from the full
+    size, then shrunk as far as it still must (batch 22, decision 50).
+
+    "Larger" is by whole pixels. Agg draws text at whole-pixel sizes: a
+    title's measured width steps each time its size crosses half a pixel
+    (measured 2026-10-22), so a short form that fits at 19.60 pt where the
+    adjective fits at 19.48 pt (27.22 and 27.06 px, both drawn at 27 px)
+    would change the wording and spare nothing.
+    """
+    full_size = TITLE_FS * scale
+    title_artist = figure.suptitle(title, fontsize=full_size, fontweight="bold", y=_TITLE_TOP_Y, va="top")
+    _shrink_title_to_fit(title_artist)
+    long_size = title_artist.get_fontsize()
+    if short_title and short_title != title and long_size < _TITLE_ABBREVIATE_BELOW * full_size:
+        title_artist.set_text(short_title)
+        title_artist.set_fontsize(full_size)
+        _shrink_title_to_fit(title_artist)
+        if _whole_pixels(title_artist.get_fontsize(), figure.dpi) <= _whole_pixels(long_size, figure.dpi):
+            title_artist.set_text(title)
+            title_artist.set_fontsize(long_size)
+    return title_artist
+
+
+def _whole_pixels(size_pt: float, dpi: float) -> int:
+    """Return the whole-pixel size Agg draws text of ``size_pt`` points at, on a canvas of ``dpi``.
+
+    Half a pixel goes up (measured: 9 pt at 100 dpi, 12.5 px, is as wide as
+    13 px), where Python's round would take 12.5 to 12.
+    """
+    return int(size_pt * dpi / 72.0 + 0.5)
+
+
 def finish_legend_and_title(
     ax: Axes,
     legend_groups: Sequence[Sequence[Artist]],
@@ -353,8 +399,15 @@ def finish_legend_and_title(
     quote_time: pd.Timestamp | None = None,
     rate_labels: Sequence[RateLabel] = (),
     quote_zone: str | None = None,
+    short_title: str | None = None,
 ) -> None:
     """Add title and date-range subtitle, fix the layout and x-limits, label line ends, then place the legend.
+
+    ``short_title`` is the title naming the nation by its short form ("CDN
+    Benchmark Yields …", ``CountryMetadata.title_for``'s ``short``), drawn
+    in place of ``title`` only where ``title`` would shrink below
+    ``_TITLE_ABBREVIATE_BELOW`` of its size to fit and the short form is
+    drawn larger (batch 22, decision 50; ``_place_title``).
 
     The subtitle names ``data_span``, the first and last dates of the data
     actually drawn, which may be narrower than the axis (``config.start`` to
@@ -379,8 +432,7 @@ def finish_legend_and_title(
     figure = ax.figure
     scale = config.font_scale
     figure_height = figure.get_figheight()
-    title_artist = figure.suptitle(title, fontsize=TITLE_FS * scale, fontweight="bold", y=_TITLE_TOP_Y, va="top")
-    _shrink_title_to_fit(title_artist)
+    title_artist = _place_title(figure, title, short_title, scale)
 
     # The subtitle follows the title's actual size, so a shrunken title does
     # not leave a gap above the date range.
