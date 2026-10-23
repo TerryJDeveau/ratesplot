@@ -242,6 +242,12 @@ CASES: dict[str, list[str]] = {
     # having gross debt alone, answers with its gross debt and a note.
     "uk_net_only": ["--na:gb", "--uk:agg:net", "-s:1990", "-l"],
     "ca_uk_agg_net": ["--na:ca,gb", "--agg:net", "--no-yield", "-s:2000"],
+    # Batch 10.5: each nation's own levels (the U.S.' none: its aggregates);
+    # the UK's "n", its local government, drawn as "m" is; and the UK given
+    # none of its levels, which draws its aggregate lines (nothing before).
+    "nat_levels": ["--na:ca,us,gb,de", "--cdn:d:fp", "--uk:d:f", "--ger:d:pm", "--debt", "--interest", "-s:2005"],
+    "uk_lv_n": ["--na:gb", "--d:fn", "-i", "-s:1990"],
+    "uk_lv_p": ["--na:gb", "--d:p", "-i", "-s:1990"],
 }
 
 

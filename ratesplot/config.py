@@ -590,6 +590,19 @@ class Nation:
     # too (batch 10.4). A nation with one has nothing to choose, so its panel
     # offers no box for it.
     debt_aggregates: tuple[str, ...] = DEFAULT_DEBT_AGGREGATES
+    # Its levels of government (--debt:LETTERS; batch 10.5, Terry
+    # 2026-10-13: "offering only the series that nation has"): the boxes in
+    # its panel, (letter, caption), named for its governments, in the
+    # plan's order; and letters that mean one of them on its chart
+    # (synonym, letter): the UK's "n", all but central government, is its
+    # local government, "m".
+    level_boxes: tuple[tuple[str, str], ...] = ()
+    level_synonyms: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def level_letters(self) -> tuple[str, ...]:
+        """The letters its chart draws a level for, its synonyms included."""
+        return tuple(letter for letter, _caption in self.level_boxes) + tuple(synonym for synonym, _letter in self.level_synonyms)
 
     @property
     def prefix(self) -> str:
@@ -616,13 +629,22 @@ class Nation:
         default list for every chart draws the nation's own default where it
         has one (``own_defaults``). The aggregate debts: those it has, and
         its gross debt where the list names none of them (``--aggregate:net``
-        on Canada's chart; batch 10.4). Any other field is its value.
+        on Canada's chart; batch 10.4). The levels: those it has, a synonym
+        as the level it means (the UK's "n" as "m"), in COMPONENT_LETTERS
+        order; none where it has none of them, so its chart draws its
+        aggregate lines, with a note (the UK and "p"; batch 10.5), as it
+        draws its gross debt where it has none of the aggregates named. Any
+        other field is its value.
         """
         own = dict(self.own_defaults)
         if field in own and value == _LIST_DEFAULTS[field]:
             return own[field]
         if field == "debt_aggregates":
             return tuple(item for item in value if item in self.debt_aggregates) or self.debt_aggregates[:1]
+        if field == "components":
+            synonyms = dict(self.level_synonyms)
+            levels = {synonyms.get(letter, letter) for letter in value if letter in self.level_letters}
+            return "".join(letter for letter in COMPONENT_LETTERS if letter in levels)
         if field == "yield_terms":
             return tuple(term for term in value if term in self.yield_terms)
         if field == "mortgage_terms":
@@ -643,10 +665,12 @@ NATIONS: tuple[Nation, ...] = (
     Nation(
         "cdn", "Canada", ("ca", "cdn"), tuple(term for term in YIELD_TERMS if term != "20y"), "Canadian",
         market_timezone="America/Toronto",
+        level_boxes=(("f", "Federal"), ("p", "Provincial"), ("m", "Municipal"), ("n", "Non-federal")),
     ),
     Nation(
         "us", "United States", ("us",), tuple(term for term in YIELD_TERMS if term != "3y"), "U.S.",
         market_timezone="America/New_York",
+        level_boxes=(("f", "Federal"), ("p", "State"), ("m", "Local"), ("n", "Non-federal")),
     ),
     # Batch 3: drawn only when asked for, so every existing command line
     # draws what it drew. Its own defaults, since the defaults for every
@@ -659,6 +683,9 @@ NATIONS: tuple[Nation, ...] = (
     Nation(
         "uk", "United Kingdom", ("gb", "uk"), ("5y", "10y", "20y"), "UK", shown_by_default=False,
         market_timezone="Europe/London", debt_aggregates=DEBT_AGGREGATES,
+        # Central and local government: the devolved governments are inside
+        # central government in its accounts (CountryMetadata UK, uk_data).
+        level_boxes=(("f", "Central"), ("m", "Local")), level_synonyms=(("n", "m"),),
         own_defaults=(
             ("yield_terms", ("5y", "10y", "20y")),
             ("mortgage_terms", ("2f", "3f", "5f", "svr", "tracker")),
@@ -676,6 +703,7 @@ NATIONS: tuple[Nation, ...] = (
     Nation(
         "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "5y", "7y", "10y", "20y", "30y"), "German",
         shown_by_default=False, list_only_codes=("de",), market_timezone="Europe/Berlin",
+        level_boxes=(("f", "Federal"), ("p", "States"), ("m", "Local"), ("n", "States and local")),
         own_defaults=(
             ("yield_terms", ("2y", "5y", "10y", "30y")),
             ("mortgage_terms", ("1-5", "5-10", "over10")),
@@ -700,11 +728,12 @@ def nation_by_key(key: str) -> Nation | None:
 
 # The choices that can differ by nation (PlotConfig.for_nation): the yield
 # axis's lists, the axis limits (Top and Bottom are in each nation's own
-# currency, so a limit right for one is wrong for the other), and the
-# aggregate debts (batch 10.4: only the UK has a choice).
+# currency, so a limit right for one is wrong for the other), the aggregate
+# debts (batch 10.4: only the UK has a choice), and the levels of
+# government (batch 10.5, each nation's own in its panel).
 PER_NATION_FIELDS = (
     "yield_terms", "mortgage_terms", "spread_pairs", "yield_ymin", "yield_ymax", "macro_bottom", "macro_top",
-    "prime_margin", "policy_terms", "tracker_margin", "debt_aggregates",
+    "prime_margin", "policy_terms", "tracker_margin", "debt_aggregates", "components",
 )
 # The defaults of the lists a nation may have its own default of (Nation.own_defaults).
 _LIST_DEFAULTS = {
@@ -914,17 +943,20 @@ class CountryMetadata:
         national debt to 1975), and the UK's net debt.
         """
         suffix = _measure_suffixes(config)[0]
-        if config.components:
+        # The levels it has, a synonym as the level it means (the UK's "n" as
+        # "m"); none of them, its aggregate lines (batch 10.5, ``Nation.view``).
+        letters = nation_by_key(self.key).view("components", config.components)
+        if letters:
             specs = [
                 (f"debt_{letter}", config.include_debt, component_column("debt", letter),
                  self.component_debt_label.format(self.level_name(letter)))
-                for letter in config.components
+                for letter in letters
             ]
             specs.append(("gdp", config.draws_gdp, self.gdp_column, self.gdp_label))
             specs += [
                 (f"interest_{letter}", config.include_interest, component_column("interest", letter),
                  self.component_interest_label.format(self.level_name(letter)))
-                for letter in config.components
+                for letter in letters
             ]
             return tuple((key, enabled, column, _with_suffix(label, suffix)) for key, enabled, column, label in specs)
         aggregates = nation_by_key(self.key).view("debt_aggregates", config.debt_aggregates)

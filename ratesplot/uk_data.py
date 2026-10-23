@@ -68,7 +68,6 @@ from .config import (
     BILLION,
     BOE_IADB_FROM,
     BOE_IADB_URL,
-    COMPONENT_LETTERS,
     DATE_COLUMN,
     GDP_COLUMN,
     MILLION,
@@ -84,6 +83,7 @@ from .config import (
     YIELD_TERMS,
     PlotConfig,
     component_column,
+    nation_by_key,
 )
 from .baked import with_recent_part
 from .http import downloads_of, uk_get
@@ -165,10 +165,10 @@ UK_INTEREST_SERIES = "NMYX"
 UK_GDP_SERIES = "YBHA"
 UK_POPULATION_SERIES = "EBAQ"
 # Levels of government (--debt:LETTERS): central "f", local "m". "n" (every
-# level but the central one) is local government too; there is no "p".
+# level but the central one) is local government too, drawn as "m" (the UK's
+# level synonym in config.NATIONS); there is no "p".
 _LEVEL_DEBT_SERIES = {"f": "BKPW", "m": "MDYT"}
 _LEVEL_INTEREST_SERIES = {"f": "NMFX", "m": "NUGW"}
-_LEVEL_ALIASES = {"n": "m"}
 
 # A quarter's population is dated this many days after the quarter begins:
 # about its middle, where an interpolation of mid-year estimates centres it.
@@ -487,27 +487,28 @@ def fetch_uk_components(config: PlotConfig) -> pd.DataFrame | None:
 
     The UK accounts have no level between them (the devolved governments are
     inside central government): "p" is named and left out. "n", every level
-    but the central one, is local government, drawn once if "m" is chosen too.
-    A level's series is drawn from its bake if the ONS fails (``ons_series``,
-    batch 19.2); one with neither is left out, with a warning.
+    but the central one, is local government: drawn as "m" is, and once if
+    "m" is chosen too (``Nation.view``, the UK's level synonym; batch 10.5:
+    before, "n" alone took a colour of its own). A level's series is drawn
+    from its bake if the ONS fails (``ons_series``, batch 19.2); one with
+    neither is left out, with a warning.
     """
-    letters = config.components
-    if "p" in letters:
+    chosen = config.components
+    if "p" in chosen:
         print("  Note: the UK accounts have no provincial or state level (the devolved governments are inside central government); not drawn.")
-    if "n" in letters and "m" in letters:
+    if "n" in chosen and "m" in chosen:
         print("  Note: in the UK the non-central level is local government alone: drawn once, as local.")
     columns: list[pd.Series] = []
-    for letter in COMPONENT_LETTERS:
-        if letter not in letters or letter == "p" or (letter == "n" and "m" in letters):
-            continue
-        source = _LEVEL_ALIASES.get(letter, letter)
+    for letter in nation_by_key("uk").view("components", chosen):
+        if letter not in _LEVEL_DEBT_SERIES:
+            continue  # "p" alone, kept by the view, which the UK has not
         for kind, include, series_of in (
             ("debt", config.include_debt, _LEVEL_DEBT_SERIES),
             ("interest", config.include_interest, _LEVEL_INTEREST_SERIES),
         ):
             if not include:
                 continue
-            cdid = series_of[source]
+            cdid = series_of[letter]
             try:
                 values = ons_series(cdid) if kind == "debt" else ttm_sum(ons_series(cdid))
             except Exception as exc:

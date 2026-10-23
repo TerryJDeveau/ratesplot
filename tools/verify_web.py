@@ -117,8 +117,8 @@ CHART_CASES = (
     "de_rates", "de_nat", "all4",
     # Batch 9.1: both policy terms on every nation's chart, the U.S. target range a band.
     "policy_both",
-    # Batch 10.4: the UK's net debt alone.
-    "uk_net_only",
+    # Batch 10.4: the UK's net debt alone. Batch 10.5: each nation's own levels.
+    "uk_net_only", "nat_levels",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -311,12 +311,12 @@ def check_address_and_rules(check: Check) -> None:
         (address(at), [e.value for e in at.error]),
     )
 
-    # The level boxes and the tolerance.
-    at.checkbox(key="level:f").check()
-    at.checkbox(key="level:p").check()
+    # The level boxes (Canada's own since batch 10.5) and the tolerance.
+    at.checkbox(key="level:cdn:f").check()
+    at.checkbox(key="level:cdn:p").check()
     at.text_input(key="value:regression-tolerance").input("3")
     at.run()
-    check("levels and tolerance in the address", "--debt:fp" in address(at) and "--reg:3" in address(at), address(at))
+    check("levels and tolerance in the address", "--cdn:debt:fp" in address(at) and "--reg:3" in address(at), address(at))
     at.checkbox(key="flag:regression").uncheck()
     at.run()
     check(
@@ -664,7 +664,7 @@ def check_greyed(check: Check) -> None:
 
     def disabled(at: AppTest) -> set[str]:
         widgets = [*at.checkbox, *at.text_input]
-        keys = {"flag:relative", "flag:per-capita", "flag:regression", "flag:gdp", "level:f", "value:regression-tolerance", "value:us:top"}
+        keys = {"flag:relative", "flag:per-capita", "flag:regression", "flag:gdp", "level:us:f", "value:regression-tolerance", "value:us:top"}
         return {w.key for w in widgets if w.key in keys and w.disabled}
 
     page = new_page("-u --yield --debt --reg:2 --d:fp --us:top:40t -s:2001 --e:2026-09-01")
@@ -676,16 +676,16 @@ def check_greyed(check: Check) -> None:
     check("a bad tolerance stops the drawing", any("Not drawn" in e.value for e in page.error), [e.value for e in page.error])
     page.checkbox(key="flag:debt").uncheck()
     page.run()
-    every = {"flag:relative", "flag:per-capita", "flag:regression", "level:f", "value:regression-tolerance", "value:us:top"}
+    every = {"flag:relative", "flag:per-capita", "flag:regression", "level:us:f", "value:regression-tolerance", "value:us:top"}
     check("no right-axis curve: all greyed but GDP", disabled(page) == every, disabled(page))
     check("a bad text in a greyed field stops nothing", not page.error and charts_shown(page) == 1, [e.value for e in page.error])
-    check("ticks and texts kept", flags(page)["regression"] and page.checkbox(key="level:f").value
+    check("ticks and texts kept", flags(page)["regression"] and page.checkbox(key="level:us:f").value
           and page.text_input(key="value:us:top").value == "40t" and page.text_input(key="value:regression-tolerance").value == "x")
     check("left out of the address, --regression kept", address(page) == "--U --yield --regression --start:2001 --end:2026-09-01", address(page))
     page.checkbox(key="flag:gdp").check()
     page.run()
     check("GDP: -p, --reg, its tolerance and Top active; -r and the levels greyed",
-          disabled(page) == {"flag:relative", "level:f"}, disabled(page))
+          disabled(page) == {"flag:relative", "level:us:f"}, disabled(page))
     page.text_input(key="value:regression-tolerance").input("2")
     page.checkbox(key="flag:gdp").uncheck()
     page.checkbox(key="flag:debt").check()
@@ -694,7 +694,7 @@ def check_greyed(check: Check) -> None:
     rel = new_page("-u -r --gdp -s:2001 --e:2026-09-01")
     check(
         "-r with GDP only: -r greyed and ticked, GDP active (the tolerance greyed: --reg is off)",
-        flags(rel)["relative"] and disabled(rel) == {"flag:relative", "level:f", "value:regression-tolerance"},
+        flags(rel)["relative"] and disabled(rel) == {"flag:relative", "level:us:f", "value:regression-tolerance"},
         (flags(rel)["relative"], disabled(rel)),
     )
 
@@ -759,14 +759,13 @@ def check_layout(check: Check) -> None:
     ]
     check("the titled blocks in order", titles[: len(wanted)] == wanted, titles)
     order = [box.key.split(":", 1)[1] for box in at.checkbox if box.key and box.key.startswith("flag:")]
-    wanted = ["by level", "relative", "per-capita", "regression", "yield", "spreads", "policy", "mortgages", "label", "current"]
+    wanted = ["relative", "per-capita", "regression", "yield", "spreads", "policy", "mortgages", "label", "current"]
     keys = [box.key for box in at.checkbox if box.key]
-    levels = keys.index("level:f")
-    placed = order[: order.index("relative")] + ["by level"] + order[order.index("relative"):]
+    # By level left the column for each nation's section in batch 10.5.
     check(
-        "By level, then the measure, the regression segments, the four rates, the line labels and the latest data",
-        keys.index("flag:interest") < levels < keys.index("flag:relative")
-        and [name for name in placed if name in wanted] == wanted,
+        "the measure under the curves, then the regression segments, the four rates, the line labels and the latest data",
+        keys.index("flag:interest") < keys.index("flag:relative") and [name for name in order if name in wanted] == wanted
+        and not any(key.startswith("level:") and key.count(":") == 1 for key in keys),
         order,
     )
     # The limits only: the prime margin's field sits with the mortgage boxes, above them (batch 9.4).
@@ -964,11 +963,11 @@ def check_batch104(check: Check) -> None:
           at.checkbox(key=gross).disabled and at.checkbox(key=net).disabled and at.checkbox(key=net).value
           and "--agg" not in address(at), address(at))
     at.checkbox(key="flag:debt").check()
-    at.checkbox(key="level:f").check()
+    at.checkbox(key="level:uk:f").check()
     at.run()
     check("a level ticked: greyed (the levels replace the aggregate lines), the list out of the address",
           at.checkbox(key=net).disabled and "--agg" not in address(at), address(at))
-    at.checkbox(key="level:f").uncheck()
+    at.checkbox(key="level:uk:f").uncheck()
     at.run()
     check("the level unticked: active again, net alone again",
           not at.checkbox(key=net).disabled and drawn(at) == ("net",), (address(at), drawn(at)))
@@ -976,6 +975,54 @@ def check_batch104(check: Check) -> None:
     page = new_page("--nations:gb --agg:gross,net --e:2026-09-01")
     check("--agg:gross,net from the address: both ticked",
           page.checkbox(key=gross).value and page.checkbox(key=net).value, address(page))
+
+
+def check_batch105(check: Check) -> None:
+    """Batch 10.5: the levels in each nation's section, named for its governments; a nation's own written after its code."""
+    at = new_page("--na:ca,us,gb,de --e:2026-09-01 -s:2005")
+    check("no exception", not at.exception, at.exception)
+    wanted = {
+        "cdn": ["Federal", "Provincial", "Municipal", "Non-federal"],
+        "us": ["Federal", "State", "Local", "Non-federal"],
+        "uk": ["Central", "Local"],
+        "de": ["Federal", "States", "Local", "States and local"],
+    }
+    captions = {
+        key: [box.label for box in at.checkbox if box.key and box.key.startswith(f"level:{key}:")] for key in NATION_KEYS
+    }
+    check("each nation's levels named for its governments", captions == wanted, captions)
+    check("none in the column", not any(box.key and box.key.count(":") == 1 and box.key.startswith("level:") for box in at.checkbox))
+
+    def drawn(page: AppTest, key: str) -> str:
+        return drawn_config(config_from_choices(*sort_tokens(address(page).split())[:2]), key).components
+
+    at.checkbox(key="level:cdn:f").check()
+    at.checkbox(key="level:cdn:p").check()
+    at.run()
+    check("Canada's federal and provincial: written after its code, every curve written",
+          "--cdn:debt:fp" in address(at) and drawn(at, "cdn") == "fp" and drawn(at, "us") == "", address(at))
+    for key in ("us", "uk", "de"):
+        at.checkbox(key=f"level:{key}:f").check()
+        if key != "uk":
+            at.checkbox(key=f"level:{key}:p").check()
+    at.run()
+    check("the same levels on every chart (the UK has no provincial level): written once",
+          "--debt:fp" in address(at) and "--cdn:debt" not in address(at) and "--uk:debt" not in address(at)
+          and drawn(at, "uk") == "f", address(at))
+    check("the UK's aggregate debts greyed by its level",
+          at.checkbox(key="choice:uk:aggregate:gross").disabled and at.checkbox(key="choice:uk:aggregate:net").disabled)
+    at.checkbox(key="flag:debt").uncheck()
+    at.checkbox(key="flag:interest").uncheck()
+    at.run()
+    check("no debt or interest: every nation's levels greyed, ticks kept, out of the address",
+          all(box.disabled for box in at.checkbox if box.key and box.key.startswith("level:"))
+          and at.checkbox(key="level:cdn:f").value and ":debt:" not in address(at) and "--debt:" not in address(at), address(at))
+    check("no exception, four charts", not at.exception and charts_shown(at) == 4, (at.exception, charts_shown(at)))
+    page = new_page("--na:gb,de --debt:fn --ger:interest:pm --e:2026-09-01 -s:2005")
+    ticked = {key: [box.key.rsplit(":", 1)[1] for box in page.checkbox if box.key and box.key.startswith(f"level:{key}:") and box.value]
+              for key in ("uk", "de")}
+    check("from the address: the UK's n ticks its Local box; Germany's own levels", ticked == {"uk": ["f", "m"], "de": ["p", "m"]}, ticked)
+    check("its charts the address's", drawn(page, "uk") == "fm" and drawn(page, "de") == "pm", address(page))
 
 
 def check_batch17(check: Check) -> None:
@@ -1015,7 +1062,7 @@ def check_batch17(check: Check) -> None:
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
-    check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104,
+    check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
 )
 
 

@@ -734,13 +734,15 @@ OPTIONS: tuple[Option, ...] = (
     ),
     # Curve sub-options: debt and interest by level of government ("--d:" is
     # debt; the size needs at least "dim"). They set one field; see
-    # ``config_from_choices`` for how they name their curves. The window has
-    # one control for both, under the debt and interest boxes (Terry,
-    # 2026-10-06).
+    # ``config_from_choices`` for how they name their curves. Per nation
+    # since batch 10.5 (--cdn:debt:fp): the window and the page have one
+    # control for both in each nation's panel, its boxes named for its
+    # governments (``Nation.level_boxes``; Terry, 2026-10-13); until then one
+    # in the column for every chart, under the debt and interest boxes.
     Option(
         "debt-parts", Kind.VALUE, ("components",), "curves", "--debt:LETTERS / --d:LETTERS",
         "debt and interest by level instead of\nin total: f federal, n non-federal,\n"
-        "p or s provincial/state, m municipal",
+        "p or s provincial/state, m municipal;\nthe UK's f central, m (or n) local",
         names=("debt",), parse=partial(parse_components, kind="debt"),
         label="By level", format=format_components, editor="levels",
     ),
@@ -1057,7 +1059,13 @@ def _removed(option: Option, spec: str, current: tuple) -> tuple:
 
 
 def _check_nation_terms(nation: Nation, field: str, values: Mapping[str, object]) -> None:
-    """Reject a nation's own terms in ``field`` that its chart cannot draw (a yield or mortgage term it lacks, net debt)."""
+    """Reject a nation's own terms in ``field`` that its chart cannot draw (a yield or mortgage term it lacks, net debt, a level)."""
+    if field == "components":
+        lacking = [letter for letter in values[field] if letter not in nation.level_letters]
+        if lacking:
+            levels = ", ".join(f"{letter} {caption.lower()}" for letter, caption in nation.level_boxes)
+            raise ValueError(f"{nation.name} has no level {lacking[0]} (its levels: {levels})")
+        return
     if field == "debt_aggregates":
         foreign = [item for item in values[field] if item not in nation.debt_aggregates]
         if foreign:
@@ -1122,19 +1130,31 @@ def idle_margins(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> froz
 def idle_aggregates(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
     """Return the keys of the nations' aggregate debts that change nothing ("uk:aggregate"): no aggregate debt is drawn.
 
-    While debt is off, or while levels of government are chosen, which
-    replace the aggregate lines (``CountryMetadata.macro_specs``); and for
-    a nation with gross debt alone, which draws it whatever the list names
+    While debt is off, or while the nation's levels of government are
+    chosen (its own, else those for every chart), which replace the
+    aggregate lines (``CountryMetadata.macro_specs``); and for a nation with
+    gross debt alone, which draws it whatever the list names
     (``Nation.view``). The window and the page grey the UK's boxes, keeping
     their ticks, and the written command line leaves the list out
     (batch 10.4), as for a margin (``idle_margins``).
     """
     option = by_name("aggregate")
-    levels = any(payloads.get(name, "").strip() for name in _PART_OPTIONS)
+
+    def has_levels(nation: Nation) -> bool:
+        """Its chart draws levels: some of those chosen are its own (``Nation.view``); a text that does not parse counts."""
+        for name in _PART_OPTIONS:
+            text = payloads.get(nation_choice(nation, by_name(name)), payloads.get(name, "")).strip()
+            if text:
+                try:
+                    return bool(nation.view("components", by_name(name).parse(text)))
+                except ValueError:
+                    return True
+        return False
+
     return frozenset(
         nation_choice(nation, option)
         for nation in NATIONS
-        if not flags.get("debt", True) or levels or len(nation.debt_aggregates) < 2
+        if not flags.get("debt", True) or has_levels(nation) or len(nation.debt_aggregates) < 2
     )
 
 
@@ -1169,8 +1189,16 @@ def _nation_settings(payloads: Mapping[str, str], values: Mapping[str, object]) 
                 else:
                     continue
                 given[option.name] = payloads[key]
-                if option.fields[0] in ("yield_terms", "spread_pairs", "mortgage_terms", "debt_aggregates"):
+                if option.fields[0] in ("yield_terms", "spread_pairs", "mortgage_terms", "debt_aggregates", "components"):
                     _check_nation_terms(nation, option.fields[0], own)
+            # A nation's own debt and interest levels are one field, as for
+            # every chart: given on both, they must agree (batch 10.5).
+            own_parts = {name: by_name(name).parse(given[name]) for name in _PART_OPTIONS if name in given}
+            if len(set(own_parts.values())) > 1:
+                raise ValueError(
+                    f"--debt:{own_parts['debt-parts']} and --interest:{own_parts['interest-parts']} choose different levels; "
+                    "give the letters once, or the same on both"
+                )
             # A margin names its term too, unless a list of terms is given:
             # one for every chart on each nation that has the term, one of
             # the nation's own on it (a nation without the term refuses
@@ -1225,7 +1253,8 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     * Curve sub-options: --debt:LETTERS and --interest:LETTERS set the same
       levels, so given on both they must agree. Each also names its curve,
       as --debt and --interest do, unless that curve's flag was given
-      explicitly (the window gives every flag, so there it names nothing).
+      explicitly (the window gives every flag, so there it names nothing);
+      a nation's own (--cdn:debt:fp, batch 10.5) too, on every chart.
     * A value option that removes (``--no-yields:LIST``) takes its items out
       of its field as the options before it left it; an item not there, or
       none left, is an error.
@@ -1276,7 +1305,12 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
         if option.turns_on
         and (option.name in payloads or any(nation_choice(nation, option) in payloads for nation in NATIONS))
     }
-    flags = {**{curve: True for curve in given_parts}, **turned_on, **flags}
+    # A nation's own levels name their curve too, on every chart, as a value
+    # given for one nation turns its flag on for both (batch 10.5).
+    named_parts = set(given_parts) | {
+        curve for name, curve in _PART_OPTIONS.items() if any(nation_choice(nation, by_name(name)) in payloads for nation in NATIONS)
+    }
+    flags = {**{curve: True for curve in named_parts}, **turned_on, **flags}
 
     for option in options_of(Kind.FLAG):
         if option.name in flags:
@@ -1423,7 +1457,7 @@ def drawn_config(config: PlotConfig, key: str) -> PlotConfig:
         if not own.mortgages or term not in viewed["mortgage_terms"]:
             viewed[field] = field_default(field)
     # Nor the aggregate debts without debt, or with levels (``idle_aggregates``).
-    if not own.include_debt or own.components:
+    if not own.include_debt or viewed["components"]:
         viewed["debt_aggregates"] = field_default("debt_aggregates")
     return dataclasses.replace(own, nation_settings=(), **viewed)
 
@@ -1462,6 +1496,22 @@ def _nation_tokens(option: Option, texts: dict[str, str], spelling: str) -> list
                     return []
                 text = option.format((candidate,), PlotConfig())
                 return [_shorter_as_removal(option, text) or f"{spelling}:{text}"]
+    if option.fields[0] == "components":
+        # The levels (batch 10.5) as a list: written once, for every chart,
+        # when one set of letters draws each nation's own (the UK has no "p",
+        # so --debt:fp draws its "f"), the default ("": the aggregate lines)
+        # first, then the letters of them all.
+        try:
+            own = {key: option.parse(text) if text else default for key, text in texts.items()}
+        except ValueError:
+            own = {}
+        union = "".join(letter for letter in COMPONENT_LETTERS if any(letter in value for value in own.values()))
+        for candidate in dict.fromkeys((default, union, *own.values())):
+            if own and all(
+                nation_view(nations[key], option, candidate) == nation_view(nations[key], option, value)
+                for key, value in own.items()
+            ):
+                return [] if candidate == default else [f"{spelling}:{candidate}"]
     tokens = []
     for key, text in texts.items():
         try:
@@ -1520,7 +1570,14 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     curves = options_of(Kind.TOGGLE)
     on = [option for option in curves if flags.get(option.name, True)]
     off = [option for option in curves if option not in on]
-    with_levels = any(payloads.get(name, "").strip() for name in _PART_OPTIONS)
+    # A nation drawn only when asked for, and not asked for, writes nothing
+    # (its fields stay in the window for when it is).
+    written_for = [n for n in NATIONS if n.shown_by_default or flags.get(switch_of(n), False)]
+    with_levels = any(
+        payloads.get(nation_choice(nation, by_name(name)), payloads.get(name, "")).strip()
+        for nation in written_for
+        for name in _PART_OPTIONS
+    )
     if with_levels:
         tokens += [f"--{option.name}" if option in on else f"--no-{option.name}" for option in curves]
     elif off and (not on or len(off) <= len(on)):
@@ -1546,17 +1603,16 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     for option in options_of(Kind.VALUE):
         text = payloads.get(option.name, "").strip()
         texts = {}
+        # The levels on a curve that is shown (--debt:fp, or --interest:fp).
+        spelling = f"--{level_key}" if option.name in _PART_OPTIONS else option.usage.split(":")[0]
         if per_nation(option):
-            # A nation drawn only when asked for, and not asked for, writes
-            # nothing (its fields stay in the window for when it is).
-            written_for = [n for n in NATIONS if n.shown_by_default or flags.get(switch_of(n), False)]
             texts = {nation.key: payloads.get(nation_choice(nation, option), text).strip() for nation in written_for}
             text = text if len(set(texts.values())) > 1 else next(iter(texts.values()))
         # "none" in every nation's field is written for each: a list for every chart is never none.
         if len(set(texts.values())) > 1 or (texts and _is_none(text)):
             if option.turns_on and not flags.get(option.turns_on, default_flags.get(option.turns_on)):
                 continue
-            written = _nation_tokens(option, texts, option.usage.split(":")[0])
+            written = _nation_tokens(option, texts, spelling)
             if written and option.turns_on:
                 stood_for.add(option.turns_on)
             values += written
@@ -1570,10 +1626,9 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
             if not flags.get(option.turns_on, default_flags.get(option.turns_on)):
                 continue
             stood_for.add(option.turns_on)
-        key = f"--{level_key}" if option.name in _PART_OPTIONS else option.usage.split(":")[0]
         shorter = _shorter_as_removal(option, text)
         if shorter != "":  # "": the default, spelled another way ("3m,2,5,10,30")
-            values.append(shorter or f"{key}:{text}")
+            values.append(shorter or f"{spelling}:{text}")
 
     # On/off flags in the window (--cur, --reg): only when not at their default.
     for option in options_of(Kind.FLAG):

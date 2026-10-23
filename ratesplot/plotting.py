@@ -615,7 +615,7 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
     rates = rate_curves("cdn", yields, config)
     # A spread is cut where its yields are (from the start): their own coverage is the one warned about.
     warn_series_coverage(config.start, {curve.label: curve.first for curve in rates if not curve.spread})
-    if config.components:
+    if _levels_drawn("cdn", config):
         # Debt and interest by level of government replace the aggregate lines.
         series = (fetch_cdn_components(config), fetch_cdn_gdp(config))
     else:
@@ -685,7 +685,7 @@ def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     yields, quote_time = extend_cdn_yields(fetch_uk_yields(config), config, "uk", "UK")
     rates = rate_curves("uk", yields, config)
     warn_series_coverage(config.start, {curve.label: curve.first for curve in rates if not curve.spread})
-    if config.components:
+    if _levels_drawn("uk", config):
         series = (fetch_uk_components(config), fetch_uk_gdp(config))
     else:
         series = (fetch_uk_debt(config), fetch_uk_gdp(config), fetch_uk_interest(config))
@@ -723,7 +723,7 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     yields, quote_time = extend_cdn_yields(fetch_de_yields(config), config, "de", "German")
     rates = rate_curves("de", yields, config)
     warn_series_coverage(config.start, {curve.label: curve.first for curve in rates if not curve.spread})
-    if config.components:
+    if _levels_drawn("de", config):
         series = (fetch_de_components(config), fetch_de_gdp(config))
     else:
         series = (fetch_de_debt(config), fetch_de_gdp(config), fetch_de_interest(config))
@@ -774,8 +774,23 @@ def _require_start(config: PlotConfig) -> None:
 def _note_gross_debt_drawn(country: str, config: PlotConfig) -> None:
     """Note a chart drawing its gross debt where none of the aggregate debts chosen is its own (``--aggregate:net`` on Canada's; batch 10.4)."""
     nation = nation_by_key(country)
-    if config.include_debt and not config.components and not set(config.debt_aggregates) & set(nation.debt_aggregates):
+    levels = nation.view("components", config.components)
+    if config.include_debt and not levels and not set(config.debt_aggregates) & set(nation.debt_aggregates):
         print(f"  Note: {nation.name} has no {' or '.join(config.debt_aggregates)} debt; its gross debt is drawn.")
+
+
+def _levels_drawn(country: str, config: PlotConfig) -> str:
+    """Return the levels of government a chart draws (``Nation.view``): those chosen that it has.
+
+    None where it has none of them, so its aggregate lines are drawn, with
+    a note (batch 10.5: the UK and "p", where it drew nothing for debt and
+    interest before).
+    """
+    nation = nation_by_key(country)
+    levels = nation.view("components", config.components)
+    if config.components and not levels:
+        print(f"  Note: {nation.name} has none of the levels chosen ({config.components}); its aggregate lines are drawn.")
+    return levels
 
 
 def _warn_no_yields(country: str, config: PlotConfig) -> None:

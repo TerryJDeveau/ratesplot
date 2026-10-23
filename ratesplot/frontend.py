@@ -47,6 +47,7 @@ import pandas as pd
 from matplotlib.figure import Figure
 
 from .config import (
+    COMPONENT_LETTERS,
     COMPONENT_SYNONYMS,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     EARLIEST_DATA_START,
@@ -90,9 +91,6 @@ _FORMER_DEFAULT_START = "1966-01-01"
 # Same PNG metadata as tools/verify_charts.py, so saved files hash identically.
 PNG_METADATA = {"Software": None}
 TAB_TITLES = {nation.key: nation.name for nation in NATIONS}
-# The "By level" check boxes: letter and caption (one control for both countries,
-# since --debt: and --interest: take the same letters).
-LEVEL_BOXES = (("f", "Federal"), ("n", "Non-federal"), ("p", "Provincial / state"), ("m", "Municipal / local"))
 # The format of the window's remembered-settings file; a file of another version is ignored.
 STATE_VERSION = 1
 
@@ -104,12 +102,15 @@ NATION_OPTIONS = tuple(option for option in OPTIONS if per_nation(option) and op
 # The order of a nation's lists under its tab, by field: the spreads next to
 # the yield terms, as in the column (Terry, 2026-10-06); the policy terms
 # (batch 9.1) before the mortgages, as the column has the policy rate before
-# them; the aggregate debts (batch 10.4) last, beside the axis limits.
-_PANEL_LISTS = ("yield_terms", "spread_pairs", "policy_terms", "mortgage_terms", "debt_aggregates")
+# them; the aggregate debts (batch 10.4), then the levels of government that
+# replace them (batch 10.5: "By level", one control for --debt: and
+# --interest:, which take the same letters), beside the axis limits.
+_PANEL_LISTS = ("yield_terms", "spread_pairs", "policy_terms", "mortgage_terms", "debt_aggregates", "components")
 # The control column's blocks, top to bottom: key (an option's ``panel``, or
 # its help group), title (None: no title) and the options to put first, in
 # that order (the rest follow in table order). Terry, 2026-10-08 (batch 7):
-# the measure just under "By level", the regression segments just under the
+# the measure just under "By level" (under the curves since By level went
+# to each nation's panel, batch 10.5), the regression segments just under the
 # measure, the yields, spreads, policy rate and mortgages ticked in one
 # block, "Line labels" and "Latest data" one block without a title. --help
 # keeps its sections (``options.GROUPS``), which say what each option is.
@@ -334,11 +335,14 @@ def starting_choices(
         for name, text in cli_payloads.items():
             if name in payloads:
                 payloads[name] = text
-        # The levels (--debt:LETTERS, --interest:LETTERS) have one control, the
-        # debt one; and giving them names their curves, as --debt would.
-        levels_given = any(name in cli_payloads for name in ("debt-parts", "interest-parts"))
-        if levels_given:
-            payloads["debt-parts"] = cli_config_payloads["debt-parts"]
+        # The levels (--debt:LETTERS, --interest:LETTERS, for every chart or
+        # for one nation) name their curves, as --debt would; each nation's
+        # one control (the debt one) is set below with the other nations' own.
+        levels_given = any(
+            name in cli_payloads or nation_choice(nation, by_name(name)) in cli_payloads
+            for name in ("debt-parts", "interest-parts")
+            for nation in NATIONS
+        )
         # A list taken out of a field (--no-yields:30y) has no control of its
         # own: the field's control shows what the command line left.
         for option in options_of(Kind.VALUE):
@@ -607,13 +611,22 @@ def nation_of(key: str) -> Nation | None:
     return next((nation for nation in NATIONS if nation.key == code), None)
 
 
-def level_letters(text: str) -> set[str]:
+def level_letters(text: str, nation: Nation | None = None) -> set[str]:
     """Return the levels a ``--debt:`` text names, synonyms resolved: ``"fs"`` -> ``{"f", "p"}``.
 
-    Lenient, for ticking the level boxes: letters that are not levels are
-    ignored here (the option's parser reports them when the chart is drawn).
+    With ``nation``, its own synonyms too, so the boxes of its panel tick:
+    the UK's ``"n"`` is its local level, ``"m"`` (batch 10.5). Lenient, for
+    ticking the level boxes: letters that are not levels are ignored here
+    (the option's parser reports them when the chart is drawn).
     """
-    return {COMPONENT_SYNONYMS.get(letter, letter) for letter in text.strip().lower()}
+    own = dict(nation.level_synonyms) if nation else {}
+    resolved = (COMPONENT_SYNONYMS.get(letter, letter) for letter in text.strip().lower())
+    return {own.get(letter, letter) for letter in resolved}
+
+
+def level_text(ticked: set[str] | list[str]) -> str:
+    """Return the levels' text for the boxes ticked, as the command line writes it: in ``COMPONENT_LETTERS`` order ("" for none)."""
+    return "".join(letter for letter in COMPONENT_LETTERS if letter in ticked)
 
 
 # ---------------------------------------------------------------------------
@@ -679,13 +692,22 @@ def choice_rows(option: Option, text: str, nation: Nation | None = None) -> list
 def panel_lists(nation: Nation) -> list[Option]:
     """Return the lists under a nation's tab, in their order (``_PANEL_LISTS``): those offering it a choice, two boxes or more.
 
-    The aggregate debts only for the UK, the only nation with two (batch
-    10.4); a nation without the choice draws its gross debt.
+    The tick-box lists (``Option.editor`` "choices") and the levels
+    ("levels", the nation's own ``level_boxes``, batch 10.5). The aggregate
+    debts only for the UK, the only nation with two (batch 10.4); a nation
+    without the choice draws its gross debt.
     """
     lists = sorted(
-        (option for option in NATION_OPTIONS if option.editor == "choices"), key=lambda option: _PANEL_LISTS.index(option.fields[0])
+        (option for option in NATION_OPTIONS if option.editor in ("choices", "levels")),
+        key=lambda option: _PANEL_LISTS.index(option.fields[0]),
     )
-    return [option for option in lists if sum(len(boxes) for _caption, boxes in choice_rows(option, "", nation)) >= 2]
+
+    def boxes(option: Option) -> int:
+        if option.editor == "levels":
+            return len(nation.level_boxes)
+        return sum(len(row) for _caption, row in choice_rows(option, "", nation))
+
+    return [option for option in lists if boxes(option) >= 2]
 
 
 def choices_text(option: Option, ticked: list[str]) -> str:

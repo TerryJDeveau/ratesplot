@@ -8,8 +8,9 @@ Controls
     button; ``editor="size"`` gives width and height boxes with an
     aspect-ratio lock; ``editor="levels"`` gives one check box per level of
     government, the single "By level" control for ``--debt:`` and
-    ``--interest:``), in the blocks of ``frontend.control_blocks`` (Terry's
-    order of 2026-10-08: the measure under "By level", the regression
+    ``--interest:``, in each nation's panel), in the blocks of
+    ``frontend.control_blocks`` (Terry's order of 2026-10-08: the measure
+    under the curves, the regression
     segments under the measure, the four rates on the yield axis together,
     the line labels with the latest data; --help keeps its sections), each with the option's
     help text and command-line spelling as a tooltip. A new option in the table
@@ -21,15 +22,16 @@ Controls
     (dollars, percent, dollars per person), and under -r the GDP box is
     greyed out, GDP being only the denominator. What has no curve to act on
     is greyed out too, its tick or text kept (``frontend.idle_controls``):
-    % of GDP and By level without debt or interest; Per capita, Regression
+    % of GDP and the levels without debt or interest; Per capita, Regression
     segments and each chart's Top and Bottom without debt, GDP or interest.
     A greyed field's text is ignored and left off the command line. A blank
     text field shows the value in effect in grey (``frontend.field_hints``):
     the automatic start, the end, the tolerance's default, each chart's axis
     limits as drawn; it is never written in (``_Hint``). Each nation's own choices
-    (``frontend.NATION_OPTIONS``: its yield terms, spreads and mortgage terms
-    as tick boxes, and its axis limits) are in a panel under its tab, keyed
-    "NATION:OPTION". The controls scroll when the
+    (``frontend.NATION_OPTIONS``: its yield terms, spreads, policy and
+    mortgage terms, the UK's aggregate debts and its levels of government as
+    tick boxes, and its axis limits) are in a panel under its tab, keyed
+    "NATION:OPTION", as many to a row as fit (batch 10). The controls scroll when the
     window is too short for them; Refresh, Save PNG and Save log file sit in
     a bar under them that does not, so they are always in sight (the log's
     button under the other two when the column is narrow). A handle between the
@@ -104,11 +106,10 @@ import pandas as pd
 from PIL import Image, ImageTk
 
 from . import http
-from .config import COMPONENT_LETTERS, DOWNLOAD_MAX_AGE_SECONDS, NATIONS, Nation, PlotConfig
+from .config import DOWNLOAD_MAX_AGE_SECONDS, NATIONS, Nation, PlotConfig
 from .console import this_thread_output_to
 from .frontend import (
     GREYABLE_OPTIONS,
-    LEVEL_BOXES,
     LIMIT_COLUMNS,
     NATION_OPTIONS,
     STATE_VERSION,
@@ -129,6 +130,7 @@ from .frontend import (
     idle_controls,
     idle_nation_keys,
     level_letters,
+    level_text,
     load_state,
     nation_boxes,
     option_help_lines,
@@ -411,18 +413,21 @@ class DatePicker:
 
 
 class _LevelsEditor:
-    """Keeps one check box per level of government and the option's letters (e.g. ``"fp"``) in step.
+    """Keeps one check box per level of a nation's government and the option's letters (e.g. ``"fp"``) in step.
 
     See ``RatesPlotApp._add_levels_control``. The letters variable stays the
     single source of truth (for drawing, the command line, Back and the
-    remembered settings); the boxes are a view of it. ``syncing`` stops the
-    two sides' updates from triggering each other.
+    remembered settings); the boxes are a view of it: the nation's own
+    (``Nation.level_boxes``; batch 10.5), a synonym ticking the box of the
+    level it means (the UK's "n", its "m"). ``syncing`` stops the two sides'
+    updates from triggering each other.
     """
 
-    def __init__(self, payload: tk.StringVar, on_change) -> None:
+    def __init__(self, payload: tk.StringVar, on_change, nation: Nation) -> None:
         self.payload = payload
         self.on_change = on_change
-        self.boxes = {letter: tk.BooleanVar(value=False) for letter in COMPONENT_LETTERS}
+        self.nation = nation
+        self.boxes = {letter: tk.BooleanVar(value=False) for letter, _caption in nation.level_boxes}
         self.widgets: list[ttk.Checkbutton] = []
         self.syncing = False
         self.payload.trace_add("write", lambda *_args: self._payload_changed())
@@ -436,7 +441,7 @@ class _LevelsEditor:
             return
         self.syncing = True
         try:
-            self.payload.set("".join(letter for letter in COMPONENT_LETTERS if self.boxes[letter].get()))
+            self.payload.set(level_text([letter for letter, box in self.boxes.items() if box.get()]))
         finally:
             self.syncing = False
         self.on_change()
@@ -445,7 +450,7 @@ class _LevelsEditor:
         """Show letters set from elsewhere (loading, Back, Reset) in the boxes."""
         if self.syncing:
             return
-        letters = level_letters(self.payload.get())
+        letters = level_letters(self.payload.get(), self.nation)
         self.syncing = True
         try:
             for letter, box in self.boxes.items():
@@ -611,7 +616,7 @@ class _Flow:
     Terry, 2026-10-08: the column's width adjustable, its controls in two
     columns at the default width, in one when it is made narrow, in more
     when it is made wide. Each control is a cell (``add``), placed row by
-    row; a cell added ``wide`` (a caption such as "By level") takes a row
+    row; a cell added ``wide`` (a list of tick boxes, such as the spreads) takes a row
     of its own and starts a new run of cells. Each run fills its rows in
     turn with as many cells as fit, the rest wrapping (Terry, 2026-10-14,
     batch 15.2: "three across, where possible, and if that leaves one down
@@ -1012,12 +1017,6 @@ class RatesPlotApp:
                 elif option.kind is Kind.VALUE and option.editor == "size":
                     flow.add(cell)
                     flow.add(self._add_size_control(cell, frame, option))
-                elif option.kind is Kind.VALUE and option.editor == "levels":
-                    # "By level" over its boxes, which line up with the curves' (Terry, 2026-10-08).
-                    caption, boxes = self._add_levels_control(frame, option)
-                    flow.add(caption, wide=True)
-                    for box in boxes:
-                        flow.add(box)
                 elif option.kind is Kind.VALUE:
                     self._add_value_control(cell, 0, option, entry_width=_DATE_ENTRY_CHARS if option.editor == "date" else 16)
                     flow.add(cell)
@@ -1101,29 +1100,31 @@ class RatesPlotApp:
             button.grid(row=row, column=2, padx=(2, 0), pady=1)
             _Tooltip(button, "Pick a date from a calendar")
 
-    def _add_levels_control(self, frame: ttk.Frame, option: Option) -> tuple[ttk.Label, list[ttk.Checkbutton]]:
-        """One check box per level of government, writing the option's letters ("fp" …): return its caption and its boxes.
+    def _add_levels_control(self, cell: ttk.Frame, option: Option, nation: Nation) -> None:
+        """A nation's levels of government in ``cell``, a box for each, writing its letters ("fp" …): "By level" above, two to a row.
 
-        Ticking none gives the aggregate lines. The one control serves debt and
-        interest alike (``--debt:`` and ``--interest:`` take the same letters).
-        The caption and each box are cells of the block (``_Flow``).
+        Batch 10.5 (Terry, 2026-10-13): in each nation's panel, the boxes
+        named for its governments (``Nation.level_boxes``), where the column
+        had one control for every chart. Ticking none gives the aggregate
+        lines. The one control serves debt and interest alike (``--debt:`` and
+        ``--interest:`` take the same letters).
         """
+        key = nation_choice(nation, option)
         payload = tk.StringVar()
-        self.payload_vars[option.name] = payload
-        label = ttk.Label(frame, text=option.label)
-        self.value_labels[option.name] = label
+        self.payload_vars[key] = payload
+        label = ttk.Label(cell, text=option.label)
+        label.grid(row=0, column=0, columnspan=2, sticky="w")
+        self.value_labels[key] = label
         # A level ticked greys the UK's aggregate debts (batch 10.4): the dependent controls first.
-        editor = _LevelsEditor(payload, on_change=self._choices_changed)
-        self.level_editors[option.name] = editor
+        editor = _LevelsEditor(payload, on_change=self._choices_changed, nation=nation)
+        self.level_editors[key] = editor
         tip = _tooltip_text(option) + "\nNone ticked = debt and interest in total."
-        boxes = []
-        for letter, text in LEVEL_BOXES:
-            check = ttk.Checkbutton(frame, text=text, variable=editor.boxes[letter], command=editor.box_changed)
+        for index, (letter, text) in enumerate(nation.level_boxes):
+            check = ttk.Checkbutton(cell, text=text, variable=editor.boxes[letter], command=editor.box_changed)
+            check.grid(row=1 + index // 2, column=index % 2, sticky="w", padx=(0, 6))
             editor.widgets.append(check)
             _Tooltip(check, tip)
-            boxes.append(check)
         _Tooltip(label, tip)
-        return label, boxes
 
     def _add_choices_control(self, frame: ttk.LabelFrame, row: int, option: Option, nation: Nation | None = None) -> None:
         """A list option as tick boxes (``Option.choices``), one row of boxes per row offered.
@@ -1366,7 +1367,8 @@ class RatesPlotApp:
 
         Its yield terms, spreads, policy terms and mortgage terms as tick
         boxes (only those its chart can draw), the UK's aggregate debts (batch
-        10.4), then its axis limits. They set that chart only;
+        10.4), its levels of government (batch 10.5), then its axis limits.
+        They set that chart only;
         the curves' own boxes (yields, spreads, mortgages on or off) stay in
         the column, for both charts (Terry, 2026-10-06: a panel under each
         tab, ready for more nations).
@@ -1381,7 +1383,10 @@ class RatesPlotApp:
         flow = _Flow(frame, sticky="nw", pady=0)
         for option in panel_lists(nation):
             cell = ttk.Frame(frame)
-            self._add_choices_control(cell, 0, option, nation)
+            if option.editor == "levels":
+                self._add_levels_control(cell, option, nation)
+            else:
+                self._add_choices_control(cell, 0, option, nation)
             flow.add(cell)
         limits = ttk.Frame(frame)
         flow.add(limits)

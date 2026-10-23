@@ -37,7 +37,9 @@ sys.path.insert(0, str(ROOT))
 
 from ratesplot.cli import sort_tokens  # noqa: E402
 from ratesplot.config import NATIONS  # noqa: E402
-from ratesplot.frontend import NATION_OPTIONS, choice_values, choices_text, starting_choices  # noqa: E402
+from ratesplot.frontend import (  # noqa: E402
+    NATION_OPTIONS, choice_values, choices_text, level_letters, level_text, starting_choices,
+)
 from ratesplot.options import command_line_tokens, config_from_choices, drawn_config, nation_choice  # noqa: E402
 
 # The lists a nation may be left none of, and the flag that draws each.
@@ -72,6 +74,10 @@ VALUES = (
     # without debt, where they draw nothing; with a measure.
     "--agg:gross,net", "--agg:net", "--uk:agg:net", "--uk:agg:gross,net --agg:net", "--agg:net --d:f",
     "--agg:net --no-debt", "--uk:agg:net -r",
+    # The levels for one nation (batch 10.5): alone, beside those for every chart, by --interest, the UK's
+    # "n" and its missing "p", with a curve given.
+    "--cdn:d:fp", "--d:fp --uk:d:f", "--d:fn", "--us:i:f --d:fpm", "--ger:d:pm --uk:d:fn", "--d:p",
+    "--cdn:d:fp --gdp", "--d:fp --cdn:i:f",
 )
 
 
@@ -108,13 +114,20 @@ def round_trip(line: list[str]) -> tuple[list[str], list[str]] | None:
 
 
 def through_boxes(payloads: dict[str, str]) -> dict[str, str]:
-    """Return ``payloads`` with each nation's list as the page's boxes give it back: the items ticked, "none" for none."""
+    """Return ``payloads`` with each nation's list as the page's boxes give it back: the items ticked, "none" for none.
+
+    The levels too (batch 10.5): the letters of the nation's boxes ticked, a
+    synonym as the box it ticks (the UK's "n" as "m").
+    """
     boxed = dict(payloads)
     for option in NATION_OPTIONS:
-        if option.editor == "choices":
-            for nation in NATIONS:
-                key = nation_choice(nation, option)
+        for nation in NATIONS:
+            key = nation_choice(nation, option)
+            if option.editor == "choices":
                 boxed[key] = choices_text(option, choice_values(option, payloads[key], nation))
+            elif option.editor == "levels":
+                letters = level_letters(payloads[key], nation)
+                boxed[key] = level_text([letter for letter, _caption in nation.level_boxes if letter in letters])
     return boxed
 
 

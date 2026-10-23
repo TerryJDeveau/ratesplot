@@ -106,7 +106,6 @@ import streamlit as st  # noqa: E402
 from . import http  # noqa: E402
 from .cli import sort_tokens  # noqa: E402
 from .config import (  # noqa: E402
-    COMPONENT_LETTERS,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DOWNLOAD_MAX_AGE_SECONDS,
     EARLIEST_DATA_START,
@@ -117,7 +116,6 @@ from .config import (  # noqa: E402
 )
 from .console import this_thread_output_to  # noqa: E402
 from .frontend import (  # noqa: E402
-    LEVEL_BOXES,
     LIMIT_COLUMNS,
     NATION_OPTIONS,
     TAB_TITLES,
@@ -137,6 +135,7 @@ from .frontend import (  # noqa: E402
     idle_controls,
     idle_nation_keys,
     level_letters,
+    level_text,
     move_dates_updates,
     nation_boxes,
     option_help_lines,
@@ -211,7 +210,7 @@ _ZOOM_HINT = (
 # Session-state keys: one per control, and the page's own records.
 _FLAG = "flag:"      # + option name: a check box
 _VALUE = "value:"    # + option name, or a nation's choice key ("us:max"): a text field
-_LEVEL = "level:"    # + letter: one of the "By level" boxes
+_LEVEL = "level:"    # + nation key + ":" + letter: one of a nation's "By level" boxes (batch 10.5)
 _CHOICE = "choice:"  # + choice key + ":" + value: one tick box of a list option (Option.choices)
 _CHOICE_OTHERS = "choice_others:"  # + choice key: the values given that no offered box has
 _READY = "ready"     # the controls have been set from the address
@@ -445,9 +444,9 @@ def _load_choices(choices: Choices) -> None:
     payloads, flags = choices
     for key, option, nation in _value_keys():
         if option.editor == "levels":
-            letters = level_letters(payloads.get(key, ""))
-            for letter in COMPONENT_LETTERS:
-                st.session_state[_LEVEL + letter] = letter in letters
+            letters = level_letters(payloads.get(key, ""), nation)
+            for letter, _caption in nation.level_boxes:
+                st.session_state[_LEVEL + nation.key + ":" + letter] = letter in letters
         elif option.editor == "choices":
             text = payloads.get(key, "")
             rows = choice_rows(option, text, nation)
@@ -469,7 +468,8 @@ def _snapshot() -> Choices:
     payloads: dict[str, str] = {}
     for key, option, nation in _value_keys():
         if option.editor == "levels":
-            payloads[key] = "".join(letter for letter in COMPONENT_LETTERS if st.session_state.get(_LEVEL + letter, False))
+            ticked = [letter for letter, _caption in nation.level_boxes if st.session_state.get(_LEVEL + nation.key + ":" + letter, False)]
+            payloads[key] = level_text(ticked)
         elif option.editor == "choices":
             ticked = [
                 value for value in _choice_values_offered(key) if st.session_state.get(_CHOICE + key + ":" + value, False)
@@ -891,18 +891,19 @@ def _size_control(where, option: Option) -> None:
     )
 
 
-def _levels_control(where, option: Option) -> None:
-    """"By level" over its four boxes, as many to a row as fit (the window's rule, Terry, 2026-10-14, batch 15.2).
+def _levels_control(where, option: Option, nation: Nation) -> None:
+    """A nation's "By level" over its boxes, named for its governments, as many to a row as fit.
 
-    A row that wraps, as the nations' and the rates' (``_controls``): two
-    to a row at the sidebar's default width, more when it is wider. It was
-    two fixed columns.
+    Batch 10.5 (Terry, 2026-10-13): in each nation's section, its own boxes
+    (``Nation.level_boxes``), where the column had one control for every
+    chart. A row that wraps, as the nations' and the rates' (``_controls``;
+    the window's rule, Terry, 2026-10-14, batch 15.2).
     """
     where.markdown(f"**{option.label}**", help=_help(option, "None ticked = debt and interest in total."))
     idle = option.name in _idle()  # greyed without debt or interest, as in the window
     row = where.container(horizontal=True, wrap=True)
-    for letter, caption in LEVEL_BOXES:
-        row.checkbox(caption, key=_LEVEL + letter, disabled=idle)
+    for letter, caption in nation.level_boxes:
+        row.checkbox(caption, key=_LEVEL + nation.key + ":" + letter, disabled=idle)
 
 
 def _choices_control(where, option: Option, nation: Nation | None = None) -> None:
@@ -1017,8 +1018,6 @@ def _controls() -> None:
         for option in values:
             if option.editor == "choices":
                 _choices_control(bar, option)
-            elif option.editor == "levels":
-                _levels_control(bar, option)
             elif option.editor == "size":
                 _size_control(bar, option)
     for nation in NATIONS:
@@ -1029,14 +1028,18 @@ def _nation_controls(bar, nation: Nation) -> None:
     """A nation's own section (``frontend.NATION_OPTIONS``), as the panel under its tab in the window.
 
     Its yield terms, spreads, policy terms and mortgage terms (only those its
-    chart can draw), the UK's aggregate debts (batch 10.4), in the window's
+    chart can draw), the UK's aggregate debts (batch 10.4), its levels of
+    government (batch 10.5), in the window's
     order (``frontend.panel_lists``), then its axis limits as in the window: the yield axis's Max above
     its Min, beside the right axis's Top above its Bottom (Terry, 2026-10-12;
     ``LIMIT_COLUMNS``).
     """
     bar.subheader(f"{nation.name} only", divider="gray")
     for option in panel_lists(nation):
-        _choices_control(bar, option, nation)
+        if option.editor == "levels":
+            _levels_control(bar, option, nation)
+        else:
+            _choices_control(bar, option, nation)
     for row in zip(*LIMIT_COLUMNS):  # (max, top), then (min, bottom)
         for column, name in zip(bar.columns(2), row):
             option = by_name(name)

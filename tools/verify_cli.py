@@ -219,6 +219,11 @@ CASES: list[list[str]] = [
     ["--gb:aggregate:gross,net"], ["--cdn:agg:net"], ["--ger:agg:gross"], ["--agg:none"], ["--uk:agg:none"], ["--agg:"],
     ["--agg"], ["--ag:net"], ["--a:net"], ["--agg:gro"], ["--na:gb", "--agg:net", "--no-debt"], ["--na:gb", "--agg:net", "--d:f"],
     ["--na:gb", "--agg:net", "--gdp"],
+    # Batch 10.5: the levels for one nation; a level it has not; its own debt and interest letters
+    # agree; they name their curve on every chart; the UK's "n".
+    ["--cdn:debt:fp"], ["--cdn:d:fs"], ["--us:interest:f"], ["--uk:debt:p"], ["--uk:debt:fn"], ["--gb:d:m"],
+    ["--ger:d:pm"], ["--cdn:debt:f", "--cdn:interest:p"], ["--cdn:debt:f", "--cdn:interest:f"],
+    ["--debt:fp", "--cdn:interest:f"], ["--cdn:debt:fp", "--gdp"], ["--cdn:debt:x"], ["--cdn:debt:"], ["--na:gb", "--debt:p"],
 ]
 
 
