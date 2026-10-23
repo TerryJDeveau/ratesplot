@@ -1678,7 +1678,10 @@ class RatesPlotApp:
             self.drawn_choices = self.rendering_choices
             not_drawn = not_drawn or {}
             drawn = [TAB_TITLES.get(c.key, c.key) for c in COUNTRIES if getattr(config, c.show_field) and c.key not in not_drawn]
-            names = drawn[0] if len(drawn) == 1 else f"{', '.join(drawn[:-1])} and {drawn[-1]}"
+            if len(drawn) > 1:
+                names = f"{', '.join(drawn[:-1])} and {drawn[-1]}"
+            else:  # one chart, or none: every chart's source failing (an IndexError here until 2026-10-22)
+                names = drawn[0] if drawn else ""
             failures = "; ".join(f"{TAB_TITLES.get(key, key)} not drawn: {why}" for key, why in not_drawn.items())
             # Sources that failed and were drawn from their last good copies (batch 20).
             from_copies = f"From last good copies, their sources failing: {'; '.join(copies)}." if copies else ""
