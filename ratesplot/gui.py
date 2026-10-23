@@ -619,11 +619,17 @@ class _Flow:
     Until then four boxes had gone two by two at any width, never three
     and one, so the nations and the rates stayed in two columns while the
     curves took three. Each column is as wide as its widest cell, so the
-    cells line up from row to row.
+    cells line up from row to row. ``sticky``: where a cell sits in its
+    place, "w" (a check box beside a taller one is centred) or "nw" (the
+    panel under each tab, whose lists differ in height and whose labels
+    stay on one line; batch 10). ``pady``: the space above and below each
+    cell (none in the panel, which kept its height as a grid of columns).
     """
 
-    def __init__(self, frame: ttk.Frame) -> None:
+    def __init__(self, frame: ttk.Frame, sticky: str = "w", pady: int = 1) -> None:
         self.frame = frame
+        self.sticky = sticky
+        self.pady = pady
         self.cells: list[tuple[tk.Widget, bool]] = []
         self.columns = 0  # the most columns that fit, as last laid out
 
@@ -698,7 +704,7 @@ class _Flow:
             if wide:
                 cell.grid(row=row, column=0, columnspan=used, sticky="w", pady=1, padx=0)
             else:
-                cell.grid(row=row, column=column, columnspan=1, sticky="w", pady=1, padx=(0, _CELL_GAP_PX if column < used - 1 else 0))
+                cell.grid(row=row, column=column, columnspan=1, sticky=self.sticky, pady=self.pady, padx=(0, _CELL_GAP_PX if column < used - 1 else 0))
 
     def used_columns(self) -> int:
         """How many columns the cells are in now."""
@@ -791,6 +797,8 @@ class RatesPlotApp:
 
         # Per-country preview state, keyed by Country.key.
         self.tabs: dict[str, ttk.Frame] = {}
+        # The panel under each tab: its cells, as many to a row as fit (batch 10).
+        self.panel_flows: dict[str, _Flow] = {}
         self.canvases: dict[str, tk.Canvas] = {}
         self.scrollbars: dict[str, tuple[ttk.Scrollbar, ttk.Scrollbar]] = {}
         self.pngs: dict[str, bytes] = {}
@@ -1134,11 +1142,12 @@ class RatesPlotApp:
         self.payload_vars[key] = payload
         box = ttk.Frame(frame)
         if nation is not None:
+            # A cell of the panel's flow, which puts the gap between cells.
             label = ttk.Label(frame, text=option.label)
-            label.grid(row=0, column=row, sticky="w", padx=(0, 12))
+            label.grid(row=0, column=row, sticky="w")
             self.value_labels[key] = label
             _Tooltip(label, _tooltip_text(option))
-            box.grid(row=1, column=row, sticky="nw", padx=(0, 12))
+            box.grid(row=1, column=row, sticky="nw")
         elif option.turns_on:
             box.grid(row=row, column=0, columnspan=3, sticky="w", padx=(22, 0), pady=(0, 2))
         else:
@@ -1364,13 +1373,20 @@ class RatesPlotApp:
         """
         frame = ttk.LabelFrame(tab, text=f"{nation.name} only", padding=(8, 2))
         frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0))
-        column = 0
-        limits = ttk.Frame(frame)
-        # In the order both front ends give them (``frontend.panel_lists``).
+        # Each list a cell, in the order both front ends give them
+        # (``frontend.panel_lists``), then the limits: as many to a row as the
+        # tab's width allows, the rest wrapping, as in the column's blocks
+        # (decision 37). At 1728 px Canada's had 14 px to spare, and batch
+        # 10's lists would have pushed the limits past the window's edge.
+        flow = _Flow(frame, sticky="nw", pady=0)
         for option in panel_lists(nation):
-            self._add_choices_control(frame, column, option, nation)
-            column += 1
-        limits.grid(row=0, column=column, rowspan=2, sticky="nw")
+            cell = ttk.Frame(frame)
+            self._add_choices_control(cell, 0, option, nation)
+            flow.add(cell)
+        limits = ttk.Frame(frame)
+        flow.add(limits)
+        frame.bind("<Configure>", lambda event, flow=flow: flow.fit(event.width), add="+")
+        self.panel_flows[nation.key] = flow
         # A column per axis, Max above Min, Top above Bottom (LIMIT_COLUMNS).
         for axis, names in enumerate(LIMIT_COLUMNS):
             for place, name in enumerate(names):
