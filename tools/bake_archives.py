@@ -6,13 +6,15 @@ extracts the rows the charts need and writes them as Python literals between
 the BEGIN/END markers of
 
 * ``ratesplot/cdn_archive_data.py``: the Canadian history (StatCan archived
-  tables, *Historical Statistics of Canada*, Bank of Canada term bands);
+  tables, *Historical Statistics of Canada* with the Canadian dollar's rate
+  1913-1977, Bank of Canada term bands);
 * ``ratesplot/us_archive_data.py``: U.S. state and local government debt apart
   (Census Bureau). Needs ``pyodbc`` and the Microsoft Access ODBC driver, to
   read the Census historical database, and ``xlrd`` for one old ``.xls``
   table (both ``pip install``-able; only this bake uses them);
 * ``ratesplot/uk_archive_data.py``: the UK history (the Bank of England's
-  "A millennium of macroeconomic data", no longer updated). Needs
+  "A millennium of macroeconomic data", no longer updated), its exchange
+  rates of the pound among it (batch 18.4). Needs
   ``openpyxl``. ``--uk-workbook FILE`` reads a copy already downloaded
   instead of fetching the 27.5 MB workbook.
 * ``ratesplot/de_archive_data.py``: Germany's 10-year before 1972 (the

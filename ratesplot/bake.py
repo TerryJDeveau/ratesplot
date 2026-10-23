@@ -103,10 +103,12 @@ from .config import (
     HISTORICAL_CDN_INTEREST_ANNUAL_TABLE,
     HISTORICAL_CDN_INTEREST_QUARTERLY_TABLE,
     HISTORICAL_CDN_POPULATION_TABLE,
+    HSC_CAD_PER_USD,
+    HSC_EXCHANGE_RATE_SERIES,
     HSC_FEDERAL_DEBT_SERIES,
     HSC_LOCAL_DEBT_SERIES,
     HSC_PROVINCIAL_DEBT_SERIES,
-    HSC_SECTION_H_URL,
+    HSC_URL,
     MILLION,
     ONS_TIMESERIES_URL,
     POPULATION_COLUMN,
@@ -496,27 +498,30 @@ def _extract_historical_interest(
     return ttm.rename(CDN_INTEREST_COLUMN).rename_axis(DATE_COLUMN).to_frame()
 
 
-def parse_hsc_table(text: str, series: str) -> pd.DataFrame:
+def parse_hsc_table(text: str, series: str, unit: str = "millions of dollars") -> pd.DataFrame:
     """Parse a *Historical Statistics of Canada* CSV into a year-indexed frame of its series.
 
     The files are laid out for print: title and heading rows, one row of
     series numbers (e.g. ``,,35,36,37,…``) that fixes which column holds which
     series, then one row per year with the year in the second column, blank
     spacer rows and footnotes. Cells carry thousands separators; unnumbered
-    columns hold footnote markers; a dash means "none". Anything that is not
-    a number becomes NaN. Columns are named ``H<number>``.
+    columns hold footnote markers; a dash means "none" (".." in section J).
+    Anything that is not a number becomes NaN. Columns are named by the
+    section's letter and the number (``H37``, ``J562``).
 
-    ``series`` is the file's name, e.g. ``"H35_51"``; the title must name it
-    and the numbers row must run from its first to its last series, so a
-    moved or reworked file is rejected rather than misread.
+    ``series`` is the file's name, e.g. ``"H35_51"``; the title must name it,
+    its first rows must state ``unit``, and the numbers row must run from its
+    first to its last series, so a moved or reworked file is rejected rather
+    than misread.
     """
-    first, last = (number.lstrip("H") for number in series.split("_"))
+    section = series[0]
+    first, last = (number.lstrip(section) for number in series.split("_"))
     rows = list(csv.reader(io.StringIO(text)))
-    title = f"Series H{first}-{last}."
+    title = f"Series {section}{first}-{last}."
     if not any(title in cell for row in rows[:3] for cell in row):
         raise RuntimeError(f"{series}: no title naming {title!r}; the file may have moved or changed")
-    if not any("millions of dollars" in cell for row in rows[:3] for cell in row):
-        raise RuntimeError(f"{series}: values are no longer stated in millions of dollars")
+    if not any(unit in cell for row in rows[:3] for cell in row):
+        raise RuntimeError(f"{series}: values are no longer stated in {unit}")
 
     numbers_row = next(
         (row for row in rows if first in (cell.strip() for cell in row) and last in (cell.strip() for cell in row)),
@@ -524,7 +529,7 @@ def parse_hsc_table(text: str, series: str) -> pd.DataFrame:
     )
     if numbers_row is None:
         raise RuntimeError(f"{series}: no row of series numbers {first} … {last}")
-    columns = {index: f"H{cell.strip()}" for index, cell in enumerate(numbers_row) if cell.strip().isdigit()}
+    columns = {index: f"{section}{cell.strip()}" for index, cell in enumerate(numbers_row) if cell.strip().isdigit()}
 
     data: dict[int, dict[str, float]] = {}
     for row in rows:
@@ -597,6 +602,35 @@ def _extract_hsc_debt_by_level(
     if levels["f"].isna().any():
         raise RuntimeError(f"H35_51: federal debt blank in {list(levels['f'].index[levels['f'].isna()])}")
     return {key: _at_year_end(series.dropna(), CDN_DEBT_COLUMN) for key, series in levels.items()}
+
+
+# J560-567's unit, as its second row states it (checked by ``parse_hsc_table``).
+_HSC_EXCHANGE_RATE_UNIT = "Canadian dollars per unit of foreign currency"
+# J562's years (measured 2026-10-23): every year 1913 to 1977, none blank.
+_HSC_CAD_PER_USD_YEARS = (1913, 1977)
+
+
+def _extract_hsc_cad_per_usd(table: pd.DataFrame) -> pd.DataFrame:
+    """Return J562, Canadian dollars per U.S. dollar, each year's average of daily noon rates, dated 1 January (batch 18.4).
+
+    Dated by the first day of the year averaged, as FRED dates an average.
+    Every year of ``_HSC_CAD_PER_USD_YEARS`` must have a value between 0.8
+    and 1.3, else it raises: the file has changed. ``fx`` reads it only for
+    1913 to 1962. Measured 2026-10-23 against the millennium workbook's
+    monthly rates (M14 over M15): 1963 to 1969 within 0.5 % of their yearly
+    means, but 1970's 1.0769 is 3 % above theirs (1.0440), its high and low
+    (1.0822, 1.0725) near 1969's: it misses the float of May 1970.
+    """
+    first, last = _HSC_CAD_PER_USD_YEARS
+    values = table[HSC_CAD_PER_USD]
+    years = list(values.dropna().index)
+    if years != list(range(first, last + 1)):
+        raise RuntimeError(f"{HSC_EXCHANGE_RATE_SERIES}: {HSC_CAD_PER_USD} holds the years {years[:3]} … {years[-3:]}, not {first}-{last}")
+    outside = values[(values < 0.8) | (values > 1.3)]
+    if len(outside):
+        raise RuntimeError(f"{HSC_EXCHANGE_RATE_SERIES}: {HSC_CAD_PER_USD} {outside.index[0]}: {outside.iloc[0]} is not a plausible rate")
+    dates = pd.to_datetime([f"{year}-01-01" for year in values.index])
+    return values.set_axis(dates).rename("value").rename_axis(DATE_COLUMN).to_frame()
 
 
 def _extract_historical_population(table: pd.DataFrame) -> pd.DataFrame:
@@ -688,15 +722,15 @@ def _replace_generated_block(source_path: Path, begin_marker: str, end_marker: s
 
 
 def _hsc_url(series: str) -> str:
-    return HSC_SECTION_H_URL.format(series=series)
+    return HSC_URL.format(section=series[0].lower(), series=series)
 
 
-def _download_hsc_table(series: str) -> pd.DataFrame:
-    """Download and parse one *Historical Statistics of Canada* section H CSV."""
+def _download_hsc_table(series: str, unit: str = "millions of dollars") -> pd.DataFrame:
+    """Download and parse one *Historical Statistics of Canada* CSV (``parse_hsc_table``)."""
     print(f"Downloading Historical Statistics of Canada {series} …")
     response = canadian_get(_hsc_url(series))
     # The files are Windows-1252 (the "none" dash is byte 0x97).
-    return parse_hsc_table(response.content.decode("cp1252", errors="replace"), series)
+    return parse_hsc_table(response.content.decode("cp1252", errors="replace"), series, unit)
 
 
 def _require_rows(frame: pd.DataFrame, what: str) -> pd.DataFrame:
@@ -819,6 +853,8 @@ def bake_canadian_archives(source_path: Path | None = None) -> None:
     early_debt, federal_only_debt = _extract_hsc_debt(*hsc_tables)
     early_debt_by_level = _extract_hsc_debt_by_level(*hsc_tables)
 
+    cad_per_usd = _extract_hsc_cad_per_usd(_download_hsc_table(HSC_EXCHANGE_RATE_SERIES, _HSC_EXCHANGE_RATE_UNIT))
+
     print("Downloading historical population estimates …")
     population = _require_rows(
         _extract_historical_population(statcan_zip_table(HISTORICAL_CDN_POPULATION_TABLE)), "Historical population"
@@ -932,6 +968,15 @@ def bake_canadian_archives(source_path: Path | None = None) -> None:
             early_interest_by_level,
             CDN_INTEREST_COLUMN,
         ),
+        # Read by ``fx``, not ``cdn_data`` (batch 18.4).
+        _embedded_list(
+            "EMBEDDED_CDN_PER_USD_HISTORY",
+            f"Canadian dollars per U.S. dollar, {HSC_CAD_PER_USD}: each year's average of daily noon spot rates on\n"
+            f"the inter-bank market, dated 1 January, {_HSC_CAD_PER_USD_YEARS[0]}-{_HSC_CAD_PER_USD_YEARS[1]}:\n"
+            f"{_hsc_url(HSC_EXCHANGE_RATE_SERIES)}",
+            cad_per_usd,
+            "value",
+        ),
     ]
 
     block = (
@@ -963,6 +1008,7 @@ def bake_canadian_archives(source_path: Path | None = None) -> None:
         ("Interest history by level", early_interest_by_level),
     ):
         summary += [(f"{name} [{key}]", frame) for key, frame in by_level.items()]
+    summary.append(("Canadian dollars per U.S. dollar", cad_per_usd))
     for label, frame in summary:
         print(f"  {label + ':':32} {len(frame):4,} rows, {frame.index.min():%Y-%m-%d} to {frame.index.max():%Y-%m-%d}")
 
@@ -1249,8 +1295,10 @@ def bake_us_archives(source_path: Path | None = None) -> None:
 # hold, by sheet: "1690/91" and "End September" (a financial year and the
 # day it ends), "1700" (a year), "1753" and "Aug" (a month; a row whose
 # year cell is blank takes the year of the row before, moving on at
-# January), or a date (a day). Written against the extract saved from the
-# laptop; not yet run on the full workbook (Terry's laptop runs the bake).
+# January), a date (a day), or a month's last day (M14's months: read as
+# the month, batch 18.4). Written against the extract saved from the
+# laptop, then run on the full workbook (on the laptop 2026-10-06; on
+# Buddug 2026-10-23, batch 18.4).
 
 _MONTHS = {name.lower(): number for number, name in enumerate(calendar.month_abbr) if name}
 
@@ -1316,6 +1364,23 @@ _UK_MILLENNIUM = {
         "M12", 17, 135, "month", "1939-09-01", 931, (0.0, 25.0),
         "M12 col 17: spliced variable mortgage rate, monthly, percent",
     ),
+    # The exchange rates ``fx`` reads before FRED's begin (batch 18.4;
+    # measured 2026-10-23: M15 every month 1791-01 to 2017-01, within 0.3 % of
+    # FRED's DEXUSUK averaged by month over 1971-2017, median 0.002 %; M14's
+    # Canadian dollar every month 1963-01 to 2017-03, its mark 1963-01 to
+    # 1998-12, each month dated by its last day).
+    "usd_per_gbp": _MillenniumColumn(
+        "M15", 3, 7, "month", "1791-01-01", 2713, (1.0, 15.0),
+        "M15 col 3: U.S. dollars per pound, monthly (Craighead 2010, Federal Reserve Board and ONS)",
+    ),
+    "cad_per_gbp": _MillenniumColumn(
+        "M14", 2, 7, "month", "1963-01-01", 651, (1.0, 5.0),
+        "M14 col 2: Canadian dollars per pound, monthly average",
+    ),
+    "dem_per_gbp": _MillenniumColumn(
+        "M14", 7, 7, "month", "1963-01-01", 432, (2.0, 15.0),
+        "M14 col 7: Deutsche marks per pound, monthly average",
+    ),
 }
 # Population: each part covers the years up to the next part's first.
 _UK_POPULATION_PARTS = (("population_gb", 1801), ("population_uk_ireland", 1922), ("population_uk", 9999))
@@ -1337,6 +1402,9 @@ def _millennium_date(kind: str, cells: tuple[object, object], previous: pd.Times
     first, second = cells
     if kind == "day" and isinstance(first, (dt.datetime, dt.date)):
         return pd.Timestamp(first).normalize()
+    if kind == "month" and isinstance(first, (dt.datetime, dt.date)):
+        # M14 dates each month by its last day ("1963-01-31"): the month.
+        return pd.Timestamp(year=first.year, month=first.month, day=1)
     a, b = _cell_text(first), _cell_text(second)
     text = " ".join(part for part in (a, b) if part)
     if not text:
@@ -1477,6 +1545,12 @@ def bake_uk_archives(source_path: Path | None = None, workbook_path: Path | None
          frame(columns["bank_rate"])),
         ("EMBEDDED_UK_MORTGAGE_HISTORY", f"Dated by the first day of the month.\n{specs['mortgage'].header}",
          frame(columns["mortgage"])),
+        ("EMBEDDED_UK_USD_PER_GBP_HISTORY", f"Dated by the first day of the month.\n{specs['usd_per_gbp'].header}",
+         frame(columns["usd_per_gbp"])),
+        ("EMBEDDED_UK_CAD_PER_GBP_HISTORY", f"Dated by the first day of the month averaged.\n{specs['cad_per_gbp'].header}",
+         frame(columns["cad_per_gbp"])),
+        ("EMBEDDED_UK_DEM_PER_GBP_HISTORY", f"Dated by the first day of the month averaged.\n{specs['dem_per_gbp'].header}",
+         frame(columns["dem_per_gbp"])),
     )
     block = (
         f"{UK_ARCHIVE_BEGIN_MARKER}\n"

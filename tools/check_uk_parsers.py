@@ -272,6 +272,7 @@ def check_bake_periods() -> None:
         ("month", (1753, "Aug"), None, "1753-08-01"),
         ("month", (None, "Jan"), pd.Timestamp("1935-12-01"), "1936-01-01"),
         ("month", (None, "Feb"), pd.Timestamp("1936-01-01"), "1936-02-01"),
+        ("month", (dt.datetime(1963, 1, 31), "3.0213"), None, "1963-01-01"),  # M14: a month by its last day (18.4)
         ("day", (dt.datetime(1833, 1, 1), None), None, "1833-01-01"),
         ("day", ("02/11/2017", None), None, "2017-11-02"),
     ]

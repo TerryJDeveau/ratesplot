@@ -3,14 +3,16 @@
 Debt and interest 1961-1994 (joined to the live tables from 1990); GDP and
 interest from 1926, debt from 1933 (federal alone from 1867), population from
 1867, and stand-ins for the 2- and 5-year yields before their benchmarks
-begin. Each list's comment names its source. ``cdn_data`` joins them.
+begin. Each list's comment names its source. ``cdn_data`` joins them. The
+Canadian dollar's yearly rate against the U.S. dollar, 1913-1977, is read
+by ``fx`` (batch 18.4).
 
 The block between the BEGIN/END markers is regenerated in place by
 ``tools/bake_archives.py`` (see :mod:`ratesplot.bake`). Do not hand-edit it.
 """
 
 # BEGIN AUTO-GENERATED CANADIAN ARCHIVE DATA
-# Generated from archived StatCan tables on 2026-09-27.
+# Generated from archived StatCan tables on 2026-10-23.
 # These are historical observations only, in each source's own terms; the
 # live modern series remain responsible for current data, and cdn_data joins
 # the layers at run time.
@@ -2960,4 +2962,75 @@ EMBEDDED_CDN_EARLY_INTEREST_HISTORY_BY_LEVEL = {
         ("1994-10-01", 4035000000),
     ],
 }
+
+# Canadian dollars per U.S. dollar, J562: each year's average of daily noon spot rates on
+# the inter-bank market, dated 1 January, 1913-1977:
+# https://www150.statcan.gc.ca/n1/pub/11-516-x/sectionj/J560_567-eng.csv
+EMBEDDED_CDN_PER_USD_HISTORY = [
+    ("1913-01-01", 1.0001),
+    ("1914-01-01", 0.9992),
+    ("1915-01-01", 1.0039),
+    ("1916-01-01", 1.0018),
+    ("1917-01-01", 1.0018),
+    ("1918-01-01", 1.0159),
+    ("1919-01-01", 1.0357),
+    ("1920-01-01", 1.1247),
+    ("1921-01-01", 1.1164),
+    ("1922-01-01", 1.0154),
+    ("1923-01-01", 1.0196),
+    ("1924-01-01", 1.0127),
+    ("1925-01-01", 1.0002),
+    ("1926-01-01", 0.9998),
+    ("1927-01-01", 1),
+    ("1928-01-01", 1.0009),
+    ("1929-01-01", 1.0076),
+    ("1930-01-01", 1.0016),
+    ("1931-01-01", 1.0381),
+    ("1932-01-01", 1.1352),
+    ("1933-01-01", 1.0874),
+    ("1934-01-01", 0.99),
+    ("1935-01-01", 1.0051),
+    ("1936-01-01", 1.0006),
+    ("1937-01-01", 0.9999),
+    ("1938-01-01", 1.0056),
+    ("1939-01-01", 1.037),
+    ("1940-01-01", 1.105),
+    ("1941-01-01", 1.105),
+    ("1942-01-01", 1.105),
+    ("1943-01-01", 1.105),
+    ("1944-01-01", 1.105),
+    ("1945-01-01", 1.1045),
+    ("1946-01-01", 1.0025),
+    ("1947-01-01", 1.0025),
+    ("1948-01-01", 1.0025),
+    ("1949-01-01", 1.0308),
+    ("1950-01-01", 1.0892),
+    ("1951-01-01", 1.0528),
+    ("1952-01-01", 0.9789),
+    ("1953-01-01", 0.9834),
+    ("1954-01-01", 0.9732),
+    ("1955-01-01", 0.9863),
+    ("1956-01-01", 0.9841),
+    ("1957-01-01", 0.9588),
+    ("1958-01-01", 0.9706),
+    ("1959-01-01", 0.959),
+    ("1960-01-01", 0.9697),
+    ("1961-01-01", 1.0132),
+    ("1962-01-01", 1.0689),
+    ("1963-01-01", 1.0785),
+    ("1964-01-01", 1.0786),
+    ("1965-01-01", 1.078),
+    ("1966-01-01", 1.0773),
+    ("1967-01-01", 1.0787),
+    ("1968-01-01", 1.0728),
+    ("1969-01-01", 1.0768),
+    ("1970-01-01", 1.0769),
+    ("1971-01-01", 1.0097),
+    ("1972-01-01", 0.9903),
+    ("1973-01-01", 1),
+    ("1974-01-01", 0.978),
+    ("1975-01-01", 1.0173),
+    ("1976-01-01", 0.9861),
+    ("1977-01-01", 1.0635),
+]
 # END AUTO-GENERATED CANADIAN ARCHIVE DATA

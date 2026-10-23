@@ -273,11 +273,18 @@ HISTORICAL_CDN_INTEREST_ANNUAL_TABLE = "36100177"
 HISTORICAL_CDN_INTEREST_QUARTERLY_TABLE = "36100142"
 # Historical Statistics of Canada (StatCan 11-516-X), section H: federal debt
 # from 1867, provincial and local debt from 1933 (1933, 1937, 1939, 1941,
-# 1943, then yearly from 1945). Plain CSV files, not StatCan tables.
-HSC_SECTION_H_URL = "https://www150.statcan.gc.ca/n1/pub/11-516-x/sectionh/{series}-eng.csv"
+# 1943, then yearly from 1945). Plain CSV files, not StatCan tables, in a
+# folder per section ("sectionh"), named by the section's letter and the
+# first and last series they hold.
+HSC_URL = "https://www150.statcan.gc.ca/n1/pub/11-516-x/section{section}/{series}-eng.csv"
 HSC_FEDERAL_DEBT_SERIES = "H35_51"
 HSC_PROVINCIAL_DEBT_SERIES = "H382_397"
 HSC_LOCAL_DEBT_SERIES = "H398_403"
+# Section J: foreign exchange rates 1913-1977, Canadian dollars per unit of
+# each currency (batch 18.4). ``fx`` reads J562, the U.S. dollar's annual
+# average, for 1913 to 1962 (see there).
+HSC_EXCHANGE_RATE_SERIES = "J560_567"
+HSC_CAD_PER_USD = "J562"
 # Bank of Canada financial market statistics (monthly, last Wednesday). Its
 # average yields for the 1-3 and 3-5 year bands stand in for the 2- and 5-year
 # benchmarks before those begin (1982-06 and 1980-11), as the 5-10 year and
