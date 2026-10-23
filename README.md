@@ -77,6 +77,14 @@ automatic start, today's end, each chart's axis limits as drawn); a value typed 
 and a number typed without the 0 before its point (`.3`) gets it (`0.3`). A country ticked
 becomes the current tab once its chart is drawn; Reset leaves the country boxes as they are.
 
+Right of each country's axis limit is its unit (% for Max and Min, the country's currency for Top
+and Bottom, none for a percentage of GDP) and an "All" box. Ticked, the limit goes into every
+country's box, and a value typed into any of them goes into the others; the command line writes it
+once, for every chart (`--max:8`). Unticked, each box keeps its value. A box emptied unticks its
+"All" once Enter is pressed or the box is left. "All" needs two countries ticked and a value in the
+box; Top and Bottom take it only as percentages of GDP (`-r`), being each country's own currency
+otherwise.
+
 ## Setting up
 
 Python 3.12 or later, then:
