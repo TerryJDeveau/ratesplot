@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
-from functools import partial
+from functools import partial, wraps
 from typing import Callable, Iterable
 
 import matplotlib.dates as mdates
@@ -34,6 +34,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from .axes import apply_axes_formatting, format_currency, format_percent, format_spread, format_yield
+from .baked import chart_ending
 from .cdn_data import (
     align_cdn_macro,
     cdn_series_earliest,
@@ -580,6 +581,25 @@ def plot_country(
 # ---------------------------------------------------------------------------
 
 
+def _with_chart_end(
+    prepare: Callable[[PlotConfig], tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]],
+) -> Callable[[PlotConfig], tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]]:
+    """``prepare`` with its chart's end in force (``baked.chart_ending``): a recent part beginning more than a year after the chart ends is not asked for.
+
+    Plan 19.2 (b): "A chart ending before that part fetches nothing." Every
+    caller of a nation's preparation gets it: each drawing, the automatic
+    start's trial pass and the downloads made side by side.
+    """
+
+    @wraps(prepare)
+    def prepared(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]:
+        with chart_ending(config.end):
+            return prepare(config)
+
+    return prepared
+
+
+@_with_chart_end
 def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]:
     """Fetch and align all selected Canadian inputs, in the configured measure; return ``(yields, macro, rates)``.
 
@@ -616,6 +636,7 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
     return yields, expressed, rates
 
 
+@_with_chart_end
 def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]:
     """Fetch all selected U.S. inputs, trimmed to the end date, in the configured measure; return ``(yields, macro, rates)``.
 
@@ -645,6 +666,7 @@ def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     return yields, expressed, rates
 
 
+@_with_chart_end
 def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]:
     """Fetch and align all selected UK inputs, in the configured measure; return ``(yields, macro, rates)``.
 
@@ -681,6 +703,7 @@ def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     return yields, expressed, rates
 
 
+@_with_chart_end
 def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]:
     """Fetch and align all selected German inputs, in the configured measure; return ``(yields, macro, rates)``.
 

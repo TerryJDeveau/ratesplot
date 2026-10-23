@@ -32,6 +32,10 @@ Offline, in seconds:
   in one request (the Bank of Canada's benchmark yields): one request, from
   the earliest bake's last date less the recent part; only the columns read;
   the answer failing or lacking one of them: the bakes alone;
+* ``baked.chart_ending`` (19.2 (b)): a chart ending more than a year before
+  a series' or a group's recent part, the bake alone with nothing asked or
+  said; ending a year before its first day, asked for; the end of a chart
+  prepared within another, or in another thread, its own;
 * the re-bake's report (``bake.bake_changes``): new values, each revised value
   with its size, dates within the bake that it lacked; a download that lacks
   dates the file has, refused; a date without a value on both sides
@@ -55,7 +59,9 @@ import contextlib
 import io
 import sys
 import tempfile
+import threading
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 
@@ -197,6 +203,7 @@ def check_join(folder: Path) -> None:
         check("... not baked: the whole series asked for, as any series not yet baked", asked == [None] and len(whole) == 5, asked)
         check_blank_join(folder)
         check_group_join(folder, history)
+        check_chart_end(history, answering)
     finally:
         baked.DATA_FOLDER = real_folder
         baked.forget_read_files()
@@ -277,6 +284,57 @@ def check_group_join(folder: Path, history: pd.Series) -> None:
     whole = baked.frame_with_recent_part("made-up", ("X", "Y"), "made-up group", answering, pd.DateOffset(months=2))
     check("group: a series of it not baked: the whole group asked for, every column, as before 19.2",
           asked == [None] and list(whole.columns) == ["X", "Z", "W"], asked)
+
+
+def check_chart_end(history: pd.Series, answer: Callable[[pd.Timestamp | None], pd.Series]) -> None:
+    """``baked.chart_ending`` (19.2 (b)): a chart ending more than a year before the recent part asks for nothing.
+
+    X is baked to 2026-09-30, so its recent part begins on 2026-07-30; the
+    group of X and Z (Z to 2026-08-31) on 2026-06-30 (``check_group_join``).
+    A year (``config.CHART_READS_PAST_END``): a chart reads a series up to one
+    of its periods past its last day.
+    """
+    asked: list[pd.Timestamp | None] = []
+
+    def answering(start: pd.Timestamp | None) -> pd.Series:
+        asked.append(start)
+        return answer(start)
+
+    def answering_group(start: pd.Timestamp | None) -> pd.DataFrame:
+        asked.append(start)
+        return pd.concat([answer(start), answer(start).rename("Z")], axis=1)
+
+    def x(end: str) -> tuple[pd.Series, str]:
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed), baked.chart_ending(pd.Timestamp(end)):
+            values = baked.with_recent_part("made-up", "X", "made-up X", answering, pd.DateOffset(months=2))
+        return values, printed.getvalue()
+
+    alone, said = x("2025-07-29")
+    check("a chart ending a year and a day before the recent part: the bake alone, the source not asked, nothing said",
+          alone.equals(history) and not asked and not said, (asked, said))
+    joined, _said = x("2025-07-30")
+    check("... ending a year before its first day: asked for as before", asked == [pd.Timestamp("2026-07-30")] and len(joined) == 6, asked)
+    asked.clear()
+    with baked.chart_ending(pd.Timestamp("2025-07-29")):
+        with baked.chart_ending(pd.Timestamp("2026-12-31")):
+            baked.with_recent_part("made-up", "X", "made-up X", answering, pd.DateOffset(months=2))
+        baked.with_recent_part("made-up", "X", "made-up X", answering, pd.DateOffset(months=2))
+        # Another thread prepares a chart of its own (the nations side by side): this one's end does not reach it.
+        other = threading.Thread(target=baked.with_recent_part, args=("made-up", "X", "made-up X", answering, pd.DateOffset(months=2)))
+        other.start()
+        other.join()
+    baked.with_recent_part("made-up", "X", "made-up X", answering, pd.DateOffset(months=2))
+    check("... a chart within another: its own end, then the outer one's again; another thread and after the chart: asked for",
+          asked == [pd.Timestamp("2026-07-30")] * 3, asked)
+    asked.clear()
+    with baked.chart_ending(pd.Timestamp("2025-06-29")):
+        group = baked.frame_with_recent_part("made-up", ("X", "Z"), "made-up group", answering_group, pd.DateOffset(months=2))
+    check("group: a chart ending a year and a day before the group's recent part: the bakes alone, nothing asked",
+          not asked and list(group.columns) == ["X", "Z"] and group["X"].dropna().equals(history), asked)
+    with baked.chart_ending(pd.Timestamp("2025-06-30")):
+        baked.frame_with_recent_part("made-up", ("X", "Z"), "made-up group", answering_group, pd.DateOffset(months=2))
+    check("group: ... ending a year before its first day: asked for once", asked == [pd.Timestamp("2026-06-30")], asked)
 
 
 def check_report() -> None:

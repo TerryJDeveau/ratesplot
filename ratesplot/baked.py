@@ -38,20 +38,24 @@ date on are taken. The Bundesbank's download is always whole too, but the
 same database's SDMX web service can be asked from a date, so its recent
 part is asked of that; so are Statistics Canada's tables, whose ZIPs are
 whole and whose WDS answers each vector from a date.
+
+A chart that ends more than a year before a series' recent part begins
+asks for nothing (``chart_ending``): the bake holds every value it draws.
 """
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import io
 import os
 import threading
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Iterator, Sequence
 
 import pandas as pd
 
-from .config import DATE_COLUMN
+from .config import CHART_READS_PAST_END, DATE_COLUMN
 from .http import baked_alone
 
 # The package's data files; a harness may point it elsewhere (tools/synthetic_sources.py).
@@ -138,6 +142,49 @@ def forget_read_files() -> None:
     _read.cache_clear()
 
 
+# The last day of the chart the calling thread is preparing (``chart_ending``), None outside one.
+_chart = threading.local()
+
+
+@contextlib.contextmanager
+def chart_ending(end: pd.Timestamp) -> Iterator[None]:
+    """Within it, the calling thread prepares a chart ending on ``end``: a series whose recent part begins more than a year after ``end`` is its bake alone, with no request.
+
+    Plan 19.2 (b): "A chart ending before that part fetches nothing." The
+    recent part brings only values dated from its first day on (revisions,
+    new values), and a chart reads a series no further than one of its
+    periods past its last day (``config.CHART_READS_PAST_END``, a year: a
+    monthly rate dated by the month's last day and drawn across it; a value
+    per person on the chart's last day, between two figures of the
+    population). So the bake holds every value such a chart draws, and the
+    chart is the same, byte for byte. Measured, not assumed (2026-10-23,
+    ratesplot_measurements_2026-10-22h): 66 charts of the four nations, each
+    measure, the levels, the yield axis's other curves, -l and --reg, each
+    drawn again with every baked series altered from a day after its end on
+    (each value revised, or every other one withdrawn and one added); 10
+    changed, from values dated less than 92 days after the end, none with
+    the values altered from 92 days or a year after it on. Nothing is said:
+    nothing was asked.
+
+    Set by each nation's ``plotting.prepare_*`` around its fetches; outside
+    one (the bake, the checks of the sources) every recent part is asked for.
+    One thread's chart does not reach another's: the nations prepared side by
+    side (``http.in_parallel``) each set their own.
+    """
+    previous = getattr(_chart, "end", None)
+    _chart.end = end
+    try:
+        yield
+    finally:
+        _chart.end = previous
+
+
+def _before_the_chart_ends(start: pd.Timestamp) -> bool:
+    """Whether a recent part beginning on ``start`` may hold anything the chart being prepared draws (always, outside a chart)."""
+    end = getattr(_chart, "end", None)
+    return end is None or start <= end + CHART_READS_PAST_END
+
+
 def with_recent_part(
     source: str,
     code: str,
@@ -181,6 +228,10 @@ def with_recent_part(
     series starting again, still reaches the bake (tools/check_baked.py
     checks that each bake ends on its declared date). Not baked, it is
     asked for whole, as any series not yet baked.
+
+    A chart that ends more than a year before the recent part's first day
+    (``chart_ending``) gets the bake alone too, with no request and no
+    warning (19.2 (b)).
     """
     baked = read_series(source, code)
     if baked is None or baked.count() == 0:
@@ -189,6 +240,8 @@ def with_recent_part(
         return baked
     last = baked.last_valid_index()
     start = last - recent
+    if not _before_the_chart_ends(start):
+        return baked
     try:
         live = fetch(start)
     except passes:
@@ -219,7 +272,9 @@ def frame_with_recent_part(
     has a value (a date the group lists with no value in any of them is not
     in the bake). If the recent part fails, or lacks one of ``codes``, the
     baked history alone, with a warning naming ``label`` (as above) and the bake's last
-    date.
+    date. A chart that ends more than a year before the recent part's first
+    day gets the baked history alone, with no request and no warning
+    (``chart_ending``).
     """
     bakes = [read_series(source, code) for code in codes]
     if any(series is None or series.empty for series in bakes):
@@ -227,6 +282,8 @@ def frame_with_recent_part(
     start = min(series.index[-1] for series in bakes) - recent
     # sort_index: concat along columns does not sort the dates one series lacks.
     history = pd.concat(bakes, axis=1).sort_index()
+    if not _before_the_chart_ends(start):
+        return history
     try:
         live = fetch(start)[list(codes)]
     except Exception as exc:

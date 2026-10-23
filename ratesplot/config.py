@@ -149,6 +149,17 @@ DOWNLOAD_MAX_AGE_SECONDS = 3600
 # 2026-10-21 (measured).
 RECENT_PART_UNREVISED = pd.DateOffset(months=2)
 RECENT_PART_REVISED = pd.DateOffset(months=24)
+# How far past its last day a chart may read a series (19.2 (b): a chart that
+# ends before a recent part asks nothing for it; ``baked.chart_ending``): up
+# to one of the series' periods. A rate observed over a month is dated by the
+# month's last day and drawn across the month (the Bank of England's quoted
+# mortgage rates, the ECB's German ones), and a value per person on a chart's
+# last day may lie between the population's figure before it and the one
+# after. Measured 2026-10-23 on 66 charts, each series altered from a day
+# after the chart's end on: 10 charts read values dated after their end,
+# none from 92 days after it on. A year, not the 92 days measured, since no
+# live series is published less often than yearly: it holds for any chart.
+CHART_READS_PAST_END = pd.DateOffset(years=1)
 
 FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 BOC_GROUP_URL = "https://www.bankofcanada.ca/valet/observations/group/{group}/csv"
