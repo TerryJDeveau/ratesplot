@@ -48,14 +48,17 @@ All three draw the same charts from the same code (`plotting.build_figure`).
 When a source does not answer (it is down, or sends a web page such as its maintenance notice
 in place of its data), the chart is drawn from the last good copy of that download, which is
 kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_good` on Windows,
-`~/.cache/ratesplot/last_good` elsewhere). The message log names the source and the copy's date;
-the web page says so above the charts, and the window in its status line. A Bank of England,
-Bank of Canada, FRED, ECB, Eurostat, ONS, Bundesbank or Statistics Canada series with no copy kept
-is drawn from its history built into the code, to its last date, with a warning. A source that
-does not answer (it times out, refuses the connection, or sends an outage page or a bot check, as
-the Bundesbank may behind a VPN) is asked nothing more in that drawing: each of its series is drawn
-from its copy or its history built in, and the next drawing asks it again. A chart whose source has failed with no copy kept is left out and named,
-and the other charts are drawn. The web page's server keeps its copies only until it restarts. A
+`~/.cache/ratesplot/last_good` elsewhere); the web page says so above the charts, and the window
+in its status line. A Bank of England, Bank of Canada, FRED, ECB, Eurostat, ONS, Bundesbank or
+Statistics Canada series with no copy kept is drawn from its history built into the code, to its
+last date. A source that does not answer (it times out, refuses the connection, or sends an outage
+page or a bot check, as the Bundesbank may behind a VPN) is asked nothing more in that drawing:
+each of its series is drawn from its copy or its history built in, and the next drawing asks it
+again. The message log gives one warning for each source that failed, with the cause once, the
+copies drawn and their dates, and the series drawn from their history built in, grouped by how far
+it reaches. A chart that cannot be drawn is left out and named in one line beginning "NOT DRAWN"
+(in the window in red and bold, with the status line in red), and the other charts are drawn.
+The web page's server keeps its copies only until it restarts. A
 curve on the right axis whose source has stopped (or is left with only its baked history) ends a
 year after its last figure instead of running on flat to the end of the chart.
 
