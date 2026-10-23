@@ -20,7 +20,10 @@ be asked for part of a series, so it is asked for the whole, as before, and only
 are taken. The Bundesbank's download is whole too, so the last two months of its yields are asked
 of its web service, which can be asked from a date; so are Statistics Canada's tables, whose last
 24 months are asked of its Web Data Service, one request per table. The CMHC mortgage rate, drawn
-only before Canada's posted 5-year rate begins in 1975, is not asked for at all.
+only before Canada's posted 5-year rate begins in 1975, is not asked for at all. Nor is a series
+whose last two (or 24) months begin more than a year after the chart ends: every value such a
+chart draws is built in (a chart may draw a figure dated up to one of its periods after its end,
+such as a month's average mortgage rate dated by the month's last day).
 A job on GitHub (`.github/workflows/rebake.yml`, run each day at 06:37 UTC) bakes that history
 again: a series whose only change is new values is committed straight to `main`; one whose
 history changed (a value revised, a date added within it, dates the source no longer gives) goes
