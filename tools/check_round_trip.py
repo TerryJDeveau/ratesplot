@@ -68,6 +68,10 @@ VALUES = (
     # The policy terms (batch 9.1): for every chart, for one nation, a nation's own none.
     "--po", "--po:market", "--po:target,market", "--us:po:market", "--po:market --cdn:po:target,market",
     "--uk:po:none --po", "--po:target --ger:po:market --mo",
+    # The aggregate debts (batch 10.4): for every chart, for the UK, both; with the levels and
+    # without debt, where they draw nothing; with a measure.
+    "--agg:gross,net", "--agg:net", "--uk:agg:net", "--uk:agg:gross,net --agg:net", "--agg:net --d:f",
+    "--agg:net --no-debt", "--uk:agg:net -r",
 )
 
 

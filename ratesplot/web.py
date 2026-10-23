@@ -135,11 +135,13 @@ from .frontend import (  # noqa: E402
     field_hints,
     field_problems,
     idle_controls,
+    idle_nation_keys,
     level_letters,
     move_dates_updates,
     nation_boxes,
     option_help_lines,
     option_of,
+    panel_lists,
     png_bytes,
     problem_text,
     reset_choices,
@@ -159,7 +161,6 @@ from .options import (  # noqa: E402
     config_from_choices,
     field_default,
     help_epilog,
-    idle_margins,
     margin_options,
     nation_choice,
     options_in,
@@ -719,7 +720,7 @@ def _value_control(where, option: Option, key: str | None = None, label: str | N
     ``label`` replaces the option's label (a margin's "margin (pts)" beside
     its term's box). Greyed while its flag is off, while it has no curve to
     act on, and a nation's margin while its chart draws not its term, the
-    prime rate (``options.idle_margins``), as in the window.
+    prime rate (``frontend.idle_nation_keys``), as in the window.
     """
     key = key or option.name
     flag_off = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
@@ -730,7 +731,7 @@ def _value_control(where, option: Option, key: str | None = None, label: str | N
         args=(key,),
         help=_help(option, "Blank = default (shown in grey)."),
         placeholder=st.session_state.get(_HINTS, {}).get(key) or _PLACEHOLDERS.get(option.name, _DEFAULT_PLACEHOLDER),
-        disabled=flag_off or option.name in _idle() or key in idle_margins(*_snapshot()),
+        disabled=flag_off or option.name in _idle() or key in idle_nation_keys(*_snapshot()),
         width=width,
     )
 
@@ -908,7 +909,8 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     """A list option as tick boxes (``Option.choices``): a row of boxes per row offered, with its caption.
 
     One that belongs to a flag (mortgage terms, spreads) is greyed while
-    the flag is off, as its field was. A nation's own list has its label
+    the flag is off, as its field was, and the UK's aggregate debts while
+    none is drawn (``frontend.idle_nation_keys``). A nation's own list has its label
     always, and only the boxes its chart can draw (``frontend.choice_rows``).
     The boxes of a row flow, wrapping when the sidebar is narrow, and the
     help is on the list's label alone: a column per box, each with its "?",
@@ -918,6 +920,7 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     """
     key = nation_choice(nation, option) if nation else option.name
     disabled = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
+    disabled = disabled or key in idle_nation_keys(*_snapshot())
     if option.turns_on is None or nation is not None:
         where.markdown(f"**{option.label}**", help=_help(option))
     others = st.session_state.get(_CHOICE_OTHERS + key, [])
@@ -1026,13 +1029,13 @@ def _nation_controls(bar, nation: Nation) -> None:
     """A nation's own section (``frontend.NATION_OPTIONS``), as the panel under its tab in the window.
 
     Its yield terms, spreads, policy terms and mortgage terms (only those its
-    chart can draw), then its axis limits as in the window: the yield axis's Max above
+    chart can draw), the UK's aggregate debts (batch 10.4), in the window's
+    order (``frontend.panel_lists``), then its axis limits as in the window: the yield axis's Max above
     its Min, beside the right axis's Top above its Bottom (Terry, 2026-10-12;
     ``LIMIT_COLUMNS``).
     """
     bar.subheader(f"{nation.name} only", divider="gray")
-    order = ("yield_terms", "spread_pairs", "policy_terms", "mortgage_terms")
-    for option in sorted((o for o in NATION_OPTIONS if o.editor == "choices"), key=lambda o: order.index(o.fields[0])):
+    for option in panel_lists(nation):
         _choices_control(bar, option, nation)
     for row in zip(*LIMIT_COLUMNS):  # (max, top), then (min, bottom)
         for column, name in zip(bar.columns(2), row):

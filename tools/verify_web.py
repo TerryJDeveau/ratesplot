@@ -117,6 +117,8 @@ CHART_CASES = (
     "de_rates", "de_nat", "all4",
     # Batch 9.1: both policy terms on every nation's chart, the U.S. target range a band.
     "policy_both",
+    # Batch 10.4: the UK's net debt alone.
+    "uk_net_only",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -931,6 +933,51 @@ def check_batch91(check: Check) -> None:
           sorted(key for key in wanted if page.checkbox(key=key).value))
 
 
+def check_batch104(check: Check) -> None:
+    """Batch 10.4: the UK's gross and net debt as two boxes, gross ticked; greyed without debt or with a level; no other nation's."""
+    at = new_page("--nations:ca,gb --e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    gross, net = "choice:uk:aggregate:gross", "choice:uk:aggregate:net"
+    boxes = {box.key for box in at.checkbox if box.key and ":aggregate:" in box.key}
+    check("the UK's section alone has them, two boxes", boxes == {gross, net}, sorted(boxes))
+    check("gross ticked, net not (decision 33)", at.checkbox(key=gross).value and not at.checkbox(key=net).value)
+    check("active while debt is drawn", not at.checkbox(key=gross).disabled and not at.checkbox(key=net).disabled)
+
+    def drawn(page: AppTest) -> tuple[str, ...]:
+        return drawn_config(config_from_choices(*sort_tokens(address(page).split())[:2]), "uk").debt_aggregates
+
+    at.checkbox(key=net).check()
+    at.run()
+    check("net ticked: the address draws both on the UK's chart",
+          drawn(at) == ("gross", "net") and "--aggregate:gross,net" in address(at), (address(at), drawn(at)))
+    at.checkbox(key=gross).uncheck()
+    at.run()
+    check("gross unticked: net alone", drawn(at) == ("net",), (address(at), drawn(at)))
+    at.checkbox(key=net).uncheck()
+    at.run()
+    check("the last box cannot be unticked, and the debt curve's box is named",
+          at.checkbox(key=net).value
+          and any("untick “Aggregate public debt”" in str(item.value) for item in list(at.info) + list(at.warning)), address(at))
+    at.checkbox(key="flag:debt").uncheck()
+    at.run()
+    check("debt off: both greyed, ticks kept, the list out of the address",
+          at.checkbox(key=gross).disabled and at.checkbox(key=net).disabled and at.checkbox(key=net).value
+          and "--agg" not in address(at), address(at))
+    at.checkbox(key="flag:debt").check()
+    at.checkbox(key="level:f").check()
+    at.run()
+    check("a level ticked: greyed (the levels replace the aggregate lines), the list out of the address",
+          at.checkbox(key=net).disabled and "--agg" not in address(at), address(at))
+    at.checkbox(key="level:f").uncheck()
+    at.run()
+    check("the level unticked: active again, net alone again",
+          not at.checkbox(key=net).disabled and drawn(at) == ("net",), (address(at), drawn(at)))
+    check("no exception, two charts", not at.exception and charts_shown(at) == 2, (at.exception, charts_shown(at)))
+    page = new_page("--nations:gb --agg:gross,net --e:2026-09-01")
+    check("--agg:gross,net from the address: both ticked",
+          page.checkbox(key=gross).value and page.checkbox(key=net).value, address(page))
+
+
 def check_batch17(check: Check) -> None:
     """Batch 17.4 and 17.5: a nation ticked by hand gets its tab once drawn; Reset leaves the nation boxes alone."""
     at = new_page("--e:2026-09-01")
@@ -968,7 +1015,7 @@ def check_batch17(check: Check) -> None:
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
-    check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95,
+    check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104,
 )
 
 

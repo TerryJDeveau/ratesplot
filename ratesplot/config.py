@@ -421,6 +421,14 @@ UK_DEBT_COLUMN = "Total UK Debt (£)"
 UK_NATIONAL_DEBT_COLUMN = "UK National Debt (£)"
 # The UK's headline debt, beside the gross (Terry, 2026-10-06: "add net too").
 UK_NET_DEBT_COLUMN = "UK Net Debt (£)"
+# --aggregate:LIST (batch 10.4; Terry, 2026-10-13 and 2026-10-14, decision
+# 33): the aggregate debt drawn, "gross" (general government gross debt, which
+# every nation has) and "net" (the UK's public sector net debt excluding the
+# public sector banks). Gross alone by default: gross debt is what the other
+# charts draw, and the measure international comparisons use. Before, the UK
+# drew both whenever debt was drawn (batch 3).
+DEBT_AGGREGATES = ("gross", "net")
+DEFAULT_DEBT_AGGREGATES = ("gross",)
 UK_INTEREST_COLUMN = "TTM UK Interest Paid (£)"
 DE_DEBT_COLUMN = "Total German Debt (€)"
 DE_INTEREST_COLUMN = "TTM German Interest Paid (€)"
@@ -578,6 +586,10 @@ class Nation:
     # 2026-10-08: London time on the UK's chart, not EDT). The quotes are
     # still dated by Toronto's day (MARKET_TIMEZONE), as the chart's end is.
     market_timezone: str = MARKET_TIMEZONE
+    # The aggregate debts it has (DEBT_AGGREGATES): gross, and the UK net
+    # too (batch 10.4). A nation with one has nothing to choose, so its panel
+    # offers no box for it.
+    debt_aggregates: tuple[str, ...] = DEFAULT_DEBT_AGGREGATES
 
     @property
     def prefix(self) -> str:
@@ -602,11 +614,15 @@ class Nation:
         lists with the same view draw the same chart (a spread's colour goes
         by its place among those drawn, ``rates.yield_spreads``). The
         default list for every chart draws the nation's own default where it
-        has one (``own_defaults``). Any other field is its value.
+        has one (``own_defaults``). The aggregate debts: those it has, and
+        its gross debt where the list names none of them (``--aggregate:net``
+        on Canada's chart; batch 10.4). Any other field is its value.
         """
         own = dict(self.own_defaults)
         if field in own and value == _LIST_DEFAULTS[field]:
             return own[field]
+        if field == "debt_aggregates":
+            return tuple(item for item in value if item in self.debt_aggregates) or self.debt_aggregates[:1]
         if field == "yield_terms":
             return tuple(term for term in value if term in self.yield_terms)
         if field == "mortgage_terms":
@@ -642,7 +658,7 @@ NATIONS: tuple[Nation, ...] = (
     # when mortgages are ticked"), the 10y-5y and 20y-10y spreads.
     Nation(
         "uk", "United Kingdom", ("gb", "uk"), ("5y", "10y", "20y"), "UK", shown_by_default=False,
-        market_timezone="Europe/London",
+        market_timezone="Europe/London", debt_aggregates=DEBT_AGGREGATES,
         own_defaults=(
             ("yield_terms", ("5y", "10y", "20y")),
             ("mortgage_terms", ("2f", "3f", "5f", "svr", "tracker")),
@@ -683,11 +699,12 @@ def nation_by_key(key: str) -> Nation | None:
 
 
 # The choices that can differ by nation (PlotConfig.for_nation): the yield
-# axis's lists, and the axis limits (Top and Bottom are in each nation's own
-# currency, so a limit right for one is wrong for the other).
+# axis's lists, the axis limits (Top and Bottom are in each nation's own
+# currency, so a limit right for one is wrong for the other), and the
+# aggregate debts (batch 10.4: only the UK has a choice).
 PER_NATION_FIELDS = (
     "yield_terms", "mortgage_terms", "spread_pairs", "yield_ymin", "yield_ymax", "macro_bottom", "macro_top",
-    "prime_margin", "policy_terms", "tracker_margin",
+    "prime_margin", "policy_terms", "tracker_margin", "debt_aggregates",
 )
 # The defaults of the lists a nation may have its own default of (Nation.own_defaults).
 _LIST_DEFAULTS = {
@@ -834,10 +851,14 @@ class CountryMetadata:
     federal_debt_column: str | None = None
     federal_debt_label: str = ""
     federal_debt_title: str = ""
-    # Net debt, drawn with the (gross) debt curve (None: no such curve).
+    # Net debt, drawn with the debt curve when chosen (--aggregate:LIST,
+    # batch 10.4; None: no such curve). ``net_debt_title`` names it beside
+    # gross debt ("Net Debt"), ``net_debt_alone_title`` without it, naming
+    # the nation as the gross debt's phrase does.
     net_debt_column: str | None = None
     net_debt_label: str = ""
     net_debt_title: str = ""
+    net_debt_alone_title: str = ""
     # The word the title phrases name the nation by, its adjective
     # ("Canadian", "German"; "US" and "UK" as they are), kept only in a
     # title's first phrase (batch 21, title_for). Terry, 2026-10-22 (batch
@@ -886,6 +907,11 @@ class CountryMetadata:
         alone is drawn past the years its label gives and is named without
         them ("UK National Debt", not "UK National Debt (pre-1975)", when the
         ONS's gross debt fails and the national debt runs to 2016).
+
+        The aggregate debts are those chosen that the nation has
+        (``--aggregate:LIST``, ``Nation.view``; batch 10.4): gross debt, with
+        the debt alone before it (Canada's federal debt to 1933, the UK's
+        national debt to 1975), and the UK's net debt.
         """
         suffix = _measure_suffixes(config)[0]
         if config.components:
@@ -901,21 +927,25 @@ class CountryMetadata:
                 for letter in config.components
             ]
             return tuple((key, enabled, column, _with_suffix(label, suffix)) for key, enabled, column, label in specs)
+        aggregates = nation_by_key(self.key).view("debt_aggregates", config.debt_aggregates)
+        gross = config.include_debt and "gross" in aggregates
         specs = [
-            ("debt", config.include_debt, self.debt_column, self.debt_label),
+            ("debt", gross, self.debt_column, self.debt_label),
             ("gdp", config.draws_gdp, self.gdp_column, self.gdp_label),
             ("interest", config.include_interest, self.interest_column, self.interest_label),
         ]
         if self.net_debt_column is not None:
-            # Chosen with the debt curve; listed after it.
-            specs.insert(1, ("net_debt", config.include_debt, self.net_debt_column, self.net_debt_label))
+            # Chosen with the debt curve, when among the aggregates; listed after gross debt.
+            net = config.include_debt and "net" in aggregates
+            specs.insert(1, ("net_debt", net, self.net_debt_column, self.net_debt_label))
         if self.federal_debt_column is not None:
-            # Chosen with the debt curve; listed straight after it. Without
-            # the aggregate it is named by its legend label less the years,
-            # not by its title phrase, which may word the nation differently
-            # (batch 22: "Federal Canadian Public Debt" in a title).
+            # Chosen with gross debt, whose years before it it covers; listed
+            # straight after it. Without the aggregate it is named by its
+            # legend label less the years, not by its title phrase, which may
+            # word the nation differently (batch 22: "Federal Canadian Public
+            # Debt" in a title).
             label = self.federal_debt_label if aggregate_debt else _without_years(self.federal_debt_label)
-            specs.insert(1, ("federal_debt", config.include_debt, self.federal_debt_column, label))
+            specs.insert(1, ("federal_debt", gross, self.federal_debt_column, label))
         return tuple((key, enabled, column, _with_suffix(label, suffix)) for key, enabled, column, label in specs)
 
     def title_for(
@@ -965,7 +995,8 @@ class CountryMetadata:
         macro_titles = {
             "debt": self.debt_title,
             "federal_debt": self.federal_debt_title,
-            "net_debt": self.net_debt_title,
+            # Beside gross debt "Net Debt"; without it, named whole (batch 10.4).
+            "net_debt": self.net_debt_title if "debt" in drawn else self.net_debt_alone_title,
             "gdp": self.gdp_title,
             "interest": self.interest_title,
         }
@@ -985,7 +1016,7 @@ class CountryMetadata:
         names = {kind: "" if by_level else self.level_name(levels[kind][0]) for kind in split}
         templates = {"debt": self.component_debt_title, "interest": self.component_interest_title}
         # The phrases that name the nation: the yields' and the debt's.
-        naming = {self.yield_title, self.debt_title, self.federal_debt_title}
+        naming = {self.yield_title, self.debt_title, self.federal_debt_title} | ({self.net_debt_alone_title} - {""})
         if len(split) == 2 and names["debt"] == names["interest"]:
             both = templates["debt"].format(names["debt"]).strip() + " and " + templates["interest"].format("").strip()
             naming.add(both)
@@ -1104,10 +1135,12 @@ UK = CountryMetadata(
     federal_debt_label="UK National Debt (pre-1975)",
     federal_debt_title="UK National Debt",
     # ONS HF6W: public sector net debt excluding the public sector banks,
-    # the UK's own headline measure, beside gross general government debt.
+    # the UK's own headline measure, beside gross general government debt
+    # when chosen (batch 10.4).
     net_debt_column=UK_NET_DEBT_COLUMN,
     net_debt_label="UK Public Sector Net Debt (ex banks)",
     net_debt_title="Net Debt",
+    net_debt_alone_title="UK Public Sector Net Debt",
     # Central and local government only: the devolved governments are inside
     # central government in the UK accounts, so there is no "p" level, and
     # the non-central level "n" is local government (ratesplot.uk_data).
@@ -1210,6 +1243,10 @@ class PlotConfig:
     # debt and interest into, as letters from COMPONENT_LETTERS in that order
     # ("" = the aggregate lines).
     components: str = ""
+    # --aggregate:LIST (batch 10.4): which aggregate debts are drawn
+    # (DEBT_AGGREGATES), when debt is and no level is chosen. Per nation
+    # (--uk:aggregate:gross,net); only the UK has net debt (Nation.view).
+    debt_aggregates: tuple[str, ...] = DEFAULT_DEBT_AGGREGATES
     # -r: debt and interest as a percentage of TTM GDP, on a log percent axis;
     # GDP itself is not drawn.
     relative: bool = False

@@ -127,12 +127,14 @@ from .frontend import (
     field_hints,
     field_problems,
     idle_controls,
+    idle_nation_keys,
     level_letters,
     load_state,
     nation_boxes,
     option_help_lines,
     option_of,
     pan_updates,
+    panel_lists,
     png_bytes,
     problem_text,
     reset_choices,
@@ -151,7 +153,6 @@ from .options import (
     by_name,
     command_line_tokens,
     config_from_choices,
-    idle_margins,
     margin_options,
     nation_choice,
     options_in,
@@ -1103,7 +1104,8 @@ class RatesPlotApp:
         self.payload_vars[option.name] = payload
         label = ttk.Label(frame, text=option.label)
         self.value_labels[option.name] = label
-        editor = _LevelsEditor(payload, on_change=self.request_redraw)
+        # A level ticked greys the UK's aggregate debts (batch 10.4): the dependent controls first.
+        editor = _LevelsEditor(payload, on_change=self._choices_changed)
         self.level_editors[option.name] = editor
         tip = _tooltip_text(option) + "\nNone ticked = debt and interest in total."
         boxes = []
@@ -1354,7 +1356,8 @@ class RatesPlotApp:
         """The nation's own controls, under its chart (``frontend.NATION_OPTIONS``).
 
         Its yield terms, spreads, policy terms and mortgage terms as tick
-        boxes (only those its chart can draw), then its axis limits. They set that chart only;
+        boxes (only those its chart can draw), the UK's aggregate debts (batch
+        10.4), then its axis limits. They set that chart only;
         the curves' own boxes (yields, spreads, mortgages on or off) stay in
         the column, for both charts (Terry, 2026-10-06: a panel under each
         tab, ready for more nations).
@@ -1363,14 +1366,8 @@ class RatesPlotApp:
         frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         column = 0
         limits = ttk.Frame(frame)
-        # The spreads next to the yield terms, as in the column (Terry,
-        # 2026-10-06); the policy terms (batch 9.1) before the mortgages, as
-        # the column has the policy rate before them.
-        lists = sorted(
-            (option for option in NATION_OPTIONS if option.editor == "choices"),
-            key=lambda option: ("yield_terms", "spread_pairs", "policy_terms", "mortgage_terms").index(option.fields[0]),
-        )
-        for option in lists:
+        # In the order both front ends give them (``frontend.panel_lists``).
+        for option in panel_lists(nation):
             self._add_choices_control(frame, column, option, nation)
             column += 1
         limits.grid(row=0, column=column, rowspan=2, sticky="nw")
@@ -1460,11 +1457,12 @@ class RatesPlotApp:
         each chart's Top and Bottom without debt, GDP or interest; and a
         value whose flag is off (the regression tolerance without --reg, the
         mortgage terms without mortgages); and a nation's margin while its
-        chart draws not its term, the prime rate (``options.idle_margins``).
+        chart draws not its term, the prime rate, and the UK's aggregate debts
+        while none is drawn (``frontend.idle_nation_keys``).
         """
         flags = {name: variable.get() for name, variable in self.flag_vars.items()}
         idle = idle_controls(flags)
-        idle_margin_keys = idle_margins(self._snapshot()[0], flags)
+        idle_keys = idle_nation_keys(self._snapshot()[0], flags)
         for name, box in self.flag_boxes.items():
             if name in GREYABLE_OPTIONS:
                 box.state(["disabled"] if name in idle else ["!disabled"])
@@ -1473,7 +1471,7 @@ class RatesPlotApp:
             off = option.turns_on in flags and not flags[option.turns_on]
             if option.turns_on not in flags and option.name not in GREYABLE_OPTIONS:
                 continue
-            state = ["disabled"] if off or option.name in idle or key in idle_margin_keys else ["!disabled"]
+            state = ["disabled"] if off or option.name in idle or key in idle_keys else ["!disabled"]
             if key in self.value_entries:
                 self.value_entries[key].state(state)
             if key in self.value_labels:

@@ -57,6 +57,7 @@ import pandas as pd
 from .config import (
     COMPONENT_LETTERS,
     COMPONENT_SYNONYMS,
+    DEBT_AGGREGATES,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DEFAULT_MORTGAGE_TERMS,
     DEFAULT_TRACKER_MARGIN,
@@ -300,6 +301,24 @@ def parse_policy_terms(spec: str) -> tuple[str, ...]:
             "or market (the overnight market's rate around it), or both"
         )
     return tuple(term for term in POLICY_TERMS if term in items)
+
+
+def parse_debt_aggregates(spec: str) -> tuple[str, ...]:
+    """Parse ``--aggregate:LIST``: ``gross`` (general government gross debt) and ``net`` (the UK's public sector net debt), in that order.
+
+    Repeats are harmless. Never none, not even a nation's own: drawing no
+    debt is --no-debt's job (batch 10.4).
+    """
+    items = [item.strip().lower() for item in spec.split(",") if item.strip()]
+    if not items or _is_none(spec):
+        raise ValueError("--aggregate names gross, net or both; to draw no debt use --no-debt")
+    unknown = [item for item in items if item not in DEBT_AGGREGATES]
+    if unknown:
+        raise ValueError(
+            f"invalid --aggregate debt {unknown[0]!r}: use gross (general government gross debt) "
+            "or net (the UK's public sector net debt, ex banks), or both"
+        )
+    return tuple(item for item in DEBT_AGGREGATES if item in items)
 
 
 def parse_spreads(spec: str) -> tuple[tuple[str, str], ...]:
@@ -631,6 +650,12 @@ _SPREAD_CHOICES = (
     # The UK has only the 5-, 10- and 20-year (batch 3); the U.S. has them too.
     ("", tuple((f"{a}-{b}", f"{a}–{b}") for a, b in (("10y", "5y"), ("20y", "10y"), ("20y", "5y")))),
 )
+# The aggregate debts (batch 10.4), one to a row: only the UK's panel shows
+# them, the only nation with two (Terry, 2026-10-13: "a pair of tick boxes").
+_AGGREGATE_CHOICES = (
+    ("", (("gross", "Gross (general government)"),)),
+    ("", (("net", "Net (public sector, ex banks)"),)),
+)
 
 # Help-listing sections, in display order: key -> heading (and any notes).
 # The GUI titles its panels with the heading up to the first " (" or ":".
@@ -723,6 +748,19 @@ OPTIONS: tuple[Option, ...] = (
         "interest-parts", Kind.VALUE, ("components",), "curves", "--interest:LETTERS / --i:LETTERS",
         "the same letters; given on both --debt\nand --interest they must agree",
         names=("interest",), parse=partial(parse_components, kind="interest"), in_gui=False,
+    ),
+    # The aggregate debts (batch 10.4, decision 33): gross, and the UK's net
+    # too; gross alone by default. The debt curve's lines, as the yield terms
+    # are the yield curve's: the list names no curve under the curve rule, and
+    # --no-debt hides whichever are chosen. Per nation (--uk:aggregate:net); a
+    # nation with gross debt alone draws it whatever the list names
+    # (``Nation.view``). At least "agg", as the plan has it.
+    Option(
+        "aggregate", Kind.VALUE, ("debt_aggregates",), "curves", "--aggregate:LIST / --agg:LIST",
+        "the aggregate debt drawn: gross (general\ngovernment, the default), net (the UK's\n"
+        "public sector net debt, ex banks), or\nboth; only the UK has net debt (the\nothers draw their gross debt)",
+        names=("aggregate",), shortest=3, parse=parse_debt_aggregates, label="Aggregate debts", format=format_terms,
+        editor="choices", choices=_AGGREGATE_CHOICES,
     ),
     Option(
         "yield", Kind.TOGGLE, ("include_yield",), "curves", "--yield / --no-yield", "bond yields",
@@ -990,13 +1028,16 @@ _PART_OPTIONS = {"debt-parts": "debt", "interest-parts": "interest"}
 # "Choices" are what a user expressed, keyed by option name:
 #   payloads: VALUE option -> its text (absent = not given, so the default)
 #   flags:    FLAG / TOGGLE / SWITCH option -> True or False (absent = not given)
-# The fields holding a list of items (terms, pairs), which a nation's chart
-# draws as far as it has them (``nation_view``) and which may be none.
-_LIST_FIELDS = ("yield_terms", "mortgage_terms", "spread_pairs", "policy_terms")
+# The fields holding a list of items (terms, pairs, debts), which a nation's
+# chart draws as far as it has them (``nation_view``) and which may be none
+# (the aggregate debts never: ``parse_debt_aggregates``).
+_LIST_FIELDS = ("yield_terms", "mortgage_terms", "spread_pairs", "policy_terms", "debt_aggregates")
 
 
 def list_switch(option: Option) -> Option:
-    """Return the switch that draws a list's curves: the flag the list turns on (--mortgages), or for the yield terms the yield curve."""
+    """Return the switch that draws a list's curves: the flag the list turns on (--mortgages); for the yield terms the yield curve, for the aggregate debts the debt curve."""
+    if option.fields == ("debt_aggregates",):
+        return by_name("debt")
     return by_name(option.turns_on or "yield")
 
 
@@ -1016,7 +1057,12 @@ def _removed(option: Option, spec: str, current: tuple) -> tuple:
 
 
 def _check_nation_terms(nation: Nation, field: str, values: Mapping[str, object]) -> None:
-    """Reject a nation's own terms in ``field`` that its chart cannot draw (a yield or mortgage term it lacks)."""
+    """Reject a nation's own terms in ``field`` that its chart cannot draw (a yield or mortgage term it lacks, net debt)."""
+    if field == "debt_aggregates":
+        foreign = [item for item in values[field] if item not in nation.debt_aggregates]
+        if foreign:
+            raise ValueError(f"{nation.name} has no {foreign[0]} debt (its aggregate debt: {','.join(nation.debt_aggregates)})")
+        return
     if field == "mortgage_terms":
         foreign = [term for term in values[field] if term not in nation.mortgage_terms]
         if foreign:
@@ -1073,6 +1119,25 @@ def idle_margins(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> froz
     return frozenset(idle)
 
 
+def idle_aggregates(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
+    """Return the keys of the nations' aggregate debts that change nothing ("uk:aggregate"): no aggregate debt is drawn.
+
+    While debt is off, or while levels of government are chosen, which
+    replace the aggregate lines (``CountryMetadata.macro_specs``); and for
+    a nation with gross debt alone, which draws it whatever the list names
+    (``Nation.view``). The window and the page grey the UK's boxes, keeping
+    their ticks, and the written command line leaves the list out
+    (batch 10.4), as for a margin (``idle_margins``).
+    """
+    option = by_name("aggregate")
+    levels = any(payloads.get(name, "").strip() for name in _PART_OPTIONS)
+    return frozenset(
+        nation_choice(nation, option)
+        for nation in NATIONS
+        if not flags.get("debt", True) or levels or len(nation.debt_aggregates) < 2
+    )
+
+
 def _nation_settings(payloads: Mapping[str, str], values: Mapping[str, object]) -> tuple:
     """Return ``PlotConfig.nation_settings`` for the choices given with a nation's code; raise ValueError.
 
@@ -1104,7 +1169,7 @@ def _nation_settings(payloads: Mapping[str, str], values: Mapping[str, object]) 
                 else:
                     continue
                 given[option.name] = payloads[key]
-                if option.fields[0] in ("yield_terms", "spread_pairs", "mortgage_terms"):
+                if option.fields[0] in ("yield_terms", "spread_pairs", "mortgage_terms", "debt_aggregates"):
                     _check_nation_terms(nation, option.fields[0], own)
             # A margin names its term too, unless a list of terms is given:
             # one for every chart on each nation that has the term, one of
@@ -1357,6 +1422,9 @@ def drawn_config(config: PlotConfig, key: str) -> PlotConfig:
     for term, field in MORTGAGE_MARGINS.items():
         if not own.mortgages or term not in viewed["mortgage_terms"]:
             viewed[field] = field_default(field)
+    # Nor the aggregate debts without debt, or with levels (``idle_aggregates``).
+    if not own.include_debt or own.components:
+        viewed["debt_aggregates"] = field_default("debt_aggregates")
     return dataclasses.replace(own, nation_settings=(), **viewed)
 
 
@@ -1429,8 +1497,8 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     defaults, default_flags = choices_from_config(PlotConfig())
     tokens: list[str] = []
     idle = idle_options(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True))
-    idle_margin_keys = idle_margins(payloads, flags)
-    payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle and key not in idle_margin_keys}
+    idle_keys = idle_margins(payloads, flags) | idle_aggregates(payloads, flags)
+    payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle and key not in idle_keys}
 
     # The nations' switches, unless the ones chosen are those drawn by default.
     countries = [option for option in options_in("country") if option.in_gui]

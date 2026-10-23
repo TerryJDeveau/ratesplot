@@ -213,6 +213,12 @@ CASES: list[list[str]] = [
     ["--tracker:1.5"], ["--tr:0.5"], ["--uk:tracker:2"], ["--gb:tr:-0.25"], ["--cdn:tracker:1"], ["--tracker:x"],
     ["--tracker:11"], ["--tracker:"], ["--tracker"], ["--t:1"], ["--na:gb", "--tracker:1"], ["--na:gb", "--mo:svr", "--tracker:1"],
     ["--na:gb", "--uk:mo:2f,tracker"], ["--mo:tracker"], ["--na:ca,gb", "--prime:0.5", "--tracker:1"], ["--mo:trackers"],
+    # Batch 10.4: the aggregate debts, for every chart and for one nation; only the UK has net debt;
+    # at least "agg"; never none; beside --no-debt and the levels; it names no curve.
+    ["--agg:gross,net"], ["--aggregate:net"], ["--agg:Net,gross"], ["--agg:net,net"], ["--uk:agg:net"],
+    ["--gb:aggregate:gross,net"], ["--cdn:agg:net"], ["--ger:agg:gross"], ["--agg:none"], ["--uk:agg:none"], ["--agg:"],
+    ["--agg"], ["--ag:net"], ["--a:net"], ["--agg:gro"], ["--na:gb", "--agg:net", "--no-debt"], ["--na:gb", "--agg:net", "--d:f"],
+    ["--na:gb", "--agg:net", "--gdp"],
 ]
 
 

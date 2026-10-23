@@ -609,6 +609,7 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
     """
     _require_start(config)
     _warn_no_yields("cdn", config)
+    _note_gross_debt_drawn("cdn", config)
     warn_series_coverage(config.start, cdn_series_earliest(config))
     yields, quote_time = extend_cdn_yields(fetch_cdn_yields(config), config)
     rates = rate_curves("cdn", yields, config)
@@ -646,6 +647,7 @@ def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     """
     _require_start(config)
     _warn_no_yields("us", config)
+    _note_gross_debt_drawn("us", config)
     warn_series_coverage(config.start, us_series_earliest(config))
     yields, quote_time = extend_us_yields(fetch_us_yields(config), config)
     if not yields.empty:
@@ -678,6 +680,7 @@ def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     """
     _require_start(config)
     _warn_no_yields("uk", config)
+    _note_gross_debt_drawn("uk", config)
     warn_series_coverage(config.start, uk_series_earliest(config))
     yields, quote_time = extend_cdn_yields(fetch_uk_yields(config), config, "uk", "UK")
     rates = rate_curves("uk", yields, config)
@@ -715,6 +718,7 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     """
     _require_start(config)
     _warn_no_yields("de", config)
+    _note_gross_debt_drawn("de", config)
     warn_series_coverage(config.start, de_series_earliest(config))
     yields, quote_time = extend_cdn_yields(fetch_de_yields(config), config, "de", "German")
     rates = rate_curves("de", yields, config)
@@ -765,6 +769,13 @@ def _require_start(config: PlotConfig) -> None:
     """Refuse a config whose automatic start has not been found yet (``resolve_start``)."""
     if config.start is None:
         raise ValueError("the start date is automatic: call plotting.resolve_start(config) before preparing a chart")
+
+
+def _note_gross_debt_drawn(country: str, config: PlotConfig) -> None:
+    """Note a chart drawing its gross debt where none of the aggregate debts chosen is its own (``--aggregate:net`` on Canada's; batch 10.4)."""
+    nation = nation_by_key(country)
+    if config.include_debt and not config.components and not set(config.debt_aggregates) & set(nation.debt_aggregates):
+        print(f"  Note: {nation.name} has no {' or '.join(config.debt_aggregates)} debt; its gross debt is drawn.")
 
 
 def _warn_no_yields(country: str, config: PlotConfig) -> None:

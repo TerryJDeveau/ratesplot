@@ -69,6 +69,7 @@ from .options import (
     format_dollar_bound,
     group_title,
     field_default,
+    idle_aggregates,
     idle_margins,
     idle_options,
     is_percent_bound,
@@ -100,6 +101,11 @@ Choices = tuple[dict[str, str], dict[str, bool]]
 # the tick boxes of a nation's terms, and its axis limits, under its tab). The
 # window and the page show none of them for both charts at once.
 NATION_OPTIONS = tuple(option for option in OPTIONS if per_nation(option) and option.in_gui)
+# The order of a nation's lists under its tab, by field: the spreads next to
+# the yield terms, as in the column (Terry, 2026-10-06); the policy terms
+# (batch 9.1) before the mortgages, as the column has the policy rate before
+# them; the aggregate debts (batch 10.4) last, beside the axis limits.
+_PANEL_LISTS = ("yield_terms", "spread_pairs", "policy_terms", "mortgage_terms", "debt_aggregates")
 # The control column's blocks, top to bottom: key (an option's ``panel``, or
 # its help group), title (None: no title) and the options to put first, in
 # that order (the rest follow in table order). Terry, 2026-10-08 (batch 7):
@@ -267,7 +273,7 @@ def nation_text(nation: Nation, option: Option, text: str) -> str:
     "none", which its chart draws (Terry, 2026-10-07); a text that does not
     parse is kept as it is, for the field to report.
     """
-    if not text.strip() or option.fields[0] not in ("yield_terms", "mortgage_terms", "spread_pairs", "policy_terms"):
+    if not text.strip() or option.fields[0] not in _PANEL_LISTS:
         return text
     try:
         value = nation_view(nation, option, option.parse(text))
@@ -449,8 +455,19 @@ def idle_controls(flags: Mapping[str, bool]) -> frozenset[str]:
 
 
 # Every option ``idle_controls`` can grey out: those idle with no right-axis
-# curve chosen, and GDP (under -r).
-GREYABLE_OPTIONS = idle_options(False, False, False) | {"gdp"}
+# curve chosen, and GDP (under -r); and a nation's aggregate debts, by its key
+# (``idle_nation_keys``).
+GREYABLE_OPTIONS = idle_options(False, False, False) | {"gdp", "aggregate"}
+
+
+def idle_nation_keys(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
+    """Return the keys of the nations' own fields that change nothing: a margin whose term is not drawn, aggregate debts not drawn.
+
+    ``options.idle_margins`` (the prime rate's, the tracker's) and
+    ``options.idle_aggregates`` (batch 10.4).
+    """
+    return idle_margins(payloads, flags) | idle_aggregates(payloads, flags)
+
 
 # A number typed without the 0 before its point: ".3", "-.25", "+.5t".
 _BARE_POINT = re.compile(r"^(\s*[+-]?)\.(?=\d)")
@@ -476,17 +493,18 @@ def drawn_payloads(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> di
     the drawing: a value whose flag is off (the tolerance without --reg), and
     one with no curve to act on (``idle_controls``: Top and Bottom, the
     levels, the tolerance; a nation's margin while its chart draws not its
-    term, the prime rate, ``options.idle_margins``). The field keeps its text
-    for when it applies again, and the written command line leaves it out
+    term, the prime rate, and its aggregate debts while none is drawn,
+    ``idle_nation_keys``). The field keeps its text for when it applies
+    again, and the written command line leaves it out
     (``options.command_line_tokens``).
     """
     idle = idle_controls(flags)
-    idle_margin_keys = idle_margins(payloads, flags)
+    idle_keys = idle_nation_keys(payloads, flags)
     drawn: dict[str, str] = {}
     for key, text in payloads.items():
         option = option_of(key)
         off = option.turns_on in flags and not flags[option.turns_on]
-        if text.strip() and not off and option.name not in idle and key not in idle_margin_keys:
+        if text.strip() and not off and option.name not in idle and key not in idle_keys:
             drawn[key] = text.strip()
     return drawn
 
@@ -629,9 +647,11 @@ def choice_values(option: Option, text: str, nation: Nation | None = None) -> li
 
 
 def _offers(nation: Nation, option: Option, value: str) -> bool:
-    """True when ``nation``'s chart can draw a box's item: a term it has, a spread of two of them; either policy term."""
+    """True when ``nation``'s chart can draw a box's item: a term it has, a spread of two of them, an aggregate debt it has; either policy term."""
     if option.fields[0] == "policy_terms":
         return True
+    if option.fields[0] == "debt_aggregates":
+        return value in nation.debt_aggregates
     if option.fields[0] == "mortgage_terms":
         return value in nation.mortgage_terms
     terms = value.split("-") if option.fields[0] == "spread_pairs" else [value]
@@ -654,6 +674,18 @@ def choice_rows(option: Option, text: str, nation: Nation | None = None) -> list
     offered = {value for _caption, boxes in rows for value, _box in boxes}
     others = [(value, value.replace("-", "–")) for value in choice_values(option, text, nation) if value not in offered]
     return rows + ([("other", others)] if others else [])
+
+
+def panel_lists(nation: Nation) -> list[Option]:
+    """Return the lists under a nation's tab, in their order (``_PANEL_LISTS``): those offering it a choice, two boxes or more.
+
+    The aggregate debts only for the UK, the only nation with two (batch
+    10.4); a nation without the choice draws its gross debt.
+    """
+    lists = sorted(
+        (option for option in NATION_OPTIONS if option.editor == "choices"), key=lambda option: _PANEL_LISTS.index(option.fields[0])
+    )
+    return [option for option in lists if sum(len(boxes) for _caption, boxes in choice_rows(option, "", nation)) >= 2]
 
 
 def choices_text(option: Option, ticked: list[str]) -> str:

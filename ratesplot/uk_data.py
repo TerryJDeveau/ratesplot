@@ -423,31 +423,35 @@ def fetch_uk_yields(config: PlotConfig) -> pd.DataFrame:
 
 @downloads_of("ONS public sector debt")
 def fetch_uk_debt(config: PlotConfig) -> pd.DataFrame | None:
-    """Return general government gross debt (BKPX), the national debt alone before it begins, and net debt (HF6W); monthly.
+    """Return the chosen aggregate debts, monthly: gross debt (BKPX) with the national debt alone before it, and net debt (HF6W).
 
-    The national debt (``UK_NATIONAL_DEBT_COLUMN``) is kept as it is, a
-    different quantity: its years before BKPX's first month. If the ONS
-    fails, BKPX and HF6W are drawn from their bake (``ons_series``, batch
-    19.2); only with neither, the national debt alone, to 2017, with a
-    warning, and no net debt, with a warning.
+    Each only when chosen (``--aggregate:LIST``, batch 10.4; gross alone by
+    default): the UK has both, so its list is what it draws. The national
+    debt (``UK_NATIONAL_DEBT_COLUMN``) is kept as it is, a different
+    quantity: its years before BKPX's first month. If the ONS fails, BKPX
+    and HF6W are drawn from their bake (``ons_series``, batch 19.2); only
+    with neither, the national debt alone, to 2017, with a warning, and no
+    net debt, with a warning.
     """
     if not config.include_debt:
         return None
     parts: list[pd.DataFrame] = []
-    history = embedded_frame(EMBEDDED_UK_DEBT_HISTORY, UK_NATIONAL_DEBT_COLUMN)
-    try:
-        live = ons_series(UK_DEBT_SERIES).rename(UK_DEBT_COLUMN).to_frame()
-    except Exception as exc:
-        print(f"  Warning: ONS {UK_DEBT_SERIES} (UK debt) unavailable ({exc}); the national debt alone (to 2017).")
-        live = None
-    if live is not None:
-        parts.append(live)
-    if history is not None:
-        parts.append(history if live is None else history.loc[history.index < live.index[0]])
-    try:
-        parts.append(ons_series(UK_NET_DEBT_SERIES).rename(UK_NET_DEBT_COLUMN).to_frame())
-    except Exception as exc:
-        print(f"  Warning: ONS {UK_NET_DEBT_SERIES} (UK net debt) unavailable ({exc}); not drawn.")
+    if "gross" in config.debt_aggregates:
+        history = embedded_frame(EMBEDDED_UK_DEBT_HISTORY, UK_NATIONAL_DEBT_COLUMN)
+        try:
+            live = ons_series(UK_DEBT_SERIES).rename(UK_DEBT_COLUMN).to_frame()
+        except Exception as exc:
+            print(f"  Warning: ONS {UK_DEBT_SERIES} (UK debt) unavailable ({exc}); the national debt alone (to 2017).")
+            live = None
+        if live is not None:
+            parts.append(live)
+        if history is not None:
+            parts.append(history if live is None else history.loc[history.index < live.index[0]])
+    if "net" in config.debt_aggregates:
+        try:
+            parts.append(ons_series(UK_NET_DEBT_SERIES).rename(UK_NET_DEBT_COLUMN).to_frame())
+        except Exception as exc:
+            print(f"  Warning: ONS {UK_NET_DEBT_SERIES} (UK net debt) unavailable ({exc}); not drawn.")
     return pd.concat(parts, axis=1).sort_index() if parts else None
 
 

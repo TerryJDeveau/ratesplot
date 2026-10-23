@@ -237,6 +237,11 @@ CASES: dict[str, list[str]] = {
     # Batch 9.6: Germany's policy line, the Bundesbank's discount rate from
     # 1948 (baked), then the ECB's rate from 1999, with the yields.
     "de_policy1960": ["--na:de", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1960", "--e:2005", "-l"],
+    # Batch 10.4: the UK's net debt alone (its title phrase names the
+    # nation), with -l; and net debt asked for every chart, which Canada,
+    # having gross debt alone, answers with its gross debt and a note.
+    "uk_net_only": ["--na:gb", "--uk:agg:net", "-s:1990", "-l"],
+    "ca_uk_agg_net": ["--na:ca,gb", "--agg:net", "--no-yield", "-s:2000"],
 }
 
 
