@@ -52,6 +52,8 @@ uk_archive_data   baked UK history from the Bank of England's "A millennium of
                   macroeconomic data" (rewritten by tools/bake_archives.py)
 rates             the yield axis's other curves, each only when chosen: policy rates,
                   mortgage rates, yield spreads
+fx                exchange rates, for Top and Bottom given in another currency
+                  (batch 18.3): FRED's from 1971, older ones baked (18.4)
 measures          the right-axis measure: dollars, % of GDP (-r) or per person (-p)
 plotting          line drawing, draw_country, build_figure (no pyplot), COUNTRIES, run_cdn / run_us / run_uk / run_de
 options           the option table, value parsers/formatters, choices <-> PlotConfig, --help text
@@ -69,7 +71,8 @@ config}; plotting -> {axes, legend, endlabels, regression, measures, rates,
 cdn_data, us_data, uk_data, de_data, joins, latest, baked} -> {frames, http} -> config;
 {cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data, us_data, de_data} -> baked -> {http, config};
 rates -> {cdn_data, uk_data, us_data, de_data, baked, http}; cdn_data -> us_data (FRED's
-Canadian GDP); plotting, gui, web, http -> console;
+Canadian GDP); plotting -> fx -> {us_data, cdn_archive_data, uk_archive_data};
+plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
 regression -> occupancy; options -> config. Data modules never import
 plotting. Nothing imports web or gui, and cli imports gui only when the

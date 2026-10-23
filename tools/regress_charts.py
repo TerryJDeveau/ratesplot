@@ -251,12 +251,21 @@ CASES: dict[str, list[str]] = {
     # Batch 18.3: Top and Bottom in a currency, converted on each chart at the
     # rate of its end date: U.S. dollars on all four (the end pinned, so the
     # rates of 2026-09-01); euros before the euro (the mark's monthly rate);
-    # per capita in pounds; a chart before any rate is known, its limit left
-    # to the axis with a warning (until 18.4's older rates).
+    # per capita in pounds; a chart before FRED's rates (left to the axis with
+    # a warning until 18.4; since then at M14 over M15, 1965-01).
     "nat_fx": ["--na:ca,us,gb,de", "--top:USD40t", "--bottom:USD1t", "-s:2010"],
     "fx_eur_1990": ["--na:ca,gb", "--top:EUR2t", "--bottom:EUR50b", "-s:1980", "--e:1995"],
     "fx_p": ["--na:ca,us", "-p", "--top:GBP100k", "-s:2000"],
     "fx_1960": ["-c", "--top:USD100b", "-s:1950", "--e:1965"],
+    # Batch 18.4, the older rates: before 1913 the pound by M15 and the
+    # Canadian dollar at its gold par; in 1947 a limit in euros left to the
+    # axis with a warning (no rate before 1948-06-21), the other converted at
+    # J562 and M15; in 1960 euros at the mark's parity of 4.20 on the other
+    # three charts (Germany's has no right-axis curve before 1991), with J562
+    # and M15.
+    "fx_1912": ["--na:ca,gb", "--top:USD15b", "--bottom:USD50m", "-s:1867", "--e:1912"],
+    "fx_1947": ["--na:ca,gb", "--top:EUR20b", "--bottom:USD100m", "-s:1926", "--e:1947"],
+    "fx_1960_all": ["--na:ca,us,gb,de", "--top:EUR2t", "--bottom:EUR2b", "-s:1956", "--e:1960"],
 }
 
 
