@@ -1135,8 +1135,9 @@ def _limit_control(where, nation: Nation, option: Option) -> None:
         disabled=not all_tick_offered(payloads, flags, key),
         help=(
             f"This {option.label} for every nation's chart. Ticked, the value goes into every nation's field, and a value "
-            "entered in any of them goes into the others; unticked, each keeps its own. Greyed while the field is blank "
-            "or only one nation is ticked; for Top and Bottom, unless they are % of GDP."
+            "entered in any of them goes into the others; unticked, each keeps its own. Top and Bottom go with their "
+            "currency (20t from the U.S. field as USD20t), each chart converting them at the rate of its end date. "
+            "Greyed while the field is blank or only one nation is ticked."
         ),
     )
 

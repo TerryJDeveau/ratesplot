@@ -248,6 +248,15 @@ CASES: dict[str, list[str]] = {
     "nat_levels": ["--na:ca,us,gb,de", "--cdn:d:fp", "--uk:d:f", "--ger:d:pm", "--debt", "--interest", "-s:2005"],
     "uk_lv_n": ["--na:gb", "--d:fn", "-i", "-s:1990"],
     "uk_lv_p": ["--na:gb", "--d:p", "-i", "-s:1990"],
+    # Batch 18.3: Top and Bottom in a currency, converted on each chart at the
+    # rate of its end date: U.S. dollars on all four (the end pinned, so the
+    # rates of 2026-09-01); euros before the euro (the mark's monthly rate);
+    # per capita in pounds; a chart before any rate is known, its limit left
+    # to the axis with a warning (until 18.4's older rates).
+    "nat_fx": ["--na:ca,us,gb,de", "--top:USD40t", "--bottom:USD1t", "-s:2010"],
+    "fx_eur_1990": ["--na:ca,gb", "--top:EUR2t", "--bottom:EUR50b", "-s:1980", "--e:1995"],
+    "fx_p": ["--na:ca,us", "-p", "--top:GBP100k", "-s:2000"],
+    "fx_1960": ["-c", "--top:USD100b", "-s:1950", "--e:1965"],
 }
 
 

@@ -78,6 +78,7 @@ from .config import (
 from .console import this_thread_output_to
 from .endlabels import ValueFormatter
 from .frames import filter_to_date_range
+from .fx import rate
 from .http import download_cache_on, in_parallel
 from .joins import align_macro
 from .latest import (
@@ -946,6 +947,53 @@ def _download_side_by_side(config: PlotConfig) -> None:
         in_parallel([partial(country.prepare, quiet.for_nation(country.key)) for country in chosen])
 
 
+def limits_in_own_currency(config: PlotConfig, key: str) -> PlotConfig:
+    """Return nation ``key``'s chart config with Top and Bottom in its own currency, converted at the rate of its end date (batch 18.3).
+
+    Decision 41 (Terry, 2026-10-20): a limit "written once with its
+    currency and converted at each drawing", at the rate of the chart's end
+    date, the latest on or before it (``fx.rate``); so a chart with a pinned
+    end draws the same every time, and one ending today follows the rate.
+    Only a limit in another currency asks for a rate; the line saying so
+    names the rate and its date. Where no rate is known by the end date, the
+    limit is left to the axis, with a warning; so are both when Bottom is not
+    below Top once converted (the command line compares two limits only in
+    the same currency). ``config`` is the nation's own (``for_nation``).
+    """
+    nation = nation_by_key(key)
+    limits = {"Top": ("macro_top", "macro_top_currency"), "Bottom": ("macro_bottom", "macro_bottom_currency")}
+    changes: dict[str, object] = {}
+    for name, (field, currency_field) in limits.items():
+        value, currency = getattr(config, field), getattr(config, currency_field)
+        if currency is None:
+            continue
+        changes[currency_field] = None
+        if value is None or currency == nation.currency:
+            continue
+        # As a field writes it ("USD20t"); the result as the axis does ("C$27.8T").
+        given = f"{name} {currency}{format_currency(value, '').lower()}"
+        # A chart that ended long ago asks nothing for the recent part (19.2 (b)).
+        with chart_ending(config.end):
+            found = rate(currency, nation.currency, config.end)
+        if found is None:
+            print(f"  Warning: no {currency} to {nation.currency} rate on or before {config.end:%Y-%m-%d}; {given} is left to the axis.")
+            changes[field] = None
+            continue
+        changes[field] = value * found.value
+        print(
+            f"  {given} is {format_currency(changes[field], nation.currency_symbol)} on the {nation.adjective} chart: "
+            f"{found.value:.5g} {nation.currency} per {currency} on {found.dated:%Y-%m-%d} ({found.source})."
+        )
+    if not changes:
+        return config
+    converted = replace(config, **changes)
+    top, bottom = converted.macro_top, converted.macro_bottom
+    if top is not None and bottom is not None and bottom >= top:
+        print(f"  Warning: Bottom is not below Top on the {nation.adjective} chart once both are in {nation.currency}; both are left to the axis.")
+        converted = replace(converted, macro_top=None, macro_bottom=None)
+    return converted
+
+
 def build_figure(country: Country, config: PlotConfig) -> Figure:
     """Fetch, prepare and draw one country's chart on a new Agg figure, without pyplot.
 
@@ -956,7 +1004,8 @@ def build_figure(country: Country, config: PlotConfig) -> Figure:
     An automatic start must be found first (``resolve_start``), once for all
     the charts drawn together.
     """
-    config = config.for_nation(country.key)  # its own choices over the shared ones
+    # Its own choices over the shared ones, a limit in another currency in its own.
+    config = limits_in_own_currency(config.for_nation(country.key), country.key)
     figure = Figure(figsize=config.figsize_inches, dpi=CANVAS_DPI)
     FigureCanvasAgg(figure)
     ax_yield = figure.subplots()
@@ -967,7 +1016,7 @@ def build_figure(country: Country, config: PlotConfig) -> Figure:
 
 def run_cdn(config: PlotConfig) -> None:
     """Fetch all selected Canadian inputs and show the Canadian chart in a matplotlib window."""
-    config = config.for_nation(CDN.key)
+    config = limits_in_own_currency(config.for_nation(CDN.key), CDN.key)
     yields, macro, rates = prepare_cdn(config)
     plot_country(yields, macro, rates, config, CDN, add_canadian_yield_lines)
     print("CDN chart finished.\n")
@@ -975,7 +1024,7 @@ def run_cdn(config: PlotConfig) -> None:
 
 def run_us(config: PlotConfig) -> None:
     """Fetch all selected U.S. inputs and show the U.S. chart in a matplotlib window."""
-    config = config.for_nation(US.key)
+    config = limits_in_own_currency(config.for_nation(US.key), US.key)
     yields, macro, rates = prepare_us(config)
     plot_country(yields, macro, rates, config, US, add_us_yield_lines)
     print("US chart finished.\n")
@@ -983,7 +1032,7 @@ def run_us(config: PlotConfig) -> None:
 
 def run_uk(config: PlotConfig) -> None:
     """Fetch all selected UK inputs and show the UK's chart in a matplotlib window."""
-    config = config.for_nation(UK.key)
+    config = limits_in_own_currency(config.for_nation(UK.key), UK.key)
     yields, macro, rates = prepare_uk(config)
     plot_country(yields, macro, rates, config, UK, add_uk_yield_lines)
     print("UK chart finished.\n")
@@ -991,7 +1040,7 @@ def run_uk(config: PlotConfig) -> None:
 
 def run_de(config: PlotConfig) -> None:
     """Fetch all selected German inputs and show Germany's chart in a matplotlib window."""
-    config = config.for_nation(DE.key)
+    config = limits_in_own_currency(config.for_nation(DE.key), DE.key)
     yields, macro, rates = prepare_de(config)
     plot_country(yields, macro, rates, config, DE, add_de_yield_lines)
     print("German chart finished.\n")

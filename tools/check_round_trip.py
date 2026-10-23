@@ -78,6 +78,10 @@ VALUES = (
     # "n" and its missing "p", with a curve given.
     "--cdn:d:fp", "--d:fp --uk:d:f", "--d:fn", "--us:i:f --d:fpm", "--ger:d:pm --uk:d:fn", "--d:p",
     "--cdn:d:fp --gdp", "--d:fp --cdn:i:f",
+    # Top and Bottom in a currency (batch 18.3): for every chart, for one nation, a nation's own currency, two
+    # currencies, per capita, a symbol typed.
+    "--top:USD20t", "--top:EUR2t --bottom:EUR50b", "--cdn:top:USD20t", "--us:top:USD20t", "--top:USD5t --bottom:CAD1t",
+    "-p --top:GBP100k", "--uk:top:C$3t --ger:bottom:£40b",
 )
 
 

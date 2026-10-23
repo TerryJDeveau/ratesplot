@@ -224,6 +224,13 @@ CASES: list[list[str]] = [
     ["--cdn:debt:fp"], ["--cdn:d:fs"], ["--us:interest:f"], ["--uk:debt:p"], ["--uk:debt:fn"], ["--gb:d:m"],
     ["--ger:d:pm"], ["--cdn:debt:f", "--cdn:interest:p"], ["--cdn:debt:f", "--cdn:interest:f"],
     ["--debt:fp", "--cdn:interest:f"], ["--cdn:debt:fp", "--gdp"], ["--cdn:debt:x"], ["--cdn:debt:"], ["--na:gb", "--debt:p"],
+    # Batch 18.3: Top and Bottom in a currency, by its code or its symbol, letters in either case; a bare "$" or
+    # a percentage with a currency refused; under -r refused; crossed limits refused only in one currency; a
+    # nation's own currency the same as none.
+    ["--top:USD20t"], ["--top:usd20t"], ["--top:US$20t"], ["--t:C$5t"], ["--top:CAD 5t"], ["--top:£1t"], ["--top:€2t"],
+    ["--top:EUR2T", "--bottom:EUR100b"], ["--top:$20t"], ["--top:USD150%"], ["--top:USD20t", "-r"], ["--top:XYZ5t"],
+    ["--top:USD5t", "--bottom:USD10t"], ["--top:USD5t", "--bottom:CAD10t"], ["--us:top:USD20t"], ["--cdn:top:USD20t"],
+    ["--uk:bottom:CAD1t", "--uk:top:3t"], ["--top:USD60k", "-p"], ["--na:ca,us,gb,de", "--top:GBP10t"],
 ]
 
 

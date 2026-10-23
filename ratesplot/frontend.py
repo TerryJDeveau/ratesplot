@@ -512,18 +512,14 @@ def all_tick_offered(payloads: Mapping[str, str], flags: Mapping[str, bool], key
     non-blank (non-auto-generated) and there is more than one nation
     selected". A box blanked by typing (``blanked``) counts as not blank
     until Return is typed in it or it is left (decision 47). Greyed too
-    while its box is (Top and Bottom with no right-axis curve), and Top
-    and Bottom while they are amounts, in each nation's own currency: 20t
-    copied from the U.S.'s box would be 20 trillion euros in Germany's
-    (18.3 marks a value with its currency). Under -r they are percentages
-    of GDP, the same on every chart.
+    while its box is (Top and Bottom with no right-axis curve). Top and
+    Bottom in amounts are copied with their currency since batch 18.3
+    (``limit_copies``); until then they took "All" only as percentages of GDP.
     """
     name = option_of(key).name
     if not (payloads.get(key, "").strip() or key in blanked):
         return False
-    if nations_ticked(flags) < 2 or name in idle_controls(flags):
-        return False
-    return name in _YIELD_LIMITS or _relative_in_effect(flags)
+    return nations_ticked(flags) >= 2 and name not in idle_controls(flags)
 
 
 def limit_copies(updates: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
@@ -534,38 +530,50 @@ def limit_copies(updates: Mapping[str, str], flags: Mapping[str, bool]) -> dict[
     value-box on all the other national pages". Every nation's box, its
     chart drawn or not, so that the limit is written once, for every chart.
     A blank is not copied: blanking a box unticks its "All" instead, and
-    leaves the others' values (``settled_all_ticks``).
+    leaves the others' values (``settled_all_ticks``). An amount in the
+    nation's own currency is copied with that currency's code in front
+    ("20t" from the U.S.' box as "USD20t"), which each other chart converts
+    at the rate of its end date (batch 18.3, decision 41; Terry: "a currency
+    conversion will be necessary to get the correct values cross-populated");
+    a percentage of GDP, an amount already marked, or a text that does not
+    parse, as it is.
     """
     copies: dict[str, str] = {}
     for key, text in updates.items():
         nation, option = nation_of(key), option_of(key)
         if nation is None or option.name not in LIMITS or not text.strip() or not flags.get(all_tick(option.name), False):
             continue
-        copies.update({nation_choice(other, option): text.strip() for other in NATIONS if other is not nation})
+        copied = text.strip()
+        if option.name not in _YIELD_LIMITS and not is_percent_bound(copied):
+            try:
+                _amount, currency = option.parse(copied)
+            except ValueError:
+                currency = ""
+            if currency is None:
+                copied = nation.currency + copied
+        copies.update({nation_choice(other, option): copied for other in NATIONS if other is not nation})
     return copies
 
 
 def settled_all_ticks(payloads: Mapping[str, str], flags: Mapping[str, bool], blanked: Collection[str] = ()) -> dict[str, bool]:
     """Return every "All" tick after a change: unticked where its rule no longer holds (batch 18.2).
 
-    A tick stays while more than one nation is ticked, while every nation's
+    A tick stays while more than one nation is ticked and every nation's
     box of its limit holds a value (a box blanked by typing, ``blanked``,
     counting as not blank until Return is typed in it or it is left,
-    decision 47), and for Top and Bottom while they are percentages of GDP
-    (``all_tick_offered``); a greyed limit keeps its tick, as a greyed
-    field keeps its text. Terry, 2026-10-14: "Blanking out one value-box
-    automatically unticks the corresponding “All” tick-box ... and unticks
-    it on all the other nations too, but it doesn't blank out the
-    corresponding value-boxes of the other nations". A change of measure
-    clears Top and Bottom, and so unticks theirs.
+    decision 47); a greyed limit keeps its tick, as a greyed field keeps
+    its text. Terry, 2026-10-14: "Blanking out one value-box automatically
+    unticks the corresponding “All” tick-box ... and unticks it on all the
+    other nations too, but it doesn't blank out the corresponding
+    value-boxes of the other nations". A change of measure clears Top and
+    Bottom, and so unticks theirs. (Until batch 18.3, Top's and Bottom's
+    were unticked too when they were amounts.)
     """
-    idle = idle_controls(flags)
     ticks: dict[str, bool] = {}
     for name in LIMITS:
         keys = [nation_choice(nation, by_name(name)) for nation in NATIONS]
         filled = all(payloads.get(key, "").strip() or key in blanked for key in keys)
-        amounts = name not in _YIELD_LIMITS and name not in idle and not _relative_in_effect(flags)
-        ticks[all_tick(name)] = bool(flags.get(all_tick(name), False)) and filled and nations_ticked(flags) >= 2 and not amounts
+        ticks[all_tick(name)] = bool(flags.get(all_tick(name), False)) and filled and nations_ticked(flags) >= 2
     return ticks
 
 

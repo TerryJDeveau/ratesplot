@@ -650,12 +650,16 @@ class Nation:
         as the level it means (the UK's "n" as "m"), in COMPONENT_LETTERS
         order; none where it has none of them, so its chart draws its
         aggregate lines, with a note (the UK and "p"; batch 10.5), as it
-        draws its gross debt where it has none of the aggregates named. Any
-        other field is its value.
+        draws its gross debt where it has none of the aggregates named. Top's
+        and Bottom's currency: none where it is the nation's own (batch
+        18.3). Any other field is its value.
         """
         own = dict(self.own_defaults)
         if field in own and value == _LIST_DEFAULTS[field]:
             return own[field]
+        if field in LIMIT_CURRENCY_FIELDS:
+            # A limit in its own currency is one without a currency (batch 18.3).
+            return None if value == self.currency else value
         if field == "debt_aggregates":
             return tuple(item for item in value if item in self.debt_aggregates) or self.debt_aggregates[:1]
         if field == "components":
@@ -743,14 +747,17 @@ def nation_by_key(key: str) -> Nation | None:
     return next((nation for nation in NATIONS if nation.key == key), None)
 
 
+# The currency Top and Bottom are given in (batch 18.3): None for the chart's
+# own, else an ISO code of CURRENCY_SYMBOLS, converted at each drawing.
+LIMIT_CURRENCY_FIELDS = ("macro_top_currency", "macro_bottom_currency")
 # The choices that can differ by nation (PlotConfig.for_nation): the yield
 # axis's lists, the axis limits (Top and Bottom are in each nation's own
-# currency, so a limit right for one is wrong for the other), the aggregate
-# debts (batch 10.4: only the UK has a choice), and the levels of
-# government (batch 10.5, each nation's own in its panel).
+# currency unless given in another, so a limit right for one is wrong for the
+# other), the aggregate debts (batch 10.4: only the UK has a choice), and the
+# levels of government (batch 10.5, each nation's own in its panel).
 PER_NATION_FIELDS = (
     "yield_terms", "mortgage_terms", "spread_pairs", "yield_ymin", "yield_ymax", "macro_bottom", "macro_top",
-    "prime_margin", "policy_terms", "tracker_margin", "debt_aggregates", "components",
+    "prime_margin", "policy_terms", "tracker_margin", "debt_aggregates", "components", *LIMIT_CURRENCY_FIELDS,
 )
 # The defaults of the lists a nation may have its own default of (Nation.own_defaults).
 _LIST_DEFAULTS = {
@@ -1249,6 +1256,11 @@ class PlotConfig:
     yield_ymax: float | None = None
     macro_bottom: float | None = None
     macro_top: float | None = None
+    # --top:USD20t (batch 18.3): the currency Top and Bottom are given in, an
+    # ISO code of CURRENCY_SYMBOLS; None, the chart's own. Converted to the
+    # chart's own at the rate of its end date when it is drawn (plotting).
+    macro_bottom_currency: str | None = None
+    macro_top_currency: str | None = None
     include_yield: bool = True
     # --policy: each country's policy rate on the yield axis (ratesplot.rates);
     # additive, not under the curve rule.

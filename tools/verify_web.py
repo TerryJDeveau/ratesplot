@@ -120,6 +120,8 @@ CHART_CASES = (
     "policy_both",
     # Batch 10.4: the UK's net debt alone. Batch 10.5: each nation's own levels.
     "uk_net_only", "nat_levels",
+    # Batch 18.3: Top and Bottom in U.S. dollars on all four charts.
+    "nat_fx",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -1062,7 +1064,7 @@ def check_batch17(check: Check) -> None:
 
 
 def check_batch18(check: Check) -> None:
-    """Batch 18.1 and 18.2: each limit's unit on its right, and the "All" tick that copies it to every nation."""
+    """Batch 18.1 to 18.3: each limit's unit on its right, and the "All" tick that copies it to every nation, an amount with its currency."""
     at = new_page("--na:ca,us --e:2026-09-01 -s:2015")
     check("no exception", not at.exception, at.exception)
     labels = {name: at.text_input(key=f"value:us:{name}").label for name in ("max", "min", "top", "bottom")}
@@ -1104,7 +1106,14 @@ def check_batch18(check: Check) -> None:
           at.checkbox(key="all:cdn:max").disabled and not at.checkbox(key="all:us:max").disabled)
     at.text_input(key="value:us:top").input("40t")
     at.run()
-    check("Top in dollars: its All greyed", at.checkbox(key="all:us:top").disabled)
+    # Batch 18.3: an amount goes with its currency, which each chart converts.
+    check("Top in dollars: its All active", not at.checkbox(key="all:us:top").disabled)
+    at.checkbox(key="all:us:top").check()
+    at.run()
+    check("All on Top: the U.S.' 40t as USD40t in the other nations' fields", values("top") == ["USD40t", "40t", "USD40t", "USD40t"],
+          values("top"))
+    check("All on Top: written once, --top:USD40t", "--top:USD40t" in address(at) and "--us:top" not in address(at), address(at))
+    check("no exception", not at.exception, at.exception)
     at.checkbox(key="flag:relative").check()
     at.run()
     at.text_input(key="value:us:top").input("150%")

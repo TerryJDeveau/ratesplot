@@ -57,6 +57,7 @@ import pandas as pd
 from .config import (
     COMPONENT_LETTERS,
     COMPONENT_SYNONYMS,
+    CURRENCY_SYMBOLS,
     DEBT_AGGREGATES,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DEFAULT_MORTGAGE_TERMS,
@@ -367,26 +368,54 @@ def is_percent_bound(spec: str) -> bool:
     return spec.strip().endswith("%")
 
 
-def parse_macro_bound(spec: str, *, kind: str) -> float:
-    """Parse a right-axis bound: dollars, or with a ``%`` sign a percentage (for ``-r``).
+# The marks an amount may be given in another currency with (batch 18.3,
+# decision 41: "--top:US$20t; C$, US$, £, €; the spelling settled when
+# built"): each currency's ISO 4217 code, which is what the program writes,
+# and its symbol. The code, since a bare "$" on a command line is a variable
+# to PowerShell and bash (--top:US$20t reaches the program as --top:US there);
+# the symbols are accepted as typed. Letters in either case.
+CURRENCY_MARKS = {
+    **{code: code for code in CURRENCY_SYMBOLS},
+    "US$": "USD", "C$": "CAD", CURRENCY_SYMBOLS["GBP"]: "GBP", CURRENCY_SYMBOLS["EUR"]: "EUR",
+}
 
-    Dollars: ``k/m/b/t`` suffixes scale, unsuffixed means billions. A
-    percentage is returned as the number of percent (``150%`` -> 150.0).
-    Which of the two the chart needs is checked in ``config_from_choices``,
-    once ``-r`` is known.
+
+def _currency_mark(spec: str) -> tuple[str | None, str]:
+    """Split an amount's currency mark off its front: ``"USD20t"`` -> ``("USD", "20t")``; none -> ``(None, spec)``."""
+    for mark in sorted(CURRENCY_MARKS, key=len, reverse=True):  # "US$" before a mark it might begin
+        if spec.upper().startswith(mark.upper()):
+            return CURRENCY_MARKS[mark], spec[len(mark):].strip()
+    return None, spec
+
+
+def parse_macro_bound(spec: str, *, kind: str) -> tuple[float, str | None]:
+    """Parse a right-axis bound: an amount, or with a ``%`` sign a percentage (for ``-r``); return it and its currency.
+
+    An amount: ``k/m/b/t`` suffixes scale, unsuffixed means billions, in the
+    chart's own currency, or in the one its mark names (``USD20t``,
+    ``C$5t``; ``CURRENCY_MARKS``; batch 18.3), returned as its ISO code: the
+    chart converts it when it is drawn. A percentage is returned as the
+    number of percent (``150%`` -> 150.0), with no currency. Which of the
+    two the chart needs is checked in ``config_from_choices``, once ``-r``
+    is known.
     """
     value = spec.strip().lower()
     if not value:
         raise ValueError(f"empty {kind} limit")
+    currency, value = _currency_mark(value)
+    if value.startswith("$"):
+        raise ValueError(f"{kind} limit {spec.strip()!r}: say whose dollars, USD{value[1:]} or CAD{value[1:]}")
 
     if value.endswith("%"):
+        if currency is not None:
+            raise ValueError(f"{kind} limit {spec.strip()!r}: a percentage of GDP takes no currency")
         try:
             parsed = float(value[:-1].strip())
         except ValueError:
             raise ValueError(f"invalid {kind} percentage {spec!r}: must be a positive decimal value") from None
         if parsed <= 0:
             raise ValueError(f"{kind} percentage must be positive, got {parsed}")
-        return parsed
+        return parsed, None
 
     multiplier = _DOLLAR_SUFFIX_MULTIPLIERS.get(value[-1])
     if multiplier is not None:
@@ -400,7 +429,7 @@ def parse_macro_bound(spec: str, *, kind: str) -> float:
         raise ValueError(f"invalid {kind} dollar limit {spec!r}: must be a positive decimal value") from None
     if parsed <= 0:
         raise ValueError(f"{kind} dollar limit must be positive, got {parsed}")
-    return parsed * multiplier
+    return parsed * multiplier, currency
 
 
 # ---------------------------------------------------------------------------
@@ -438,10 +467,13 @@ def format_dollar_bound(values: tuple) -> str:
 
 
 def format_macro_bound(values: tuple, config: PlotConfig) -> str:
-    """Format a right-axis bound: a percentage under -r, otherwise dollars; blank when unset."""
+    """Format a right-axis bound, ``(amount, currency)``: a percentage under -r, otherwise the amount after its currency's code, if any (``USD20t``); blank when unset."""
     if values[0] is None:
         return ""
-    return f"{values[0]:g}%" if config.relative else format_dollar_bound(values)
+    if config.relative:
+        return f"{values[0]:g}%"
+    currency = values[1] if len(values) > 1 else None
+    return (currency or "") + format_dollar_bound(values)
 
 
 def format_regression_tolerance(values: tuple, _config: PlotConfig) -> str:
@@ -494,10 +526,12 @@ def check_macro_bounds(values: Mapping[str, object]) -> None:
 
     The message gives no numbers: parsed, they are dollars (5e+12 for "5t")
     or percentages, which is known only once the flags are; the fields and
-    the command line show what was typed.
+    the command line show what was typed. Two in different currencies are
+    compared once converted, when the chart is drawn (``plotting``; batch 18.3).
     """
     top, bottom = values["macro_top"], values["macro_bottom"]
-    if top is not None and bottom is not None and bottom >= top:
+    same_currency = values["macro_top_currency"] == values["macro_bottom_currency"]
+    if top is not None and bottom is not None and same_currency and bottom >= top:
         raise ValueError("bottom limit must be less than top limit")
 
 
@@ -935,12 +969,16 @@ OPTIONS: tuple[Option, ...] = (
         names=("maximum", "mx"), parse=partial(parse_yield_bound, kind="max"), check=check_yield_bounds,
         label="Max", format=format_yield_bound,
     ),
+    # Batch 18.3 (decision 41): an amount may name its currency, converted
+    # at the rate of the chart's end date when each chart is drawn.
     Option(
-        "top", Kind.VALUE, ("macro_top",), "dollar", "--top:VAL / --t:VAL", "upper bound",
+        "top", Kind.VALUE, ("macro_top", "macro_top_currency"), "dollar", "--top:VAL / --t:VAL",
+        "upper bound; in another currency with\nits code first (USD20t; CAD, GBP, EUR, or\nUS$ C$ £ €), converted at the rate of\n"
+        "the chart's end date",
         names=("top",), parse=partial(parse_macro_bound, kind="top"), label="Top", format=format_macro_bound,
     ),
     Option(
-        "bottom", Kind.VALUE, ("macro_bottom",), "dollar", "--bottom:VAL / --b:VAL", "lower bound",
+        "bottom", Kind.VALUE, ("macro_bottom", "macro_bottom_currency"), "dollar", "--bottom:VAL / --b:VAL", "lower bound, likewise",
         names=("bottom",), parse=partial(parse_macro_bound, kind="bottom"), check=check_macro_bounds,
         label="Bottom", format=format_macro_bound,
     ),
@@ -1229,12 +1267,10 @@ def _nation_settings(payloads: Mapping[str, str], values: Mapping[str, object]) 
         except ValueError as exc:
             raise ValueError(f"{exc} (--{nation.prefix}: {nation.name} only)") from None
         # Kept only where the nation's chart differs: Canada's own mortgage
-        # terms "5" draw what the default "30,5" draws on its chart.
-        fields = {option.fields[0]: option for option in options_of(Kind.VALUE) if per_nation(option) and not option.removes}
+        # terms "5" draw what the default "30,5" draws on its chart; a limit's
+        # currency, the U.S.' "USD" what none draws on its (``Nation.view``).
         overrides = tuple(
-            (field, own[field])
-            for field in PER_NATION_FIELDS
-            if nation_view(nation, fields[field], own[field]) != nation_view(nation, fields[field], values[field])
+            (field, own[field]) for field in PER_NATION_FIELDS if nation.view(field, own[field]) != nation.view(field, values[field])
         )
         if overrides:
             settings.append((nation.key, overrides))
@@ -1391,11 +1427,14 @@ def choices_from_config(config: PlotConfig) -> tuple[dict[str, str], dict[str, b
         field_values = tuple(getattr(config, field) for field in option.fields)
         if per_nation(option):
             # Each nation's own field (the panel under its tab): its value, as
-            # far as its chart can draw it (``nation_view``).
+            # far as its chart can draw it (``nation_view``), with the option's
+            # other fields as they are (Top's currency: "USD20t" shows as given
+            # in every box, the U.S.' too, batch 18.3).
             for nation in NATIONS:
                 own = config.for_nation(nation.key)
                 value = nation_view(nation, option, getattr(own, option.fields[0]))
-                payloads[nation_choice(nation, option)] = option.format((value,), own)
+                others = tuple(getattr(own, field) for field in option.fields[1:])
+                payloads[nation_choice(nation, option)] = option.format((value, *others), own)
         elif option.kind is Kind.VALUE:
             at_moving_default = any(field in moving for field in option.fields) and field_values == tuple(
                 getattr(defaults, field) for field in option.fields
@@ -1455,6 +1494,10 @@ def drawn_config(config: PlotConfig, key: str) -> PlotConfig:
         for option in options_of(Kind.VALUE)
         if per_nation(option) and not option.removes
     }
+    # The options' other fields: a limit in the nation's own currency is one
+    # without (batch 18.3).
+    for field in PER_NATION_FIELDS:
+        viewed.setdefault(field, nation.view(field, getattr(own, field)))
     # A margin with its term not drawn draws nothing (``idle_margins``).
     for term, field in MORTGAGE_MARGINS.items():
         if not own.mortgages or term not in viewed["mortgage_terms"]:
@@ -1463,6 +1506,27 @@ def drawn_config(config: PlotConfig, key: str) -> PlotConfig:
     if not own.include_debt or viewed["components"]:
         viewed["debt_aggregates"] = field_default("debt_aggregates")
     return dataclasses.replace(own, nation_settings=(), **viewed)
+
+
+def _one_amount(option: Option, texts: dict[str, str], nations: Mapping[str, Nation]) -> str | None:
+    """Return the text a Top or Bottom is written once with, for every chart, when each nation's gives the same amount; else None.
+
+    Batch 18.3: the "All" tick copies the U.S.' "20t" as "USD20t" into the
+    other nations' boxes, so the texts differ, but each nation's draws 20
+    trillion U.S. dollars, an unmarked amount being in the nation's own
+    currency; one of the marked texts says so for every chart
+    (``--top:USD20t``). Not when a box is blank, a text does not parse, or
+    none is marked (equal texts are written once already).
+    """
+    if not texts or not all(texts.values()):
+        return None
+    try:
+        parsed = {key: option.parse(text) for key, text in texts.items()}
+    except ValueError:
+        return None
+    amounts = {(value, currency or nations[key].currency) for key, (value, currency) in parsed.items()}
+    marked = [texts[key] for key, (_value, currency) in parsed.items() if currency is not None]
+    return marked[0] if len(amounts) == 1 and marked else None
 
 
 def _nation_tokens(option: Option, texts: dict[str, str], spelling: str) -> list[str]:
@@ -1515,6 +1579,10 @@ def _nation_tokens(option: Option, texts: dict[str, str], spelling: str) -> list
                 for key, value in own.items()
             ):
                 return [] if candidate == default else [f"{spelling}:{candidate}"]
+    if option.fields[0] in ("macro_top", "macro_bottom"):
+        once = _one_amount(option, texts, nations)
+        if once is not None:
+            return [f"{spelling}:{once}"]
     tokens = []
     for key, text in texts.items():
         try:

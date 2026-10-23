@@ -143,6 +143,7 @@ from .de_data import (
     parse_jsonstat,
     term_structure_key,
 )
+from .fx import FX_SERIES
 from .http import canadian_get, de_get, fetch_fred_csv, get_if_published, uk_get
 from .rates import (
     CDN_BANK_RATE_SERIES,
@@ -1917,17 +1918,22 @@ _FRED_SERIES_TITLES = {
     "MORTGAGE15US": "15-Year Fixed Rate Mortgage Average in the United States; weekly, ending Thursday",
     "DPRIME": "Bank Prime Loan Rate; daily",
     "NGDPSAXDCCAQ": "Nominal Gross Domestic Product (GDP) for Canada; quarterly",
+    # The exchange rates (batch 18.3, ``fx``), read from each series' page 2026-10-23.
+    "DEXCAUS": "Canadian Dollars to U.S. Dollar Spot Exchange Rate; daily",
+    "DEXUSUK": "U.S. Dollars to U.K. Pound Sterling Spot Exchange Rate; daily",
+    "DEXUSEU": "U.S. Dollars to Euro Spot Exchange Rate; daily",
+    "EXGEUS": "German Deutsche Marks to U.S. Dollar Spot Exchange Rate (DISCONTINUED); monthly",
 }
 
 
 def fred_baked_codes() -> list[str]:
-    """Every FRED series the program reads: the yields, debt, interest, GDP and population (``us_data``), the policy, mortgage and prime rates (``rates``), Canada's GDP (``cdn_data``, when Statistics Canada fails)."""
+    """Every FRED series the program reads: the yields, debt, interest, GDP and population (``us_data``), the policy, mortgage and prime rates (``rates``), Canada's GDP (``cdn_data``, when Statistics Canada fails), the exchange rates (``fx``, batch 18.3)."""
     return sorted({
         *US_YIELD_SERIES.values(), US_DEBT_SERIES_ID, US_STATE_LOCAL_DEBT_SERIES_ID, US_INTEREST_SERIES_ID,
         US_FEDERAL_INTEREST_SERIES_ID, US_STATE_LOCAL_INTEREST_SERIES_ID, US_STATE_INTEREST_SERIES_ID,
         US_LOCAL_INTEREST_SERIES_ID, US_GDP_SERIES_ID, US_POPULATION_SERIES_ID,
         US_MONTHLY_EFFECTIVE_SERIES, US_TARGET_SERIES, *US_TARGET_RANGE_SERIES, US_MARKET_SERIES, *US_MORTGAGE_SERIES.values(),
-        FRED_CDN_GDP_SERIES,
+        FRED_CDN_GDP_SERIES, *FX_SERIES,
     })
 
 

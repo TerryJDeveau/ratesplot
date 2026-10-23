@@ -137,8 +137,17 @@ def _quarter_points(values: np.ndarray) -> np.ndarray:
     return np.maximum(np.round(values * 4) / 4, 0.0)
 
 
+# The exchange rates (batch 18.3, ``ratesplot.fx``): id -> (start, end, freq,
+# first, last), FRED's units, drifting from the first to the last.
+_FX = {
+    "DEXCAUS": ("1971-01-04", "2026-09-30", "B", 1.01, 1.39),
+    "DEXUSUK": ("1971-01-04", "2026-09-30", "B", 2.39, 1.34),
+    "DEXUSEU": ("1999-01-04", "2026-09-30", "B", 1.18, 1.16),
+    "EXGEUS": ("1971-01-01", "2001-12-01", "MS", 3.64, 2.19),
+}
+
 # Every FRED series ``fred`` answers.
-_FRED_IDS = ("FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", *_GROWTH, *_DAILY_START)
+_FRED_IDS = ("FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", *_GROWTH, *_DAILY_START, *_FX)
 
 
 def fred(series_id: str) -> pd.DataFrame:
@@ -162,6 +171,10 @@ def fred(series_id: str) -> pd.DataFrame:
         end = "2026-07-01" if freq == "QS" else "2025-01-01"
         dates = pd.date_range(start, end, freq=freq)
         values = np.round(_growth(dates, first, last, series_id), 1)
+    elif series_id in _FX:
+        start, end, freq, first, last = _FX[series_id]
+        dates = pd.bdate_range(start, end) if freq == "B" else pd.date_range(start, end, freq=freq)
+        values = np.round(_growth(dates, first, last, series_id), 4)
     elif series_id in _DAILY_START or series_id.startswith("MORTGAGE"):
         if series_id.startswith("MORTGAGE"):
             start = "1971-04-02" if series_id == "MORTGAGE30US" else "1991-08-30"

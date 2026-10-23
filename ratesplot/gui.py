@@ -1423,7 +1423,8 @@ class RatesPlotApp:
                 cell.grid(row=place, column=axis, sticky="e", padx=(0, 10))
                 option = by_name(name)
                 key = nation_choice(nation, option)
-                self._add_value_control(cell, 0, option, entry_width=7, pady=1, key=key)
+                # Top and Bottom wider: an amount may carry its currency's code ("USD1.25t", batch 18.3).
+                self._add_value_control(cell, 0, option, entry_width=9 if axis else 7, pady=1, key=key)
                 self._add_limit_extras(cell, key)
 
     def _add_limit_extras(self, cell: ttk.Frame, key: str) -> None:
@@ -1448,7 +1449,8 @@ class RatesPlotApp:
             box,
             f"All: this {option_of(key).label} for every nation's chart. Ticked, the value goes into every nation's box,\n"
             "and a value typed into any of them goes into the others; unticked, each keeps its own.\n"
-            "Greyed while the box is blank or only one nation is ticked; for Top and Bottom, unless they are % of GDP.",
+            "Top and Bottom go with their currency (20t from the U.S. box as USD20t), each chart converting\n"
+            "them at the rate of its end date. Greyed while the box is blank or only one nation is ticked.",
         )
         entry = self.value_entries[key]
         entry.bind("<Return>", lambda _event: self._limit_settled(key), add="+")
