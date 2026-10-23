@@ -82,8 +82,16 @@ and Bottom, none for a percentage of GDP) and an "All" box. Ticked, the limit go
 country's box, and a value typed into any of them goes into the others; the command line writes it
 once, for every chart (`--max:8`). Unticked, each box keeps its value. A box emptied unticks its
 "All" once Enter is pressed or the box is left. "All" needs two countries ticked and a value in the
-box; Top and Bottom take it only as percentages of GDP (`-r`), being each country's own currency
-otherwise.
+box. Top and Bottom go to the other countries with their currency: 20t in the U.S. box becomes
+`USD20t` in the others.
+
+Top and Bottom may be given in any of the four currencies, its code first: `--top:USD20t`,
+`--bottom:EUR50b` (`CAD`, `USD`, `GBP`, `EUR`; `C$`, `US$`, `£` and `€` are accepted too, but a
+`$` on a PowerShell or bash command line needs quotes). Each chart converts such a limit into its
+own currency at the exchange rate of its end date, the latest on or before it, and the message
+log says which rate it used: a chart with a fixed end draws the same every time, one ending today
+follows the rate. The rates are FRED's: the Canadian dollar and the pound daily from 1971, the
+euro from 1999, and before it the Deutsche mark at its fixed 1.95583 per euro.
 
 ## Setting up
 
@@ -106,6 +114,7 @@ python -m pip install -r requirements.txt
 | `--policy:target,market` | the policy rate: `target`, each central bank's official rate (the default: the fed funds target, its range from 2008 drawn as a band, the monthly average before September 1982; Canada's Bank Rate, then its overnight target from 1996; the UK's Bank Rate; Germany's: the Bundesbank's discount rate from 1948, on the days it changed, then the ECB's main refinancing rate from 1999), and `market`, the overnight market's rate around it (the effective fed funds rate, CORRA, SONIA, EONIA then €STR); the legend names the parts of a joined line that the chart shows |
 | `--prime:0.5`, `--cdn:prime:-0.25` | the prime rate drawn plus a margin in points (negative allowed), as a variable mortgage priced from it; shown in the legend ("Prime Rate + 0.50") |
 | `--tracker:2`, `--uk:tracker:1.25` | the UK's tracker mortgage (the term `tracker`, among the UK's mortgage terms by default): Bank Rate plus a margin in points, 1.75 unless given, from 1997, when the Bank of England first quoted a tracker rate; shown in the legend ("Tracker Mortgage (Bank Rate + 1.75)") |
+| `--top:20t`, `--bottom:USD500b` | the right axis's limits (k, m, b, t; billions unsuffixed), in each chart's own currency or in the one named, converted at the rate of the chart's end date; with `-r` a percentage of GDP (`--top:150%`) |
 | `--us:max:8`, `--cdn:yields:2,10` | a value for one country's chart only (its code in front: `ca` or `cdn`, `us`, `gb` or `uk`, `ger` or `deu`; Germany's `de` names it only in `--nations`, since `--de` is `--debt`); a country's own list may be `none` (`--cdn:yields:none`); in the window and on the page each country's terms, levels of government and axis limits (and the UK's aggregate debts) have their own panel, as many to a row as fit |
 | `-l` | each line's last value at its end (to three decimals where the third is not 0, as quotes and gilt yields are; a spread to a tenth of a point) |
 | `--reg`, `--reg:1` | each right-axis curve fitted by straight pieces, labelled with its growth in %/yr; each piece within 0.3 % of the axis height of the curve (or the percentage given), loosened where monthly figures would otherwise cut a curve into pieces of a few months (the message log says where) |
