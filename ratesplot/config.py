@@ -788,6 +788,13 @@ def _with_suffix(label: str, suffix: str) -> str:
     return label + suffix
 
 
+def _without_years(label: str) -> str:
+    """Return a legend label without its closing parenthetical: "UK National Debt (pre-1975)" -> "UK National Debt"."""
+    if label.endswith(")") and " (" in label:
+        return label.rpartition(" (")[0]
+    return label
+
+
 @dataclass(frozen=True)
 class CountryMetadata:
     """Labels, column names and title wording for one country's chart.
@@ -879,8 +886,11 @@ class CountryMetadata:
             # Chosen with the debt curve; listed after it.
             specs.insert(1, ("net_debt", config.include_debt, self.net_debt_column, self.net_debt_label))
         if self.federal_debt_column is not None:
-            # Chosen with the debt curve; listed straight after it.
-            label = self.federal_debt_label if aggregate_debt else self.federal_debt_title
+            # Chosen with the debt curve; listed straight after it. Without
+            # the aggregate it is named by its legend label less the years,
+            # not by its title phrase, which may word the nation differently
+            # (batch 22: "Federal Canadian Public Debt" in a title).
+            label = self.federal_debt_label if aggregate_debt else _without_years(self.federal_debt_label)
             specs.insert(1, ("federal_debt", config.include_debt, self.federal_debt_column, label))
         return tuple((key, enabled, column, _with_suffix(label, suffix)) for key, enabled, column, label in specs)
 
