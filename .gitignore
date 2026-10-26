@@ -4,3 +4,10 @@ __pycache__/
 ratesplot/cdn_archive_data_bake_*.py
 *.png
 out/
+# Terry's own files kept in this folder, never in git (2026-10-26): the plan, its copies and backups,
+# the window's saved logs, the cloud sessions' outputs, the frozen ideas archive, Office lock files
+*.docx
+~$*
+ratesplot_log_*.txt
+ClaudeCloudOutputs/
+ideas_for_new_features.md
