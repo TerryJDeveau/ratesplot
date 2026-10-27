@@ -78,6 +78,7 @@ from .config import (
     Nation,
     PlotConfig,
 )
+from .export import FORMATS, format_of
 
 _DOLLAR_SUFFIX_MULTIPLIERS = {"t": 1e12, "b": 1e9, "m": 1e6, "k": 1e3}
 _DEFAULT_DOLLAR_MULTIPLIER = 1e9
@@ -356,6 +357,16 @@ def parse_nations(spec: str) -> tuple[str, ...]:
         listed = ", ".join(code for nation in NATIONS for code in nation.codes)
         raise ValueError(f"--nations:{spec.strip()}: {unknown[0]} is not a nation's code (codes: {listed})")
     return tuple(nation.key for nation in NATIONS if nation.key in {known[code] for code in codes})
+
+
+def parse_save_file(spec: str) -> str:
+    """Parse ``--save:FILE`` (batch 11.1): a file name whose extension names a format ``export`` writes."""
+    path = spec.strip()
+    if not path:
+        raise ValueError("--save needs a file name: --save:rates.png")
+    if format_of(path) is None:
+        raise ValueError(f"--save:{path}: the file's extension names its format, one of {', '.join(FORMATS)}")
+    return path
 
 
 def format_spreads(values: tuple, _config: PlotConfig) -> str:
@@ -713,7 +724,7 @@ GROUPS: dict[str, str] = {
         "Right-axis limits (suffixes k/m/b/t; unsuffixed values are billions;\n"
         "with -r, percentages such as 150%):"
     ),
-    "interface": "Interface (spelled in full; no abbreviation):",
+    "interface": 'Interface (--gui spelled in full; --save at least "sa"):',
 }
 
 OPTIONS: tuple[Option, ...] = (
@@ -1008,6 +1019,16 @@ OPTIONS: tuple[Option, ...] = (
         "gui", Kind.FLAG, ("gui",), "interface", "--gui / --no-gui",
         "interactive window (default); --no-gui\ndraws plain matplotlib windows instead",
         names=("gui",), shortest=3, in_gui=False,
+    ),
+    # Export chart from the command line (batch 11.1, decision 46): the
+    # charts written to a file, the format by its extension, and no window.
+    # At least "sa": "--s:" is the start.
+    Option(
+        "save", Kind.VALUE, ("save",), "interface", "--save:FILE / --sa:FILE",
+        "write the charts to FILE, open no window:\nan image (.png .jpg .pdf .svg) or the data\n"
+        "(.csv .tsv) a file per chart, named with\nits nation's code (rates_ca.png ...); .xlsx\n"
+        "one workbook, a sheet per chart",
+        names=("save",), shortest=2, parse=parse_save_file, in_gui=False,
     ),
     # Baking the historical data into the code is not an option of the program:
     # it is a maintenance step run from tools/bake_archives.py when an

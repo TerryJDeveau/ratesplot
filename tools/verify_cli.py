@@ -236,6 +236,12 @@ CASES: list[list[str]] = [
     ["--pro"], ["--proj"], ["--projections"], ["--PROJECTIONS"], ["--no-pro"], ["--no-projections"], ["--No-Proj"],
     ["--pr"], ["--pro:1"], ["projections"], ["--no-cur", "--no-pro"], ["--no-cur", "--pro"], ["--no-pro", "--cur"],
     ["--no-pro", "--pro"], ["--no-pro", "-l", "-u"],
+    # Batch 11.1 (decision 46): --save:FILE, at least "sa" ("--s:" is the start); every format by its extension, in
+    # any case; none, or another, refused; a name with dots and folders; the last one given wins.
+    ["--save:rates.png"], ["--sa:rates.png"], ["--sav:rates.csv"], ["--SAVE:Rates.PDF"], ["--save:r.jpg"], ["--save:r.jpeg"],
+    ["--save:r.svg"], ["--save:r.xlsx"], ["--save:r.tsv"], ["--s:rates.png"], ["--save:rates"], ["--save:rates.txt"],
+    ["--save:"], ["--save"], ["--sa"], ["--no-save"], ["--save:out/2026.10.27/rates.png"], ["--save:C:/charts/rates.xlsx"],
+    ["--save:a.png", "--save:b.csv"], ["--save:r.png", "--no-gui"], ["--save:r.png", "-u", "-s:2015"],
 ]
 
 

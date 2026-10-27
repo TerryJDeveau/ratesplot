@@ -1347,6 +1347,9 @@ class PlotConfig:
     projections: bool = True
     # Open the interactive window (ratesplot.gui) rather than plain matplotlib windows.
     gui: bool = True
+    # --save:FILE (batch 11.1): write the charts to FILE, the format by its
+    # extension, and open no window (cli.save_charts).
+    save: str | None = None
 
     def for_nation(self, key: str) -> PlotConfig:
         """Return the config one nation's chart is drawn with: these choices, with that nation's own over them.

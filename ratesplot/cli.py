@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from . import export
 from .config import NATIONS, Nation, PlotConfig, nation_by_code, nation_by_key
 from .options import (
     OPTIONS,
@@ -31,7 +32,7 @@ from .options import (
 )
 from .http import drawing_downloads, enable_download_cache, enable_last_good_copies, not_drawn_line
 from .http import not_drawn as why_not_drawn
-from .plotting import resolve_start, run_cdn, run_de, run_uk, run_us
+from .plotting import COUNTRIES, build_figure, resolve_start, run_cdn, run_de, run_uk, run_us
 
 
 # ---------------------------------------------------------------------------
@@ -253,15 +254,65 @@ def parse_args(argv: list[str] | None = None) -> PlotConfig:
         parser.error(str(exc))
 
 
+def save_charts(config: PlotConfig) -> list[str]:
+    """Draw the charts and write them to ``config.save`` (batch 11.1, decision 46); return the charts not drawn.
+
+    Each chart is drawn as the window draws it (``plotting.build_figure``,
+    byte for byte the command line's chart) and written in the format of the
+    file's extension (``export``). An image, a CSV or a TSV holds one chart, so
+    each chart has a file of its own, named with its nation's first code
+    (``rates.png`` -> ``rates_ca.png``, ``rates_us.png``), even when one
+    chart is drawn, so a name says whose chart it is; an XLSX is one workbook,
+    a sheet for each chart, named as the window's tabs. A chart that cannot be
+    drawn is named as the windows' path names it, and the others written.
+    """
+    from .frontend import png_bytes  # the window's PNG bytes: the regression set's, metadata and all
+
+    path = config.save
+    assert path is not None
+    extension = export.format_of(path)
+    not_drawn: list[str] = []
+    sheets: list[tuple[str, export.ChartData]] = []
+    for country in COUNTRIES:
+        if not getattr(config, country.show_field):
+            continue
+        nation = nation_by_key(country.key)
+        try:
+            figure = build_figure(country, config)
+        except Exception as exc:  # named here and at the end, never swallowed
+            why, trace = why_not_drawn(exc)
+            if trace is not None:
+                sys.stderr.write(trace)
+            print(not_drawn_line(f"the {nation.name} chart", why))
+            not_drawn.append(nation.name)
+            continue
+        if extension == ".xlsx":
+            sheets.append((nation.name, export.chart_data(figure, config.for_nation(country.key), country.key)))
+            continue
+        if extension in export.IMAGE_FORMATS:
+            data = export.image_bytes(figure, png_bytes(figure), extension)
+        else:
+            data = export.data_bytes(extension, [(nation.name, export.chart_data(figure, config.for_nation(country.key), country.key))])
+        written = export.per_nation_path(path, nation.codes[0])
+        with open(written, "wb") as output:
+            output.write(data)
+        print(f"Saved {written}")
+    if sheets:
+        with open(path, "wb") as output:
+            output.write(export.data_bytes(extension, sheets))
+        print(f"Saved {path} ({len(sheets)} sheet{'s' if len(sheets) > 1 else ''})")
+    return not_drawn
+
+
 def main(argv: list[str] | None = None) -> None:
-    """Parse the command line, then open the GUI or draw the charts in matplotlib windows."""
+    """Parse the command line, then write the charts to a file, or open the GUI, or draw them in matplotlib windows."""
     payloads, flags, parser = parse_choices(argv)
     try:
         config = config_from_choices(payloads, flags)
     except ValueError as exc:
         parser.error(str(exc))
 
-    if config.gui:
+    if config.gui and config.save is None:
         # Imported here so --no-gui runs (and the harnesses) never load tkinter.
         from .gui import run_gui
 
@@ -284,14 +335,14 @@ def main(argv: list[str] | None = None) -> None:
         # Each chart on its own: one whose source is down (FRED's maintenance
         # page, 2026-10-21) is named in one line, "NOT DRAWN: ..." (batch 19.4;
         # the traceback too for an unexpected error), and the rest drawn.
-        not_drawn = []
+        not_drawn = save_charts(config) if config.save is not None else []
         for shown, run, name in (
             (config.show_cdn, run_cdn, "Canada"),
             (config.show_us, run_us, "United States"),
             (config.show_uk, run_uk, "United Kingdom"),
             (config.show_de, run_de, "Germany"),
         ):
-            if not shown:
+            if not shown or config.save is not None:
                 continue
             try:
                 run(config)
