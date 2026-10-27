@@ -1021,12 +1021,15 @@ class RatesPlotApp:
 
         def wheel(event) -> None:
             # Only with the pointer over the column; the charts zoom with their
-            # own binding, and the log scrolls itself.
+            # own binding, and the log scrolls itself, as Tk's scroll bars
+            # scroll what they belong to (Tk 9: the log's bar, the column's
+            # own, a chart's at actual size). Over the log's bar the column
+            # scrolled too (batch 24.7).
             try:
                 widget = self.root.winfo_containing(event.x_root, event.y_root)
             except (KeyError, tk.TclError):  # Tk's own pop-ups have no tkinter widget
                 return
-            if isinstance(widget, tk.Text) or not scroll.winfo_ismapped():
+            if isinstance(widget, (tk.Text, tk.Scrollbar, ttk.Scrollbar)) or not scroll.winfo_ismapped():
                 return
             while widget is not None and widget is not outer:
                 widget = widget.master
