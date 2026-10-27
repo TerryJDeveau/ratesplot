@@ -148,7 +148,7 @@ from .frontend import (
     drawn_payloads,
     field_hints,
     field_problems,
-    idle_controls,
+    idle_choices,
     idle_nation_keys,
     level_letters,
     level_text,
@@ -183,9 +183,11 @@ from .options import (
     margin_options,
     nation_choice,
     options_in,
+    parse_auto_refresh_minutes,
     parse_date_spec,
 )
 from .plotting import COUNTRIES, Country, build_figure, resolve_start
+from .refresh import Ticker
 
 WINDOW_TITLE = "Rates plot: yields, public debt, GDP & interest"
 _SCRIPT_NAME = "ratesplot.py"
@@ -875,6 +877,11 @@ class RatesPlotApp:
         self.drawn_choices: Choices | None = None
         self._text_after_id: str | None = None
         self._resize_after_ids: dict[str, str] = {}
+        # The automatic refresh (batch 11.3): its timer, the minutes it runs
+        # at (None: not running), and whether each tick draws again.
+        self._auto_after_id: str | None = None
+        self._auto_minutes: int | None = None
+        self._auto_ticker = Ticker()
         self._loading = False
         # The text fields changed by hand, oldest first: a problem between two
         # (Min not below Max) is put on the one changed last (field_problems).
@@ -1570,7 +1577,7 @@ class RatesPlotApp:
         while none is drawn (``frontend.idle_nation_keys``).
         """
         flags = {name: variable.get() for name, variable in self.flag_vars.items()}
-        idle = idle_controls(flags)
+        idle = idle_choices(self._snapshot()[0], flags)
         idle_keys = idle_nation_keys(self._snapshot()[0], flags)
         for name, box in self.flag_boxes.items():
             if name in GREYABLE_OPTIONS:
@@ -1728,6 +1735,7 @@ class RatesPlotApp:
         self._text_after_id = None
         self._update_command_line()
         self._update_view_buttons()
+        self._update_auto_refresh()
         snapshot = self._snapshot()
         # A greyed field has no effect: a bad text left there must not stop the drawing.
         payloads = drawn_payloads(*snapshot)
@@ -1841,6 +1849,8 @@ class RatesPlotApp:
                         self._append_log(message[3])
                     self._append_log(message[4], _NOT_DRAWN_TAG)
                     self._render_finished(message[1], message[2])
+                elif kind == "auto refresh":
+                    self._auto_refresh_checked(message[1])
         except queue.Empty:
             pass
         self._poll_id = self.root.after(_POLL_MS, self._poll)
@@ -1897,6 +1907,10 @@ class RatesPlotApp:
                 self.status.set(f"Drawn: {names} at {config.width_px} x {config.height_px} px.")
             self._show_hints()
             self._remember()
+            # Each drawing starts the automatic refresh's minutes again (batch 11.3).
+            self._schedule_auto_refresh(restart=True)
+            if self._auto_minutes is not None:
+                self.status.set(f"{self.status.get()} Refreshed every {self._auto_minutes} minutes.")
         else:
             self.status.set(f"Drawing failed: {error} (details in the message log)")
             self.status_label.configure(foreground=_ERROR_FOREGROUND)
@@ -2321,6 +2335,77 @@ class RatesPlotApp:
         self._append_log(f"--- refresh: the latest quotes, and {dropped} download(s) over an hour old fetched again\n")
         self.request_redraw(force=True)
 
+    # -- automatic refresh (batch 11.3) ---------------------------------------
+
+    def _auto_refresh_minutes(self) -> int | None:
+        """The minutes the automatic refresh runs at for the controls now, or None for none: unticked, greyed, or its minutes wrong."""
+        payloads, flags = self._snapshot()
+        if not flags.get("auto-refresh") or "auto-refresh" in idle_choices(payloads, flags):
+            return None
+        text = payloads.get("auto-refresh-minutes", "").strip()
+        try:
+            return parse_auto_refresh_minutes(text) if text else PlotConfig().refresh_minutes
+        except ValueError:
+            return None  # marked in red, and nothing drawn (``request_redraw``)
+
+    def _update_auto_refresh(self) -> None:
+        """Grey the automatic refresh's box and minutes where it can bring nothing new, and start or stop its timer.
+
+        Called before each drawing is asked for, since the End date's text
+        is one of the things it turns on, which ``_update_dependent_controls``
+        is not called for. A change of the box or the minutes draws nothing
+        (``PlotConfig.same_chart``), so the timer starts afresh here.
+        """
+        payloads, flags = self._snapshot()
+        idle = "auto-refresh" in idle_choices(payloads, flags)
+        self.flag_boxes["auto-refresh"].state(["disabled"] if idle else ["!disabled"])
+        state = ["disabled"] if idle or not flags.get("auto-refresh") else ["!disabled"]
+        for widgets in (self.value_entries, self.value_labels):
+            widgets["auto-refresh-minutes"].state(state)
+        self.hints["auto-refresh-minutes"].update()
+        self._schedule_auto_refresh(restart=False)
+
+    def _schedule_auto_refresh(self, restart: bool) -> None:
+        """Run the automatic refresh's timer at the minutes the controls give, or stop it; ``restart``: from now, even at the same minutes."""
+        minutes = self._auto_refresh_minutes()
+        if minutes == self._auto_minutes and self._auto_after_id is not None and not restart:
+            return
+        if self._auto_after_id is not None:
+            self.root.after_cancel(self._auto_after_id)
+            self._auto_after_id = None
+        self._auto_minutes = minutes
+        if minutes is not None:
+            self._auto_after_id = self.root.after(minutes * 60_000, self._auto_refresh_tick)
+
+    def _auto_refresh_tick(self) -> None:
+        """The automatic refresh's minutes are up: whether to draw again is found on a thread (the quotes asked for outside market hours)."""
+        self._auto_after_id = None
+        if self.rendering:
+            return  # the drawing under way starts the minutes again when it ends
+        payloads, flags = self._snapshot()
+        try:
+            config = config_from_choices(drawn_payloads(payloads, flags), flags)
+        except ValueError:
+            return  # nothing can be drawn: the next change of the controls starts the timer again
+        if config.refresh_brings_nothing is not None:
+            self._update_auto_refresh()  # greyed now: a date given as today is past
+            return
+        self._append_log(f"--- automatic refresh, every {self._auto_minutes} minutes\n")
+
+        def check() -> None:
+            with this_thread_output_to(lambda text: self.messages.put(("log", text))), http.drawing_downloads():
+                due = self._auto_ticker.due(config)
+            self.messages.put(("auto refresh", due))
+
+        threading.Thread(target=check, daemon=True).start()
+
+    def _auto_refresh_checked(self, due: bool) -> None:
+        """A tick's answer: draw again as Refresh does, or wait the minutes again."""
+        if due:
+            self._refresh()
+        else:
+            self._schedule_auto_refresh(restart=True)
+
     def _reset(self) -> None:
         """Back to the default charts for the nations ticked, and the preview's defaults: "Fit to window", aspect ratio preserved.
 
@@ -2361,8 +2446,10 @@ class RatesPlotApp:
             return
         payloads, flags = self.drawn_choices
         # The hover read-out's box takes effect with no drawing (batch 11.2),
-        # so it is remembered as it stands, as the preview's zoom is.
-        flags = {**flags, "hover": self.flag_vars["hover"].get()}
+        # and so does the automatic refresh's (11.3), so they are remembered
+        # as they stand, as the preview's zoom is.
+        flags = {**flags, "hover": self.flag_vars["hover"].get(), "auto-refresh": self.flag_vars["auto-refresh"].get()}
+        payloads = {**payloads, "auto-refresh-minutes": self.payload_vars["auto-refresh-minutes"].get()}
         geometry = self._normal_geometry or self.root.geometry()
         error = save_state(
             {
@@ -2390,7 +2477,7 @@ class RatesPlotApp:
         # Every callback still waiting, or it fires after the window is gone
         # ("invalid command name ..."): the poll, and a view refresh after a
         # resize, a redraw after typing, or a zoom after the wheel stops.
-        pending = [self._poll_id, self._text_after_id, *self._resize_after_ids.values()]
+        pending = [self._poll_id, self._text_after_id, self._auto_after_id, *self._resize_after_ids.values()]
         if self._wheel is not None:
             pending.append(self._wheel["after"])
         for after_id in pending:
