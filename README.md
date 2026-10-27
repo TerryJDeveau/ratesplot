@@ -137,7 +137,8 @@ projection of each curve to today are provisional, and drawn as such. The subtit
 ## Layout
 
 `ratesplot/` is the program (its `__init__.py` has the module map); `tools/` holds the checks
-used when it is changed (`regress_charts.py`, `verify_cli.py`, `verify_web.py`, `check_sources.py`,
+used when it is changed (`regress_charts.py`, `verify_cli.py`, `verify_web.py`, `verify_gui.py`, the
+window driven from a script, its charts against the command line's and its controls' behaviour, `check_sources.py`,
 `check_drawn_values.py`, every curve on the yield axis against its sources, `check_reg_labels.py`,
 what the regression segments' labels cover, `check_last_good.py`, the charts drawn from the
 last good copies with every source cut off, `check_requests.py`, which failed requests are
