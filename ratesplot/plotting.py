@@ -77,6 +77,7 @@ from .config import (
 )
 from .console import this_thread_output_to
 from .endlabels import ValueFormatter
+from .export import MACRO_AXIS, YIELD_AXIS, mark_series
 from .frames import filter_to_date_range
 from .fx import rate
 from .http import download_cache_on, in_parallel
@@ -183,12 +184,14 @@ def add_macro_line(
     With ``projected_from`` (--projections, ``latest.project_to_now``) the rows after
     that date are a projection, not data: they are drawn as a straight,
     fainter continuation, hidden from the legend, after the curve's steps.
+    Each piece is marked as the curve ``label`` for Export chart
+    (``export.mark_series``), the projection with it.
     """
     if not enabled or data.empty or column not in data.columns or not data[column].notna().any():
         return None
     if projected_from is None:
         (line,) = ax.plot(data[DATE_COLUMN], data[column], label=label, **style)
-        return line
+        return mark_series(line, label, MACRO_AXIS)
 
     observed = data.loc[data[DATE_COLUMN] <= projected_from]
     ahead = data.loc[data[DATE_COLUMN] >= projected_from]
@@ -196,9 +199,11 @@ def add_macro_line(
     if not observed[column].notna().any():
         # The window lies wholly in the projection.
         (line,) = ax.plot(ahead[DATE_COLUMN], ahead[column], label=label, **faint)
-        return line
+        return mark_series(line, label, MACRO_AXIS)
     (line,) = ax.plot(observed[DATE_COLUMN], observed[column], label=label, **style)
-    ax.plot(ahead[DATE_COLUMN], ahead[column], label="_projection", **faint)
+    mark_series(line, label, MACRO_AXIS)
+    (projection,) = ax.plot(ahead[DATE_COLUMN], ahead[column], label="_projection", **faint)
+    mark_series(projection, label, MACRO_AXIS)
     return line
 
 
@@ -277,6 +282,7 @@ def add_stepped_yield_lines(
             (line,) = ax.plot(
                 historical.index, historical.values, label=label, drawstyle="steps-post", **_yield_style(column, config, nation_key)
             )
+            mark_series(line, label, YIELD_AXIS)
             color = line.get_color()
             legend_lines.append(line)
 
@@ -287,6 +293,7 @@ def add_stepped_yield_lines(
                 label="_nolegend_" if color is not None else label,
                 **(_yield_style(column, config, nation_key) | ({"color": color} if color is not None else {})),
             )
+            mark_series(line, label, YIELD_AXIS)
             if color is None:
                 legend_lines.append(line)
 
@@ -306,7 +313,7 @@ def add_us_yield_lines(ax: Axes, yields: pd.DataFrame, config: PlotConfig) -> li
     for column in config.yield_columns:
         if column in data.columns:
             (line,) = ax.plot(data[DATE_COLUMN], data[column], label=f"{column} Yield", **_yield_style(column, config, "us"))
-            lines.append(line)
+            lines.append(mark_series(line, f"{column} Yield", YIELD_AXIS))
     return lines
 
 
@@ -328,6 +335,8 @@ def add_rate_lines(
     A band (``RateCurve.upper``, the U.S. target range) gets its upper
     limits drawn and the space between shaded (``_add_band``). The legend
     names the parts of a joined curve the window shows (``rates.legend_label``).
+    Each part is marked for Export chart under that name; a band's as its
+    lower limit, its upper limits another curve (``export.mark_series``).
     """
     yield_colours = {line.get_label(): line.get_color() for line in yield_lines}
     drawn: list[tuple[Line2D, RateCurve]] = []
@@ -348,14 +357,17 @@ def add_rate_lines(
             monthly = values.loc[values.index <= curve.steps_until]
             daily = values.loc[values.index > curve.steps_until]
             parts = [(monthly, style | {"drawstyle": "steps-post"}), (daily, style)]
+        name = legend_label(curve, config)
+        exported = f"{name}, lower limit" if curve.upper is not None else name
         first: Line2D | None = None
         for part, part_style in parts:
             if part.empty:
                 continue
             # The second part in the first's colour, and only the first in the legend.
             colour = {} if first is None else {"color": first.get_color()}
-            label = legend_label(curve, config) if first is None else "_nolegend_"
+            label = name if first is None else "_nolegend_"
             (drawn_line,) = ax.plot(part.index, part.to_numpy(), label=label, **(part_style | colour))
+            mark_series(drawn_line, exported, YIELD_AXIS)
             first = first or drawn_line
             if curve.spread:
                 as_steps = part_style.get("drawstyle") == "steps-post"
@@ -365,27 +377,29 @@ def add_rate_lines(
                     linewidth=0, label="_nolegend_",
                 )
         if first is not None and curve.upper is not None:
-            _add_band(ax, curve, values, config, style | {"color": first.get_color()})
+            _add_band(ax, curve, values, config, style | {"color": first.get_color()}, f"{name}, upper limit")
         if first is not None:
             drawn.append((first, curve))
     return drawn
 
 
-def _add_band(ax: Axes, curve: RateCurve, lower: pd.Series, config: PlotConfig, style: dict) -> None:
+def _add_band(ax: Axes, curve: RateCurve, lower: pd.Series, config: PlotConfig, style: dict, exported: str) -> None:
     """Draw a band's upper limits as a step line in ``style`` and shade it (batch 9.1, the U.S. target range).
 
     ``lower`` is the curve as drawn (``rates.held_steps``); the upper limits
     are stepped on the same dates. The upper line is drawn only where the two
     differ, and from the point before each such stretch, so it leaves the
     lower line where the band begins; where they are equal (a single target)
-    the shading has no height. Neither is in the legend.
+    the shading has no height. Neither is in the legend. The upper line is
+    marked for Export chart as ``exported`` (``export.mark_series``).
     """
     upper = held_steps(curve, config, curve.upper)
     apart = ((upper - lower).abs() > 1e-9).to_numpy()  # NaN (a break) is not apart
     if not apart.any():
         return
     edge = apart | np.append(apart[1:], False)
-    ax.plot(upper.index, upper.where(edge).to_numpy(), label="_nolegend_", **style)
+    (line,) = ax.plot(upper.index, upper.where(edge).to_numpy(), label="_nolegend_", **style)
+    mark_series(line, exported, YIELD_AXIS)
     ax.fill_between(
         upper.index, lower.to_numpy(), upper.to_numpy(), step="post", color=style["color"], alpha=POLICY_BAND_ALPHA,
         linewidth=0, label="_nolegend_",

@@ -52,6 +52,7 @@ from matplotlib.transforms import Bbox
 from .axes import apply_date_xlim
 from .config import CANVAS_DPI, LEGEND_FS, TITLE_FS, PlotConfig
 from .endlabels import ValueFormatter, add_end_labels
+from .export import mark_subtitle
 from .occupancy import CELL_PX, OccupancyGrid, collect_display_samples
 from .regression import RateLabel, add_rate_labels
 
@@ -443,7 +444,7 @@ def finish_legend_and_title(
     # so they end the chart when that day is its last.
     if quote_time is not None and quote_time.tz_localize(None).normalize() == last:
         subtitle += _quote_time_text(quote_time, last, quote_zone)
-    figure.text(
+    subtitle_text = figure.text(
         0.5,
         subtitle_y,
         subtitle,
@@ -452,6 +453,7 @@ def finish_legend_and_title(
         fontsize=subtitle_fs,
         style="italic",
     )
+    mark_subtitle(figure, subtitle_text)  # the second row of Export chart's data (batch 11.1)
     figure.tight_layout(rect=[0, 0, 1, 0.99], pad=0.4)
 
     # tight_layout does not know about suptitle/text, so push the axes top down
