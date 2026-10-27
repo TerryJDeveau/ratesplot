@@ -174,6 +174,7 @@ from .frontend import (  # noqa: E402
     settled_all_ticks,
     size_boxes_at_fault,
     starting_choices,
+    version_text,
     with_leading_zero,
     zoom_updates,
 )
@@ -1329,6 +1330,7 @@ def _controls() -> None:
     is set off by a line alone.
     """
     bar = st.sidebar
+    bar.caption(version_text())  # the version, small and grey at the top left (batch 11.7)
     buttons = bar.columns(2)
     # One button, as in the window (Terry, 2026-10-08: "Refresh", meaning
     # reload data): a drawing after a change of the controls is automatic.

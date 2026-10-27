@@ -363,6 +363,11 @@ def main(argv: list[str] | None = None) -> None:
     except ValueError as exc:
         parser.error(str(exc))
 
+    if config.version:
+        from .frontend import version_text  # the window's and the page's text (batch 11.7)
+
+        print(f"ratesplot {version_text()}")
+        return
     if config.gui and config.save is None:
         # Imported here so --no-gui runs (and the harnesses) never load tkinter.
         from .gui import run_gui

@@ -1402,6 +1402,8 @@ class PlotConfig:
     # front ends do not draw again when only it changes (``same_chart``).
     auto_refresh: bool = False
     auto_refresh_minutes: int | None = None
+    # --version (batch 11.7): print the version and exit (cli.main); nothing is drawn.
+    version: bool = False
     # Open the interactive window (ratesplot.gui) rather than plain matplotlib windows.
     gui: bool = True
     # --save:FILE (batch 11.1): write the charts to FILE, the format by its

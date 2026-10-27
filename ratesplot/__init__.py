@@ -89,3 +89,10 @@ gui, web} -> export -> config; {plotting, gui, web} -> hover -> {export, legend}
 plotting. Nothing imports web or gui, and cli imports gui only when the
 window is opened, so --no-gui and the web page never load tkinter.
 """
+
+# The version (batch 11.7; Terry, 2026-10-27): major.minor. The major goes up when a batch of the plan adds a new
+# type of series (CPI, population and the like), batch 11 being 6; the minor goes up by one at each push of a
+# build, in a commit of its own made before the push (the daily data job's commits leave it). It counts from 0 at
+# the first work on batch 11: its four pushes of 2026-10-27 made 6.4. Shown with the commit the program was
+# started from (frontend.version_text).
+__version__ = "6.4"

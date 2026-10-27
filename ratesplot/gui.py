@@ -173,6 +173,7 @@ from .frontend import (
     settled_all_ticks,
     size_boxes_at_fault,
     starting_choices,
+    version_text,
     with_leading_zero,
     zoom_updates,
 )
@@ -212,6 +213,8 @@ _DEFAULT_PREVIEW = "fit"
 # Initial window size as a fraction of the screen (when nothing is remembered).
 _SCREEN_FRACTION = 0.9
 _ERROR_FOREGROUND = "#b00020"
+# The version at the column's top left (batch 11.7): small, grey, out of the way.
+_VERSION_FOREGROUND = "#808080"
 # The message log's tag for a chart not drawn: red and bold (batch 19.4).
 _NOT_DRAWN_TAG = "not drawn"
 # The canvas items of the hover read-out (batch 11.2): its box, its text and the ring on the point read.
@@ -942,6 +945,9 @@ class RatesPlotApp:
         )
         self.paned.grid(row=0, column=0, sticky="nsew")
         self.column, panel, pinned = self._build_control_column(self.paned)
+        # The version, small and grey at the column's top left (batch 11.7).
+        self.version_label = ttk.Label(panel, text=version_text(), foreground=_VERSION_FOREGROUND, font=("TkDefaultFont", 8))
+        self.version_label.pack(anchor="w", pady=(0, 2))
         self._build_option_controls(panel)
         self._build_actions(panel, pinned)
         self._build_log(panel)

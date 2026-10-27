@@ -1085,6 +1085,14 @@ OPTIONS: tuple[Option, ...] = (
         "one workbook, a sheet per chart",
         names=("save",), shortest=2, parse=parse_save_file, in_gui=False,
     ),
+    # The version (batch 11.7), printed, nothing drawn. In the table, not
+    # argparse's own, so it is spelled as the others are: at least "ver" (no
+    # other name begins so), never "--v".
+    Option(
+        "version", Kind.FLAG, ("version",), "interface", "--ver / --version",
+        "print the program's version and the commit\nit is at, and exit",
+        names=("version",), shortest=3, in_gui=False,
+    ),
     # Baking the historical data into the code is not an option of the program:
     # it is a maintenance step run from tools/bake_archives.py when an
     # extraction changes (Terry, 2026-09-27).
