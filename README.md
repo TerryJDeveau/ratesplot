@@ -42,7 +42,9 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   its own, so several windows can be open at once; a window whose monitor has gone comes back
   at its size on another. The handle between the controls and the charts sets the controls'
   width, and each row of controls takes as many as fit it. "Save log file" saves the
-  message log as text (on the page, a button under the log).
+  message log as text (on the page, a button under the log). Its dialog and Export chart's open in
+  the folder last saved to, remembered with the settings, and the first time in Documents; never in
+  the program's own folder, so nothing saved lands among the repository's files.
 - **The command line**: `python ratesplot.py --no-gui [options]`, or any options with the
   window. `python ratesplot.py --help` lists them all; the web page shows the same list.
 

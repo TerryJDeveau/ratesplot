@@ -639,6 +639,60 @@ def check_save_log(check: Check) -> None:
         check("the status line says where", str(target.name) in app.status.get(), app.status.get())
 
 
+def check_save_folders(check: Check) -> None:
+    """Batch 11.5: the save dialogs open in the folder last saved to, else in Documents; never in the program's own folder."""
+    documents = str(frontend.documents_folder())
+    elsewhere = Path(tempfile.mkdtemp(prefix="ratesplot_verify_gui_saves_"))
+    try:
+        with window(f"-c -s:2015 {END}") as w:
+            app = w.app
+            asked: list[dict] = []
+
+            def answer_with(path: str):
+                def answer(**kwargs) -> str:
+                    asked.append(kwargs)
+                    return path
+                return answer
+
+            def save(how: Callable[[], None], path: str) -> str:
+                """The folder the dialog opened in, answered with ``path``."""
+                dialog = gui.filedialog.asksaveasfilename
+                gui.filedialog.asksaveasfilename = answer_with(path)
+                try:
+                    how()
+                finally:
+                    gui.filedialog.asksaveasfilename = dialog
+                return str(asked[-1].get("initialdir", ""))
+
+            check("the program is run from its own folder here", Path.cwd().resolve() == ROOT, str(Path.cwd()))
+            first = save(app._save_log, str(elsewhere / "log.txt"))
+            check("nothing remembered: Save log file opens in Documents", first == documents, first)
+            again = save(app._export_chart, str(elsewhere / "chart.png"))
+            check("then Export chart opens where the log was saved", again == str(elsewhere), again)
+            check("and the chart is written there", (elsewhere / "chart.png").exists(), sorted(p.name for p in elsewhere.iterdir()))
+            app._save_folder = str(ROOT)
+            check("a folder saved to in the program's own: Documents next", save(app._save_log, str(elsewhere / "log2.txt")) == documents)
+            app._save_folder = str(ROOT / "out")
+            check("one inside it (out\\): Documents next", save(app._save_log, str(elsewhere / "log3.txt")) == documents)
+            check("no dialog ever opened in the program's folder or the working folder",
+                  all(Path(str(kw.get("initialdir", ""))).resolve() not in (ROOT, Path.cwd().resolve()) for kw in asked),
+                  [kw.get("initialdir") for kw in asked])
+            app._remember()
+            state, _note, _path = frontend.load_state()
+            check("the folder last saved to remembered with the settings", state.get("save_folder") == str(elsewhere), state.get("save_folder"))
+        root = tk.Tk()
+        try:
+            app = gui.RatesPlotApp(root, frontend.starting_choices(cli.parse_args(["--no-gui", "-c", END]), {}, {}, {})[0], [],
+                                   {"save_folder": str(elsewhere)}, normal_geometry=SIZE)
+            check("a window started with it remembered opens there", frontend.save_dialog_folder(app._save_folder) == str(elsewhere))
+            app._close()
+        except Exception:
+            root.destroy()
+            raise
+    finally:
+        shutil.rmtree(elsewhere, ignore_errors=True)
+
+
 def check_export(check: Check) -> None:
     """Batch 11.1: Export chart writes the chart as each type chosen, the data as shown, refusing a redrawn image mid-drawing."""
     from openpyxl import load_workbook
@@ -1573,6 +1627,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "grey_values": check_grey_values,
     "typing": check_typing,
     "save_log": check_save_log,
+    "save_folders": check_save_folders,
     "export": check_export,
     "tabs": check_tabs,
     "policy_terms": check_policy_terms,
