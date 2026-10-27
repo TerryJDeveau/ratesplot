@@ -31,7 +31,10 @@ import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
+from matplotlib.legend import Legend
+from matplotlib.legend_handler import HandlerBase
 from matplotlib.lines import Line2D
+from matplotlib.patches import Rectangle
 
 from .axes import apply_axes_formatting, format_currency, format_percent, format_spread, format_yield
 from .baked import chart_ending
@@ -358,7 +361,8 @@ def add_rate_lines(
     mortgage) takes the colour of that yield's line among ``yield_lines``
     when it is drawn, so the two match whatever colour the yield was given.
     A band (``RateCurve.upper``, the U.S. target range) gets its upper
-    limits drawn and the space between shaded (``_add_band``). The legend
+    limits drawn and the space between shaded (``_add_band``), and its
+    legend entry shows the band (``_BandKey``). The legend
     names the parts of a joined curve the window shows (``rates.legend_label``).
     Each part is marked for Export chart under that name; a band's as its
     lower limit, its upper limits another curve (``export.mark_series``);
@@ -406,26 +410,29 @@ def add_rate_lines(
                     linewidth=0, label="_nolegend_",
                 )
         if first is not None and curve.upper is not None:
-            _add_band(ax, curve, values, config, style | {"color": first.get_color()}, f"{name}, upper limit")
+            if _add_band(ax, curve, values, config, style | {"color": first.get_color()}, f"{name}, upper limit"):
+                setattr(first, _BAND_ATTR, True)  # its legend entry shows the band (yield_axis_legend)
         if first is not None:
             drawn.append((first, curve))
     return drawn
 
 
-def _add_band(ax: Axes, curve: RateCurve, lower: pd.Series, config: PlotConfig, style: dict, exported: str) -> None:
+def _add_band(ax: Axes, curve: RateCurve, lower: pd.Series, config: PlotConfig, style: dict, exported: str) -> bool:
     """Draw a band's upper limits as a step line in ``style`` and shade it (batch 9.1, the U.S. target range).
 
     ``lower`` is the curve as drawn (``rates.held_steps``); the upper limits
     are stepped on the same dates. The upper line is drawn only where the two
     differ, and from the point before each such stretch, so it leaves the
     lower line where the band begins; where they are equal (a single target)
-    the shading has no height. Neither is in the legend. The upper line is
-    marked for Export chart as ``exported`` (``export.mark_series``).
+    the shading has no height. Neither is in the legend; the lower line's
+    entry shows the band instead (``_BandKey``). The upper line is marked for
+    Export chart as ``exported`` (``export.mark_series``). Returns whether
+    any band was drawn: none in a window of single targets only.
     """
     upper = held_steps(curve, config, curve.upper)
     apart = ((upper - lower).abs() > 1e-9).to_numpy()  # NaN (a break) is not apart
     if not apart.any():
-        return
+        return False
     edge = apart | np.append(apart[1:], False)
     (line,) = ax.plot(upper.index, upper.where(edge).to_numpy(), label="_nolegend_", **style)
     mark_series(line, exported, YIELD_AXIS)
@@ -434,6 +441,49 @@ def _add_band(ax: Axes, curve: RateCurve, lower: pd.Series, config: PlotConfig, 
         upper.index, lower.to_numpy(), upper.to_numpy(), step="post", color=style["color"], alpha=POLICY_BAND_ALPHA,
         linewidth=0, label="_nolegend_",
     )
+    return True
+
+
+# A rate curve drawn with its band (``_add_band``): its first line carries
+# this attribute, and its legend entry is a ``_BandKey``.
+_BAND_ATTR = "_ratesplot_band"
+
+
+class _BandKey(Line2D):
+    """A band's legend entry (batch 24.4): its lower line's look, drawn by ``_BandKeyHandler``.
+
+    Terry, 2026-10-24 (decision 58): the target range's entry "shows the band
+    as the chart draws it, the shaded range with the line along its floor,
+    not a plain line". Made from the drawn line after the line widths are
+    scaled, so the floor matches the chart's line.
+    """
+
+    @classmethod
+    def like(cls, line: Line2D) -> "_BandKey":
+        key = cls([], [])
+        key.update_from(line)  # colour, width, dashes and the label
+        return key
+
+
+class _BandKeyHandler(HandlerBase):
+    """Draws a ``_BandKey`` in its legend sample: the shading at the chart's alpha, the line along its floor."""
+
+    def create_artists(self, legend, orig_handle, xdescent, ydescent, width, height, fontsize, trans):
+        left, bottom = -xdescent, -ydescent
+        shading = Rectangle(
+            (left, bottom), width, height, facecolor=orig_handle.get_color(), alpha=POLICY_BAND_ALPHA, linewidth=0,
+            transform=trans,
+        )
+        floor = Line2D([left, left + width], [bottom, bottom])
+        floor.update_from(orig_handle)
+        floor.set_drawstyle("default")  # the chart's steps, a straight stroke here
+        floor.set_transform(trans)
+        return [shading, floor]
+
+
+# Matplotlib finds a legend entry's handler by its type, so every legend draws
+# a _BandKey this way; no other kind of entry is affected.
+Legend.update_default_handler_map({_BandKey: _BandKeyHandler()})
 
 
 def _end_label_format(curve: RateCurve, config: PlotConfig) -> ValueFormatter:
@@ -461,7 +511,8 @@ def yield_axis_legend(yield_lines: list[Line2D], rate_lines: list[tuple[Line2D, 
     (``config.MORTGAGE_LEGEND_ORDER``). The spreads keep their order, since
     each one's colour goes by its place (``rates.yield_spreads``). Only the
     legend is ordered: the lines are drawn as before, so where they cross,
-    the same one is on top.
+    the same one is on top. A curve drawn with its band (the U.S. target
+    range) is entered as the band (``_BandKey``, batch 24.4).
     """
     longest_first = {f"{name} Yield": rank for rank, name in enumerate(reversed(YIELD_TERMS.values()))}
     yields = sorted(yield_lines, key=lambda line: longest_first.get(line.get_label(), len(longest_first)))
@@ -474,7 +525,9 @@ def yield_axis_legend(yield_lines: list[Line2D], rate_lines: list[tuple[Line2D, 
             return 0, int(key == "policy_market")  # the target, then the market rate (batch 9.1)
         return 2, 0
 
-    return yields + [line for line, _curve in sorted(rate_lines, key=place)]
+    return yields + [
+        _BandKey.like(line) if getattr(line, _BAND_ATTR, False) else line for line, _curve in sorted(rate_lines, key=place)
+    ]
 
 
 def drawn_date_span(axes: Iterable[Axes]) -> tuple[pd.Timestamp, pd.Timestamp] | None:
