@@ -124,6 +124,7 @@ from matplotlib.figure import Figure  # noqa: E402
 from . import export, hover, http  # noqa: E402
 from .cli import sort_tokens  # noqa: E402
 from .config import (  # noqa: E402
+    DEFAULT_AUTO_REFRESH_MINUTES,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DOWNLOAD_MAX_AGE_SECONDS,
     EARLIEST_DATA_START,
@@ -154,7 +155,7 @@ from .frontend import (  # noqa: E402
     drawn_payloads,
     field_hints,
     field_problems,
-    idle_controls,
+    idle_choices,
     idle_nation_keys,
     level_letters,
     level_text,
@@ -191,6 +192,7 @@ from .options import (  # noqa: E402
     parse_date_spec,
 )
 from .plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
+from .refresh import Ticker  # noqa: E402
 
 PAGE_TITLE = "Bond Yields and Public Debt"
 PAGE_SUMMARY = (
@@ -211,6 +213,7 @@ _PLACEHOLDERS = {
     "start": "automatic",
     "end": "today",
     "regression-tolerance": f"{DEFAULT_REGRESSION_TOLERANCE_PCT:g}",
+    "auto-refresh-minutes": f"{DEFAULT_AUTO_REFRESH_MINUTES}",  # batch 11.3
     # The margins at their defaults: the prime margin's 0 (batch 9.4).
     **{margin.name: f"{field_default(margin.fields[0]):g}" for margin in margin_options().values()},
 }
@@ -258,6 +261,9 @@ _TAB = "tab"             # the charts' tabs: the title of the one shown
 _TICKED = "ticked"       # a nation ticked by hand, whose tab is shown once its chart is drawn (batch 17.4)
 _EXPORT = "export"       # the format last chosen under any chart, by its caption (batch 11.1)
 _EXPORT_MENU = "export:"  # + country key: the format menu under that nation's chart
+_IDLE = "idle"           # the options greyed out, judged once as the controls are laid out (frontend.idle_choices)
+_AUTO_TICKER = "auto_ticker"  # the automatic refresh's Ticker for this visitor (batch 11.3)
+_AUTO_LAID_OUT = "auto_laid_out"  # True while its fragment runs as part of the whole page's run
 # The calendar's first day: no series starts earlier (config.EARLIEST_DATA_START).
 _CALENDAR_FIRST = EARLIEST_DATA_START.date()
 # A date field with its calendar button: room for a whole YYYY-MM-DD.
@@ -1002,16 +1008,22 @@ def _flag_control(where, option: Option) -> None:
         help=_help(option),
         on_change=callback,
         args=(option.name,) if callback else None,
-        # What has no effect is greyed, its tick kept (frontend.idle_controls):
+        # What has no effect is greyed, its tick kept (frontend.idle_choices):
         # GDP under -r, where it is the divisor; % of GDP, Per capita and the
-        # regression segments with no curve to act on.
+        # regression segments with no curve to act on; the automatic refresh
+        # where it can bring nothing new.
         disabled=option.name in _idle(),
     )
 
 
 def _idle() -> frozenset[str]:
-    """The options greyed out for the check boxes' state now (``frontend.idle_controls``), as in the window."""
-    return idle_controls({option.name: bool(st.session_state.get(_FLAG + option.name, False)) for option in _gui_options(False)})
+    """The options greyed out for the controls' state now (``frontend.idle_choices``), as in the window.
+
+    Judged once as the sidebar is laid out (``_controls``): the automatic
+    refresh's rule builds the choices' config (batch 11.3).
+    """
+    idle = st.session_state.get(_IDLE)
+    return idle_choices(*_snapshot()) if idle is None else idle
 
 
 def _field_changed(key: str) -> None:
@@ -1329,6 +1341,7 @@ def _controls() -> None:
     buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch")
     st.session_state[_HINTS] = _field_hints()
     _settle_all_ticks()  # before the "All" boxes are laid out, which fixes their state for this run
+    st.session_state[_IDLE] = idle_choices(*_snapshot())
     for key, title, members in control_blocks():
         if title:
             bar.subheader(title, divider="gray")
@@ -1597,8 +1610,12 @@ def _export_row(drawing: Drawing, key: str) -> None:
     )
 
 
-def _show(drawing: Drawing) -> None:
-    """The charts, one tab per country, each with its format menu and download button; then the command line and log."""
+def _show(drawing: Drawing, config: PlotConfig | None = None) -> None:
+    """The charts, one tab per country, each with its format menu and download button; then the command line and log.
+
+    ``config``: the controls' now, None where they draw nothing; under the
+    charts, its automatic refresh (``_auto_refresh``, batch 11.3).
+    """
     if drawing.error is not None:
         st.error(f"Drawing failed: {drawing.error} (details in the message log below)")
     for key, why in drawing.failed.items():
@@ -1635,6 +1652,7 @@ def _show(drawing: Drawing) -> None:
             f"Drawn at {drawing.finished:%Y-%m-%d %H:%M %Z} in {drawing.seconds:.1f} s. "
             "The page's address holds this chart's settings: copy it from the address bar to share the chart."
         )
+        _auto_refresh(config)
     st.markdown("**The same chart from the command line**")
     st.code(" ".join(["python", _SCRIPT_NAME, *drawing.tokens]), language=None, wrap_lines=True)
     with st.expander("Message log"):
@@ -1651,6 +1669,44 @@ def _show(drawing: Drawing) -> None:
             key="download:log",
             help="Save this drawing's message log as a text file.",
         )
+
+
+def _auto_refresh(config: PlotConfig | None) -> None:
+    """The automatic refresh (--auto-refresh, batch 11.3): a fragment Streamlit runs again every few minutes, under the charts.
+
+    Laid out with the page, it says how often; each run of its own after
+    that asks this visitor's ``refresh.Ticker`` and, when it is due, does
+    what Refresh does: the page's downloads are an hour old at most anyway
+    (``DOWNLOAD_MAX_AGE_SECONDS``), so a drawing forced. Every whole run of
+    the page lays it out again, which starts its minutes again, so they run
+    from the last drawing or change of a control. None where it is off or
+    can bring nothing new (its box greyed).
+    """
+    if config is None or not config.auto_refresh or config.refresh_brings_nothing is not None:
+        return
+    every = datetime.timedelta(minutes=config.refresh_minutes)
+    st.session_state[_AUTO_LAID_OUT] = True
+    try:
+        st.fragment(_auto_refresh_tick, run_every=every)(config)
+    finally:
+        st.session_state[_AUTO_LAID_OUT] = False
+
+
+def _auto_refresh_tick(config: PlotConfig) -> None:
+    """The automatic refresh's fragment (``_auto_refresh``): what it says, and at each run of its own whether to draw again."""
+    state = st.session_state
+    note = f"Refreshed automatically every {config.refresh_minutes} minutes; outside market hours only when a quote has changed."
+    if state.get(_AUTO_LAID_OUT):
+        st.caption(note)
+        return
+    if config.refresh_brings_nothing is not None:
+        st.rerun(scope="app")  # the day has changed: the whole page judges the controls again (a blank End is today)
+    with this_thread_output_to(None), http.drawing_downloads():
+        due = state.setdefault(_AUTO_TICKER, Ticker()).due(config)
+    if due:
+        state[_FORCE] = True
+        st.rerun(scope="app")
+    st.caption(f"{note} Asked at {pd.Timestamp.now(tz=MARKET_TIMEZONE):%H:%M %Z}: no quote has changed since the last refresh.")
 
 
 def main() -> None:
@@ -1681,8 +1737,9 @@ def main() -> None:
     previous: Drawing | None = state.get(_DRAWING)
     forced = state.pop(_FORCE, False)
     if config is not None and previous is not None and not forced and previous.config != config and config.same_chart(previous.config):
-        # Only the hover read-out's box changed (batch 11.2): it draws nothing,
-        # so the charts stay; the address and the command line follow it.
+        # Only the hover read-out's box changed (batch 11.2), or the automatic
+        # refresh's (11.3): they draw nothing, so the charts stay; the address
+        # and the command line follow them.
         tokens = tuple(command_line_tokens(*choices))
         state[_DRAWING] = previous = replace(previous, config=config, tokens=tokens)
         if previous.error is None:
@@ -1710,7 +1767,7 @@ def main() -> None:
             st.rerun()
     drawing = state.get(_DRAWING)
     if drawing is not None:
-        _show(drawing)
+        _show(drawing, config)
 
     with st.expander("Every option, as the command line spells it"):
         st.code(help_epilog(), language=None)
