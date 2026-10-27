@@ -896,6 +896,16 @@ def saved_png_name(key: str, drawn: PlotConfig | None) -> str:
     return f"{key}_rates{dates}.png"
 
 
+def saved_export_name(key: str, drawn: PlotConfig | None, extension: str, every: bool = False) -> str:
+    """Return the file name a chart is exported under (batch 11.1): ``saved_png_name``'s with ``extension``.
+
+    A workbook of every chart (``every``) drops the nation's key:
+    ``rates_1981-09-01_2026-09-29.xlsx``.
+    """
+    name = saved_png_name(key, drawn).removesuffix(".png")
+    return f"{name.removeprefix(f'{key}_') if every else name}{extension}"
+
+
 def saved_log_name(when: pd.Timestamp) -> str:
     """Return the file name the message log is saved under: ``ratesplot_log_2026-10-14_1015.txt``.
 

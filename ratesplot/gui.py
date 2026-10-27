@@ -35,7 +35,7 @@ Controls
     limit box its unit ("%", the nation's currency) and an "All" tick that
     copies its value to every nation's box and keeps them alike while
     ticked (batch 18, ``frontend.settled_all_ticks``). The controls scroll when the
-    window is too short for them; Refresh, Save PNG and Save log file sit in
+    window is too short for them; Refresh, Export chart and Save log file sit in
     a bar under them that does not, so they are always in sight (the log's
     button under the other two when the column is narrow). A handle between the
     controls and the charts sets the column's width, remembered with the
@@ -57,7 +57,7 @@ Remembered settings
 Zoom and pan
     The mouse edits the same fields a user would type in, so the fields remain
     the single source of truth (and the command line, the remembered settings
-    and "Save PNG" all follow). Left-drag a box to zoom to it: its width sets
+    and "Export chart" all follow). Left-drag a box to zoom to it: its width sets
     Start/End, its height sets the yield Min/Max and the right-axis Top/Bottom of
     whichever axes are drawn. Right- or middle-drag pans. The wheel zooms the
     dates about the pointer. "Back" undoes one zoom, pan, Unzoom or Reset;
@@ -71,8 +71,10 @@ Drawing
     Each chart is drawn exactly as the command line draws it (the same
     ``plotting.draw_country``) on an off-screen Agg figure at the configured
     pixel size, rendered to PNG, and shown scaled to fit the window (or at
-    actual size). "Save PNG" writes those same bytes, so a saved chart is the
-    real output, not a screenshot of the preview. A blank Start is the
+    actual size). "Export chart" (Ctrl+S; "Save PNG" until batch 11.1) writes
+    those same bytes as a PNG, so a saved chart is the real output, not a
+    screenshot of the preview; as a JPG, PDF or SVG, the same figure saved
+    again; as XLSX, CSV or TSV, the data it shows (``export``). A blank Start is the
     automatic start, found for the charts drawn together
     (``plotting.resolve_start``) each time they are drawn, so it follows the
     chosen curves (no earlier than ``config.DEFAULT_START_FLOOR``); the log
@@ -108,9 +110,12 @@ from tkinter import filedialog, ttk
 import pandas as pd
 from PIL import Image, ImageTk
 
-from . import http
+from matplotlib.figure import Figure
+
+from . import export, http
 from .config import DOWNLOAD_MAX_AGE_SECONDS, NATIONS, Nation, PlotConfig
 from .console import this_thread_output_to
+from .export import EXPORT_CHOICES, IMAGE_FORMATS
 from .frontend import (
     ALL_TICKS,
     GREYABLE_OPTIONS,
@@ -151,8 +156,8 @@ from .frontend import (
     problem_text,
     reset_choices,
     save_state,
+    saved_export_name,
     saved_log_name,
-    saved_png_name,
     scale_dates_updates,
     settled_all_ticks,
     size_boxes_at_fault,
@@ -828,6 +833,10 @@ class RatesPlotApp:
         self.canvases: dict[str, tk.Canvas] = {}
         self.scrollbars: dict[str, tuple[ttk.Scrollbar, ttk.Scrollbar]] = {}
         self.pngs: dict[str, bytes] = {}
+        # Each chart's figure and the config it was drawn with, for Export chart (batch 11.1).
+        self.figures: dict[str, tuple[Figure, PlotConfig]] = {}
+        # The type last chosen in Export chart's dialog, by its caption: the next opens on it.
+        self.export_type = tk.StringVar(self.root, value=EXPORT_CHOICES[0][0])
         self.images: dict[str, Image.Image] = {}
         self.photos: dict[str, ImageTk.PhotoImage] = {}  # Tk shows an image only while a reference exists
         self.geometry: dict[str, ChartGeometry | None] = {}
@@ -930,7 +939,7 @@ class RatesPlotApp:
         self.status.trace_add("write", lambda *_args: self.status_label.configure(foreground=""))
 
         self.root.bind("<F5>", lambda _event: self._refresh())
-        self.root.bind("<Control-s>", lambda _event: self._save_png())
+        self.root.bind("<Control-s>", lambda _event: self._export_chart())
         self.root.bind("<Alt-Left>", lambda _event: self._back())
 
     def _build_control_column(self, master: tk.Widget) -> tuple[ttk.Frame, ttk.Frame, ttk.Frame]:
@@ -1283,7 +1292,7 @@ class RatesPlotApp:
         return self._column_width
 
     def _build_actions(self, panel: ttk.Frame, pinned: ttk.Frame) -> None:
-        """The Preview panel and the Reset button in the column; Refresh, Save PNG and Save log file in the ``pinned`` bar."""
+        """The Preview panel and the Reset button in the column; Refresh, Export chart and Save log file in the ``pinned`` bar."""
         preview = ttk.LabelFrame(panel, text="Preview", padding=(8, 4))
         preview.pack(fill="x", pady=(0, 6))
         self._preview, self._pinned = preview, pinned
@@ -1302,19 +1311,19 @@ class RatesPlotApp:
         preview.bind("<Configure>", lambda event: hint.configure(wraplength=max(_NOTE_WRAP_PX, event.width - 24)), add="+")
         self._zoom_note = hint
 
-        # The pinned bar: Refresh, Save PNG and Save log file (Terry,
-        # 2026-10-14, batch 15.3: the third button beside the other two). In
-        # one row when the column is wide enough (at the default width), else
-        # the log's button under the other two (``_arrange_bar``): the bar
-        # takes two rows, as the blocks do, rather than making the column's
-        # narrowest width larger.
+        # The pinned bar: Refresh, Export chart (Save PNG until batch 11.1)
+        # and Save log file (Terry, 2026-10-14, batch 15.3: the third button
+        # beside the other two). In one row when the column is wide enough
+        # (at the default width), else the log's button under the other two
+        # (``_arrange_bar``): the bar takes two rows, as the blocks do, rather
+        # than making the column's narrowest width larger.
         self._bar = ttk.Frame(pinned)
         self._bar.pack(fill="x")
         self._bar_buttons = [
             ttk.Button(self._bar, text=text, command=command)
             for text, command in (
                 ("Refresh (F5)", self._refresh),
-                ("Save PNG… (Ctrl+S)", self._save_png),
+                ("Export chart… (Ctrl+S)", self._export_chart),
                 ("Save log file…", self._save_log),
             )
         ]
@@ -1780,7 +1789,8 @@ class RatesPlotApp:
                 png = png_bytes(figure)
                 # Measured after savefig, so the axes positions are the final rendered ones.
                 geometry = ChartGeometry.from_figure(figure, drawn)
-                self.messages.put(("chart", country.key, png, geometry))
+                # The figure goes too, for Export chart; this thread does not touch it again.
+                self.messages.put(("chart", country.key, png, geometry, figure, drawn))
         self.messages.put(("done", config, drawn, not_drawn, downloads.copies_used()))
 
     def _poll(self) -> None:
@@ -1792,6 +1802,7 @@ class RatesPlotApp:
                 if kind == "log":
                     self._append_log(message[1])
                 elif kind == "chart":
+                    self.figures[message[1]] = (message[4], message[5])
                     self._show_chart(message[1], message[2], message[3])
                 elif kind == "not drawn":
                     if message[2] is not None:
@@ -1823,6 +1834,7 @@ class RatesPlotApp:
     def _clear_chart(self, key: str) -> None:
         """Take a chart that could not be drawn off its tab, so an older drawing is not shown as this one."""
         self.pngs.pop(key, None)
+        self.figures.pop(key, None)
         self.images.pop(key, None)
         self.geometry[key] = None
         self.canvases[key].delete("all")
@@ -2122,23 +2134,73 @@ class RatesPlotApp:
                 return key
         return None
 
-    def _save_png(self) -> None:
+    def _export_chart(self) -> None:
+        """Export chart (batch 11.1, decision 46): this tab's chart as an image, or the data it shows (``export``).
+
+        The format is the file's extension (``export.format_of``); a name with
+        none the program writes gets the extension of the type chosen in the
+        dialog. Windows' dialog does that itself, given a default extension:
+        it shows the name with the type's extension, changes it when another
+        type is chosen, and asks before replacing a file of that name
+        (measured 2026-10-27 with Tk 9.0: without one it returned the name as
+        typed). "XLSX-global", the second XLSX type, is a workbook with a
+        sheet for each chart shown, named as its tab. A PNG is the bytes
+        drawn, as Save PNG wrote; JPG, PDF and SVG are the figure saved again,
+        refused while a drawing runs, since saving draws on this thread while
+        the worker draws on its own (matplotlib's font cache is shared). The
+        data are written while a drawing runs: reading a figure's lines draws
+        nothing, and each chart's are read with the config it was drawn with.
+        """
         key = self._current_tab_key()
-        if key is None or key not in self.pngs:
+        if key is None or key not in self.figures:
             self.status.set("Nothing drawn in this tab yet.")
             return
+        figure, drawn = self.figures[key]
+        types = {caption: (extension, every) for caption, extension, every in EXPORT_CHOICES}
+        if self.export_type.get() not in types:
+            self.export_type.set(EXPORT_CHOICES[0][0])
         path = filedialog.asksaveasfilename(
             parent=self.root,
-            title="Save chart as PNG",
-            defaultextension=".png",
-            filetypes=[("PNG image", "*.png")],
-            initialfile=saved_png_name(key, self.drawn_config),
+            title="Export chart",
+            filetypes=[(caption, f"*{extension}") for caption, extension, _every in EXPORT_CHOICES],
+            typevariable=self.export_type,
+            defaultextension=types[self.export_type.get()][0],
+            initialfile=saved_export_name(key, drawn, ""),
         )
         if not path:
             return
-        with open(path, "wb") as output:
-            output.write(self.pngs[key])
-        self.status.set(f"Saved {path}")
+        chosen, every = types.get(self.export_type.get(), (EXPORT_CHOICES[0][1], False))
+        extension = export.format_of(path)
+        if extension is None:
+            path, extension = path + chosen, chosen
+        if extension in IMAGE_FORMATS and extension != ".png" and self.rendering:
+            self.status.set(f"Not exported: a chart is being drawn. Export the {extension[1:].upper()} once it is drawn.")
+            return
+        try:
+            if extension in IMAGE_FORMATS:
+                data = export.image_bytes(figure, self.pngs[key], extension)
+            else:
+                shown = [key]
+                if every and extension == ".xlsx":
+                    shown = [
+                        country.key
+                        for country in COUNTRIES
+                        if country.key in self.figures and self.notebook.tab(self.tabs[country.key], "state") != "hidden"
+                    ]
+                sheets = [
+                    (TAB_TITLES.get(each, each), export.chart_data(self.figures[each][0], self.figures[each][1].for_nation(each), each))
+                    for each in shown
+                ]
+                data = export.data_bytes(extension, sheets)
+            with open(path, "wb") as output:
+                output.write(data)
+        except ImportError as exc:  # openpyxl, imported only for a workbook
+            self.status.set(f"Not exported: a workbook needs the openpyxl package ({exc}).")
+            return
+        except OSError as exc:
+            self.status.set(f"Not exported: {exc}")
+            return
+        self.status.set(f"Exported {path}")
 
     def _save_log(self) -> None:
         """Save the whole message log, as shown, to a text file (Terry, 2026-10-13, batch 15.3).

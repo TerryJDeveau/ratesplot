@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import csv
 import hashlib
 import io
 import os
@@ -627,6 +628,112 @@ def check_save_log(check: Check) -> None:
         check("the status line says where", str(target.name) in app.status.get(), app.status.get())
 
 
+def check_export(check: Check) -> None:
+    """Batch 11.1: Export chart writes the chart as each type chosen, the data as shown, refusing a redrawn image mid-drawing."""
+    from openpyxl import load_workbook
+
+    folder = Path(SCRATCH_APPDATA) / "export"
+    folder.mkdir(exist_ok=True)
+    with window(f"-s:2015 {END}") as w:
+        app = w.app
+        button = app._bar_buttons[1]
+        check("the pinned bar's button: Export chart… (Ctrl+S)", str(button.cget("text")) == "Export chart… (Ctrl+S)",
+              button.cget("text"))
+        asked: dict = {}
+        answers: list[tuple[str, str]] = []  # (the type to choose, the name to give), one per dialog
+
+        def answer(**kwargs) -> str:
+            asked.clear()
+            asked.update(kwargs)
+            caption, name = answers.pop(0)
+            if caption:
+                kwargs["typevariable"].set(caption)
+            return str(folder / name) if name else ""
+
+        def export(caption: str, name: str, how: str = "button") -> Path:
+            answers.append((caption, name))
+            dialog = gui.filedialog.asksaveasfilename
+            gui.filedialog.asksaveasfilename = answer
+            try:
+                if how == "Ctrl+S":
+                    # A key reaches the window only while it has the focus (as in check_typing).
+                    w.root.focus_force()
+                    w.root.update()
+                    w.root.event_generate("<Control-s>")
+                    w.pump()
+                else:
+                    button.invoke()
+            finally:
+                gui.filedialog.asksaveasfilename = dialog
+                if answers:  # the dialog was not opened: its answer is dropped, so the next export's is its own
+                    answers.clear()
+                    asked.clear()
+            return folder / name
+
+        app.notebook.select(app.tabs["us"])
+        w.pump()
+        figure, drawn = app.figures["us"]
+        written = export("PNG image", "chart_png", how="Ctrl+S")
+        check("Ctrl+S opens the dialog: titled Export chart, the eight types, the name without an extension, PNG's",
+              asked.get("title") == "Export chart" and len(asked.get("filetypes", ())) == 8
+              and asked.get("initialfile") == frontend.saved_png_name("us", drawn).removesuffix(".png")
+              and asked.get("defaultextension") == ".png",
+              {k: v for k, v in asked.items() if k not in ("parent", "typevariable")})
+        check("PNG: the extension added, the bytes drawn", written.with_suffix(".png").read_bytes() == app.pngs["us"]
+              if written.with_suffix(".png").exists() else False, sorted(p.name for p in folder.iterdir()))
+        check("the status line says where", "chart_png.png" in app.status.get(), app.status.get())
+        starts = {"JPG image": b"\xff\xd8\xff", "PDF document": b"%PDF", "SVG drawing": b"<?xml"}
+        for caption, extension, _every in gui.EXPORT_CHOICES[1:4]:
+            written = export(caption, f"chart_{extension[1:]}")
+            data = written.with_suffix(extension).read_bytes() if written.with_suffix(extension).exists() else b""
+            check(f"{caption}: written as {extension}", data.startswith(starts[caption]), data[:8])
+        written = export("CSV, comma-separated", "chart_csv")
+        check("the dialog opens on the type last chosen, with its extension", app.export_type.get() == "CSV, comma-separated"
+              and asked.get("defaultextension") == ".svg", asked.get("defaultextension"))
+        rows = list(csv.reader(io.StringIO(written.with_suffix(".csv").read_text(encoding="utf-8-sig"))))
+        data = gui.export.chart_data(figure, drawn.for_nation("us"), "us")
+        check("CSV: the chart's data, its title first, a row a date", rows[0] == [figure._suptitle.get_text()]
+              and rows[2][0] == "Date" and len(rows) == 4 + len(data.dates) and len(data.dates) > 1000,
+              (rows[:3], len(rows), len(data.dates)))
+        check("CSV: the file is export's bytes", written.with_suffix(".csv").read_bytes() == gui.export.delimited_bytes(data, ","))
+        written = export("TSV, tab-separated", "chart_tsv")
+        check("TSV: tab-separated", written.with_suffix(".tsv").read_bytes() == gui.export.delimited_bytes(data, "\t"))
+        written = export("XLSX workbook, this chart", "chart_one")
+        book = load_workbook(written.with_suffix(".xlsx"))
+        check("XLSX: one sheet, the tab's name", book.sheetnames == ["United States"], book.sheetnames)
+        written = export("XLSX-global workbook, every chart", "chart_all")
+        book = load_workbook(written.with_suffix(".xlsx"))
+        check("XLSX-global: a sheet for each chart, named as its tab", book.sheetnames == ["Canada", "United States"], book.sheetnames)
+        check("XLSX-global: each sheet its chart's title", [book[name]["A1"].value for name in book.sheetnames]
+              == [app.figures[key][0]._suptitle.get_text() for key in ("cdn", "us")])
+        export("PNG image", "named.csv")
+        check("a name's own extension wins over the type chosen", (folder / "named.csv").exists()
+              and not (folder / "named.csv.png").exists(), sorted(p.name for p in folder.iterdir()))
+        export("XLSX-global workbook, every chart", "named_global.csv")
+        check("XLSX-global with a .csv name: this chart's CSV", (folder / "named_global.csv").read_bytes()
+              == gui.export.delimited_bytes(data, ","))
+        before = sorted(p.name for p in folder.iterdir())
+        export("PNG image", "")
+        check("the dialog cancelled: nothing written", sorted(p.name for p in folder.iterdir()) == before)
+        app.rendering = True  # as while the worker draws
+        try:
+            export("PDF document", "drawing_pdf")
+            check("while drawing: a PDF refused, the status line says why",
+                  not (folder / "drawing_pdf.pdf").exists() and "being drawn" in app.status.get(), app.status.get())
+            export("PNG image", "drawing_png")
+            check("while drawing: a PNG written (the bytes drawn)", (folder / "drawing_png.png").exists())
+            export("CSV, comma-separated", "drawing_csv")
+            check("while drawing: the data written", (folder / "drawing_csv.csv").exists())
+        finally:
+            app.rendering = False
+        # Unticking a nation hides its tab: XLSX-global then holds the charts shown.
+        w.tick("cdn", False)
+        w.settle()
+        export("XLSX-global workbook, every chart", "shown_only")
+        book = load_workbook(folder / "shown_only.xlsx")
+        check("a nation unticked: XLSX-global without it", book.sheetnames == ["United States"], book.sheetnames)
+
+
 def check_tabs(check: Check) -> None:
     """Batch 17.4: a nation ticked gets its tab once drawn; unticking the current one makes the first shown current."""
     with window(f"{END} -s:2015 --no-gdp --no-debt --no-interest") as w:
@@ -1045,6 +1152,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "grey_values": check_grey_values,
     "typing": check_typing,
     "save_log": check_save_log,
+    "export": check_export,
     "tabs": check_tabs,
     "policy_terms": check_policy_terms,
     "levels": check_levels,
