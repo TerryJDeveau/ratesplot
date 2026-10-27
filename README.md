@@ -36,12 +36,14 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   wheel over it to zoom the dates about the pointer; buttons move the dates and undo a zoom;
   each date has a calendar; the size keeps its shape when you change one side. The page's
   address holds the chart's settings, so a chart can be bookmarked or
-  sent.
+  sent. The page remembers your last chart for your next visit, in a cookie in your browser,
+  while "Remember my settings" is ticked; a link with a chart in it opens on that chart.
   To run it on your own machine: `streamlit run streamlit_app.py`.
 - **The desktop window** (`ratesplot/gui.py`): `python ratesplot.py`. It adds a
   right-drag pan, and remembers your last settings: each command window
   its own, so several windows can be open at once; a window whose monitor has gone comes back
-  at its size on another. The handle between the controls and the charts sets the controls'
+  at its size on another. Untick "Remember my settings" (on the page too) to draw other charts
+  without replacing the settings kept; it is ticked again at every start. The handle between the controls and the charts sets the controls'
   width, and each row of controls takes as many as fit it. "Save log file" saves the
   message log as text (on the page, a button under the log). Its dialog and Export chart's open in
   the folder last saved to, remembered with the settings, and the first time in Documents; never in
