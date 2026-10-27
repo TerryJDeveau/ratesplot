@@ -724,7 +724,7 @@ GROUPS: dict[str, str] = {
         "Right-axis limits (suffixes k/m/b/t; unsuffixed values are billions;\n"
         "with -r, percentages such as 150%):"
     ),
-    "interface": 'Interface (--gui spelled in full; --save at least "sa"):',
+    "interface": 'Interface (--gui spelled in full; --save at least "sa", --hover "ho"):',
 }
 
 OPTIONS: tuple[Option, ...] = (
@@ -1012,6 +1012,16 @@ OPTIONS: tuple[Option, ...] = (
         "projections", Kind.FLAG, ("projections",), "latest", "--pro / --projections / --no-pro",
         "on by default: each right-axis curve\ncarried from its last value to today at\nits past year's pace, drawn faint",
         names=("projections",), shortest=3, label="Projections to today", panel="labels",
+    ),
+    # The hover read-out (batch 11.2, ratesplot.hover), on by default with a
+    # box and a switch of its own (Terry, 2026-10-26, decision 68: "a tick-box
+    # to turn off the hover read-out ..., as some people won't like it"). At
+    # least "ho": "--h" is argparse's --help. Its box is in the block with the
+    # line labels; --help lists it with the interface.
+    Option(
+        "hover", Kind.FLAG, ("hover",), "interface", "--ho / --hover / --no-ho",
+        "on by default: the pointer resting on a\nline shows its name, date and value",
+        names=("hover",), shortest=2, label="Hover read-out", panel="labels",
     ),
     # Interface. Spelled in full (Terry, 2026-09-24): "--g" is the GDP curve,
     # and "--gu" nothing.

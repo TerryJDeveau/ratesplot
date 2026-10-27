@@ -1345,6 +1345,11 @@ class PlotConfig:
     # between controlling projections with --projections and current quotes
     # with --current"); --cur turned both on and off before.
     projections: bool = True
+    # --hover (on unless --no-hover, batch 11.2): the read-out by the pointer
+    # resting on a line, in the window, on the web page and in the plain
+    # matplotlib windows (ratesplot.hover). It draws nothing on the chart, so
+    # the front ends do not draw again when only it changes (``same_chart``).
+    hover: bool = True
     # Open the interactive window (ratesplot.gui) rather than plain matplotlib windows.
     gui: bool = True
     # --save:FILE (batch 11.1): write the charts to FILE, the format by its
@@ -1366,6 +1371,10 @@ class PlotConfig:
             if field_name not in own and getattr(self, field_name) == _LIST_DEFAULTS[field_name]:
                 own[field_name] = value
         return replace(self, **own) if own else self
+
+    def same_chart(self, other: PlotConfig | None) -> bool:
+        """Whether ``other`` draws the same charts as this: it may differ in the hover read-out alone, which draws nothing (batch 11.2)."""
+        return other is not None and replace(self, hover=True) == replace(other, hover=True)
 
     @property
     def figsize_inches(self) -> tuple[float, float]:
