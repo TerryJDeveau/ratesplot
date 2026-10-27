@@ -29,6 +29,10 @@ the next drawing asks it again; after a 404, a reset (twice), a 503 (twice) or a
 that cannot be read, the host's other requests are made; a request of another thread,
 waiting its turn while the host hangs, is not made; outside a drawing each request is.
 
+Last, with downloads kept: a drawing that serves a download again ends with "Reused 1
+earlier download, the oldest from YYYY-MM-DD HH:MM:SS UTC", the date always given, today's
+too (batch 24.3, Terry 2026-10-24: a saved log reads right where the date changed).
+
 Usage (from the project root)::
 
     python tools/check_requests.py
@@ -240,6 +244,27 @@ def check_hosts(server: Server, other: Server) -> None:
     http.RETRY_WAIT_SECONDS = config.RETRY_WAIT_SECONDS
 
 
+def check_reused_line(server: Server) -> None:
+    """The drawing's "Reused" line gives the oldest reused download's date, whether it is today's or not (batch 24.3)."""
+    http.enable_download_cache()
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), http.drawing_downloads():
+            outcome_of(via_requests, server.url("ok"))
+        (key,) = http._download_cache
+        for days in (0, 2):  # fetched today, and two days ago (a window left open)
+            fetched_at, _wall, result = http._download_cache[key]
+            fetched = time.time() - days * 86400
+            http._download_cache[key] = (fetched_at, fetched, result)
+            printed = io.StringIO()
+            with contextlib.redirect_stdout(printed), http.drawing_downloads():
+                outcome_of(via_requests, server.url("ok"))
+            expected = f"Reused 1 earlier download, the oldest from {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(fetched))} UTC"
+            check(f"the Reused line dated, for a download {days} days old", printed.getvalue().strip() == expected,
+                  printed.getvalue().strip())
+    finally:
+        http._download_cache = None
+
+
 def main() -> int:
     http._download_cache = None
     http._copies_folder = None
@@ -248,6 +273,7 @@ def main() -> int:
     print(f"[requests] a server on 127.0.0.1:{server.port}; the program's timeout {TIMEOUT} s")
     check_retries(server)
     check_hosts(server, Server())
+    check_reused_line(server)
     passed = sum(RESULTS)
     print(f"[requests] {passed} of {len(RESULTS)} checks passed")
     return 0 if passed == len(RESULTS) else 1

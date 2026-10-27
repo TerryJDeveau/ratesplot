@@ -945,6 +945,9 @@ def check_batch91(check: Check) -> None:
     boxes = {box.key for box in at.checkbox if box.key and ":policy-terms:" in box.key}
     wanted = {f"choice:{key}:policy-terms:{term}" for key in NATION_KEYS for term in ("target", "market")}
     check("every nation's section has target and market", boxes == wanted, sorted(boxes))
+    labels = {key: at.checkbox(key=f"choice:{key}:policy-terms:market").label for key in NATION_KEYS}
+    check("each nation's market box named for its rate (batch 24.5)",
+          labels == {"cdn": "market (CORRA)", "us": "market (fed funds)", "uk": "market (SONIA)", "de": "market (€STR)"}, labels)
     targets = {f"choice:{key}:policy-terms:target" for key in NATION_KEYS}
     check("the target ticked in each, the market not", {key for key in boxes if at.checkbox(key=key).value} == targets)
     check("greyed while the policy rate is off", all(at.checkbox(key=key).disabled for key in boxes))

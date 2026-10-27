@@ -860,6 +860,11 @@ def check_policy_terms(check: Check) -> None:
 
         check("each panel: target and market", all(list(editor(n).boxes) == ["target", "market"] for n in NATION_KEYS),
               {n: list(editor(n).boxes) for n in NATION_KEYS})
+        # The editor keeps its boxes and their widgets in the same order.
+        captions = {n: str(editor(n).widgets[list(editor(n).boxes).index("market")].cget("text")) for n in NATION_KEYS}
+        check("each nation's market box named for its rate (batch 24.5)",
+              captions == {"cdn": "market (CORRA)", "us": "market (fed funds)", "uk": "market (SONIA)", "de": "market (€STR)"},
+              captions)
         check("the target ticked in each", all(ticked(n) == ["target"] for n in NATION_KEYS), {n: ticked(n) for n in NATION_KEYS})
         check("greyed while the policy rate is off", all(not enabled(widget) for n in NATION_KEYS for widget in editor(n).widgets))
         w.tick("policy", True)
