@@ -82,6 +82,8 @@ VALUES = (
     # currencies, per capita, a symbol typed.
     "--top:USD20t", "--top:EUR2t --bottom:EUR50b", "--cdn:top:USD20t", "--us:top:USD20t", "--top:USD5t --bottom:CAD1t",
     "-p --top:GBP100k", "--uk:top:C$3t --ger:bottom:£40b",
+    # The automatic refresh (batch 11.3): on, with its minutes, and greyed (its minutes then left off).
+    "--au", "--au:10", "--au:10 --no-cur", "--au:10 -e:2026-09-01", "--au:15 --no-y --sp", "--au:20 --cdn:y:none",
 )
 
 
@@ -139,6 +141,8 @@ def _drawn(config, key: str):
     """``drawn_config`` for one nation, with each list whose curves are off set aside (it draws nothing either way)."""
     drawn = drawn_config(config, key)
     hidden = {field: None for field, flag in _LISTS.items() if not getattr(drawn, flag)}
+    if drawn.refresh_brings_nothing is not None:
+        hidden["auto_refresh_minutes"] = None  # greyed, its minutes left off the written line (batch 11.3)
     return replace(drawn, **hidden) if hidden else drawn
 
 

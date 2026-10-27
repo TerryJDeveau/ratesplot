@@ -1060,6 +1060,117 @@ def check_projections(check: Check) -> None:
               "--no-projections" in w.command_tokens() and w.written_draws_the_same(("us",)), w.command_tokens())
 
 
+def _wait_until(w: Window, condition: Callable[[], bool], seconds: float = SETTLE_SECONDS) -> bool:
+    """Pump Tk until ``condition`` holds (a worker's message handled), then until the window settles; False if it never held."""
+    began = time.monotonic()
+    while not condition():
+        if time.monotonic() - began > seconds:
+            return False
+        w.root.update()
+        time.sleep(0.05)
+    w.settle()
+    return True
+
+
+def check_auto_refresh(check: Check) -> None:
+    """Batch 11.3 (decision 23): "Automatic refresh", off by default; every few minutes what Refresh does; greyed where it brings nothing new."""
+    # A chart ending today with the quotes on, so a refresh can bring something new: the yields alone, few downloads.
+    with window("-u --yield -s:2026-01-01") as w:
+        app = w.app
+        box, quotes = app.flag_boxes["auto-refresh"], app.flag_boxes["current"]
+        minutes = app.value_entries["auto-refresh-minutes"]
+
+        def block(widget):
+            while widget is not None and widget.winfo_class() != "TLabelframe":
+                widget = widget.master
+            return widget
+
+        check("the box: Automatic refresh, in the quotes' block", str(box.cget("text")) == "Automatic refresh,"
+              and block(box) is block(quotes), box.cget("text"))
+        check("off by default, not greyed; its minutes greyed while it is off", not app.flag_vars["auto-refresh"].get()
+              and enabled(box) and not enabled(minutes))
+        check("no timer while off", app._auto_after_id is None and app._auto_minutes is None)
+        before = drawings(w)
+        w.tick("auto-refresh", True)
+        w.settle()
+        check("ticked: nothing drawn again", drawings(w) == before, drawings(w) - before)
+        check("ticked: its timer runs, every 5 minutes", app._auto_minutes == 5 and app._auto_after_id is not None, app._auto_minutes)
+        check("ticked: its minutes active, 5 in grey", enabled(minutes) and hint(w, "auto-refresh-minutes") == (True, "5"),
+              hint(w, "auto-refresh-minutes"))
+        check("the command line: --auto-refresh", "--auto-refresh" in w.command_tokens(), w.command_tokens())
+        w.typed("auto-refresh-minutes", "10")
+        w.settle()
+        check("10 minutes: the timer at 10, nothing drawn", app._auto_minutes == 10 and drawings(w) == before, app._auto_minutes)
+        # The minutes by the first spelling --help shows, as --reg:TOL is written.
+        check("the command line: --au:10", "--au:10" in w.command_tokens(), w.command_tokens())
+        w.typed("auto-refresh-minutes", "4")
+        w.settle()
+        check("4 minutes: refused, the field red, no timer", app.status.get().startswith("Not drawn")
+              and styles(w, "auto-refresh-minutes")[1] == "Error.TEntry" and app._auto_minutes is None, app.status.get())
+        w.typed("auto-refresh-minutes", "10")
+        w.settle()
+
+        # A tick: what Refresh does when it is due (within market hours, the Ticker stubbed), else the minutes again.
+        app._auto_ticker.due = lambda config, now=None: True
+        app._auto_refresh_tick()
+        drew = _wait_until(w, lambda: drawings(w) == before + 1)
+        log = app.log.get("1.0", "end")
+        check("a tick due: drawn again as Refresh draws", drew and "--- automatic refresh, every 10 minutes" in log and "--- refresh:" in log,
+              drawings(w) - before)
+        check("after it the timer runs again", app._auto_after_id is not None and app._auto_minutes == 10)
+        app._auto_ticker.due = lambda config, now=None: False
+        if app._auto_after_id is not None:  # as when its minutes are up: the timer has fired
+            app.root.after_cancel(app._auto_after_id)
+        app._auto_refresh_tick()
+        check("a tick not due: nothing drawn, the timer again", _wait_until(w, lambda: app._auto_after_id is not None)
+              and drawings(w) == before + 1, drawings(w) - before)
+
+        # Greyed where it can bring nothing new, its tick and minutes kept; the minutes left off the command line.
+        def greyed_now() -> bool:
+            return not enabled(box) and not enabled(minutes)
+
+        w.tick("current", False)
+        w.settle()
+        check("quotes off: greyed, no timer, its tick and text kept", greyed_now() and app._auto_minutes is None
+              and app.flag_vars["auto-refresh"].get() and w.text("auto-refresh-minutes") == "10")
+        command = w.command_tokens()
+        check("greyed: --auto-refresh written, its minutes not", "--auto-refresh" in command and "--au:10" not in command, command)
+        w.tick("current", True)
+        w.settle()
+        check("quotes on again: active, every 10 minutes", not greyed_now() and app._auto_minutes == 10)
+        w.typed("end", "2026-09-01")
+        w.settle()
+        check("an End before today: greyed", greyed_now() and app._auto_minutes is None)
+        w.typed("auto-refresh-minutes", "x")
+        w.settle()
+        check("greyed: a bad text in its minutes stops nothing", app.status.get().startswith("Drawn"), app.status.get())
+        w.typed("auto-refresh-minutes", "10")
+        w.typed("end", "")
+        w.settle()
+        check("End blank (today) again: active", not greyed_now() and app._auto_minutes == 10)
+        w.tick("debt", True)
+        w.tick("yield", False)
+        w.settle()
+        check("no yield shown (debt alone): greyed", greyed_now())
+        w.tick("spreads", True)
+        w.settle()
+        check("a spread shown, which runs on to the quotes: active", not greyed_now() and app._auto_minutes == 10)
+        w.tick("spreads", False)
+        w.tick("yield", True)
+        w.tick("debt", False)
+        w.settle()
+
+        # Remembered as it stands, as the hover read-out's box is: its change draws nothing.
+        app._remember()
+        state, _note, _path = frontend.load_state()
+        check("remembered: ticked, every 10 minutes", state.get("flags", {}).get("auto-refresh") is True
+              and state.get("payloads", {}).get("auto-refresh-minutes") == "10", (state.get("flags", {}).get("auto-refresh"),
+              state.get("payloads", {}).get("auto-refresh-minutes")))
+        w.tick("auto-refresh", False)
+        w.settle()
+        check("unticked: no timer, its minutes greyed", app._auto_after_id is None and app._auto_minutes is None and not enabled(minutes))
+
+
 def _made_up_chart():
     """A small chart with known lines, marked as plotting marks its own, for the read-out's rules (``hover``).
 
@@ -1468,6 +1579,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "levels": check_levels,
     "limits": check_limits,
     "projections": check_projections,
+    "auto_refresh": check_auto_refresh,
     "hover": check_hover,
     "not_drawn": check_not_drawn,
     "settings_files": check_settings_files,

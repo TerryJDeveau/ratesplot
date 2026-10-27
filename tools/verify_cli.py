@@ -245,6 +245,13 @@ CASES: list[list[str]] = [
     # Batch 11.2 (decisions 21 and 68): --hover, on by default, at least "ho" ("--h" is argparse's --help).
     ["--ho"], ["--hov"], ["--hover"], ["--HOVER"], ["--no-ho"], ["--no-hover"], ["--No-Hover"], ["--h"], ["--hover:1"],
     ["hover"], ["--no-hover", "--hover"], ["--hover", "--no-hover"], ["--no-hover", "--no-gui", "-u"], ["--no-hover", "--save:r.png"],
+    # Batch 11.3 (decision 23): --auto-refresh[:MIN], off by default, at least "au"; 5 minutes without a value, never
+    # fewer, at most a day; the minutes turn it on unless --no-au is given; "--a" is no spelling of it.
+    ["--au"], ["--aut"], ["--auto"], ["--auto-refresh"], ["--autorefresh"], ["--AUTO-REFRESH"], ["--no-au"],
+    ["--no-auto-refresh"], ["--a"], ["auto"], ["--au:5"], ["--au:10"], ["--auto-refresh:15"], ["--au:1440"], ["--au:4"],
+    ["--au:0"], ["--au:1441"], ["--au:-5"], ["--au:2.5"], ["--au:x"], ["--au:"], ["--au:10m"], ["--au:10", "--no-au"],
+    ["--no-au", "--au:10"], ["--au", "--au:20"], ["--au:20", "--au"], ["--au", "--save:r.png"], ["--au:30", "--no-gui", "-u"],
+    ["--au", "--no-cur"], ["--au", "--no-yields"], ["--au", "--no-yields", "--sp"], ["--au", "-e:2020-01-01"],
 ]
 
 

@@ -54,6 +54,7 @@ import logging
 import re
 import sys
 import zlib
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
@@ -77,7 +78,7 @@ from streamlit.runtime.media_file_manager import MediaFileManager  # noqa: E402
 from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
-from ratesplot import hover, http, web  # noqa: E402
+from ratesplot import cli, hover, http, web  # noqa: E402
 from ratesplot.cli import sort_tokens  # noqa: E402
 from ratesplot.config import NATIONS  # noqa: E402
 from ratesplot.frontend import move_dates_updates, starting_choices  # noqa: E402
@@ -797,7 +798,10 @@ def check_layout(check: Check) -> None:
     ]
     check("the titled blocks in order", titles[: len(wanted)] == wanted, titles)
     order = [box.key.split(":", 1)[1] for box in at.checkbox if box.key and box.key.startswith("flag:")]
-    wanted = ["relative", "per-capita", "regression", "yield", "spreads", "policy", "mortgages", "label", "current", "projections", "hover"]
+    wanted = [
+        "relative", "per-capita", "regression", "yield", "spreads", "policy", "mortgages", "label", "current", "auto-refresh",
+        "projections", "hover",
+    ]
     keys = [box.key for box in at.checkbox if box.key]
     # By level left the column for each nation's section in batch 10.5.
     check(
@@ -1264,11 +1268,110 @@ def check_batch112(check: Check) -> None:
           and all(chart_bytes(page, key) == page.session_state["drawing"].pngs[key] for key in ("cdn", "us")))
 
 
+class _Rerun(Exception):
+    """``st.rerun`` stood in for: the fragment's run ends there, as Streamlit ends it."""
+
+
+class _StandIn:
+    """What ``web._auto_refresh_tick`` uses of Streamlit, stood in for: AppTest runs no fragment's timer."""
+
+    def __init__(self, state: dict) -> None:
+        self.session_state = state
+        self.captions: list[str] = []
+        self.reruns: list[str] = []
+
+    def caption(self, text: str) -> None:
+        self.captions.append(text)
+
+    def rerun(self, scope: str = "app") -> None:
+        self.reruns.append(scope)
+        raise _Rerun
+
+
+def check_batch113(check: Check) -> None:
+    """Batch 11.3 (decision 23): the "Automatic refresh" box and its minutes; greyed where it brings nothing new; the fragment's ticks."""
+    # A chart ending today with the quotes on, so a refresh can bring something new: the U.S. yields alone.
+    at = new_page("-u --yield -s:2026-06-01")
+    check("no exception", not at.exception, at.exception)
+    box, minutes = at.checkbox(key="flag:auto-refresh"), at.text_input(key="value:auto-refresh-minutes")
+    check("a box Automatic refresh, unticked, not greyed", box.label == "Automatic refresh" and not box.value and not box.disabled,
+          (box.label, box.value, box.disabled))
+    check("its minutes, greyed while unticked, 5 in grey", minutes.label == "interval, minutes" and minutes.disabled
+          and minutes.placeholder == "5", (minutes.label, minutes.disabled, minutes.placeholder))
+
+    def note() -> list[str]:
+        return [caption.value for caption in at.caption if caption.value.startswith("Refreshed automatically")]
+
+    check("unticked: no refresh under the charts", not note())
+    finished = at.session_state["drawing"].finished
+    at.checkbox(key="flag:auto-refresh").check().run()
+    check("ticked: nothing drawn again", at.session_state["drawing"].finished == finished)
+    check("ticked: --auto-refresh in the address", "--auto-refresh" in address(at), address(at))
+    check("ticked: every 5 minutes, said under the charts", note() and "every 5 minutes" in note()[0], note())
+    check("ticked: its minutes active", not at.text_input(key="value:auto-refresh-minutes").disabled)
+    at.text_input(key="value:auto-refresh-minutes").input("10").run()
+    check("10: --au:10 in the address, every 10 minutes, nothing drawn", "--au:10" in address(at)
+          and note() and "every 10 minutes" in note()[0] and at.session_state["drawing"].finished == finished, address(at))
+    at.text_input(key="value:auto-refresh-minutes").input("4").run()
+    check("4: refused, its label red", any("Not drawn" in error.value for error in at.error)
+          and at.text_input(key="value:auto-refresh-minutes").label.startswith(":red["), [error.value for error in at.error])
+    at.text_input(key="value:auto-refresh-minutes").input("10").run()
+
+    at.checkbox(key="flag:current").uncheck().run()
+    box, minutes = at.checkbox(key="flag:auto-refresh"), at.text_input(key="value:auto-refresh-minutes")
+    check("the quotes off: both greyed, the tick and text kept", box.disabled and minutes.disabled and box.value and minutes.value == "10")
+    check("greyed: --auto-refresh in the address, its minutes not, no refresh", "--auto-refresh" in address(at)
+          and "--au:10" not in address(at) and not note(), address(at))
+    at.checkbox(key="flag:current").check().run()
+    check("the quotes on again: active", not at.checkbox(key="flag:auto-refresh").disabled and note())
+    page = new_page("-u --yield -s:2026-01-01 --e:2026-09-01 --au:10")
+    check("from an address with an End before today: ticked, greyed", page.checkbox(key="flag:auto-refresh").value
+          and page.checkbox(key="flag:auto-refresh").disabled and page.text_input(key="value:auto-refresh-minutes").value == "10")
+
+    # The fragment's own runs, with Streamlit stood in for: AppTest runs no timer.
+    original, original_ticker = web.st, web.Ticker
+    state = {"auto_laid_out": True}
+    stand_in = web.st = _StandIn(state)
+    try:
+        today = cli.parse_args(["--no-gui", "-u", "--au:10"])
+
+        class Ticker:
+            answer = True
+
+            def due(self, _config, now=None):
+                return Ticker.answer
+
+        state["auto_ticker"] = Ticker()
+        web._auto_refresh_tick(today)
+        check("laid out with the page: says how often, nothing else", stand_in.captions and "every 10 minutes" in stand_in.captions[0]
+              and not stand_in.reruns and "force_redraw" not in state, stand_in.captions)
+        state["auto_laid_out"] = False
+        try:
+            web._auto_refresh_tick(today)
+        except _Rerun:
+            pass
+        check("its own run, due: a drawing forced, the whole page run again", state.get("force_redraw") is True
+              and stand_in.reruns == ["app"], (state.get("force_redraw"), stand_in.reruns))
+        state.pop("force_redraw")
+        Ticker.answer = False
+        web._auto_refresh_tick(today)
+        check("its own run, not due: nothing drawn, said", stand_in.reruns == ["app"] and "force_redraw" not in state
+              and "no quote has changed" in stand_in.captions[-1], stand_in.captions[-1])
+        try:
+            web._auto_refresh_tick(replace(today, end=pd.Timestamp("2020-01-02")))
+        except _Rerun:
+            pass
+        check("the day changed (a blank End): the whole page run again, nothing forced", stand_in.reruns == ["app", "app"]
+              and "force_redraw" not in state, stand_in.reruns)
+    finally:
+        web.st, web.Ticker = original, original_ticker
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
-    check_batch18, check_batch11, check_batch112,
+    check_batch18, check_batch11, check_batch112, check_batch113,
 )
 
 
