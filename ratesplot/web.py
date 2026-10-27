@@ -473,22 +473,26 @@ function whenText(lines, curve, run, found) {
   return day;
 }
 
+// Every line within reach, the nearest first, each curve (by its name) once (hover.ChartLines.reading, batch 11.6).
 function reading(lines, x, y, reach) {
   const [left, top, right, bottom] = lines.box;
   if (!(left - reach <= x && x <= right + reach && top - reach <= y && y <= bottom + reach)) return null;
-  let best = null;
-  for (const curve of lines.curves) {
+  const best = new Map();
+  lines.curves.forEach((curve, order) => {
     for (const run of curve.runs) {
       const found = curve.steps ? nearestSteps(run, x, y, reach, lines.box) : nearestLine(run, x, y, reach, lines.box);
-      if (found !== null && (best === null || found.distance < best.found.distance)) best = { found, curve, run };
+      const kept = best.get(curve.name);
+      if (found !== null && (kept === undefined || found.distance < kept.found.distance)) {
+        best.set(curve.name, { found, order: kept === undefined ? order : kept.order, curve, run });
+      }
     }
-  }
-  if (best === null) return null;
-  const { found, curve, run } = best;
-  return {
+  });
+  if (best.size === 0) return null;
+  const ranked = [...best.values()].sort((a, b) => a.found.distance - b.found.distance || a.order - b.order);
+  return ranked.map(({ found, curve, run }) => ({
     name: curve.name, color: curve.color, value: curve.texts[run.t[found.index]],
     when: whenText(lines, curve, run, found), x: found.x, y: found.y,
-  };
+  }));
 }
 
 // When the read-out shows, follows the pointer and goes (hover.Controller).
@@ -532,12 +536,12 @@ export default function (component) {
   const frame = document.createElement("div");
   frame.className = "chart";
   frame.innerHTML = '<img alt="Chart" draggable="false"><div class="band"></div>'
-    + '<div class="ring"></div><div class="readout"><div></div><div></div></div>';
+    + '<div class="readout"></div>';
   parentElement.appendChild(frame);
   const img = frame.querySelector("img");
   const band = frame.querySelector(".band");
-  const ring = frame.querySelector(".ring");
   const readout = frame.querySelector(".readout");
+  const rings = [];  // one for each line read, made as needed
 
   const pngEnd = pngLength(data);
   const header = new DataView(data.buffer, data.byteOffset, 24);  // PNG: IHDR width, height at 16, 20
@@ -552,22 +556,42 @@ export default function (component) {
   if (pngEnd < data.byteLength) {
     readLines(data.subarray(pngEnd)).then((read) => { lines = read; }).catch(() => {});
   }
-  const show = (found, x, y) => {
+  // Each line read: its name in its colour, its value and date under it; a ring on its point. Bordered in the nearest's colour.
+  const show = (readings, x, y) => {
     const rect = img.getBoundingClientRect();
     const scale = rect.width / imageWidth;  // screen pixels per image pixel
-    ring.style.left = found.x * scale + "px";
-    ring.style.top = found.y * scale + "px";
-    ring.style.borderColor = found.color;
-    readout.children[0].textContent = found.name;
-    readout.children[1].textContent = found.value + "  " + found.when;
-    readout.style.borderColor = found.color;
-    ring.style.display = readout.style.display = "block";
+    while (rings.length < readings.length) {
+      const ring = document.createElement("div");
+      ring.className = "ring";
+      frame.insertBefore(ring, readout);
+      rings.push(ring);
+    }
+    rings.forEach((ring, index) => {
+      const one = readings[index];
+      ring.style.display = one === undefined ? "none" : "block";
+      if (one === undefined) return;
+      ring.style.left = one.x * scale + "px";
+      ring.style.top = one.y * scale + "px";
+      ring.style.borderColor = one.color;
+    });
+    readout.replaceChildren(...readings.flatMap((one) => {
+      const name = document.createElement("div"), value = document.createElement("div");
+      name.textContent = one.name;
+      name.style.color = one.color;
+      value.textContent = one.value + "  " + one.when;
+      return [name, value];
+    }));
+    readout.style.borderColor = readings[0].color;
+    readout.style.display = "block";
     // Right of the pointer and below it, turned back where that would leave the picture.
     const width = readout.offsetWidth, height = readout.offsetHeight;
     readout.style.left = (x + OFFSET_PX + width <= rect.width ? x + OFFSET_PX : Math.max(x - OFFSET_PX - width, 0)) + "px";
     readout.style.top = (y + OFFSET_PX + height <= rect.height ? y + OFFSET_PX : Math.max(y - OFFSET_PX - height, 0)) + "px";
   };
-  const hide = () => { ring.style.display = readout.style.display = "none"; };
+  const hide = () => {
+    for (const ring of rings) ring.style.display = "none";
+    readout.style.display = "none";
+  };
   const controller = new Controller(show, hide);
 
   let start = null;

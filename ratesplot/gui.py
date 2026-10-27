@@ -2112,31 +2112,45 @@ class RatesPlotApp:
         self._hover_key = key
         self.hover.moved(reading, canvas.canvasx(event.x), canvas.canvasy(event.y))
 
-    def _show_reading(self, reading: hover.Reading, x: float, y: float) -> None:
-        """Show ``reading`` by the pointer at canvas point (x, y): right of it and below, kept inside the tab's view."""
+    def _show_reading(self, reading: hover.Readings, x: float, y: float) -> None:
+        """Show ``reading`` by the pointer at canvas point (x, y): right of it and below, kept inside the tab's view.
+
+        Every line read, the nearest first (batch 11.6): its name in its own
+        colour, its value and date under it, and a ring on its point; the box
+        bordered in the nearest line's colour.
+        """
         key = self._hover_key
         if key is None or key not in self.placement:
             return
         canvas = self.canvases[key]
         canvas.delete(_HOVER_TAG)
         scale, left, top = self.placement[key]
-        ring_x, ring_y = left + reading.x * scale, top + reading.y * scale
-        canvas.create_oval(ring_x - 5, ring_y - 5, ring_x + 5, ring_y + 5, outline=reading.color, width=2, tags=_HOVER_TAG)
-        text = canvas.create_text(
-            0, 0, text="\n".join(reading.lines), anchor="nw", font="TkDefaultFont", fill=hover.BOX_TEXT, tags=_HOVER_TAG
-        )
-        x0, y0, x1, y1 = canvas.bbox(text)
-        width, height = x1 - x0 + 2 * _HOVER_PAD_PX, y1 - y0 + 2 * _HOVER_PAD_PX
+        texts: list[int] = []
+        for one in reading.each:
+            ring_x, ring_y = left + one.x * scale, top + one.y * scale
+            canvas.create_oval(ring_x - 5, ring_y - 5, ring_x + 5, ring_y + 5, outline=one.color, width=2, tags=_HOVER_TAG)
+            for text, color in zip(one.lines, (one.color, hover.BOX_TEXT)):
+                texts.append(canvas.create_text(0, 0, text=text, anchor="nw", font="TkDefaultFont", fill=color, tags=_HOVER_TAG))
+        sizes = [canvas.bbox(text) for text in texts]
+        width = max(x1 - x0 for x0, _y0, x1, _y1 in sizes) + 2 * _HOVER_PAD_PX
+        height = sum(y1 - y0 for _x0, y0, _x1, y1 in sizes) + 2 * _HOVER_PAD_PX
         view_left, view_top = canvas.canvasx(0), canvas.canvasy(0)
         view_right, view_bottom = view_left + canvas.winfo_width(), view_top + canvas.winfo_height()
         offset = hover.OFFSET_PX
         box_x = x + offset if x + offset + width <= view_right else max(x - offset - width, view_left)
         box_y = y + offset if y + offset + height <= view_bottom else max(y - offset - height, view_top)
-        canvas.coords(text, box_x + _HOVER_PAD_PX, box_y + _HOVER_PAD_PX)
+        line_y = box_y + _HOVER_PAD_PX
+        for text, (_x0, y0, _x1, y1) in zip(texts, sizes):
+            canvas.coords(text, box_x + _HOVER_PAD_PX, line_y)
+            line_y += y1 - y0
         box = canvas.create_rectangle(
             box_x, box_y, box_x + width, box_y + height, fill=hover.BOX_FACE, outline=reading.color, width=1.5, tags=_HOVER_TAG
         )
-        canvas.tag_raise(text, box)
+        # Each text just above the one before it, the first just above the box: stacked in the reading's order.
+        above = box
+        for text in texts:
+            canvas.tag_raise(text, above)
+            above = text
 
     def _hide_reading(self) -> None:
         for canvas in self.canvases.values():

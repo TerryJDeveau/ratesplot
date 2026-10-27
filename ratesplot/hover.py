@@ -7,9 +7,11 @@ every line for a while. The plan's rules: shown after 0.5 s
 (``SHOW_DELAY_MS``), hidden 2 s after the pointer has left every line
 (``HIDE_DELAY_MS``), the pointer caught within 3 screen pixels of a line in
 any direction (``REACH_PX``: a preview is usually shrunk, and the risers of
-a step curve escape an up-or-down test), the nearer line winning; on a step
-curve, the value in force on the date under the pointer and the date of its
-observation. On by default, with a box and a switch of its own (decision
+a step curve escape an up-or-down test); on a step curve, the value in force
+on the date under the pointer and the date of its observation. Every line
+within reach is read, the nearest first, in the one box (batch 11.6, Terry,
+2026-10-27: lines crossing there "combined into one pop-up pane"; until
+then the nearer line won). On by default, with a box and a switch of its own (decision
 68, 2026-10-26: "a tick-box to turn off the hover read-out ..., as some
 people won't like it"), ``--hover`` / ``--no-hover``. It draws nothing on
 the chart: the PNG is the same with it on or off.
@@ -21,8 +23,8 @@ What is shared here, without a GUI toolkit:
   read-out writes it. ``plotting`` marks each line with how its values are
   written (``mark``), as it marks each for Export chart; the time of an
   intraday quote is marked on the figure (``mark_quote``);
-* ``ChartLines.reading``: the line nearest a point of the picture and what it
-  says there. The window (``gui``) and the plain matplotlib windows
+* ``ChartLines.reading``: the lines within reach of a point of the picture
+  and what each says there (``Readings``). The window (``gui``) and the plain matplotlib windows
   (``attach``) ask it; the web page's browser asks the same of the same data
   (``payload``) in its own script (``web._CHART_JS``), which follows the rules
   of ``_nearest_line`` and ``_nearest_steps`` line for line;
@@ -63,6 +65,8 @@ import pandas as pd
 from matplotlib.colors import to_hex
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
+from matplotlib.patches import FancyBboxPatch
+from matplotlib.text import Text
 from matplotlib.transforms import IdentityTransform
 
 from .export import series_of
@@ -146,7 +150,7 @@ class Curve:
 
 @dataclass(frozen=True)
 class Reading:
-    """What the read-out says: the line's name, colour, value and date, and the point read, in image pixels."""
+    """What the read-out says of one line: its name, colour, value and date, and the point read, in image pixels."""
 
     name: str
     color: str
@@ -157,8 +161,31 @@ class Reading:
 
     @property
     def lines(self) -> tuple[str, str]:
-        """The read-out's two lines: "10-Year Yield", "4.12%  2026-10-27"."""
+        """The line's two lines in the read-out: "10-Year Yield", "4.12%  2026-10-27"."""
         return self.name, f"{self.value}  {self.when}"
+
+
+@dataclass(frozen=True)
+class Readings:
+    """What the read-out says where the pointer rests: every line within reach, the nearest first (batch 11.6).
+
+    Terry, 2026-10-27: lines that cross within 3 pixels of the pointer are
+    "combined into one pop-up pane". One reading per curve (its legend name),
+    so a curve drawn in pieces (a projection from its last observation,
+    Canada's monthly yields then its daily ones) reads once where its pieces
+    meet. The box is bordered in the nearest line's colour.
+    """
+
+    each: tuple[Reading, ...]
+
+    @property
+    def color(self) -> str:
+        return self.each[0].color
+
+    @property
+    def lines(self) -> tuple[str, ...]:
+        """Every line's two lines, the nearest first."""
+        return tuple(text for reading in self.each for text in reading.lines)
 
 
 @dataclass(frozen=True)
@@ -261,26 +288,32 @@ class ChartLines:
     # The date axis: image x = days_to_x[0] + day * days_to_x[1] (every point is on a whole day, ``payload``).
     days_to_x: tuple[float, float] = (0.0, 0.0)
 
-    def reading(self, x: float, y: float, reach: float) -> Reading | None:
-        """What the line nearest image point (x, y), within ``reach`` image pixels, says there; None if no line is that near.
+    def reading(self, x: float, y: float, reach: float) -> Readings | None:
+        """What every line within ``reach`` image pixels of image point (x, y) says there, the nearest first; None if none is that near.
 
-        Of equally near lines the first drawn wins (a projection's first day
-        is its observation's last, which then reads as the observation).
+        Each curve (by its legend name) once, at the point of its pieces
+        nearest the pointer; of equally near pieces the first drawn (a
+        projection's first day is its observation's last, which then reads
+        as the observation). Equally near curves: the first drawn first.
         """
         left, top, right, bottom = self.box
         if not (left - reach <= x <= right + reach and top - reach <= y <= bottom + reach):
             return None
-        best: tuple[_Found, Curve, Run] | None = None
-        for curve in self.curves:
+        best: dict[str, tuple[_Found, int, Curve, Run]] = {}
+        for order, curve in enumerate(self.curves):
             nearest = _nearest_steps if curve.steps else _nearest_line
             for run in curve.runs:
                 found = nearest(run, x, y, reach, self.box)
-                if found is not None and (best is None or found.distance < best[0].distance):
-                    best = (found, curve, run)
-        if best is None:
+                kept = best.get(curve.name)
+                if found is not None and (kept is None or found.distance < kept[0].distance):
+                    best[curve.name] = (found, kept[1] if kept is not None else order, curve, run)
+        if not best:
             return None
-        found, curve, run = best
-        return Reading(curve.name, curve.color, curve.texts[int(run.text[found.index])], self._when(curve, run, found), found.x, found.y)
+        ranked = sorted(best.values(), key=lambda item: (item[0].distance, item[1]))
+        return Readings(tuple(
+            Reading(curve.name, curve.color, curve.texts[int(run.text[found.index])], self._when(curve, run, found), found.x, found.y)
+            for found, _order, curve, run in ranked
+        ))
 
     def _when(self, curve: Curve, run: Run, found: _Found) -> str:
         day = date_text(found.day)
@@ -452,17 +485,17 @@ class Controller:
         self,
         schedule: Callable[[int, Callable[[], None]], object],
         cancel: Callable[[object], None],
-        show: Callable[[Reading, float, float], None],
+        show: Callable[[Readings, float, float], None],
         hide: Callable[[], None],
     ) -> None:
         self._schedule, self._cancel, self._show, self._hide = schedule, cancel, show, hide
         self.shown = False
-        self._waiting: tuple[Reading, float, float] | None = None
+        self._waiting: tuple[Readings, float, float] | None = None
         self._show_timer: object | None = None
         self._hide_timer: object | None = None
 
-    def moved(self, reading: Reading | None, x: float, y: float) -> None:
-        """The pointer is at (x, y), on the line ``reading`` reads, or on none."""
+    def moved(self, reading: Readings | None, x: float, y: float) -> None:
+        """The pointer is at (x, y), on the lines ``reading`` reads, or on none."""
         if reading is None:
             self._waiting = None
             self._stop_timer("_show_timer")
@@ -509,15 +542,19 @@ class Controller:
 # The plain matplotlib windows (--no-gui)
 # ---------------------------------------------------------------------------
 
-# The read-out's look, here and in the window: a pale box with a border in the line's colour.
+# The read-out's look, here, in the window and on the page: a pale box bordered in the nearest line's colour, each
+# line's name in its own colour and its value and date in this dark grey (batch 11.6).
 BOX_FACE = "#fffff4"
 BOX_TEXT = "#202020"
 # Its corner, from the pointer (screen pixels): right of it and below, as a tooltip.
 OFFSET_PX = 16
+# A plain window's box: its margin inside the border, and the gap between its lines (screen pixels).
+_BOX_PAD_PX = 5
+_LINE_GAP_PX = 1
 
 
 class _PlainWindow:
-    """The read-out in one plain matplotlib window: its mouse events, its timers, a text and a ring drawn over the chart.
+    """The read-out in one plain matplotlib window: its mouse events, its timers, a box of texts and a ring per line drawn over the chart.
 
     The lines are read again after every full drawing of the window (a
     resize, the toolbar's zoom), since the picture moves with them. The
@@ -530,16 +567,14 @@ class _PlainWindow:
         self.canvas = figure.canvas
         self.lines: ChartLines | None = None
         self.background = None
-        identity = IdentityTransform()
-        self.text = figure.text(
-            0, 0, "", transform=identity, fontsize=9, color=BOX_TEXT, visible=False, animated=True, zorder=10,
-            bbox={"boxstyle": "round,pad=0.4", "facecolor": BOX_FACE, "edgecolor": "#808080", "linewidth": 1.2},
+        # The box, and as many texts (two to a line read) and rings (one to a line) as the most lines read yet (batch 11.6).
+        self.box = FancyBboxPatch(
+            (0, 0), 1, 1, boxstyle="round,pad=0", transform=IdentityTransform(), facecolor=BOX_FACE, edgecolor="#808080",
+            linewidth=1.2, visible=False, animated=True, zorder=10,
         )
-        self.ring = Line2D(
-            [0], [0], transform=identity, marker="o", markersize=9, markerfacecolor="none", markeredgewidth=1.6,
-            linestyle="none", visible=False, animated=True, zorder=10,
-        )
-        figure.add_artist(self.ring)
+        figure.add_artist(self.box)
+        self.texts: list[Text] = []
+        self.rings: list[Line2D] = []
         self.controller = Controller(self._start_timer, lambda timer: timer.stop(), self._show, self._hide)
         self.connections = [
             self.canvas.mpl_connect("draw_event", self._drawn),
@@ -576,27 +611,60 @@ class _PlainWindow:
         reading = self.lines.reading(event.x, height - event.y, REACH_PX) if self.lines is not None else None
         self.controller.moved(reading, event.x, event.y)
 
-    def _show(self, reading: Reading, x: float, y: float) -> None:
+    def _pooled(self, count: int) -> tuple[list[Text], list[Line2D]]:
+        """Two texts and a ring for each of ``count`` lines read, made as needed; the rest hidden."""
+        identity = IdentityTransform()
+        while len(self.rings) < count:
+            for _ in range(2):
+                self.texts.append(self.figure.text(
+                    0, 0, "", transform=identity, fontsize=9, va="bottom", visible=False, animated=True, zorder=11,
+                ))
+            ring = Line2D(
+                [0], [0], transform=identity, marker="o", markersize=9, markerfacecolor="none", markeredgewidth=1.6,
+                linestyle="none", visible=False, animated=True, zorder=10,
+            )
+            self.figure.add_artist(ring)
+            self.rings.append(ring)
+        for artist in (*self.texts[2 * count:], *self.rings[count:]):
+            artist.set_visible(False)
+        return self.texts[:2 * count], self.rings[:count]
+
+    def _show(self, reading: Readings, x: float, y: float) -> None:
         height = self.figure.bbox.height
-        self.text.set_text("\n".join(reading.lines))
-        self.text.get_bbox_patch().set_edgecolor(reading.color)
-        self.ring.set_data([reading.x], [height - reading.y])
-        self.ring.set_markeredgecolor(reading.color)
-        # Right of the pointer and below it, turned back where that would leave the figure.
+        texts, rings = self._pooled(len(reading.each))
+        for index, one in enumerate(reading.each):
+            name, value = texts[2 * index], texts[2 * index + 1]
+            name.set_text(one.name)
+            name.set_color(one.color)
+            value.set_text(f"{one.value}  {one.when}")
+            value.set_color(BOX_TEXT)
+            rings[index].set_data([one.x], [height - one.y])
+            rings[index].set_markeredgecolor(one.color)
+        # Each text a line of the box, the nearest line's name at the top. Measured shown: matplotlib measures a hidden
+        # text as a box of one pixel (animated, a shown text is still drawn only by ``_blit``).
         renderer = self.canvas.get_renderer()
-        self.text.set_position((0, 0))
-        size = self.text.get_window_extent(renderer)
-        width, tall = size.width, size.height
+        for text in texts:
+            text.set_position((0, 0))
+            text.set_visible(True)
+        sizes = [text.get_window_extent(renderer) for text in texts]
+        step = max(size.height for size in sizes) + _LINE_GAP_PX
+        width = max(size.width for size in sizes) + 2 * _BOX_PAD_PX
+        tall = step * len(texts) - _LINE_GAP_PX + 2 * _BOX_PAD_PX
+        # Right of the pointer and below it, turned back where that would leave the figure.
         left = x + OFFSET_PX if x + OFFSET_PX + width <= self.figure.bbox.width else x - OFFSET_PX - width
         bottom = y - OFFSET_PX - tall if y - OFFSET_PX - tall >= 0 else y + OFFSET_PX
-        self.text.set_position((max(left, 0), max(bottom, 0)))
-        self.text.set_visible(True)
-        self.ring.set_visible(True)
+        left, bottom = max(left, 0), max(bottom, 0)
+        for index, text in enumerate(texts):
+            text.set_position((left + _BOX_PAD_PX, bottom + tall - _BOX_PAD_PX - (index + 1) * step + _LINE_GAP_PX))
+        self.box.set_bounds(left, bottom, width, tall)
+        self.box.set_edgecolor(reading.color)
+        for artist in (self.box, *texts, *rings):
+            artist.set_visible(True)
         self._blit()
 
     def _hide(self) -> None:
-        self.text.set_visible(False)
-        self.ring.set_visible(False)
+        for artist in (self.box, *self.texts, *self.rings):
+            artist.set_visible(False)
         self._blit()
 
     def _blit(self) -> None:
@@ -604,7 +672,7 @@ class _PlainWindow:
             self.canvas.draw_idle()
             return
         self.canvas.restore_region(self.background)
-        for artist in (self.ring, self.text):
+        for artist in (*self.rings, self.box, *self.texts):
             if artist.get_visible():
                 self.figure.draw_artist(artist)
         self.canvas.blit(self.figure.bbox)
