@@ -231,6 +231,11 @@ CASES: list[list[str]] = [
     ["--top:EUR2T", "--bottom:EUR100b"], ["--top:$20t"], ["--top:USD150%"], ["--top:USD20t", "-r"], ["--top:XYZ5t"],
     ["--top:USD5t", "--bottom:USD10t"], ["--top:USD5t", "--bottom:CAD10t"], ["--us:top:USD20t"], ["--cdn:top:USD20t"],
     ["--uk:bottom:CAD1t", "--uk:top:3t"], ["--top:USD60k", "-p"], ["--na:ca,us,gb,de", "--top:GBP10t"],
+    # Batch 11 (decisions 68 and 72): --projections, on by default, a switch of its own with no connection to --cur;
+    # at least "pro", since "--pr" is --prime:MARGIN.
+    ["--pro"], ["--proj"], ["--projections"], ["--PROJECTIONS"], ["--no-pro"], ["--no-projections"], ["--No-Proj"],
+    ["--pr"], ["--pro:1"], ["projections"], ["--no-cur", "--no-pro"], ["--no-cur", "--pro"], ["--no-pro", "--cur"],
+    ["--no-pro", "--pro"], ["--no-pro", "-l", "-u"],
 ]
 
 

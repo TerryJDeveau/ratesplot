@@ -763,7 +763,7 @@ def check_layout(check: Check) -> None:
     ]
     check("the titled blocks in order", titles[: len(wanted)] == wanted, titles)
     order = [box.key.split(":", 1)[1] for box in at.checkbox if box.key and box.key.startswith("flag:")]
-    wanted = ["relative", "per-capita", "regression", "yield", "spreads", "policy", "mortgages", "label", "current"]
+    wanted = ["relative", "per-capita", "regression", "yield", "spreads", "policy", "mortgages", "label", "current", "projections"]
     keys = [box.key for box in at.checkbox if box.key]
     # By level left the column for each nation's section in batch 10.5.
     check(

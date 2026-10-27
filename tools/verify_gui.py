@@ -22,8 +22,10 @@ program is imported, so the settings a person's own window remembers are
 never read or written. Downloads come from the regression tool's disk cache
 (``--cache``, default ``out/download_cache``, shared with
 ``tools/regress_charts.py``) and every case pins its end (``--e:2026-09-01``),
-so nothing is fetched live once the cache is warm; ``--synthetic`` draws from
-made-up data instead (``tools/synthetic_sources.py``). Needs Tk and a display:
+so nothing is fetched live once the cache is warm, but for the ``projections``
+group, whose chart must end today for anything to be projected (it draws with
+``--no-cur``, so no quote of the moment can make two drawings differ);
+``--synthetic`` draws from made-up data instead (``tools/synthetic_sources.py``). Needs Tk and a display:
 Windows has both; on Linux, ``xvfb-run``.
 
 The groups grew from the scripts that tested the window in batches 5 to 18
@@ -898,6 +900,48 @@ def check_limits(check: Check) -> None:
                   w.app.flag_vars["all-max"].get() == wanted)
 
 
+def check_projections(check: Check) -> None:
+    """Batch 11 (decisions 68 and 72): "Projections to today", on by default, a box and a switch with no connection to the quotes'."""
+    # A chart ending today, so the projection applies; --no-cur, so no quote of the moment makes two drawings differ.
+    with window("-u --no-cur -s:2020") as w:
+        app = w.app
+        box, quotes = app.flag_boxes["projections"], app.flag_boxes["current"]
+
+        def block(widget):
+            """The control column's block a control sits in (each row of a block is a frame of its own)."""
+            while widget is not None and widget.winfo_class() != "TLabelframe":
+                widget = widget.master
+            return widget
+
+        check("the box: Projections to today, in the quotes' block", str(box.cget("text")) == "Projections to today"
+              and block(box) is not None and block(box) is block(quotes), (box.cget("text"), str(block(box)), str(block(quotes))))
+        check("ticked by default", app.flag_vars["projections"].get())
+        log = app.log.get("1.0", "end")
+        check("--no-cur: the curves still projected to today", "Projecting to" in log and "(--projections)" in log,
+              [line for line in log.splitlines() if "Projecting" in line])
+        check("the command line: --no-current alone", "--no-current" in w.command_tokens() and "--no-projections" not in w.command_tokens(),
+              w.command_tokens())
+        first = app.pngs["us"]
+        start = app.log.index("end-1c")
+        w.tick("projections", False)
+        w.settle()
+        check("unticked: --no-projections written", "--no-projections" in w.command_tokens(), w.command_tokens())
+        check("unticked: nothing projected, the chart changed", "Projecting to" not in app.log.get(start, "end") and app.pngs["us"] != first)
+        check("unticked: the written line draws the same", w.written_draws_the_same(("us",)), w.command_tokens())
+        w.tick("projections", True)
+        w.settle()
+        check("ticked again: the first chart, byte for byte", app.pngs["us"] == first)
+        # No right-axis curve: nothing to project, so greyed (batch 5's rule), its tick kept, on the command line as
+        # a greyed --regression's is (a greyed field's text is what is left out).
+        w.tick("projections", False)
+        for name in ("debt", "gdp", "interest"):
+            w.tick(name, False)
+        w.settle()
+        check("no right-axis curve: the box greyed, its tick kept off", not enabled(box) and not app.flag_vars["projections"].get())
+        check("greyed: --no-projections kept on the command line, which draws the same",
+              "--no-projections" in w.command_tokens() and w.written_draws_the_same(("us",)), w.command_tokens())
+
+
 def check_not_drawn(check: Check) -> None:
     """Batch 19.4: a chart that cannot be drawn is named on a line of its own, red and bold, and in the status line, in red."""
     real = gui.build_figure
@@ -1005,6 +1049,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "policy_terms": check_policy_terms,
     "levels": check_levels,
     "limits": check_limits,
+    "projections": check_projections,
     "not_drawn": check_not_drawn,
     "settings_files": check_settings_files,
 }
