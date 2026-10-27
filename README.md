@@ -70,8 +70,10 @@ named with its country's code (`rates_ca.png`, `rates_us.png`), and opens no win
 Resting the pointer on a line for half a second shows, beside it, the line's name and its value
 and date, as its end label would write them: in the window, on the page and in the plain
 matplotlib windows (`--no-gui`). The pointer is caught within 3 pixels of a line in any direction,
-the nearer line winning; the read-out follows it along the lines, and goes 2 seconds after it has
-left them. A line's value is that of its observation nearer the pointer, never one between two;
+and every line that near is read in the one box, the nearest first: each line's name in its own
+colour with its value and date under it, a ring on each line's point, the box bordered in the
+nearest line's colour. The read-out follows the pointer along the lines, and goes 2 seconds after
+it has left them. A line's value is that of its observation nearer the pointer, never one between two;
 a curve drawn as steps (a quarterly figure, a rate held until changed) gives the value in force
 on the date under the pointer and the date it was observed ("$26.5T  2020-05-15 (observed
 2020-03-31)"); a projection to today, its value on that day, marked "≈" and "(projected)"; an
