@@ -82,6 +82,12 @@ Size
     whose shape suits can be drawn larger or smaller by typing one number
     (``_size_control``). The ``WxH`` text behind them stays the source of truth.
 
+Downloads
+    Under each chart a menu of formats and a Download button, the window's
+    Export chart (batch 11.1, ``export``): the chart as a PNG (the bytes
+    shown), JPG, PDF or SVG, or the data it shows as XLSX, CSV or TSV, or a
+    workbook of every chart. The file is made on the click (``_export_bytes``).
+
 Not here (the window has them)
     The wheel's zoom and the right-drag pan (the buttons move the dates),
     and remembered settings (the address keeps the chart instead).
@@ -103,8 +109,9 @@ matplotlib.use("Agg")  # before pyplot is imported (by plotting): a server has n
 
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
 
-from . import http  # noqa: E402
+from . import export, http  # noqa: E402
 from .cli import sort_tokens  # noqa: E402
 from .config import (  # noqa: E402
     DEFAULT_REGRESSION_TOLERANCE_PCT,
@@ -116,6 +123,7 @@ from .config import (  # noqa: E402
     PlotConfig,
 )
 from .console import this_thread_output_to  # noqa: E402
+from .export import EXPORT_CHOICES, IMAGE_FORMATS, MIME_TYPES  # noqa: E402
 from .frontend import (  # noqa: E402
     LIMIT_COLUMNS,
     LIMITS,
@@ -150,8 +158,8 @@ from .frontend import (  # noqa: E402
     png_bytes,
     problem_text,
     reset_choices,
+    saved_export_name,
     saved_log_name,
-    saved_png_name,
     settled_all_ticks,
     size_boxes_at_fault,
     starting_choices,
@@ -238,6 +246,8 @@ _CHANGED = "changed"     # the text fields changed by hand, oldest first (fronte
 _WRONG = "wrong"         # the fields in the wrong now, by key: their labels are red
 _TAB = "tab"             # the charts' tabs: the title of the one shown
 _TICKED = "ticked"       # a nation ticked by hand, whose tab is shown once its chart is drawn (batch 17.4)
+_EXPORT = "export"       # the format last chosen under any chart, by its caption (batch 11.1)
+_EXPORT_MENU = "export:"  # + country key: the format menu under that nation's chart
 # The calendar's first day: no series starts earlier (config.EARLIEST_DATA_START).
 _CALENDAR_FIRST = EARLIEST_DATA_START.date()
 # A date field with its calendar button: room for a whole YYYY-MM-DD.
@@ -255,6 +265,7 @@ class Drawing:
     config: PlotConfig  # as the controls described it (an automatic start is None)
     drawn: PlotConfig | None  # with the start found; None if the drawing failed
     pngs: dict[str, bytes]  # Country.key -> PNG bytes
+    figures: dict[str, Figure]  # Country.key -> the figure drawn, for the downloads in other formats (batch 11.1)
     geometry: dict[str, ChartGeometry | None]  # Country.key -> where its axes are, for zooming
     tokens: tuple[str, ...]  # the chart's command line (after the script name)
     log: str
@@ -1161,6 +1172,7 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
     lines.append(f"--- drawing {config.width_px}x{config.height_px}, {source} to {config.end:%Y-%m-%d}\n")
     drawn: PlotConfig | None = None
     pngs: dict[str, bytes] = {}
+    figures: dict[str, Figure] = {}
     geometry: dict[str, ChartGeometry | None] = {}
     error: str | None = None
     failed: dict[str, str] = {}
@@ -1184,12 +1196,14 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
                     lines.extend([trace or "", http.not_drawn_line(f"the {TAB_TITLES[country.key]} chart", why)])
                     continue
                 pngs[country.key] = png_bytes(figure)
+                figures[country.key] = figure
                 # Measured after savefig, so the axes positions are the final rendered ones (as in the window).
                 geometry[country.key] = ChartGeometry.from_figure(figure, drawn)
     return Drawing(
         config=config,
         drawn=drawn,
         pngs=pngs,
+        figures=figures,
         geometry=geometry,
         tokens=tokens,
         log="".join(lines),
@@ -1233,8 +1247,69 @@ def _view_buttons(drawing: Drawing) -> None:
     st.caption(_ZOOM_HINT)
 
 
+def _export_bytes(drawing: Drawing, key: str, extension: str, every: bool) -> bytes:
+    """The file a chart's download gives (batch 11.1, ``export``), made only when the button is clicked.
+
+    Streamlit runs this on a thread of its own, beside the page's next run.
+    A PNG is the bytes drawn; JPG, PDF and SVG the figure saved again, with
+    ``_DRAWING_LOCK`` held, since saving draws and matplotlib's font cache is
+    shared by every thread (a visitor's drawing waits, or this waits for it).
+    The data read the figure's lines, which draws nothing. A workbook of
+    every chart (``every``) has a sheet for each drawn, named as its tab.
+    """
+    if extension in IMAGE_FORMATS:
+        if extension == ".png":
+            return drawing.pngs[key]
+        with _DRAWING_LOCK:
+            return export.image_bytes(drawing.figures[key], drawing.pngs[key], extension)
+    assert drawing.drawn is not None  # a chart was drawn
+    keys = [each for each in TAB_TITLES if each in drawing.figures] if every and extension == ".xlsx" else [key]
+    sheets = [(TAB_TITLES[each], export.chart_data(drawing.figures[each], drawing.drawn.for_nation(each), each)) for each in keys]
+    return export.data_bytes(extension, sheets)
+
+
+def _export_chosen(menu: str) -> None:
+    """A format chosen under one chart: every chart's menu shows it from now on."""
+    st.session_state[_EXPORT] = st.session_state[menu]
+
+
+def _export_row(drawing: Drawing, key: str) -> None:
+    """Under a chart: a menu of the formats (``export.EXPORT_CHOICES``) and the download button (the window's Export chart).
+
+    The file is named as the window's Save PNG named it, with the format's
+    extension (``frontend.saved_export_name``), and made only on the click
+    (``_export_bytes``), so a page that is only looked at draws nothing more.
+    """
+    types = {caption: (extension, every) for caption, extension, every in EXPORT_CHOICES}
+    if st.session_state.get(_EXPORT) not in types:
+        st.session_state[_EXPORT] = EXPORT_CHOICES[0][0]
+    chosen = st.session_state[_EXPORT]
+    menu = f"{_EXPORT_MENU}{key}"
+    st.session_state[menu] = chosen  # set before the menu is laid out, so each tab's shows the format last chosen
+    extension, every = types[chosen]
+    row = st.container(horizontal=True, vertical_alignment="center", wrap=True)  # the button under the menu on a phone
+    row.selectbox(
+        "Format",
+        list(types),
+        key=menu,
+        on_change=_export_chosen,
+        args=(menu,),
+        label_visibility="collapsed",
+        width=300,
+    )
+    row.download_button(
+        "Download",
+        data=functools.partial(_export_bytes, drawing, key, extension, every),
+        file_name=saved_export_name(key, drawing.drawn, extension, every),
+        mime=MIME_TYPES[extension],
+        on_click="ignore",
+        key=f"download:{key}",
+        help="The chart as an image, or the data it shows: each line's value on each date in the window.",
+    )
+
+
 def _show(drawing: Drawing) -> None:
-    """The charts, one tab per country, each with its download button; then the command line and log."""
+    """The charts, one tab per country, each with its format menu and download button; then the command line and log."""
     if drawing.error is not None:
         st.error(f"Drawing failed: {drawing.error} (details in the message log below)")
     for key, why in drawing.failed.items():
@@ -1266,14 +1341,7 @@ def _show(drawing: Drawing) -> None:
                     data=drawing.pngs[key],
                     on_box_change=functools.partial(_box_dragged, key),
                 )
-                st.download_button(
-                    "Download this chart (PNG)",
-                    data=drawing.pngs[key],
-                    file_name=saved_png_name(key, drawing.drawn),
-                    mime="image/png",
-                    on_click="ignore",
-                    key=f"download:{key}",
-                )
+                _export_row(drawing, key)
         st.caption(
             f"Drawn at {drawing.finished:%Y-%m-%d %H:%M %Z} in {drawing.seconds:.1f} s. "
             "The page's address holds this chart's settings: copy it from the address bar to share the chart."

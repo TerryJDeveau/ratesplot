@@ -66,6 +66,7 @@ import pandas as pd  # noqa: E402
 import streamlit.testing.v1.app_test as app_test_module  # noqa: E402
 import synthetic_sources  # noqa: E402
 from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
+from streamlit.runtime.media_file_manager import MediaFileManager  # noqa: E402
 from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
@@ -103,6 +104,19 @@ class _KeptMediaStorage(MemoryMediaFileStorage):
 
 
 app_test_module.MemoryMediaFileStorage = _KeptMediaStorage
+
+
+class _KeptMediaFileManager(MediaFileManager):
+    """AppTest's manager of a run's files, kept as its store is: it holds the downloads made only on a click (batch 11.1)."""
+
+    last: MediaFileManager | None = None
+
+    def __init__(self, storage) -> None:
+        super().__init__(storage)
+        _KeptMediaFileManager.last = self
+
+
+app_test_module.MediaFileManager = _KeptMediaFileManager
 
 # Regression cases drawn both ways: the defaults, each measure, levels, -l,
 # --reg with and without a tolerance, the history to 1867, a small canvas.
@@ -216,6 +230,19 @@ def downloaded(at: AppTest, label: str) -> tuple[str, str, bytes]:
     """The file a download button gives, from the page's last run: (file name, type, bytes)."""
     found = next(b for b in at.get("download_button") if b.proto.label == label)
     file = _KeptMediaStorage.last.get_file(found.proto.url.rsplit("/", 1)[1])
+    return file.filename, file.mimetype, file.content
+
+
+def clicked_download(at: AppTest, key: str) -> tuple[str, str, bytes]:
+    """The file a download button made on the click gives (``key``: its widget key), from the page's last run.
+
+    AppTest cannot click a download button; this does what Streamlit does
+    on the click (``MediaFileManager.execute_deferred``: the page's callable
+    run, its bytes stored under the button's file name and type).
+    """
+    found = next(b for b in at.get("download_button") if b.proto.id.endswith(f"-{key}"))
+    url = _KeptMediaFileManager.last.execute_deferred(found.proto.deferred_file_id)
+    file = _KeptMediaStorage.last.get_file(url.rsplit("/", 1)[1])
     return file.filename, file.mimetype, file.content
 
 
@@ -1136,11 +1163,58 @@ def check_batch18(check: Check) -> None:
     check("one nation: not ticked", not page.checkbox(key="all:us:max").value, address(page))
 
 
+def check_batch11(check: Check) -> None:
+    """Batch 11.1: under each chart a menu of formats and Download, the file made on the click, the format shared by the tabs."""
+    from openpyxl import load_workbook
+
+    at = new_page("-s:2015 --e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    captions = [caption for caption, _extension, _every in web.EXPORT_CHOICES]
+    menus = {box.key: box for box in at.selectbox if box.key and box.key.startswith("export:")}
+    check("a format menu under each chart, the eight formats in order, PNG first",
+          sorted(menus) == ["export:cdn", "export:us"] and all(list(box.options) == captions and box.value == "PNG image"
+                                                                for box in menus.values()),
+          {key: (box.value, len(box.options)) for key, box in menus.items()})
+    buttons = sorted(b.proto.id.rsplit("-", 1)[1] for b in at.get("download_button") if b.proto.label == "Download")
+    check("a Download button under each chart, its file made on the click",
+          buttons == ["download:cdn", "download:us"] and all(b.proto.deferred_file_id for b in at.get("download_button")
+                                                             if b.proto.label == "Download"), buttons)
+    drawing = at.session_state["drawing"]
+    finished, chart = drawing.finished, address(at)
+    name, kind, data = clicked_download(at, "download:us")
+    check("PNG: us_rates_START_END.png, the bytes drawn", (name, kind) == ("us_rates_2015-01-01_2026-09-01.png", "image/png")
+          and data == drawing.pngs["us"], (name, kind))
+    us_data = web.export.chart_data(drawing.figures["us"], drawing.drawn.for_nation("us"), "us")
+    starts = {".jpg": b"\xff\xd8\xff", ".pdf": b"%PDF", ".svg": b"<?xml"}
+    mimes = {".png": "image/png", ".jpg": "image/jpeg", ".pdf": "application/pdf", ".svg": "image/svg+xml", ".csv": "text/csv",
+             ".tsv": "text/tab-separated-values", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+    for caption, extension, every in web.EXPORT_CHOICES[1:]:
+        at.selectbox(key="export:us").select(caption).run()
+        name, kind, data = clicked_download(at, "download:us")
+        wanted = f"{'' if every else 'us_'}rates_2015-01-01_2026-09-01{extension}"
+        if extension in starts:
+            right = data.startswith(starts[extension])
+        elif extension == ".xlsx":
+            book = load_workbook(io.BytesIO(data))
+            right = book.sheetnames == (["Canada", "United States"] if every else ["United States"])
+        else:
+            right = data == web.export.delimited_bytes(us_data, "," if extension == ".csv" else "\t")
+        check(f"{caption}: {wanted}, {mimes[extension]}", (name, kind) == (wanted, mimes[extension]) and right, (name, kind, data[:8]))
+    check("the other tab's menu shows the format last chosen", at.selectbox(key="export:cdn").value == captions[-1],
+          at.selectbox(key="export:cdn").value)
+    name, _kind, data = clicked_download(at, "download:cdn")
+    check("... and its Download gives its own chart's", name == "cdn_rates_2015-01-01_2026-09-01.tsv" and data
+          == web.export.delimited_bytes(web.export.chart_data(drawing.figures["cdn"], drawing.drawn.for_nation("cdn"), "cdn"), "\t"),
+          name)
+    check("choosing formats drew nothing, the address unchanged",
+          at.session_state["drawing"].finished == finished and address(at) == chart, (address(at), chart))
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
-    check_batch18,
+    check_batch18, check_batch11,
 )
 
 
