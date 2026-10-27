@@ -48,6 +48,18 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
 
 All three draw the same charts from the same code (`plotting.build_figure`).
 
+Each chart can be kept as a picture or as the data it shows: in the window "Export chart…"
+(Ctrl+S), the type chosen in its dialog; on the page a menu of types beside "Download" under each
+chart; on the command line `--save:FILE`. PNG is the chart as drawn; JPG, PDF and SVG the same
+chart in those formats (PDF and SVG stay sharp at any size). XLSX, CSV and TSV hold the data: the
+title and the dates, then a column for each curve as its legend names it, with its unit, and a row
+for each date in the window on which any curve has a point, holding the value each line shows on
+that date (a rate in force, or the straight line between two points, as drawn; blank where the
+chart has no line). The regression segments are fits, not data, and are not written. "XLSX-global"
+is one workbook with a sheet for each chart. `--save:rates.png` writes a file for each chart,
+named with its country's code (`rates_ca.png`, `rates_us.png`), and opens no window;
+`--save:rates.xlsx` writes one workbook, a sheet for each chart.
+
 When a source does not answer (it is down, or sends a web page such as its maintenance notice
 in place of its data), the chart is drawn from the last good copy of that download, which is
 kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_good` on Windows,
@@ -127,6 +139,7 @@ python -m pip install -r requirements.txt
 | `-s:1990`, `-e:2020` | the date window (without `-s` it starts in 2000, or where the chosen curves all have data if later; the year is `DEFAULT_START_FLOOR` in `ratesplot/config.py`) |
 | `--no-cur` | without the latest daily and intraday values |
 | `--no-projections` | without the projection of each right-axis curve to today; it has its own switch (`--pro`), and `--no-cur` leaves it on |
+| `--save:rates.png` | the charts written to files and no window opened, the format by the extension: `.png`, `.jpg`, `.pdf` or `.svg`, or the data as `.csv` or `.tsv`, a file for each chart (`rates_ca.png` …); `.xlsx`, one workbook with a sheet for each chart (at least `--sa`, since `--s:` is the start) |
 
 Each rate on the yield axis is drawn across what it applies to: a central bank's rate or a prime
 rate holds until it changes, so it runs on to the chart's end; an average, a survey or a market's
@@ -141,7 +154,8 @@ projection of each curve to today are provisional, and drawn as such. The subtit
 used when it is changed (`regress_charts.py`, `verify_cli.py`, `verify_web.py`, `verify_gui.py`, the
 window driven from a script, its charts against the command line's and its controls' behaviour, `check_sources.py`,
 `check_drawn_values.py`, every curve on the yield axis against its sources, `check_reg_labels.py`,
-what the regression segments' labels cover, `check_last_good.py`, the charts drawn from the
+what the regression segments' labels cover, `check_export.py`, the data Export chart writes
+against the lines drawn, `check_last_good.py`, the charts drawn from the
 last good copies with every source cut off, `check_requests.py`, which failed requests are
 asked again and when a source is asked nothing more, against a server on the same machine, and
 `check_baked.py`, the built-in history's files and how a drawing joins them to what it asks for)
