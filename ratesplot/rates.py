@@ -55,6 +55,11 @@ from .us_data import fred_series
 # market's rate around it ("market"), which moves day to day. Measured
 # 2026-10-21.
 #
+# The market's rate is named as such in the legend, its acronym kept (batch
+# 24.5; Terry, 2026-10-24, decision 59): the same first words on every chart
+# say what it is, the acronym in brackets is what people search for.
+OVERNIGHT_RATE_NAMED = "Overnight Rate ({})"
+#
 # U.S. target: the Federal Reserve's target for the federal funds rate (FRED
 # DFEDTAR, daily 1982-09-27 to 2008-12-15), then its target range (DFEDTARL
 # and DFEDTARU, daily from 2008-12-16, a quarter point wide on every day),
@@ -280,6 +285,9 @@ class RateCurve:
     # avg.), Target from 1982-09"). The legend names only the parts the
     # window shows (``legend_label``); ``label`` names them all.
     parts: tuple[tuple[pd.Timestamp, str, str], ...] = ()
+    # The words the parts' names are written in ("Overnight Rate ({})" around
+    # "EONIA, €STR from 2019-10", batch 24.5); "{}": the names alone.
+    named_in: str = "{}"
 
     @property
     def first(self) -> pd.Timestamp:
@@ -299,7 +307,9 @@ def legend_label(curve: RateCurve, config: PlotConfig) -> str:
     "Fed Funds Rate (monthly avg.), Target from 1982-09, Range from 2008-12"
     on a chart from 1970, "Fed Funds Target Range" on one from 2015. A part
     is shown from its first date to the next part's (an announced rate's
-    last value is in force until then). A curve of one source: its label.
+    last value is in force until then), in the curve's own words
+    (``RateCurve.named_in``: "Overnight Rate (€STR)" on a chart from 2022).
+    A curve of one source: its label.
     """
     if not curve.parts:
         return curve.label
@@ -308,7 +318,7 @@ def legend_label(curve: RateCurve, config: PlotConfig) -> str:
         for position, part in enumerate(curve.parts)
         if part[0] <= config.end and (position + 1 == len(curve.parts) or curve.parts[position + 1][0] > config.start)
     )
-    return _named(shown or curve.parts[-1:])
+    return curve.named_in.format(_named(shown or curve.parts[-1:]))
 
 
 def held_steps(curve: RateCurve, config: PlotConfig, values: pd.Series | None = None) -> pd.Series:
@@ -442,7 +452,7 @@ def us_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
         print(f"  Warning: effective federal funds rate ({US_MARKET_SERIES}) unavailable ({exc}); not drawn.")
         return None
     # The rate banks paid each other that day: observed, not announced.
-    return RateCurve("policy_market", "Fed Funds Rate (effective)", values, style, title="Policy Rate",
+    return RateCurve("policy_market", OVERNIGHT_RATE_NAMED.format("Fed Funds, effective"), values, style, title="Policy Rate",
                      holds=holding(values, "daily"))
 
 
@@ -492,7 +502,8 @@ def cdn_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
     except Exception as exc:
         print(f"  Warning: Bank of Canada CORRA ({CDN_CORRA_SERIES}) unavailable ({exc}); not drawn.")
         return None
-    return RateCurve("policy_market", "CORRA", values, style, title="Policy Rate", holds=holding(values, "daily"))
+    return RateCurve("policy_market", OVERNIGHT_RATE_NAMED.format("CORRA"), values, style, title="Policy Rate",
+                     holds=holding(values, "daily"))
 
 
 def _baked(rows: list[tuple[str, float]]) -> pd.Series:
@@ -534,7 +545,8 @@ def uk_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
     except Exception as exc:
         print(f"  Warning: Bank of England SONIA ({UK_MARKET_SERIES}) unavailable ({exc}); not drawn.")
         return None
-    return RateCurve("policy_market", "SONIA", values, style, title="Policy Rate", holds=holding(values, "daily"))
+    return RateCurve("policy_market", OVERNIGHT_RATE_NAMED.format("SONIA"), values, style, title="Policy Rate",
+                     holds=holding(values, "daily"))
 
 
 def _uk_mortgage(term: str) -> pd.Series:
@@ -645,8 +657,8 @@ def de_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
         eonia = eonia.loc[eonia.index < estr.index[0]]
     values = pd.concat([eonia, estr])
     parts = _parts((eonia, "EONIA", "EONIA"), (estr, "€STR", "€STR"))
-    return RateCurve("policy_market", _named(parts), values, style, title="Policy Rate", holds=holding(values, "daily"),
-                     parts=parts)
+    return RateCurve("policy_market", OVERNIGHT_RATE_NAMED.format(_named(parts)), values, style, title="Policy Rate",
+                     holds=holding(values, "daily"), parts=parts, named_in=OVERNIGHT_RATE_NAMED)
 
 
 def _de_mortgage(term: str) -> pd.Series:

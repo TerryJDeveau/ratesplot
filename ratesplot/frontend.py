@@ -833,6 +833,14 @@ def _offers(nation: Nation, option: Option, value: str) -> bool:
     return all(term in nation.yield_terms for term in terms)
 
 
+def _nation_box(nation: Nation, option: Option, box: tuple[str, str]) -> tuple[str, str]:
+    """Return ``box`` as ``nation``'s panel captions it: the "market" policy box named for its rate, "market (CORRA)" (batch 24.5)."""
+    value, caption = box
+    if option.fields[0] == "policy_terms" and value == "market" and nation.overnight_rate:
+        return value, f"{caption} ({nation.overnight_rate})"
+    return box
+
+
 def choice_rows(option: Option, text: str, nation: Nation | None = None) -> list[tuple[str, list[tuple[str, str]]]]:
     """Return the option's rows of boxes, ``(caption, [(value, box caption), ...])``.
 
@@ -840,11 +848,15 @@ def choice_rows(option: Option, text: str, nation: Nation | None = None) -> list
     ``text`` names that none of them offers (a spread typed on the command
     line), so nothing chosen is hidden. For a nation's own field, only the
     boxes its chart can draw, without the rows' captions ("U.S. only",
-    "Canada"), which say whose they are.
+    "Canada"), which say whose they are, and in its own words where it has
+    them ("market (SONIA)", ``_nation_box``).
     """
     rows = [(caption, list(boxes)) for caption, boxes in option.choices]
     if nation is not None:
-        rows = [("", [box for box in boxes if _offers(nation, option, box[0])]) for _caption, boxes in rows]
+        rows = [
+            ("", [_nation_box(nation, option, box) for box in boxes if _offers(nation, option, box[0])])
+            for _caption, boxes in rows
+        ]
         rows = [row for row in rows if row[1]]
     offered = {value for _caption, boxes in rows for value, _box in boxes}
     others = [(value, value.replace("-", "–")) for value in choice_values(option, text, nation) if value not in offered]

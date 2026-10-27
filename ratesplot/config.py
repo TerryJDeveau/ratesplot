@@ -662,6 +662,10 @@ class Nation:
     level_synonyms: tuple[tuple[str, str], ...] = ()
     # The currency its amounts are in (a key of CURRENCY_SYMBOLS).
     currency: str = ""
+    # Its overnight market's rate, as its "market" policy box names it,
+    # "market (CORRA)" (batch 24.5; Terry, 2026-10-24, decision 59): the box
+    # says which rate it draws, as the legend does ("Overnight Rate (CORRA)").
+    overnight_rate: str = ""
 
     @property
     def currency_symbol(self) -> str:
@@ -737,12 +741,12 @@ NATIONS: tuple[Nation, ...] = (
     # U.S.: all but the 3-year (FRED's DGS3 exists, but was not asked for).
     Nation(
         "cdn", "Canada", ("ca", "cdn"), tuple(term for term in YIELD_TERMS if term != "20y"), "Canadian",
-        market_timezone="America/Toronto", currency="CAD",
+        market_timezone="America/Toronto", currency="CAD", overnight_rate="CORRA",
         level_boxes=(("f", "Federal"), ("p", "Provincial"), ("m", "Municipal"), ("n", "Non-federal")),
     ),
     Nation(
         "us", "United States", ("us",), tuple(term for term in YIELD_TERMS if term != "3y"), "U.S.",
-        market_timezone="America/New_York", currency="USD",
+        market_timezone="America/New_York", currency="USD", overnight_rate="fed funds",
         level_boxes=(("f", "Federal"), ("p", "State"), ("m", "Local"), ("n", "State & Local")),
     ),
     # Batch 3: drawn only when asked for, so every existing command line
@@ -755,7 +759,7 @@ NATIONS: tuple[Nation, ...] = (
     # when mortgages are ticked"), the 10y-5y and 20y-10y spreads.
     Nation(
         "uk", "United Kingdom", ("gb", "uk"), ("5y", "10y", "20y"), "UK", shown_by_default=False,
-        market_timezone="Europe/London", currency="GBP", debt_aggregates=DEBT_AGGREGATES,
+        market_timezone="Europe/London", currency="GBP", debt_aggregates=DEBT_AGGREGATES, overnight_rate="SONIA",
         # Central and local government: the devolved governments are inside
         # central government in its accounts (CountryMetadata UK, uk_data).
         level_boxes=(("f", "Central"), ("m", "Local")), level_synonyms=(("n", "m"),),
@@ -776,6 +780,7 @@ NATIONS: tuple[Nation, ...] = (
     Nation(
         "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "5y", "7y", "10y", "20y", "30y"), "German",
         shown_by_default=False, list_only_codes=("de",), market_timezone="Europe/Berlin", currency="EUR",
+        overnight_rate="€STR",
         level_boxes=(("f", "Federal"), ("p", "Länder"), ("m", "Local"), ("n", "Länder & Local")),
         own_defaults=(
             ("yield_terms", ("2y", "5y", "10y", "30y")),
