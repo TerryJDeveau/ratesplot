@@ -78,10 +78,11 @@ from streamlit.runtime.media_file_manager import MediaFileManager  # noqa: E402
 from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
+import ratesplot  # noqa: E402
 from ratesplot import cli, hover, http, web  # noqa: E402
 from ratesplot.cli import sort_tokens  # noqa: E402
 from ratesplot.config import NATIONS  # noqa: E402
-from ratesplot.frontend import move_dates_updates, starting_choices  # noqa: E402
+from ratesplot.frontend import move_dates_updates, starting_choices, version_text  # noqa: E402
 from ratesplot.options import command_line_tokens, config_from_choices, drawn_config  # noqa: E402
 
 # AppTest touches Streamlit's state before each page's first run, outside any
@@ -1367,11 +1368,20 @@ def check_batch113(check: Check) -> None:
         web.st, web.Ticker = original, original_ticker
 
 
+def check_batch117(check: Check) -> None:
+    """Batch 11.7: the version, small, first in the sidebar (its top left), as the window shows it."""
+    at = new_page("-c -s:2015 --e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    captions = [caption.value for caption in at.sidebar.caption]
+    check("the sidebar's first caption: the version and the commit", bool(captions) and captions[0] == version_text()
+          and captions[0].startswith(f"v{ratesplot.__version__}"), captions[:1])
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
-    check_batch18, check_batch11, check_batch112, check_batch113,
+    check_batch18, check_batch11, check_batch112, check_batch113, check_batch117,
 )
 
 

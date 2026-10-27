@@ -50,6 +50,11 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
 
 All three draw the same charts from the same code (`plotting.build_figure`).
 
+The version is shown small at the top left of the window's controls and of the page's sidebar,
+with the commit the program was started from (`v6.5 · 8c3e41b`); `--version` prints it. It is
+major.minor: the major goes up when a batch of the plan adds a new type of series, the minor at
+each push of a build (`ratesplot.__version__`).
+
 Each chart can be kept as a picture or as the data it shows: in the window "Export chart…"
 (Ctrl+S), the type chosen in its dialog; on the page a menu of types beside "Download" under each
 chart; on the command line `--save:FILE`. PNG is the chart as drawn; JPG, PDF and SVG the same
@@ -167,6 +172,7 @@ python -m pip install -r requirements.txt
 | `--no-projections` | without the projection of each right-axis curve to today; it has its own switch (`--pro`), and `--no-cur` leaves it on |
 | `--save:rates.png` | the charts written to files and no window opened, the format by the extension: `.png`, `.jpg`, `.pdf` or `.svg`, or the data as `.csv` or `.tsv`, a file for each chart (`rates_ca.png` …); `.xlsx`, one workbook with a sheet for each chart (at least `--sa`, since `--s:` is the start) |
 | `--no-hover` | without the read-out by the pointer resting on a line (at least `--no-ho`, since `--h` is `--help`) |
+| `--version` | the version and the commit, printed (at least `--ver`) |
 | `--au`, `--au:10` | the charts drawn again every 5 minutes (or 10, at least 5) as Refresh draws them, outside market hours only when a quote has changed; with `--save`, the files written again until Ctrl-C |
 
 Each rate on the yield axis is drawn across what it applies to: a central bank's rate or a prime

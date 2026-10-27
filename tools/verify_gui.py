@@ -93,6 +93,7 @@ from matplotlib.figure import Figure  # noqa: E402
 import synthetic_sources  # noqa: E402
 from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
 
+import ratesplot  # noqa: E402
 from ratesplot import cli, export, frontend, gui, hover, http, options  # noqa: E402
 from ratesplot.axes import format_yield  # noqa: E402
 from ratesplot.config import NATIONS  # noqa: E402
@@ -691,6 +692,18 @@ def check_save_folders(check: Check) -> None:
             raise
     finally:
         shutil.rmtree(elsewhere, ignore_errors=True)
+
+
+def check_version(check: Check) -> None:
+    """Batch 11.7: the version, small and grey, first in the control column (its top left)."""
+    with window(f"-c -s:2015 {END}") as w:
+        label = w.app.version_label
+        text = str(label.cget("text"))
+        check("the version and the commit, as the page shows them", text == frontend.version_text()
+              and text.startswith(f"v{ratesplot.__version__}"), text)
+        first = label.master.pack_slaves()[0] if label.master.pack_slaves() else None
+        check("first in the column, at its left", first is label and str(label.pack_info().get("anchor")) == "w", str(first))
+        check("small and grey", str(label.cget("foreground")) == gui._VERSION_FOREGROUND, str(label.cget("foreground")))
 
 
 def check_export(check: Check) -> None:
@@ -1628,6 +1641,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "typing": check_typing,
     "save_log": check_save_log,
     "save_folders": check_save_folders,
+    "version": check_version,
     "export": check_export,
     "tabs": check_tabs,
     "policy_terms": check_policy_terms,

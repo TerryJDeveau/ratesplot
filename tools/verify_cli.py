@@ -252,6 +252,8 @@ CASES: list[list[str]] = [
     ["--au:0"], ["--au:1441"], ["--au:-5"], ["--au:2.5"], ["--au:x"], ["--au:"], ["--au:10m"], ["--au:10", "--no-au"],
     ["--no-au", "--au:10"], ["--au", "--au:20"], ["--au:20", "--au"], ["--au", "--save:r.png"], ["--au:30", "--no-gui", "-u"],
     ["--au", "--no-cur"], ["--au", "--no-yields"], ["--au", "--no-yields", "--sp"], ["--au", "-e:2020-01-01"],
+    # Batch 11.7: --version, at least "ver" (in the option table, so argparse never takes "--v" for it).
+    ["--version"], ["--ver"], ["--VERSION"], ["--vers"], ["--v"], ["--ve"], ["--version:1"], ["--version", "-c"],
 ]
 
 
