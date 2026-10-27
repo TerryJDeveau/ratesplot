@@ -60,6 +60,16 @@ is one workbook with a sheet for each chart. `--save:rates.png` writes a file fo
 named with its country's code (`rates_ca.png`, `rates_us.png`), and opens no window;
 `--save:rates.xlsx` writes one workbook, a sheet for each chart.
 
+Resting the pointer on a line for half a second shows, beside it, the line's name and its value
+and date, as its end label would write them: in the window, on the page and in the plain
+matplotlib windows (`--no-gui`). The pointer is caught within 3 pixels of a line in any direction,
+the nearer line winning; the read-out follows it along the lines, and goes 2 seconds after it has
+left them. A line's value is that of its observation nearer the pointer, never one between two;
+a curve drawn as steps (a quarterly figure, a rate held until changed) gives the value in force
+on the date under the pointer and the date it was observed ("$26.5T  2020-05-15 (observed
+2020-03-31)"); a projection to today, its value on that day, marked "≈" and "(projected)"; an
+intraday quote, its time. "Hover read-out" turns it off, as `--no-hover` does; it changes no chart.
+
 When a source does not answer (it is down, or sends a web page such as its maintenance notice
 in place of its data), the chart is drawn from the last good copy of that download, which is
 kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_good` on Windows,
@@ -140,6 +150,7 @@ python -m pip install -r requirements.txt
 | `--no-cur` | without the latest daily and intraday values |
 | `--no-projections` | without the projection of each right-axis curve to today; it has its own switch (`--pro`), and `--no-cur` leaves it on |
 | `--save:rates.png` | the charts written to files and no window opened, the format by the extension: `.png`, `.jpg`, `.pdf` or `.svg`, or the data as `.csv` or `.tsv`, a file for each chart (`rates_ca.png` …); `.xlsx`, one workbook with a sheet for each chart (at least `--sa`, since `--s:` is the start) |
+| `--no-hover` | without the read-out by the pointer resting on a line (at least `--no-ho`, since `--h` is `--help`) |
 
 Each rate on the yield axis is drawn across what it applies to: a central bank's rate or a prime
 rate holds until it changes, so it runs on to the chart's end; an average, a survey or a market's
