@@ -214,8 +214,8 @@ def _utc_text(wall: float) -> str:
 # group of downloads named by ``downloads_of``, however many requests the
 # group makes. A download served again from the session's cache is not
 # logged by itself; a drawing ends with one line counting them ("Reused 14
-# earlier downloads, the oldest from 16:32:05 UTC"), since how old the data
-# are still matters. The built-in history (the baked and transcribed data)
+# earlier downloads, the oldest from 2026-10-13 16:32:05 UTC"), since how old
+# the data are still matters. The built-in history (the baked and transcribed data)
 # is never logged: it is the same on every run.
 #
 # A drawing (``drawing_downloads``) writes its lines where its thread's
@@ -388,10 +388,14 @@ def drawing_downloads() -> Iterator[_Drawing]:
             drawing.write(fallback.warning(name, why))
         if drawing.reused:
             oldest = datetime.fromtimestamp(min(drawing.reused.values()), timezone.utc)
-            # The time alone on the day it is; a window left open overnight gets the date too.
-            when = f"{oldest:%H:%M:%S}" if oldest.date() == datetime.now(timezone.utc).date() else f"{oldest:%Y-%m-%d %H:%M:%S}"
+            # Always with its date, as the download lines are (Terry, 2026-10-24,
+            # batch 24.3): with the time alone on the day it was, a saved log
+            # read wrong where the date changed partway down, since the date was
+            # judged against today, not against the lines above it.
             count = len(drawing.reused)
-            drawing.write(f"Reused {count} earlier download{'' if count == 1 else 's'}, the oldest from {when} UTC\n")
+            drawing.write(
+                f"Reused {count} earlier download{'' if count == 1 else 's'}, the oldest from {oldest:%Y-%m-%d %H:%M:%S} UTC\n"
+            )
 
 
 def in_parallel(tasks: Sequence[Callable[[], T]]) -> list[T | Exception]:
