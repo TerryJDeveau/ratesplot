@@ -940,6 +940,53 @@ def saved_log_name(when: pd.Timestamp) -> str:
     return f"ratesplot_log_{when:%Y-%m-%d_%H%M}.txt"
 
 
+# The program's own folder: the repository's working folder when it is run from a clone (batch 11.5).
+PROGRAM_FOLDER = Path(__file__).resolve().parents[1]
+# Windows' known folder for Documents (FOLDERID_Documents), which a user may have moved.
+_DOCUMENTS_GUID = (0xFDD39AD0, 0x238F, 0x46AF, (0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))
+
+
+class _Guid(ctypes.Structure):
+    _fields_ = [("data1", ctypes.c_ulong), ("data2", ctypes.c_ushort), ("data3", ctypes.c_ushort), ("data4", ctypes.c_ubyte * 8)]
+
+
+def documents_folder() -> Path:
+    """The user's Documents folder: Windows' own, wherever it was moved; elsewhere ~/Documents; failing both, the home folder."""
+    if sys.platform == "win32":
+        first, second, third, rest = _DOCUMENTS_GUID
+        found = ctypes.c_wchar_p()
+        guid = _Guid(first, second, third, (ctypes.c_ubyte * 8)(*rest))
+        if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(found)) == 0:
+            path = Path(found.value)
+            ctypes.windll.ole32.CoTaskMemFree(found)
+            if path.is_dir():
+                return path
+    documents = Path.home() / "Documents"
+    return documents if documents.is_dir() else Path.home()
+
+
+def save_dialog_folder(remembered: str | None) -> str:
+    """Where the window's save dialogs open (batch 11.5): the folder last saved to, else the Documents folder.
+
+    Never the working folder, nor the program's own folder or one inside it:
+    started from the repository's folder, a dialog given no folder opened
+    there, and what was saved became an untracked file of the public
+    repository (Terry, 2026-10-26: "these other files are not even written
+    where the repository would see them"). A folder saved to there by choice
+    is used that once; the next dialog opens in Documents.
+    """
+    if remembered:
+        folder = Path(remembered)
+        try:
+            resolved = folder.resolve()
+            inside = resolved == Path.cwd().resolve() or resolved == PROGRAM_FOLDER or PROGRAM_FOLDER in resolved.parents
+        except OSError:
+            inside = True
+        if folder.is_dir() and not inside:
+            return str(folder)
+    return str(documents_folder())
+
+
 # ---------------------------------------------------------------------------
 # Zoom and pan: chart geometry (image pixels <-> data values) and the fields' texts
 # ---------------------------------------------------------------------------

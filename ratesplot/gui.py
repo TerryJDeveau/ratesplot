@@ -108,6 +108,7 @@ from __future__ import annotations
 
 import calendar
 import io
+import os
 import queue
 import re
 import subprocess
@@ -166,6 +167,7 @@ from .frontend import (
     reset_choices,
     save_state,
     saved_export_name,
+    save_dialog_folder,
     saved_log_name,
     scale_dates_updates,
     settled_all_ticks,
@@ -851,6 +853,9 @@ class RatesPlotApp:
         self.figures: dict[str, tuple[Figure, PlotConfig]] = {}
         # The type last chosen in Export chart's dialog, by its caption: the next opens on it.
         self.export_type = tk.StringVar(self.root, value=EXPORT_CHOICES[0][0])
+        # The folder last saved to by either save dialog, remembered with the settings (batch 11.5).
+        remembered = state.get("save_folder")
+        self._save_folder: str | None = remembered if isinstance(remembered, str) else None
         self.images: dict[str, Image.Image] = {}
         self.photos: dict[str, ImageTk.PhotoImage] = {}  # Tk shows an image only while a reference exists
         self.geometry: dict[str, ChartGeometry | None] = {}
@@ -2264,9 +2269,11 @@ class RatesPlotApp:
             typevariable=self.export_type,
             defaultextension=types[self.export_type.get()][0],
             initialfile=saved_export_name(key, drawn, ""),
+            initialdir=save_dialog_folder(self._save_folder),
         )
         if not path:
             return
+        self._save_folder = os.path.dirname(path)
         chosen, every = types.get(self.export_type.get(), (EXPORT_CHOICES[0][1], False))
         extension = export.format_of(path)
         if extension is None:
@@ -2312,9 +2319,11 @@ class RatesPlotApp:
             defaultextension=".txt",
             filetypes=[("Text file", "*.txt"), ("All files", "*.*")],
             initialfile=saved_log_name(pd.Timestamp.now()),
+            initialdir=save_dialog_folder(self._save_folder),
         )
         if not path:
             return
+        self._save_folder = os.path.dirname(path)
         try:
             with open(path, "w", encoding="utf-8") as output:
                 output.write(self.log.get("1.0", "end-1c"))
@@ -2467,6 +2476,8 @@ class RatesPlotApp:
                 "monitor": _window_monitor(geometry),
                 "column_width": self._current_column_width(),
                 "keep_ratio": {name: editor.keep_ratio.get() for name, editor in self.size_editors.items()},
+                # Where the save dialogs open next (batch 11.5; frontend.save_dialog_folder).
+                "save_folder": self._save_folder,
             }
         )
         if error is not None:
