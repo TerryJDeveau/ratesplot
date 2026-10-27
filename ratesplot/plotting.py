@@ -80,6 +80,9 @@ from .endlabels import ValueFormatter
 from .export import MACRO_AXIS, YIELD_AXIS, mark_series
 from .frames import filter_to_date_range
 from .fx import rate
+from .hover import attach as attach_hover
+from .hover import mark as mark_reading
+from .hover import mark_quote
 from .http import download_cache_on, in_parallel
 from .joins import align_macro
 from .latest import (
@@ -177,6 +180,7 @@ def add_macro_line(
     column: str,
     label: str,
     style: dict,
+    value_format: ValueFormatter,
     projected_from: pd.Timestamp | None = None,
 ) -> Line2D | None:
     """Plot one macro series if it is enabled and has data; return the (legend) line or ``None``.
@@ -185,25 +189,35 @@ def add_macro_line(
     that date are a projection, not data: they are drawn as a straight,
     fainter continuation, hidden from the legend, after the curve's steps.
     Each piece is marked as the curve ``label`` for Export chart
-    (``export.mark_series``), the projection with it.
+    (``export.mark_series``), the projection with it, and for the hover
+    read-out with ``value_format``, the projection's value "≈" as its end
+    label's (``hover.mark``).
     """
     if not enabled or data.empty or column not in data.columns or not data[column].notna().any():
         return None
     if projected_from is None:
         (line,) = ax.plot(data[DATE_COLUMN], data[column], label=label, **style)
+        mark_reading(line, value_format)
         return mark_series(line, label, MACRO_AXIS)
 
     observed = data.loc[data[DATE_COLUMN] <= projected_from]
     ahead = data.loc[data[DATE_COLUMN] >= projected_from]
     faint = {key: value for key, value in style.items() if key != "drawstyle"} | {"alpha": PROJECTION_ALPHA}
+
+    def projected_format(value: float) -> str:
+        return PROJECTION_LABEL_PREFIX + value_format(value)
+
     if not observed[column].notna().any():
         # The window lies wholly in the projection.
         (line,) = ax.plot(ahead[DATE_COLUMN], ahead[column], label=label, **faint)
+        mark_reading(line, projected_format, projected=True)
         return mark_series(line, label, MACRO_AXIS)
     (line,) = ax.plot(observed[DATE_COLUMN], observed[column], label=label, **style)
     mark_series(line, label, MACRO_AXIS)
+    mark_reading(line, value_format)
     (projection,) = ax.plot(ahead[DATE_COLUMN], ahead[column], label="_projection", **faint)
     mark_series(projection, label, MACRO_AXIS)
+    mark_reading(projection, projected_format, projected=True)
     return line
 
 
@@ -283,6 +297,7 @@ def add_stepped_yield_lines(
                 historical.index, historical.values, label=label, drawstyle="steps-post", **_yield_style(column, config, nation_key)
             )
             mark_series(line, label, YIELD_AXIS)
+            mark_reading(line, format_yield, quoted=True)
             color = line.get_color()
             legend_lines.append(line)
 
@@ -294,6 +309,7 @@ def add_stepped_yield_lines(
                 **(_yield_style(column, config, nation_key) | ({"color": color} if color is not None else {})),
             )
             mark_series(line, label, YIELD_AXIS)
+            mark_reading(line, format_yield, quoted=True)
             if color is None:
                 legend_lines.append(line)
 
@@ -313,6 +329,7 @@ def add_us_yield_lines(ax: Axes, yields: pd.DataFrame, config: PlotConfig) -> li
     for column in config.yield_columns:
         if column in data.columns:
             (line,) = ax.plot(data[DATE_COLUMN], data[column], label=f"{column} Yield", **_yield_style(column, config, "us"))
+            mark_reading(line, format_yield, quoted=True)
             lines.append(mark_series(line, f"{column} Yield", YIELD_AXIS))
     return lines
 
@@ -336,7 +353,9 @@ def add_rate_lines(
     limits drawn and the space between shaded (``_add_band``). The legend
     names the parts of a joined curve the window shows (``rates.legend_label``).
     Each part is marked for Export chart under that name; a band's as its
-    lower limit, its upper limits another curve (``export.mark_series``).
+    lower limit, its upper limits another curve (``export.mark_series``);
+    and for the hover read-out, a spread's values in points as its end label
+    writes them, the others' in percent (``hover.mark``).
     """
     yield_colours = {line.get_label(): line.get_color() for line in yield_lines}
     drawn: list[tuple[Line2D, RateCurve]] = []
@@ -368,6 +387,8 @@ def add_rate_lines(
             label = name if first is None else "_nolegend_"
             (drawn_line,) = ax.plot(part.index, part.to_numpy(), label=label, **(part_style | colour))
             mark_series(drawn_line, exported, YIELD_AXIS)
+            # A spread runs on to the day's quotes, as the yields it is taken from do.
+            mark_reading(drawn_line, format_spread if curve.spread else format_yield, quoted=curve.spread)
             first = first or drawn_line
             if curve.spread:
                 as_steps = part_style.get("drawstyle") == "steps-post"
@@ -400,6 +421,7 @@ def _add_band(ax: Axes, curve: RateCurve, lower: pd.Series, config: PlotConfig, 
     edge = apart | np.append(apart[1:], False)
     (line,) = ax.plot(upper.index, upper.where(edge).to_numpy(), label="_nolegend_", **style)
     mark_series(line, exported, YIELD_AXIS)
+    mark_reading(line, format_yield)
     ax.fill_between(
         upper.index, lower.to_numpy(), upper.to_numpy(), step="post", color=style["color"], alpha=POLICY_BAND_ALPHA,
         linewidth=0, label="_nolegend_",
@@ -497,6 +519,9 @@ def draw_country(
     macro_lines: list[Line2D] = []
     macro_keys_drawn: list[str] = []
     macro_columns_drawn: list[str] = []
+    # How a right-axis value is written, as its tick labels write them:
+    # dollars, or percent of GDP under -r (the end labels, the hover read-out).
+    macro_format = format_percent if config.relative else partial(format_currency, prefix=metadata.currency_prefix)
     # The aggregate debt's column is missing only when its source failed; in
     # a window before it begins (the UK's to 1900) it is there, empty.
     aggregate_debt = metadata.debt_column in macro.columns
@@ -508,6 +533,7 @@ def draw_country(
             column=column,
             label=label,
             style=MACRO_PLOT_STYLES[style_key],
+            value_format=macro_format,
             projected_from=projected.get(column),
         )
         if line is not None:
@@ -531,7 +557,6 @@ def draw_country(
     # (--projections) reads "≈".
     end_labels: list[tuple[Line2D, ValueFormatter]] = []
     if config.end_labels:
-        macro_format = format_percent if config.relative else partial(format_currency, prefix=metadata.currency_prefix)
         end_labels = [(line, format_yield) for line in yield_lines] + [
             (line, _end_label_format(curve, config)) for line, curve in rate_lines
         ] + [
@@ -563,6 +588,9 @@ def draw_country(
     )
     title = metadata.title_for(**title_parts)
     short_title = metadata.title_for(**title_parts, short=True)
+    if quote_time is not None and yield_lines:
+        # The hover read-out gives a quote's time on its day, as the subtitle does.
+        mark_quote(ax_yield.figure, quote_time, nation_by_key(metadata.key).market_timezone)
     finish_legend_and_title(
         ax_yield,
         [yield_axis_legend(yield_lines, rate_lines), legend_macro],
@@ -585,9 +613,11 @@ def plot_country(
     metadata: CountryMetadata,
     draw_yield_lines: YieldLineDrawer,
 ) -> None:
-    """Build one country's chart on a pyplot figure and show it in a matplotlib window."""
-    _figure, ax_yield = plt.subplots(figsize=config.figsize_inches)
+    """Build one country's chart on a pyplot figure and show it in a matplotlib window, with the hover read-out unless --no-hover."""
+    figure, ax_yield = plt.subplots(figsize=config.figsize_inches)
     draw_country(ax_yield, yields, macro, rates, config, metadata, draw_yield_lines)
+    if config.hover:
+        attach_hover(figure)
     plt.show()
 
 

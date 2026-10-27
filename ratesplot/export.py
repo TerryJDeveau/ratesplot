@@ -100,6 +100,11 @@ def mark_series(line: Line2D, name: str, axis: str) -> Line2D:
     return line
 
 
+def series_of(line: Line2D) -> tuple[str, str] | None:
+    """The curve ``line`` is (a piece of), as ``mark_series`` marked it: ``(name, axis)``; None if it is not marked."""
+    return getattr(line, _SERIES_ATTR, None)
+
+
 def mark_subtitle(figure: Figure, text: Text) -> None:
     """Record ``text`` as ``figure``'s subtitle, the second row of its exported data."""
     setattr(figure, _SUBTITLE_ATTR, text)
@@ -138,7 +143,7 @@ def _pieces(figure: Figure) -> dict[tuple[str, str], list[_Piece]]:
     curves: dict[tuple[str, str], list[_Piece]] = {}
     for ax in figure.axes:
         for line in ax.get_lines():
-            mark = getattr(line, _SERIES_ATTR, None)
+            mark = series_of(line)
             if mark is None:
                 continue
             xy = np.asarray(line.get_xydata(), dtype=float)  # dates already as day numbers

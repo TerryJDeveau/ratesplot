@@ -313,8 +313,8 @@ def auto_place_legend(
 # ---------------------------------------------------------------------------
 
 
-def _quote_time_text(quote_time: pd.Timestamp, last: pd.Timestamp, zone: str | None) -> str:
-    """Return the subtitle's words for the quotes' time: " 11:42 BST (intraday, provisional)".
+def quote_time_text(quote_time: pd.Timestamp, last: pd.Timestamp, zone: str | None) -> str:
+    """Return the subtitle's words for the quotes' time: " 11:42 BST (intraday, provisional)"; the hover read-out's too.
 
     The time is given in ``zone``, the chart's market (batch 10.3, Terry
     2026-10-08: London time on the UK's chart, Frankfurt time on Germany's;
@@ -416,7 +416,7 @@ def finish_legend_and_title(
     When the drawing ends with intraday quotes (--cur), ``quote_time`` is when
     they were taken, and the subtitle says so: "… – 2026-09-28 13:50 EDT
     (intraday, provisional)", the time in ``quote_zone``, the chart's
-    market (``_quote_time_text``).
+    market (``quote_time_text``).
 
     ``end_labels`` (-l) are the curves to label at their ends, each with the
     formatter for its value. The labels widen the date axis to the right, so
@@ -443,7 +443,7 @@ def finish_legend_and_title(
     # The quotes are dated by Toronto's day (latest.intraday_yields_after),
     # so they end the chart when that day is its last.
     if quote_time is not None and quote_time.tz_localize(None).normalize() == last:
-        subtitle += _quote_time_text(quote_time, last, quote_zone)
+        subtitle += quote_time_text(quote_time, last, quote_zone)
     subtitle_text = figure.text(
         0.5,
         subtitle_y,
