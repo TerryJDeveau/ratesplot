@@ -44,7 +44,8 @@ Controls
     filled before the next, so four boxes go three and one where three fit.
 
 Remembered settings
-    The choices of the last successful drawing, the preview mode, the selected
+    The choices of the last successful drawing (the hover read-out's box as it
+    stands, since it draws nothing), the preview mode, the selected
     tab, the window's size and place (on any monitor, or across several),
     whether it is maximized, and the column's width are saved after every drawing and on closing,
     and restored at the next start: each command window has its own file,
@@ -66,6 +67,14 @@ Zoom and pan
     greyed while it would do nothing. The axis limits are each nation's own (the
     panel under its tab), so zooming one chart's axes leaves the other's; the
     dates are shared, as on the command line.
+
+The hover read-out (batch 11.2, ``hover``)
+    The pointer resting on a line for 0.5 s, with no button held, shows by it
+    the line's name, value and date, from the lines the worker reads with
+    each chart (``hover.chart_lines``); it follows the pointer along the
+    lines and goes 2 s after the pointer has left them, or at once when a
+    button is pressed. Its box ("Hover read-out", ``--no-hover``) draws no
+    chart again: it changes nothing drawn (``PlotConfig.same_chart``).
 
 Drawing
     Each chart is drawn exactly as the command line draws it (the same
@@ -112,7 +121,7 @@ from PIL import Image, ImageTk
 
 from matplotlib.figure import Figure
 
-from . import export, http
+from . import export, hover, http
 from .config import DOWNLOAD_MAX_AGE_SECONDS, NATIONS, Nation, PlotConfig
 from .console import this_thread_output_to
 from .export import EXPORT_CHOICES, IMAGE_FORMATS
@@ -201,6 +210,9 @@ _SCREEN_FRACTION = 0.9
 _ERROR_FOREGROUND = "#b00020"
 # The message log's tag for a chart not drawn: red and bold (batch 19.4).
 _NOT_DRAWN_TAG = "not drawn"
+# The canvas items of the hover read-out (batch 11.2): its box, its text and the ring on the point read.
+_HOVER_TAG = "hover"
+_HOVER_PAD_PX = 5
 # A blank field's grey value (``_Hint``), on the field's own background.
 _HINT_FOREGROUND = "#8c8c8c"
 _FIELD_BACKGROUND = "SystemWindow" if sys.platform == "win32" else "white"
@@ -842,6 +854,11 @@ class RatesPlotApp:
         self.geometry: dict[str, ChartGeometry | None] = {}
         # Where each preview image sits on its canvas: (scale, left, top) in canvas coordinates.
         self.placement: dict[str, tuple[float, float, float]] = {}
+        # The hover read-out (batch 11.2): each chart's lines as it reads them,
+        # the tab the pointer was last over, and its timing.
+        self.hover_lines: dict[str, hover.ChartLines | None] = {}
+        self._hover_key: str | None = None
+        self.hover = hover.Controller(self.root.after, self.root.after_cancel, self._show_reading, self._hide_reading)
 
         # Drawing state.
         self.rendering = False
@@ -1389,6 +1406,9 @@ class RatesPlotApp:
             canvas.bind(f"<B{button}-Motion>", lambda event: self._drag_motion(key, event))
             canvas.bind(f"<ButtonRelease-{button}>", lambda event: self._drag_end(key, event))
         canvas.bind("<MouseWheel>", lambda event: self._wheel_turned(key, event))
+        # A move with no button held (a drag's moves have the bindings above).
+        canvas.bind("<Motion>", lambda event: self._hovered(key, event))
+        canvas.bind("<Leave>", lambda _event: self.hover.moved(None, 0.0, 0.0))
         self._build_nation_panel(tab, next(nation for nation in NATIONS if nation.key == key))
         self.notebook.add(tab, text=TAB_TITLES.get(country.key, country.key))
         self.tabs[key] = tab
@@ -1491,6 +1511,8 @@ class RatesPlotApp:
         )
 
     def _flag_changed(self, name: str) -> None:
+        if name == "hover" and not self.flag_vars[name].get():
+            self.hover.stop()  # unticked: the read-out goes now (batch 11.2); no chart is drawn again
         # The command-line rule "no country means both" would make unticking
         # the last country draw both, which would look like a bug here.
         countries = [option.name for option in options_in("country") if option.in_gui]
@@ -1726,14 +1748,15 @@ class RatesPlotApp:
             # still queue a drawing, or the old view would replace it. A
             # Refresh asked for meanwhile is kept: the drawing under way may
             # be using the downloads it dropped.
-            if config == self.target_config and not force and not self._pending_forced:
+            if config.same_chart(self.target_config) and not force and not self._pending_forced:
                 self.pending = None
                 return
             self.pending = (config, snapshot)
             self._pending_forced = self._pending_forced or force
             self.status.set("Will redraw with the new settings when the current drawing finishes …")
             return
-        if config == self.shown_config:
+        # The hover read-out's box alone draws nothing (batch 11.2, ``PlotConfig.same_chart``).
+        if config.same_chart(self.shown_config):
             return
         self._start_render(config, snapshot)
 
@@ -1789,8 +1812,9 @@ class RatesPlotApp:
                 png = png_bytes(figure)
                 # Measured after savefig, so the axes positions are the final rendered ones.
                 geometry = ChartGeometry.from_figure(figure, drawn)
+                lines = hover.chart_lines(figure)  # where the lines run, for the hover read-out (batch 11.2)
                 # The figure goes too, for Export chart; this thread does not touch it again.
-                self.messages.put(("chart", country.key, png, geometry, figure, drawn))
+                self.messages.put(("chart", country.key, png, geometry, figure, drawn, lines))
         self.messages.put(("done", config, drawn, not_drawn, downloads.copies_used()))
 
     def _poll(self) -> None:
@@ -1803,6 +1827,7 @@ class RatesPlotApp:
                     self._append_log(message[1])
                 elif kind == "chart":
                     self.figures[message[1]] = (message[4], message[5])
+                    self.hover_lines[message[1]] = message[6]
                     self._show_chart(message[1], message[2], message[3])
                 elif kind == "not drawn":
                     if message[2] is not None:
@@ -1837,6 +1862,8 @@ class RatesPlotApp:
         self.figures.pop(key, None)
         self.images.pop(key, None)
         self.geometry[key] = None
+        self.hover_lines[key] = None
+        self._put_reading_away(key)
         self.canvases[key].delete("all")
 
     def _render_finished(
@@ -1875,7 +1902,7 @@ class RatesPlotApp:
             self.status_label.configure(foreground=_ERROR_FOREGROUND)
         pending, self.pending = self.pending, None
         forced, self._pending_forced = self._pending_forced, False
-        if pending is not None and (pending[0] != self.shown_config or forced):
+        if pending is not None and (not pending[0].same_chart(self.shown_config) or forced):
             self._start_render(*pending)
 
     # -- preview ------------------------------------------------------------
@@ -1912,6 +1939,7 @@ class RatesPlotApp:
         canvas = self.canvases[key]
         if image is None:
             return
+        self._put_reading_away(key)  # the picture is drawn again, maybe at another scale
         # Scroll bars only mean something at actual size.
         for scrollbar in self.scrollbars[key]:
             if self.zoom.get() == "fit":
@@ -1948,6 +1976,7 @@ class RatesPlotApp:
         return (canvas.canvasx(event.x) - left) / scale, (canvas.canvasy(event.y) - top) / scale
 
     def _drag_start(self, key: str, event: tk.Event, mode: str) -> None:
+        self.hover.stop()
         point = self._image_point(key, event)
         if point is None:
             return
@@ -2013,6 +2042,7 @@ class RatesPlotApp:
 
     def _wheel_turned(self, key: str, event: tk.Event) -> None:
         """Collect wheel notches; zoom the dates about the pointer once the wheel stops."""
+        self.hover.stop()
         point = self._image_point(key, event)
         if point is None:
             return
@@ -2037,6 +2067,60 @@ class RatesPlotApp:
     def _shown_for(self, key: str) -> PlotConfig | None:
         """Return the config the chart in tab ``key`` was drawn with (its nation's own values applied)."""
         return self.shown_config.for_nation(key) if self.shown_config is not None else None
+
+    # -- the hover read-out (batch 11.2) ------------------------------------
+
+    def _hovered(self, key: str, event: tk.Event) -> None:
+        """The pointer moved over ``key``'s chart with no button held: read the line under it (``hover.ChartLines.reading``).
+
+        The reach is ``hover.REACH_PX`` of the screen's pixels at the scale
+        the chart is shown at, so a shrunk preview catches a line as readily
+        as the picture at actual size.
+        """
+        if not self.flag_vars["hover"].get():
+            return
+        canvas = self.canvases[key]
+        lines, point = self.hover_lines.get(key), self._image_point(key, event)
+        reading = None
+        if lines is not None and point is not None:
+            reading = lines.reading(point[0], point[1], hover.reach_in_image(self.placement[key][0]))
+        self._hover_key = key
+        self.hover.moved(reading, canvas.canvasx(event.x), canvas.canvasy(event.y))
+
+    def _show_reading(self, reading: hover.Reading, x: float, y: float) -> None:
+        """Show ``reading`` by the pointer at canvas point (x, y): right of it and below, kept inside the tab's view."""
+        key = self._hover_key
+        if key is None or key not in self.placement:
+            return
+        canvas = self.canvases[key]
+        canvas.delete(_HOVER_TAG)
+        scale, left, top = self.placement[key]
+        ring_x, ring_y = left + reading.x * scale, top + reading.y * scale
+        canvas.create_oval(ring_x - 5, ring_y - 5, ring_x + 5, ring_y + 5, outline=reading.color, width=2, tags=_HOVER_TAG)
+        text = canvas.create_text(
+            0, 0, text="\n".join(reading.lines), anchor="nw", font="TkDefaultFont", fill=hover.BOX_TEXT, tags=_HOVER_TAG
+        )
+        x0, y0, x1, y1 = canvas.bbox(text)
+        width, height = x1 - x0 + 2 * _HOVER_PAD_PX, y1 - y0 + 2 * _HOVER_PAD_PX
+        view_left, view_top = canvas.canvasx(0), canvas.canvasy(0)
+        view_right, view_bottom = view_left + canvas.winfo_width(), view_top + canvas.winfo_height()
+        offset = hover.OFFSET_PX
+        box_x = x + offset if x + offset + width <= view_right else max(x - offset - width, view_left)
+        box_y = y + offset if y + offset + height <= view_bottom else max(y - offset - height, view_top)
+        canvas.coords(text, box_x + _HOVER_PAD_PX, box_y + _HOVER_PAD_PX)
+        box = canvas.create_rectangle(
+            box_x, box_y, box_x + width, box_y + height, fill=hover.BOX_FACE, outline=reading.color, width=1.5, tags=_HOVER_TAG
+        )
+        canvas.tag_raise(text, box)
+
+    def _hide_reading(self) -> None:
+        for canvas in self.canvases.values():
+            canvas.delete(_HOVER_TAG)
+
+    def _put_reading_away(self, key: str) -> None:
+        """Put the read-out away now if it is on ``key``'s chart (its picture is about to change)."""
+        if self._hover_key == key:
+            self.hover.stop()
 
     def _apply_view(self, updates: dict[str, str], verb: str, key: str | None = None) -> None:
         """Write zoom/pan results into the fields (undoably) and redraw.
@@ -2276,6 +2360,9 @@ class RatesPlotApp:
         if self.drawn_choices is None:
             return
         payloads, flags = self.drawn_choices
+        # The hover read-out's box takes effect with no drawing (batch 11.2),
+        # so it is remembered as it stands, as the preview's zoom is.
+        flags = {**flags, "hover": self.flag_vars["hover"].get()}
         geometry = self._normal_geometry or self.root.geometry()
         error = save_state(
             {
