@@ -69,6 +69,7 @@ from .config import (
     DATE_COLUMN,
     LATEST_QUOTE_TIMEOUT_SECONDS,
     MARKET_TIMEZONE,
+    QUOTE_SYMBOLS,
     TREASURY_DEBT_TO_PENNY_URL,
     TREASURY_YIELD_CURVE_URL,
     YIELD_COLUMNS,
@@ -82,33 +83,8 @@ from .http import downloads_of, latest_get, parse_boc_csv
 # ``attrs``, the time of the newest quote added (for the subtitle).
 QUOTE_TIME_ATTR = "latest_quote_time"
 
-# Chart column -> CNBC symbol, per country (``plotting.Country.key``). Only the
-# columns a chart draws are asked for (--yields:LIST); the U.S. terms outside
-# the default five are CNBC's symbols of the same pattern, not yet seen
-# answering from here (the cloud copy has no route to the feed).
-_QUOTE_SYMBOLS = {
-    "us": {
-        "1-Month": "US1M", "3-Month": "US3M", "6-Month": "US6M", "1-Year": "US1Y", "2-Year": "US2Y",
-        "5-Year": "US5Y", "7-Year": "US7Y", "10-Year": "US10Y", "20-Year": "US20Y", "30-Year": "US30Y",
-    },
-    # Canada's (batch 9.3: CA1M, CA6M, CA1Y and CA3Y seen answering
-    # 2026-10-20; CA7Y answers empty, so the 7-year ends on its last official day).
-    "cdn": {
-        "1-Month": "CA1M", "3-Month": "CA3M", "6-Month": "CA6M", "1-Year": "CA1Y", "2-Year": "CA2Y",
-        "3-Year": "CA3Y", "5-Year": "CA5Y", "10-Year": "CA10Y", "30-Year": "CA30Y",
-    },
-    # The UK's three terms (batch 3; seen answering from the laptop 2026-10-06,
-    # tools/uk_fixtures). Not GB3M-GB: that is a gilt repo rate, not a yield.
-    "uk": {"5-Year": "GB5Y-GB", "10-Year": "GB10Y-GB", "20-Year": "GB20Y-GB"},
-    # Germany's seven terms (batch 4; all seen answering from the laptop
-    # 2026-10-06, tools/de_fixtures). CNBC does not know DE3M-DE. Quotes of
-    # Bunds, against the Bundesbank's fitted zero-coupon curve: used as they
-    # are, as the UK's are (a few basis points apart on the day measured).
-    "de": {
-        "1-Year": "DE1Y-DE", "2-Year": "DE2Y-DE", "5-Year": "DE5Y-DE", "7-Year": "DE7Y-DE",
-        "10-Year": "DE10Y-DE", "20-Year": "DE20Y-DE", "30-Year": "DE30Y-DE",
-    },
-}
+# Chart column -> CNBC symbol, per country: ``config.QUOTE_SYMBOLS`` (here
+# until batch 11.3).
 # Chart column -> column of the Treasury's yield-curve file (the file has all ten).
 _TREASURY_COLUMNS = {
     "1-Month": "1 Mo", "3-Month": "3 Mo", "6-Month": "6 Mo", "1-Year": "1 Yr", "2-Year": "2 Yr",
@@ -421,7 +397,7 @@ def _day_change(quote: dict) -> float:
 
 def _quote_symbols(country: str, columns: Iterable[str] | None) -> dict[str, str]:
     """Return {chart column: symbol} for ``columns`` (None: the default five) that the feed has for ``country``."""
-    every = _QUOTE_SYMBOLS[country]
+    every = QUOTE_SYMBOLS[country]
     return {column: every[column] for column in (YIELD_COLUMNS if columns is None else columns) if column in every}
 
 

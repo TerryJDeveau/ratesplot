@@ -371,6 +371,36 @@ CNBC_QUOTE_URL = "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolT
 # dated by Toronto's day, as the chart's end is; each chart's subtitle gives
 # their time in its own market's zone (Nation.market_timezone, batch 10.3).
 MARKET_TIMEZONE = "America/Toronto"
+# Chart column -> CNBC symbol, per country (``plotting.Country.key``): the
+# yields intraday quotes extend (--cur, ratesplot.latest). Only the columns a
+# chart draws are asked for (--yields:LIST); the U.S. terms outside the
+# default five are CNBC's symbols of the same pattern, not yet seen answering
+# from here (the cloud copy has no route to the feed). Moved here from
+# ``latest`` in batch 11.3: the automatic refresh's rule reads it too
+# (``PlotConfig.quoted_columns``).
+QUOTE_SYMBOLS = {
+    "us": {
+        "1-Month": "US1M", "3-Month": "US3M", "6-Month": "US6M", "1-Year": "US1Y", "2-Year": "US2Y",
+        "5-Year": "US5Y", "7-Year": "US7Y", "10-Year": "US10Y", "20-Year": "US20Y", "30-Year": "US30Y",
+    },
+    # Canada's (batch 9.3: CA1M, CA6M, CA1Y and CA3Y seen answering
+    # 2026-10-20; CA7Y answers empty, so the 7-year ends on its last official day).
+    "cdn": {
+        "1-Month": "CA1M", "3-Month": "CA3M", "6-Month": "CA6M", "1-Year": "CA1Y", "2-Year": "CA2Y",
+        "3-Year": "CA3Y", "5-Year": "CA5Y", "10-Year": "CA10Y", "30-Year": "CA30Y",
+    },
+    # The UK's three terms (batch 3; seen answering from the laptop 2026-10-06,
+    # tools/uk_fixtures). Not GB3M-GB: that is a gilt repo rate, not a yield.
+    "uk": {"5-Year": "GB5Y-GB", "10-Year": "GB10Y-GB", "20-Year": "GB20Y-GB"},
+    # Germany's seven terms (batch 4; all seen answering from the laptop
+    # 2026-10-06, tools/de_fixtures). CNBC does not know DE3M-DE. Quotes of
+    # Bunds, against the Bundesbank's fitted zero-coupon curve: used as they
+    # are, as the UK's are (a few basis points apart on the day measured).
+    "de": {
+        "1-Year": "DE1Y-DE", "2-Year": "DE2Y-DE", "5-Year": "DE5Y-DE", "7-Year": "DE7Y-DE",
+        "10-Year": "DE10Y-DE", "20-Year": "DE20Y-DE", "30-Year": "DE30Y-DE",
+    },
+}
 # Bank of Canada: Government of Canada treasury bills and domestic marketable
 # bonds outstanding, the total (real return bonds with their inflation
 # adjustment), dollars, each business day, a few days behind; from 2025. It is
