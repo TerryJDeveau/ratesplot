@@ -86,6 +86,7 @@ import matplotlib.dates as mdates  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from matplotlib.backend_bases import MouseEvent  # noqa: E402
+from matplotlib.colors import to_hex  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
@@ -1306,7 +1307,11 @@ def check_hover(check: Check) -> None:
         return lines.reading(x + dx, y + dy, reach)
 
     def says(found) -> tuple[str, str, str] | None:
-        return None if found is None else (found.name, found.value, found.when)
+        """What the nearest line read says (11.6: every line within reach is read, the nearest first)."""
+        return None if found is None else (found.each[0].name, found.each[0].value, found.each[0].when)
+
+    def names(found) -> list[str]:
+        return [] if found is None else [one.name for one in found.each]
 
     check("a step's flat stretch: its value, the day under the pointer, the observation's date (not a later row's)",
           says(read("2020-02-15 12:00", 1.0, dy=2)) == ("Steps", "1.00", "2020-02-15 (observed 2020-01-01)"), says(read("2020-02-15 12:00", 1.0, dy=2)))
@@ -1326,10 +1331,17 @@ def check_hover(check: Check) -> None:
           says(read("2020-03-01", 3.0)) == ("Line", "3.00", "2020-03-01 14:32 EST (intraday, provisional)"), says(read("2020-03-01", 3.0)))
     check("a projection: the value on the line that day, its end label's ≈, (projected)",
           says(read("2020-10-06 06:00", 1.0)) == ("Projection", "≈1.00", "2020-10-06 (projected)"), says(read("2020-10-06 06:00", 1.0)))
-    # The twin runs 3 px above the first step: 1 px above the step is nearer it, 2 px above nearer the twin.
-    check("of two lines in reach, the nearer",
-          read("2020-02-15 12:00", 1.0, dy=-1).name == "Steps" and read("2020-02-15 12:00", 1.0, dy=-2).name == "Twin",
-          (says(read("2020-02-15 12:00", 1.0, dy=-1)), says(read("2020-02-15 12:00", 1.0, dy=-2))))
+    # The twin runs 3 px above the first step: 1 px above the step both are in reach, the step nearer; 2 px above,
+    # both, the twin nearer (11.6, Terry: lines within 3 px "combined into one pop-up pane"); 1 px below, the step alone.
+    check("of two lines in reach, both, the nearer first",
+          names(read("2020-02-15 12:00", 1.0, dy=-1)) == ["Steps", "Twin"] and names(read("2020-02-15 12:00", 1.0, dy=-2)) == ["Twin", "Steps"],
+          (names(read("2020-02-15 12:00", 1.0, dy=-1)), names(read("2020-02-15 12:00", 1.0, dy=-2))))
+    check("one line in reach: it alone", names(read("2020-02-15 12:00", 1.0, dy=1)) == ["Steps"], names(read("2020-02-15 12:00", 1.0, dy=1)))
+    check("equally near: the first drawn first", names(read("2020-02-15 12:00", 1.0, dy=-1.5)) == ["Steps", "Twin"],
+          names(read("2020-02-15 12:00", 1.0, dy=-1.5)))
+    check("a projection and the observation it starts from read once there, as the observation",
+          names(read("2020-10-01", 1.0)).count("Projection") <= 1 and len(set(names(read("2020-10-01", 1.0)))) == len(names(read("2020-10-01", 1.0))),
+          names(read("2020-10-01", 1.0)))
     check("a line past the axis's top: read inside the axes, nothing where it runs above them",
           read("2020-05-04", 3.5 + 0.4 * 3 / 31) is not None and read("2020-05-25", 3.5 + 0.4 * 24 / 31) is None)
     check("outside the axes: nothing", lines.reading(lines.box[0] - 10, (lines.box[1] + lines.box[3]) / 2, 3) is None)
@@ -1420,7 +1432,7 @@ def check_hover(check: Check) -> None:
         day = pd.Timestamp(hover.date_text(int(run.day[k])))
         exported = data.values[data.dates.index(day)][data.names.index("10-Year Yield")]
         check("a yield read: its value as the end label writes it, the exported value that day",
-              found is not None and found.value == format_yield(exported) and found.when == hover.date_text(int(run.day[k])),
+              found is not None and found.each[0].value == format_yield(exported) and found.each[0].when == hover.date_text(int(run.day[k])),
               (found, exported))
         debt = next(curve for curve in chart.curves if curve.name.startswith("Aggregate"))
         run_debt = max(debt.runs, key=lambda each: len(each.x))
@@ -1428,8 +1440,9 @@ def check_hover(check: Check) -> None:
         flat_x = (float(run_debt.x[middle]) + float(run_debt.x[middle + 1])) / 2
         found_debt = chart.reading(flat_x, float(run_debt.y[middle]), 3)
         observed = hover.date_text(int(run_debt.day[middle]))
-        check("the debt, a step: its value in force and its observation's date", found_debt is not None and found_debt.name == debt.name
-              and (found_debt.when == observed or found_debt.when.endswith(f"(observed {observed})")), (found_debt, observed))
+        nearest_debt = found_debt.each[0] if found_debt is not None else None
+        check("the debt, a step: its value in force and its observation's date", nearest_debt is not None and nearest_debt.name == debt.name
+              and (nearest_debt.when == observed or nearest_debt.when.endswith(f"(observed {observed})")), (found_debt, observed))
 
         # The window itself: the pointer on the 10-year yield's point, at the scale the chart is shown.
         scale, left, top = app.placement["us"]
@@ -1437,16 +1450,38 @@ def check_hover(check: Check) -> None:
         def pointer(ix: float, iy: float) -> types.SimpleNamespace:
             return types.SimpleNamespace(x=left + ix * scale, y=top + iy * scale)
 
-        on_line = pointer(found.x, found.y)
+        on_line = pointer(found.each[0].x, found.each[0].y)
         app._hovered("us", on_line)
         _pump_for(w, 0.3)
         early = _hover_texts(app)
         _pump_for(w, 0.4)
-        check("the window: nothing at 0.3 s, the read-out at 0.7 s", early == [] and _hover_texts(app) == ["\n".join(found.lines)],
+        check("the window: nothing at 0.3 s, the read-out at 0.7 s", early == [] and _hover_texts(app) == list(found.lines),
               (early, _hover_texts(app)))
         canvas = app.canvases["us"]
         kinds = sorted(canvas.type(item) for item in canvas.find_withtag(gui._HOVER_TAG))
-        check("a box, its text and a ring on the point read", kinds == ["oval", "rectangle", "text"], kinds)
+        check("a box, the line's name and its value, a ring on the point read", kinds == ["oval", "rectangle", "text", "text"], kinds)
+        name_item = next(item for item in canvas.find_withtag(gui._HOVER_TAG) if canvas.type(item) == "text")
+        check("the name in the line's colour", canvas.itemcget(name_item, "fill") == found.each[0].color,
+              (canvas.itemcget(name_item, "fill"), found.each[0].color))
+        # Two lines read (11.6): each name in its colour and its value under it, in order down the box; a ring each;
+        # the box bordered in the first's colour.
+        two = hover.Readings((found.each[0], found_debt.each[0]))
+        app._show_reading(two, on_line.x, on_line.y)
+        items = canvas.find_withtag(gui._HOVER_TAG)
+        texts = [item for item in items if canvas.type(item) == "text"]
+        tops = [canvas.coords(item)[1] for item in texts]
+        rectangle = next(item for item in items if canvas.type(item) == "rectangle")
+        frame, extents = canvas.coords(rectangle), [canvas.bbox(item) for item in texts]
+        # Each text inside the box and wholly above the next.
+        laid_out = all(frame[0] <= x0 and x1 <= frame[2] and frame[1] <= y0 and y1 <= frame[3] for x0, y0, x1, y1 in extents) and all(
+            upper[3] <= lower[1] for upper, lower in zip(extents, extents[1:]))
+        check("two lines read: both in the box, in order down it, each name in its colour, a ring each, the border the first's",
+              _hover_texts(app) == list(two.lines) and tops == sorted(tops) and laid_out
+              and [canvas.itemcget(item, "fill") for item in texts] == [two.each[0].color, hover.BOX_TEXT, two.each[1].color, hover.BOX_TEXT]
+              and sorted(canvas.itemcget(item, "outline") for item in items if canvas.type(item) == "oval") == sorted(one.color for one in two.each)
+              and canvas.itemcget(rectangle, "outline") == two.each[0].color,
+              (_hover_texts(app), tops))
+        app._hide_reading()
         # 2 screen px off the line: still caught at any scale; then well off every line.
         app._hovered("us", types.SimpleNamespace(x=on_line.x, y=on_line.y + 2))
         w.pump()
@@ -1516,14 +1551,43 @@ def check_hover(check: Check) -> None:
         while time.monotonic() - began < 0.7:
             root.update()
             time.sleep(0.01)
-        check("a plain window: the read-out after 0.5 s", plain.text.get_visible()
-              and plain.text.get_text() == "Steps\n1.00  2020-02-15 (observed 2020-01-01)", plain.text.get_text())
+        shown_texts = [text.get_text() for text in plain.texts if text.get_visible()]
+        check("a plain window: the read-out after 0.5 s, the name in the line's colour", plain.box.get_visible()
+              and shown_texts == ["Steps", "1.00  2020-02-15 (observed 2020-01-01)"]
+              and to_hex(plain.texts[0].get_color()) == to_hex(plain.rings[0].get_markeredgecolor()), shown_texts)
+        # Between the step and its twin, nearer the step, both in reach (11.6): both read, the nearer first, down the box.
+        # The twin is 3 px above at 100 dpi, 3.75 at this window's 125 (Windows at 125 %, once the window has made the
+        # process DPI-aware), and a MouseEvent's coordinates are whole pixels: so the gap is measured here and the
+        # pointer put 0.4 of it above the step, as the window's own checks put it, with the event's x, y and button.
+        gap = y - _image_point(figure, ax, "2020-02-15 12:00", float(ax.lines[1].get_ydata()[0]))[1]
+        plain._moved(types.SimpleNamespace(x=x, y=height - y + 0.4 * gap, button=None))
+        root.update()
+        shown = [text for text in plain.texts if text.get_visible()]
+        renderer = canvas.get_renderer()
+        extents = [text.get_window_extent(renderer) for text in shown]
+        frame = plain.box.get_window_extent(renderer)
+        # Each text inside the box and above the next (display y upwards), none a hidden text's one-pixel measure.
+        laid_out = all(extent.height > 5 and frame.x0 <= extent.x0 and extent.x1 <= frame.x1 and frame.y0 <= extent.y0
+                       and extent.y1 <= frame.y1 for extent in extents) and all(
+            upper.y0 >= lower.y1 - 0.01 for upper, lower in zip(extents, extents[1:]))
+        check("a plain window: two lines in reach, both in the box, the nearer first, each name in its line's colour, a ring each",
+              [text.get_text() for text in shown[::2]] == ["Steps", "Twin"] and len(shown) == 4 and laid_out
+              and [ring.get_visible() for ring in plain.rings] == [True, True]
+              and [to_hex(text.get_color()) for text in shown[::2]] == [to_hex(ring.get_markeredgecolor()) for ring in plain.rings],
+              [text.get_text() for text in shown])
+        plain._moved(types.SimpleNamespace(x=x, y=height - y - 2, button=None))
+        root.update()
+        check("a plain window: back to one line, the other's texts and ring hidden",
+              [text.get_text() for text in plain.texts if text.get_visible()][::2] == ["Steps"]
+              and [ring.get_visible() for ring in plain.rings] == [True, False],
+              [text.get_text() for text in plain.texts if text.get_visible()])
         canvas.callbacks.process("motion_notify_event", MouseEvent("motion_notify_event", canvas, lines.box[0] + 3, height - lines.box[1] - 3))
         began = time.monotonic()
         while time.monotonic() - began < 2.3:
             root.update()
             time.sleep(0.01)
-        check("a plain window: gone 2 s after leaving the lines", not plain.text.get_visible())
+        check("a plain window: gone 2 s after leaving the lines", not plain.box.get_visible()
+              and not any(artist.get_visible() for artist in (*plain.texts, *plain.rings)))
     finally:
         root.destroy()
     # Its text and ring are drawn only over the window's picture: a chart saved from such a window is the same.
