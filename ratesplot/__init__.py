@@ -55,6 +55,9 @@ rates             the yield axis's other curves, each only when chosen: policy r
 fx                exchange rates, for Top and Bottom given in another currency
                   (batch 18.3): FRED's from 1971, older ones baked (18.4)
 measures          the right-axis measure: dollars, % of GDP (-r) or per person (-p)
+export            Export chart (batch 11.1): a chart as an image, or the data it shows
+                  (XLSX, CSV, TSV), the format by the file's extension; each curve
+                  marked as plotting draws it
 plotting          line drawing, draw_country, build_figure (no pyplot), COUNTRIES, run_cdn / run_us / run_uk / run_de
 options           the option table, value parsers/formatters, choices <-> PlotConfig, --help text
 frontend          what the window and the web page share without a GUI toolkit: starting
@@ -74,7 +77,8 @@ rates -> {cdn_data, uk_data, us_data, de_data, baked, http}; cdn_data -> us_data
 Canadian GDP); plotting -> fx -> {us_data, cdn_archive_data, uk_archive_data};
 plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
-regression -> occupancy; options -> config. Data modules never import
+regression -> occupancy; options -> config; {plotting, legend, options, cli,
+gui, web} -> export -> config. Data modules never import
 plotting. Nothing imports web or gui, and cli imports gui only when the
 window is opened, so --no-gui and the web page never load tkinter.
 """
