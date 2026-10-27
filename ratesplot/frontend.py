@@ -10,6 +10,7 @@ may not have it) and the two cannot drift apart:
   name (see ``options``);
 * the starting choices: defaults, remembered settings and the command line
   combined (``starting_choices``), and the window's remembered settings file;
+  the words of the "Remember my settings" box (``REMEMBER_LABEL``, batch 24.6);
 * each nation's own controls (``NATION_OPTIONS``, under its tab in the window
   and in its own sidebar section on the page), keyed "NATION:OPTION";
 * each option's help as the controls show it (``option_help_lines``);
@@ -1029,6 +1030,20 @@ def save_dialog_folder(remembered: str | None) -> str:
         if folder.is_dir() and not inside:
             return str(folder)
     return str(documents_folder())
+
+
+# The "Remember my settings" box, in the window and on the page (batch 24.6;
+# Terry, decisions 60, 69 and 74): for charts that should leave the settings
+# kept alone. Ticked at every start or visit, its off state never saved.
+# Unticked, what is remembered is left as it was, neither written nor
+# cleared; ticked again, the settings shown are kept. Reset gives the
+# defaults, which the next drawing keeps while the box is ticked.
+REMEMBER_LABEL = "Remember my settings"
+REMEMBER_HELP = (
+    "Ticked, as at every start, each drawing's settings are kept for next time. Unticked, the settings kept are left as "
+    "they are, neither written nor cleared, so the charts drawn meanwhile do not replace them; ticked again, the settings "
+    "shown are kept."
+)
 
 
 # ---------------------------------------------------------------------------

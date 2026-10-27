@@ -53,7 +53,11 @@ Remembered settings
     first run in a new command window starts from the file written last. Options given on the command line override the remembered ones
     they name: a value option individually; the curves, the countries or the
     measure each as a group, because naming one curve on the command line
-    means "only this one".
+    means "only this one". "Remember my settings" under Reset (batch 24.6),
+    ticked at every start: unticked, the choices, the preview mode and the
+    tab remembered are left as they were, for charts that should not replace
+    them; the window's size and place, the column's width and the save
+    folder are remembered whatever it says.
 
 Zoom and pan
     The mouse edits the same fields a user would type in, so the fields remain
@@ -132,6 +136,8 @@ from .frontend import (
     LIMIT_COLUMNS,
     LIMITS,
     NATION_OPTIONS,
+    REMEMBER_HELP,
+    REMEMBER_LABEL,
     STATE_VERSION,
     TAB_TITLES,
     WHEEL_DELAY_MS,
@@ -247,6 +253,13 @@ _DATE_ENTRY_CHARS = 11
 _NOTE_WRAP_PX = 150
 # Terry's wording, 2026-10-08: "Drag pointer", "right/middle click", bars between.
 _ZOOM_HINT = "Drag pointer: zoom to box | right/middle click-drag: pan | wheel: zoom dates"
+# What "Remember my settings" (batch 24.6) governs in the remembered state:
+# the chart's choices and the preview's. With the box unticked these are
+# left as they were; the rest (the window's size and place, whether it is
+# maximized and on which monitor, the column's width, the save folder) is
+# kept whatever the box says (Terry, decision 74).
+_SETTINGS_KEYS = ("payloads", "flags", "zoom", "tab", "keep_ratio")
+_REMEMBER_TIP = f"{REMEMBER_HELP} The window's size and place, the column's width and the save folder are kept either way."
 
 
 # ---------------------------------------------------------------------------
@@ -858,6 +871,11 @@ class RatesPlotApp:
         # The folder last saved to by either save dialog, remembered with the settings (batch 11.5).
         remembered = state.get("save_folder")
         self._save_folder: str | None = remembered if isinstance(remembered, str) else None
+        # "Remember my settings" (batch 24.6): ticked at every start, its off
+        # state never saved; and the settings remembered now, which the box
+        # unticked leaves as they are (``_remember``).
+        self.remember = tk.BooleanVar(self.root, value=True)
+        self._kept_settings = {key: state[key] for key in _SETTINGS_KEYS if key in state}
         self.images: dict[str, Image.Image] = {}
         self.photos: dict[str, ImageTk.PhotoImage] = {}  # Tk shows an image only while a reference exists
         self.geometry: dict[str, ChartGeometry | None] = {}
@@ -1372,6 +1390,10 @@ class RatesPlotApp:
         buttons = ttk.Frame(panel)
         buttons.pack(fill="x", pady=(0, 6))
         ttk.Button(buttons, text="Reset to defaults", command=self._reset).grid(row=0, column=0, sticky="ew", padx=1, pady=1)
+        # Under Reset rather than beside it, so the column's narrowest width is unchanged.
+        self.remember_box = ttk.Checkbutton(buttons, text=REMEMBER_LABEL, variable=self.remember)
+        self.remember_box.grid(row=1, column=0, sticky="w", padx=1, pady=(2, 0))
+        _Tooltip(self.remember_box, _REMEMBER_TIP)
         buttons.columnconfigure(0, weight=1)
 
     def _bar_width(self, rows: int) -> int:
@@ -2472,23 +2494,33 @@ class RatesPlotApp:
             self._maximized = True
 
     def _remember(self) -> None:
-        """Save the last drawn choices and the window layout for the next session."""
+        """Save the last drawn choices and the window layout for the next session.
+
+        With "Remember my settings" unticked (batch 24.6), the choices and the
+        preview's settings saved are those remembered before (``_SETTINGS_KEYS``),
+        and the layout is saved as it is now.
+        """
         if self.drawn_choices is None:
             return
-        payloads, flags = self.drawn_choices
-        # The hover read-out's box takes effect with no drawing (batch 11.2),
-        # and so does the automatic refresh's (11.3), so they are remembered
-        # as they stand, as the preview's zoom is.
-        flags = {**flags, "hover": self.flag_vars["hover"].get(), "auto-refresh": self.flag_vars["auto-refresh"].get()}
-        payloads = {**payloads, "auto-refresh-minutes": self.payload_vars["auto-refresh-minutes"].get()}
-        geometry = self._normal_geometry or self.root.geometry()
-        error = save_state(
-            {
-                "version": STATE_VERSION,
+        if self.remember.get():
+            payloads, flags = self.drawn_choices
+            # The hover read-out's box takes effect with no drawing (batch 11.2),
+            # and so does the automatic refresh's (11.3), so they are remembered
+            # as they stand, as the preview's zoom is.
+            flags = {**flags, "hover": self.flag_vars["hover"].get(), "auto-refresh": self.flag_vars["auto-refresh"].get()}
+            payloads = {**payloads, "auto-refresh-minutes": self.payload_vars["auto-refresh-minutes"].get()}
+            self._kept_settings = {
                 "payloads": payloads,
                 "flags": flags,
                 "zoom": self.zoom.get(),
                 "tab": self._current_tab_key(),
+                "keep_ratio": {name: editor.keep_ratio.get() for name, editor in self.size_editors.items()},
+            }
+        geometry = self._normal_geometry or self.root.geometry()
+        error = save_state(
+            {
+                "version": STATE_VERSION,
+                **self._kept_settings,
                 # The size and place before maximizing, and whether it is maximized.
                 "geometry": geometry,
                 "maximized": self._maximized,
@@ -2497,7 +2529,6 @@ class RatesPlotApp:
                 # to another's corner (batch 15.4). None off Windows.
                 "monitor": _window_monitor(geometry),
                 "column_width": self._current_column_width(),
-                "keep_ratio": {name: editor.keep_ratio.get() for name, editor in self.size_editors.items()},
                 # Where the save dialogs open next (batch 11.5; frontend.save_dialog_folder).
                 "save_folder": self._save_folder,
             }
