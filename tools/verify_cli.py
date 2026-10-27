@@ -242,6 +242,9 @@ CASES: list[list[str]] = [
     ["--save:r.svg"], ["--save:r.xlsx"], ["--save:r.tsv"], ["--s:rates.png"], ["--save:rates"], ["--save:rates.txt"],
     ["--save:"], ["--save"], ["--sa"], ["--no-save"], ["--save:out/2026.10.27/rates.png"], ["--save:C:/charts/rates.xlsx"],
     ["--save:a.png", "--save:b.csv"], ["--save:r.png", "--no-gui"], ["--save:r.png", "-u", "-s:2015"],
+    # Batch 11.2 (decisions 21 and 68): --hover, on by default, at least "ho" ("--h" is argparse's --help).
+    ["--ho"], ["--hov"], ["--hover"], ["--HOVER"], ["--no-ho"], ["--no-hover"], ["--No-Hover"], ["--h"], ["--hover:1"],
+    ["hover"], ["--no-hover", "--hover"], ["--hover", "--no-hover"], ["--no-hover", "--no-gui", "-u"], ["--no-hover", "--save:r.png"],
 ]
 
 

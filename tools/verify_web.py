@@ -20,7 +20,11 @@ Two parts, both run by default:
 
 A drag on a chart is not tested here: AppTest runs no JavaScript, so the chart
 component never sends a box. The rule a box goes through,
-``frontend.zoom_updates``, is the window's own; test a drag in a browser.
+``frontend.zoom_updates``, is the window's own; test a drag in a browser. So
+is the hover read-out (batch 11.2): here, the data the chart component gets
+after its PNG, unpacked as the page's script unpacks them, against the lines
+the window reads (``hover.chart_lines``); its rules are the window's
+(``tools/verify_gui.py``, group ``hover``); look at it in a browser.
 
 Downloads come from the regression tool's disk cache (``--cache``, default
 ``out/download_cache``, shared with ``tools/regress_charts.py``), and the
@@ -45,9 +49,11 @@ import contextlib
 import datetime
 import hashlib
 import io
+import json
 import logging
 import re
 import sys
+import zlib
 from pathlib import Path
 from typing import Callable
 
@@ -62,6 +68,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "tools")]
 
 import verify_charts  # noqa: E402  (first: it sets the Agg backend before pyplot is imported)
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit.testing.v1.app_test as app_test_module  # noqa: E402
 import synthetic_sources  # noqa: E402
@@ -70,7 +77,7 @@ from streamlit.runtime.media_file_manager import MediaFileManager  # noqa: E402
 from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
-from ratesplot import http, web  # noqa: E402
+from ratesplot import hover, http, web  # noqa: E402
 from ratesplot.cli import sort_tokens  # noqa: E402
 from ratesplot.config import NATIONS  # noqa: E402
 from ratesplot.frontend import move_dates_updates, starting_choices  # noqa: E402
@@ -790,7 +797,7 @@ def check_layout(check: Check) -> None:
     ]
     check("the titled blocks in order", titles[: len(wanted)] == wanted, titles)
     order = [box.key.split(":", 1)[1] for box in at.checkbox if box.key and box.key.startswith("flag:")]
-    wanted = ["relative", "per-capita", "regression", "yield", "spreads", "policy", "mortgages", "label", "current", "projections"]
+    wanted = ["relative", "per-capita", "regression", "yield", "spreads", "policy", "mortgages", "label", "current", "projections", "hover"]
     keys = [box.key for box in at.checkbox if box.key]
     # By level left the column for each nation's section in batch 10.5.
     check(
@@ -1210,11 +1217,58 @@ def check_batch11(check: Check) -> None:
           at.session_state["drawing"].finished == finished and address(at) == chart, (address(at), chart))
 
 
+def chart_bytes(at: AppTest, key: str) -> bytes:
+    """What a nation's chart component got in the page's last run (its key holds "chart:KEY:")."""
+    return next(c for c in at.get("bidi_component") if f"chart:{key}:" in c.proto.id).proto.bytes
+
+
+def check_batch112(check: Check) -> None:
+    """Batch 11.2: the hover read-out's box; its data after each chart's PNG while it is on; unticked, nothing drawn again."""
+    at = new_page("-s:2015 --e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    box = at.checkbox(key="flag:hover")
+    check("a box Hover read-out, ticked", box.label == "Hover read-out" and box.value, (box.label, box.value))
+    drawing = at.session_state["drawing"]
+    finished, chart = drawing.finished, address(at)
+    sizes = {}
+    for key in ("cdn", "us"):
+        data = chart_bytes(at, key)
+        png = web.png_part(data)
+        sizes[key] = (len(png), len(data) - len(png))
+        check(f"{key}: the PNG drawn, then the read-out's data", png == drawing.pngs[key] and len(data) > len(png), sizes[key])
+        # The data as the page's script unpacks it, against the lines as the window reads them.
+        sent = json.loads(zlib.decompress(data[len(png):]))
+        lines = hover.chart_lines(drawing.figures[key])
+        origin, per_day = sent["days_to_x"]
+        same = sent["box"] == [round(value, 2) for value in lines.box] and [c["name"] for c in sent["curves"]] == [c.name for c in lines.curves]
+        for sent_curve, curve in zip(sent["curves"], lines.curves):
+            same &= (sent_curve["texts"], sent_curve["steps"], sent_curve["projected"], sent_curve["quoted"]) == (
+                list(curve.texts), curve.steps, curve.projected, curve.quoted)
+            for sent_run, run in zip(sent_curve["runs"], curve.runs):
+                days, tenths = np.cumsum(sent_run["d"]), np.cumsum(sent_run["y"])
+                same &= (days.tolist() == run.day.tolist() and sent_run["t"] == run.text.tolist()
+                         and bool(np.all(np.abs(tenths / 10 - run.y) <= 0.05)) and bool(np.all(np.abs(origin + days * per_day - run.x) < 0.01))
+                         and sent_run["until"] == (run.until[1] if run.until is not None else None))
+        check(f"{key}: the data unpacked are the lines the window reads (days, x from the day, y, texts)", same)
+    check("the data a tenth of the PNG or less", all(extra * 10 <= png for png, extra in sizes.values()), sizes)
+    at.checkbox(key="flag:hover").uncheck().run()
+    check("unticked: nothing drawn again, each chart its PNG alone", at.session_state["drawing"].finished == finished
+          and all(chart_bytes(at, key) == drawing.pngs[key] for key in ("cdn", "us")))
+    check("unticked: --no-hover in the address and the command line shown", "--no-hover" in address(at)
+          and any("--no-hover" in code.value for code in at.code), address(at))
+    at.checkbox(key="flag:hover").check().run()
+    check("ticked again: the data again, nothing drawn, the address as before", at.session_state["drawing"].finished == finished
+          and len(chart_bytes(at, "us")) > len(drawing.pngs["us"]) and address(at) == chart, address(at))
+    page = new_page("--no-hover -s:2015 --e:2026-09-01")
+    check("from an address with --no-hover: unticked, each chart its PNG alone", not page.checkbox(key="flag:hover").value
+          and all(chart_bytes(page, key) == page.session_state["drawing"].pngs[key] for key in ("cdn", "us")))
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
-    check_batch18, check_batch11,
+    check_batch18, check_batch11, check_batch112,
 )
 
 

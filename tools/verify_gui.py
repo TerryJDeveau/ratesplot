@@ -51,6 +51,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import csv
+import dataclasses
 import hashlib
 import io
 import os
@@ -58,6 +59,7 @@ import shutil
 import sys
 import tempfile
 import time
+import types
 from pathlib import Path
 from typing import Callable
 
@@ -80,10 +82,19 @@ import verify_charts  # noqa: E402  (first: it sets the Agg backend before pyplo
 import tkinter as tk  # noqa: E402
 from tkinter import ttk  # noqa: E402
 
+import matplotlib.dates as mdates  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+from matplotlib.backend_bases import MouseEvent  # noqa: E402
+from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
+
 import synthetic_sources  # noqa: E402
 from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
 
-from ratesplot import cli, frontend, gui, http, options  # noqa: E402
+from ratesplot import cli, export, frontend, gui, hover, http, options  # noqa: E402
+from ratesplot.axes import format_yield  # noqa: E402
 from ratesplot.config import NATIONS  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
@@ -1049,6 +1060,305 @@ def check_projections(check: Check) -> None:
               "--no-projections" in w.command_tokens() and w.written_draws_the_same(("us",)), w.command_tokens())
 
 
+def _made_up_chart():
+    """A small chart with known lines, marked as plotting marks its own, for the read-out's rules (``hover``).
+
+    Steps: 1 from 2020-01-01 (carried on a row of 2020-02-01), 2 from
+    2020-04-01, 1.5 from 2020-07-01, held to 2020-09-01 where a point with no
+    value breaks the line. A twin of the first
+    step 3 px above it, 2020-01-20 to 2020-03-20. A line through 2020-01-01
+    (3), 2020-01-11 (3.4), 2020-03-01 (3), quoted, with the quote on
+    2020-03-01. A projection from 2020-10-01 (0.5) to 2020-10-11 (1.5). A line
+    over the y axis's top (3.6), shown only up to it.
+    """
+    figure = Figure(figsize=(8, 6), dpi=100)
+    FigureCanvasAgg(figure)
+    ax = figure.subplots()
+    days = pd.to_datetime
+    ax.set_xlim(days("2019-12-01"), days("2020-11-01"))
+    ax.set_ylim(0, 3.6)
+    three_px = 3 / (ax.transData.transform((0, 1.0))[1] - ax.transData.transform((0, 0.0))[1])
+    steps, = ax.plot(
+        days(["2020-01-01", "2020-02-01", "2020-04-01", "2020-07-01", "2020-09-01"]), [1.0, 1.0, 2.0, 1.5, np.nan], drawstyle="steps-post"
+    )
+    twin, = ax.plot(days(["2020-01-20", "2020-03-20"]), [1.0 + three_px, 1.0 + three_px])
+    line, = ax.plot(days(["2020-01-01", "2020-01-11", "2020-03-01"]), [3.0, 3.4, 3.0])
+    projection, = ax.plot(days(["2020-10-01", "2020-10-11"]), [0.5, 1.5])
+    high, = ax.plot(days(["2020-05-01", "2020-06-01"]), [3.5, 3.9])  # crosses the axis's top
+    two = lambda value: f"{value:.2f}"  # noqa: E731
+    for drawn, name, how in (
+        (steps, "Steps", {}), (twin, "Twin", {}), (line, "Line", {"quoted": True}),
+        (projection, "Projection", {"projected": True}), (high, "High", {}),
+    ):
+        export.mark_series(drawn, name, export.YIELD_AXIS)
+        hover.mark(drawn, (lambda value: "≈" + two(value)) if how.get("projected") else two, **how)
+    hover.mark_quote(figure, pd.Timestamp("2020-03-01 14:32", tz="America/Toronto"), "America/Toronto")
+    figure.savefig(io.BytesIO(), format="png", dpi=figure.dpi)
+    return figure, ax
+
+
+def _image_point(figure: Figure, ax, when: str, value: float) -> tuple[float, float]:
+    """Where a date and value fall on ``figure``'s picture (image pixels, origin top left)."""
+    x, y = ax.transData.transform((mdates.date2num(pd.Timestamp(when)), value))
+    return float(x), float(figure.bbox.height - y)
+
+
+def _hover_texts(app) -> list[str]:
+    """The texts of the window's read-out, on any tab: [] while it is not shown."""
+    return [canvas.itemcget(item, "text") for canvas in app.canvases.values()
+            for item in canvas.find_withtag(gui._HOVER_TAG) if canvas.type(item) == "text"]
+
+
+def _pump_for(w: Window, seconds: float) -> None:
+    """Pump Tk for ``seconds``, so its timers fire."""
+    until = time.monotonic() + seconds
+    while time.monotonic() < until:
+        w.root.update()
+        time.sleep(0.01)
+
+
+def check_hover(check: Check) -> None:
+    """Batch 11.2 (decisions 21 and 68): the hover read-out: its rules, the window's, its box and switch, the plain windows'."""
+    # The rules, on a chart whose lines are known (hover.ChartLines.reading, which the page's script follows).
+    figure, ax = _made_up_chart()
+    lines = hover.chart_lines(figure)
+
+    def read(when: str, value: float, dx: float = 0.0, dy: float = 0.0, reach: float = 3.0):
+        x, y = _image_point(figure, ax, when, value)
+        return lines.reading(x + dx, y + dy, reach)
+
+    def says(found) -> tuple[str, str, str] | None:
+        return None if found is None else (found.name, found.value, found.when)
+
+    check("a step's flat stretch: its value, the day under the pointer, the observation's date (not a later row's)",
+          says(read("2020-02-15 12:00", 1.0, dy=2)) == ("Steps", "1.00", "2020-02-15 (observed 2020-01-01)"), says(read("2020-02-15 12:00", 1.0, dy=2)))
+    check("on the observation's own day: the date alone", says(read("2020-01-01 06:00", 1.0, dy=-1)) == ("Steps", "1.00", "2020-01-01"),
+          says(read("2020-01-01 06:00", 1.0, dy=-1)))
+    check("a riser, 2 px to its right: the new value, from its own date",
+          says(read("2020-04-01", 1.5, dx=2)) == ("Steps", "2.00", "2020-04-01"), says(read("2020-04-01", 1.5, dx=2)))
+    check("the last step held to the point with no value, then nothing",
+          says(read("2020-08-31 12:00", 1.5)) == ("Steps", "1.50", "2020-08-31 (observed 2020-07-01)") and read("2020-09-10", 1.5) is None,
+          (says(read("2020-08-31 12:00", 1.5)), says(read("2020-09-10", 1.5))))
+    check("caught within 3 px (2.9 above), not at 3.1", read("2020-01-10 12:00", 1.0, dy=-2.9) is not None and read("2020-01-10 12:00", 1.0, dy=-3.1) is None)
+    check("caught 2.9 px to the left of a riser", says(read("2020-04-01", 1.5, dx=-2.9)) == ("Steps", "2.00", "2020-04-01"), says(read("2020-04-01", 1.5, dx=-2.9)))
+    check("a line: the observation nearer along it (30 %: the first, 70 %: the second)",
+          says(read("2020-01-04", 3.12)) == ("Line", "3.00", "2020-01-01") and says(read("2020-01-08", 3.28)) == ("Line", "3.40", "2020-01-11"),
+          (says(read("2020-01-04", 3.12)), says(read("2020-01-08", 3.28))))
+    check("a quoted line on the quote's day: the quote's time",
+          says(read("2020-03-01", 3.0)) == ("Line", "3.00", "2020-03-01 14:32 EST (intraday, provisional)"), says(read("2020-03-01", 3.0)))
+    check("a projection: the value on the line that day, its end label's ≈, (projected)",
+          says(read("2020-10-06 06:00", 1.0)) == ("Projection", "≈1.00", "2020-10-06 (projected)"), says(read("2020-10-06 06:00", 1.0)))
+    # The twin runs 3 px above the first step: 1 px above the step is nearer it, 2 px above nearer the twin.
+    check("of two lines in reach, the nearer",
+          read("2020-02-15 12:00", 1.0, dy=-1).name == "Steps" and read("2020-02-15 12:00", 1.0, dy=-2).name == "Twin",
+          (says(read("2020-02-15 12:00", 1.0, dy=-1)), says(read("2020-02-15 12:00", 1.0, dy=-2))))
+    check("a line past the axis's top: read inside the axes, nothing where it runs above them",
+          read("2020-05-04", 3.5 + 0.4 * 3 / 31) is not None and read("2020-05-25", 3.5 + 0.4 * 24 / 31) is None)
+    check("outside the axes: nothing", lines.reading(lines.box[0] - 10, (lines.box[1] + lines.box[3]) / 2, 3) is None)
+    origin, per_day = lines.days_to_x
+    worst = max(float(np.max(np.abs(origin + run.day * per_day - run.x))) for curve in lines.curves for run in curve.runs)
+    check("each point's x is its day's (the page works x out from the day)", worst < 0.01, worst)
+
+    # A dense line: four points kept to a pixel's column, its first, last, highest and lowest.
+    xs = np.array([10.0, 10.2, 10.4, 10.5, 10.6, 10.9, 11.1, 11.5])
+    ys = np.array([5.0, 1.0, 7.0, 3.0, 9.0, 4.0, 2.0, 2.5])
+    check("a dense line: per column of pixels its first, last, highest and lowest kept",
+          hover._decimated(xs, ys).tolist() == [0, 1, 4, 5, 6, 7], hover._decimated(xs, ys).tolist())
+
+    # The timing, on the controller alone, with a clock of its own.
+    clock: list[tuple[float, Callable[[], None]]] = []
+    now = [0.0]
+    events: list[str] = []
+    controller = hover.Controller(
+        lambda ms, callback: clock.append((now[0] + ms, callback)) or (len(clock) - 1),
+        lambda handle: clock.__setitem__(handle, (float("inf"), lambda: None)),
+        lambda found, _x, _y: events.append(f"show {found}"),
+        lambda: events.append("hide"),
+    )
+
+    def advance(ms: float) -> None:
+        now[0] += ms
+        for index, (due, callback) in enumerate(list(clock)):
+            if due <= now[0]:
+                clock[index] = (float("inf"), lambda: None)
+                callback()
+
+    controller.moved("a", 0, 0)
+    advance(400)
+    shown_early = list(events)
+    controller.moved("b", 0, 0)  # moving along the line, still on it
+    advance(150)
+    check("controller: nothing at 0.4 s; at 0.5 s what the pointer is on then", shown_early == [] and events == ["show b"], events)
+    controller.moved(None, 0, 0)
+    advance(1900)
+    controller.moved("c", 0, 0)
+    advance(2500)
+    check("controller: off the line under 2 s and back: kept, and follows", events == ["show b", "show c"], events)
+    controller.moved(None, 0, 0)
+    advance(1999)
+    still = list(events)
+    advance(2)
+    check("controller: gone 2 s after leaving every line", still == ["show b", "show c"] and events[-1] == "hide", events)
+    controller.moved("d", 0, 0)
+    controller.moved(None, 0, 0)
+    advance(600)
+    check("controller: off the line before 0.5 s: nothing shown", events[-1] == "hide", events)
+
+    # The window: a chart's lines read with each drawing; the read-out shown, followed and hidden.
+    with window(f"-u -s:2020 {END}") as w:
+        app = w.app
+        box, projections = app.flag_boxes["hover"], app.flag_boxes["projections"]
+
+        def block(widget):
+            """The control column's block a control sits in (each row of a block is a frame of its own)."""
+            while widget is not None and widget.winfo_class() != "TLabelframe":
+                widget = widget.master
+            return widget
+
+        check("the box: Hover read-out, ticked", str(box.cget("text")) == "Hover read-out" and app.flag_vars["hover"].get(), str(box.cget("text")))
+        check("in the block of Projections to today", block(box) is not None and block(box) is block(projections),
+              (str(block(box)), str(block(projections))))
+        check("on by default: not on the command line", not any("hover" in token for token in w.command_tokens()), w.command_tokens())
+        figure_us, drawn = app.figures["us"]
+        chart = app.hover_lines["us"]
+        data = export.chart_data(figure_us, drawn.for_nation("us"), "us")
+        names = list(dict.fromkeys(curve.name for curve in chart.curves))
+        check("every curve Export chart writes has its lines read, and no other", names == list(data.names), (names, data.names))
+        origin, per_day = chart.days_to_x
+        worst = max(float(np.max(np.abs(origin + run.day * per_day - run.x))) for curve in chart.curves for run in curve.runs)
+        check("every point on a whole day (the page's x from its day)", worst < 0.01, worst)
+
+        # A point on the 10-year yield with no other line within 12 px, read where its line runs (and checked
+        # against the exported value of that day).
+        ten = next(curve for curve in chart.curves if curve.name == "10-Year Yield")
+        run = max(ten.runs, key=lambda each: len(each.x))
+        others = [dataclasses.replace(chart, curves=(curve,)) for curve in chart.curves if curve.name != ten.name]
+        found = None
+        for k in range(len(run.x) // 2, len(run.x)):
+            x, y = float(run.x[k]), float(run.y[k])
+            if all(other.reading(x, y, 12) is None for other in others):
+                found = chart.reading(x, y, 3)
+                break
+        day = pd.Timestamp(hover.date_text(int(run.day[k])))
+        exported = data.values[data.dates.index(day)][data.names.index("10-Year Yield")]
+        check("a yield read: its value as the end label writes it, the exported value that day",
+              found is not None and found.value == format_yield(exported) and found.when == hover.date_text(int(run.day[k])),
+              (found, exported))
+        debt = next(curve for curve in chart.curves if curve.name.startswith("Aggregate"))
+        run_debt = max(debt.runs, key=lambda each: len(each.x))
+        middle = len(run_debt.x) // 2
+        flat_x = (float(run_debt.x[middle]) + float(run_debt.x[middle + 1])) / 2
+        found_debt = chart.reading(flat_x, float(run_debt.y[middle]), 3)
+        observed = hover.date_text(int(run_debt.day[middle]))
+        check("the debt, a step: its value in force and its observation's date", found_debt is not None and found_debt.name == debt.name
+              and (found_debt.when == observed or found_debt.when.endswith(f"(observed {observed})")), (found_debt, observed))
+
+        # The window itself: the pointer on the 10-year yield's point, at the scale the chart is shown.
+        scale, left, top = app.placement["us"]
+
+        def pointer(ix: float, iy: float) -> types.SimpleNamespace:
+            return types.SimpleNamespace(x=left + ix * scale, y=top + iy * scale)
+
+        on_line = pointer(found.x, found.y)
+        app._hovered("us", on_line)
+        _pump_for(w, 0.3)
+        early = _hover_texts(app)
+        _pump_for(w, 0.4)
+        check("the window: nothing at 0.3 s, the read-out at 0.7 s", early == [] and _hover_texts(app) == ["\n".join(found.lines)],
+              (early, _hover_texts(app)))
+        canvas = app.canvases["us"]
+        kinds = sorted(canvas.type(item) for item in canvas.find_withtag(gui._HOVER_TAG))
+        check("a box, its text and a ring on the point read", kinds == ["oval", "rectangle", "text"], kinds)
+        # 2 screen px off the line: still caught at any scale; then well off every line.
+        app._hovered("us", types.SimpleNamespace(x=on_line.x, y=on_line.y + 2))
+        w.pump()
+        check("2 screen px off the line: still read", _hover_texts(app) != [], _hover_texts(app))
+        empty = pointer(chart.box[0] + 3, chart.box[1] + 3)  # the axes' top left corner: no line there
+        check("the axes' corner reads no line", chart.reading(chart.box[0] + 3, chart.box[1] + 3, 3 / scale) is None)
+        app._hovered("us", empty)
+        _pump_for(w, 1.5)
+        kept = _hover_texts(app)
+        _pump_for(w, 0.8)
+        check("off every line: kept at 1.5 s, gone by 2.3 s", kept != [] and _hover_texts(app) == [], (kept, _hover_texts(app)))
+        app._hovered("us", on_line)
+        _pump_for(w, 0.7)
+        shown = _hover_texts(app)
+        app._drag_start("us", on_line, "zoom")
+        gone = _hover_texts(app)
+        app._drag_end("us", on_line)  # a click, not a drag: nothing zoomed
+        w.settle()
+        check("a press of the button: the read-out goes at once", shown != [] and gone == [], (shown, gone))
+
+        # The box: unticked, the read-out goes and nothing is drawn again; the address and the remembered settings follow.
+        count = drawings(w)
+        png = app.pngs["us"]
+        app._hovered("us", on_line)
+        _pump_for(w, 0.7)
+        w.tick("hover", False)
+        w.settle()
+        check("unticked: the read-out gone, no drawing, the chart the same", _hover_texts(app) == [] and drawings(w) == count and app.pngs["us"] == png,
+              (_hover_texts(app), drawings(w), count))
+        check("unticked: --no-hover written, which draws the same", "--no-hover" in w.command_tokens() and w.written_draws_the_same(("us",)),
+              w.command_tokens())
+        app._hovered("us", on_line)
+        _pump_for(w, 0.7)
+        check("unticked: the pointer on a line shows nothing", _hover_texts(app) == [], _hover_texts(app))
+        app._remember()
+        state, _note, _path = frontend.load_state()
+        check("unticked: remembered so", state.get("flags", {}).get("hover") is False, state.get("flags", {}).get("hover"))
+        w.tick("hover", True)
+        w.settle()
+        app._hovered("us", on_line)
+        _pump_for(w, 0.7)
+        check("ticked again: shown again, still no drawing", _hover_texts(app) != [] and drawings(w) == count, (_hover_texts(app), drawings(w)))
+
+    # The switch: --no-hover, at least "--ho"; "--h" stays argparse's --help.
+    spelled = {token: cli.match_token(token) for token in ("--ho", "--hover", "--no-ho", "--no-hover")}
+    check("--ho and --hover turn it on, --no-ho and --no-hover off",
+          [(option.name, value) for option, value in spelled.values()] == [("hover", True), ("hover", True), ("hover", False), ("hover", False)],
+          spelled)
+    check("--h is not the read-out", cli.match_token("--h") is None)
+    check("--no-hover: PlotConfig.hover off, the same chart", not cli.parse_args(["--no-hover"]).hover
+          and cli.parse_args(["--no-hover"]).same_chart(cli.parse_args([])))
+
+    # The plain matplotlib windows (--no-gui): matplotlib's own mouse events and timers, on a Tk canvas here.
+    root = tk.Tk()
+    try:
+        figure, ax = _made_up_chart()
+        canvas = FigureCanvasTkAgg(figure, master=root)
+        canvas.get_tk_widget().pack()
+        hover.attach(figure)
+        canvas.draw()
+        root.update()
+        plain = figure._ratesplot_hover_window
+        x, y = _image_point(figure, ax, "2020-02-15 12:00", 1.0)
+        height = figure.bbox.height
+        canvas.callbacks.process("motion_notify_event", MouseEvent("motion_notify_event", canvas, x, height - y))
+        began = time.monotonic()
+        while time.monotonic() - began < 0.7:
+            root.update()
+            time.sleep(0.01)
+        check("a plain window: the read-out after 0.5 s", plain.text.get_visible()
+              and plain.text.get_text() == "Steps\n1.00  2020-02-15 (observed 2020-01-01)", plain.text.get_text())
+        canvas.callbacks.process("motion_notify_event", MouseEvent("motion_notify_event", canvas, lines.box[0] + 3, height - lines.box[1] - 3))
+        began = time.monotonic()
+        while time.monotonic() - began < 2.3:
+            root.update()
+            time.sleep(0.01)
+        check("a plain window: gone 2 s after leaving the lines", not plain.text.get_visible())
+    finally:
+        root.destroy()
+    # Its text and ring are drawn only over the window's picture: a chart saved from such a window is the same.
+    attached, _ax = _made_up_chart()
+    hover.attach(attached)
+    attached.canvas.draw()
+    attached._ratesplot_hover_window._show(lines.reading(*_image_point(attached, _ax, "2020-02-15 12:00", 1.0), 3), 100, 100)
+    saved, clean = io.BytesIO(), io.BytesIO()
+    attached.savefig(saved, format="png", dpi=attached.dpi)
+    _made_up_chart()[0].savefig(clean, format="png", dpi=100)
+    check("a plain window's chart saved with the read-out shown: the same bytes", saved.getvalue() == clean.getvalue())
+
+
 def check_not_drawn(check: Check) -> None:
     """Batch 19.4: a chart that cannot be drawn is named on a line of its own, red and bold, and in the status line, in red."""
     real = gui.build_figure
@@ -1158,6 +1468,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "levels": check_levels,
     "limits": check_limits,
     "projections": check_projections,
+    "hover": check_hover,
     "not_drawn": check_not_drawn,
     "settings_files": check_settings_files,
 }
