@@ -151,18 +151,25 @@ def arrange_legend_groups(groups: Sequence[Sequence[Artist]], ncols: int) -> tup
 
 
 def _draw_legend(ax: Axes, handles: Sequence[Artist], *, ncols: int, fontsize: float, anchor: tuple[float, float]) -> Legend:
-    """Draw the legend with its upper-left corner at ``anchor`` (axes fraction).
+    """Draw the legend with its upper-left corner at ``anchor`` (``ax``'s axes fraction).
 
     ``borderaxespad=0``: matplotlib otherwise sets the legend half a font size
     (11 px at 16 pt) right of and below the anchor, off the position the
     occupancy grid chose. Placed in a lower-right corner it then ran 3 px
     over the frame (found 2026-09-29).
+
+    It is drawn on the axes drawn last, the right axis's twin, so that no
+    curve is drawn over it: on ``ax`` the right-axis curves, drawn after the
+    whole of ``ax``, crossed a legend placed over them (batch 24.1, where
+    nothing fits). Where it covers nothing it is the same picture.
     """
-    return ax.legend(
+    top = sorted(ax.figure.axes, key=lambda axes: axes.get_zorder())[-1]  # as the figure orders its drawing
+    return top.legend(
         handles,
         [handle.get_label() for handle in handles],
         loc="upper left",
         bbox_to_anchor=anchor,
+        bbox_transform=ax.transAxes,
         borderaxespad=0.0,
         ncols=ncols,
         fontsize=fontsize,
