@@ -88,6 +88,14 @@ Downloads
     shown), JPG, PDF or SVG, or the data it shows as XLSX, CSV or TSV, or a
     workbook of every chart. The file is made on the click (``_export_bytes``).
 
+The hover read-out
+    As in the window (batch 11.2, ``hover``): the pointer resting on a line
+    shows its name, date and value by the pointer, worked out in the
+    visitor's browser from data sent with the chart (``_chart_bytes``), so
+    following a line asks nothing of the server. Its box ("Hover read-out")
+    changes no chart: unticking it sends the charts without the data, and
+    draws nothing again.
+
 Not here (the window has them)
     The wheel's zoom and the right-drag pan (the buttons move the dates),
     and remembered settings (the address keeps the chart instead).
@@ -97,11 +105,13 @@ from __future__ import annotations
 
 import datetime
 import functools
+import json
 import os
 import struct
 import threading
 import time
-from dataclasses import dataclass
+import zlib
+from dataclasses import dataclass, replace
 
 import matplotlib
 
@@ -111,7 +121,7 @@ import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
-from . import export, http  # noqa: E402
+from . import export, hover, http  # noqa: E402
 from .cli import sort_tokens  # noqa: E402
 from .config import (  # noqa: E402
     DEFAULT_REGRESSION_TOLERANCE_PCT,
@@ -278,6 +288,11 @@ class Drawing:
     copies: tuple[str, ...]
     seconds: float
     finished: pd.Timestamp
+    # Country.key -> where its lines run and what they say, for the hover
+    # read-out (batch 11.2, ``hover.payload``), deflated: sent after the PNG
+    # while the read-out is on (``_chart_bytes``). Made with the drawing, so
+    # ticking the box again sends it without drawing anything.
+    readouts: dict[str, bytes]
 
     def chart_key(self, key: str) -> str:
         """The session key of ``key``'s chart in this drawing (a new drawing, a new chart: no stale box)."""
@@ -306,23 +321,247 @@ class Drawing:
 # runs: the picture's object URL is released by that function, and the
 # picture is given its size from the PNG's header, so that the browser keeps
 # its place while decoding it and the page does not jump.
+#
+# The hover read-out (batch 11.2): while it is on, the PNG's bytes are
+# followed by where the chart's lines run and what they say
+# (``hover.payload``), deflated (``_chart_bytes``); the script finds where
+# the PNG ends (its IEND chunk) and inflates the rest with the browser's own
+# DecompressionStream. ``reading``, ``nearestLine``, ``nearestSteps`` and the
+# Controller follow ``hover.ChartLines.reading``, ``hover._nearest_line``,
+# ``hover._nearest_steps`` and ``hover.Controller`` line for line: the read-out
+# says on the page what it says in the window. Its reach is 3 of the
+# screen's pixels, whatever size the picture is shown at; a touch shows nothing.
 _CHART_JS = """
 const MIN_DRAG = 8;
+const SHOW_DELAY_MS = __SHOW_DELAY_MS__;
+const HIDE_DELAY_MS = __HIDE_DELAY_MS__;
+const REACH_PX = __REACH_PX__;
+const OFFSET_PX = __OFFSET_PX__;
+const BOX_SLACK_PX = 0.5;
+
+// Where the PNG ends: after its IEND chunk. Anything after it is the read-out's data.
+function pngLength(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let at = 8;
+  while (at + 8 <= bytes.byteLength) {
+    const length = view.getUint32(at);
+    const type = String.fromCharCode(bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]);
+    at += 12 + length;
+    if (type === "IEND") return at;
+  }
+  return bytes.byteLength;
+}
+
+// hover.payload, inflated and unpacked: each run's days and y (tenths) were sent as changes; x is the day's.
+async function readLines(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+  const lines = JSON.parse(await new Response(stream).text());
+  const [origin, perDay] = lines.days_to_x;
+  for (const curve of lines.curves) {
+    for (const run of curve.runs) {
+      const count = run.d.length;
+      run.day = new Array(count);
+      run.x = new Float64Array(count);
+      run.yy = new Float64Array(count);
+      let day = 0, tenths = 0;
+      for (let i = 0; i < count; i++) {
+        day += run.d[i];
+        tenths += run.y[i];
+        run.day[i] = day;
+        run.x[i] = origin + day * perDay;
+        run.yy[i] = tenths / 10;
+      }
+      run.end = run.until === null ? null : [origin + run.until * perDay, run.until];
+    }
+  }
+  return lines;
+}
+
+function lowerBound(xs, value) {  // the first index whose x is at least value
+  let low = 0, high = xs.length;
+  while (low < high) { const mid = (low + high) >> 1; if (xs[mid] < value) low = mid + 1; else high = mid; }
+  return low;
+}
+
+function upperBound(xs, value) {  // the first index whose x is more than value
+  let low = 0, high = xs.length;
+  while (low < high) { const mid = (low + high) >> 1; if (xs[mid] <= value) low = mid + 1; else high = mid; }
+  return low;
+}
+
+function inside(x, y, box) {
+  const [left, top, right, bottom] = box;
+  return x >= left - BOX_SLACK_PX && x <= right + BOX_SLACK_PX && y >= top - BOX_SLACK_PX && y <= bottom + BOX_SLACK_PX;
+}
+
+function nearestLine(run, px, py, reach, box) {
+  const count = run.x.length;
+  if (count < 2) return null;
+  const low = Math.max(lowerBound(run.x, px - reach) - 1, 0);
+  const high = Math.min(upperBound(run.x, px + reach), count - 1);
+  let best = null;
+  for (let i = low; i < high; i++) {
+    const x0 = run.x[i], y0 = run.yy[i], dx = run.x[i + 1] - x0, dy = run.yy[i + 1] - y0;
+    const length2 = dx * dx + dy * dy;
+    const along = Math.min(Math.max(length2 > 0 ? ((px - x0) * dx + (py - y0) * dy) / length2 : 0, 0), 1);
+    const cx = x0 + along * dx, cy = y0 + along * dy;
+    if (!inside(cx, cy, box)) continue;
+    const distance = Math.hypot(px - cx, py - cy);
+    if (best === null || distance < best.distance) best = { distance, i, along };
+  }
+  if (best === null || !(best.distance <= reach)) return null;
+  const index = best.i + (best.along >= 0.5 ? 1 : 0);
+  return { distance: best.distance, x: run.x[index], y: run.yy[index], index, day: run.day[index] };
+}
+
+function nearestSteps(run, px, py, reach, box) {
+  const count = run.x.length;
+  const flats = run.end === null ? count - 1 : count;
+  const endX = (i) => (i + 1 < count ? run.x[i + 1] : run.end[0]);
+  const endDay = (i) => (i + 1 < count ? run.day[i + 1] : run.end[1]);
+  const first = lowerBound(run.x, px - reach), last = upperBound(run.x, px + reach);
+  const candidates = [];
+  let flat = null;
+  for (let i = Math.max(first - 1, 0); i < Math.min(last, flats); i++) {
+    const cx = Math.min(Math.max(px, run.x[i]), endX(i)), cy = run.yy[i];
+    if (!inside(cx, cy, box)) continue;
+    const distance = Math.hypot(px - cx, py - cy);
+    if (flat === null || distance < flat.distance) flat = { distance, i, cx, cy };
+  }
+  if (flat !== null) {
+    const i = flat.i, span = endX(i) - run.x[i];
+    const share = span > 0 ? (flat.cx - run.x[i]) / span : 0;
+    const day = Math.floor(run.day[i] + share * (endDay(i) - run.day[i]));
+    candidates.push({ distance: flat.distance, order: 2 * i, x: flat.cx, y: flat.cy, index: i, day });
+  }
+  let riser = null;
+  for (let i = Math.max(first, 1); i < Math.min(last, count); i++) {
+    const low = Math.min(run.yy[i - 1], run.yy[i]), high = Math.max(run.yy[i - 1], run.yy[i]);
+    const cx = run.x[i], cy = Math.min(Math.max(py, low), high);
+    if (!inside(cx, cy, box)) continue;
+    const distance = Math.hypot(px - cx, py - cy);
+    if (riser === null || distance < riser.distance) riser = { distance, i, cx, cy };
+  }
+  if (riser !== null) {
+    candidates.push({ distance: riser.distance, order: 2 * riser.i - 1, x: riser.cx, y: riser.cy, index: riser.i, day: run.day[riser.i] });
+  }
+  let best = null;
+  for (const found of candidates) {
+    if (best === null || found.distance < best.distance || (found.distance === best.distance && found.order < best.order)) best = found;
+  }
+  if (best === null || !(best.distance <= reach)) return null;
+  return best;
+}
+
+function dateText(day) {
+  return new Date(day * 86400000).toISOString().slice(0, 10);
+}
+
+function whenText(lines, curve, run, found) {
+  const day = dateText(found.day);
+  if (curve.projected) return day + " (projected)";
+  const observed = run.day[found.index];
+  if (curve.steps && found.day !== observed) return day + " (observed " + dateText(observed) + ")";
+  if (curve.quoted && lines.quote !== null && observed === lines.quote[0]) return day + lines.quote[1];
+  return day;
+}
+
+function reading(lines, x, y, reach) {
+  const [left, top, right, bottom] = lines.box;
+  if (!(left - reach <= x && x <= right + reach && top - reach <= y && y <= bottom + reach)) return null;
+  let best = null;
+  for (const curve of lines.curves) {
+    for (const run of curve.runs) {
+      const found = curve.steps ? nearestSteps(run, x, y, reach, lines.box) : nearestLine(run, x, y, reach, lines.box);
+      if (found !== null && (best === null || found.distance < best.found.distance)) best = { found, curve, run };
+    }
+  }
+  if (best === null) return null;
+  const { found, curve, run } = best;
+  return {
+    name: curve.name, color: curve.color, value: curve.texts[run.t[found.index]],
+    when: whenText(lines, curve, run, found), x: found.x, y: found.y,
+  };
+}
+
+// When the read-out shows, follows the pointer and goes (hover.Controller).
+class Controller {
+  constructor(show, hide) {
+    this.show = show; this.hide = hide; this.shown = false;
+    this.waiting = null; this.showTimer = null; this.hideTimer = null;
+  }
+  moved(found, x, y) {
+    if (found === null) {
+      this.waiting = null;
+      this.stopTimer("showTimer");
+      if (this.shown && this.hideTimer === null) {
+        this.hideTimer = setTimeout(() => { this.hideTimer = null; this.shown = false; this.hide(); }, HIDE_DELAY_MS);
+      }
+      return;
+    }
+    this.stopTimer("hideTimer");
+    if (this.shown) { this.show(found, x, y); return; }
+    this.waiting = [found, x, y];
+    if (this.showTimer === null) {
+      this.showTimer = setTimeout(() => {
+        this.showTimer = null;
+        if (this.waiting !== null) { this.shown = true; this.show(...this.waiting); this.waiting = null; }
+      }, SHOW_DELAY_MS);
+    }
+  }
+  stop() {
+    this.waiting = null;
+    this.stopTimer("showTimer");
+    this.stopTimer("hideTimer");
+    if (this.shown) { this.shown = false; this.hide(); }
+  }
+  stopTimer(name) {
+    if (this[name] !== null) { clearTimeout(this[name]); this[name] = null; }
+  }
+}
 
 export default function (component) {
   const { data, parentElement, setTriggerValue } = component;
   const frame = document.createElement("div");
   frame.className = "chart";
-  frame.innerHTML = '<img alt="Chart" draggable="false"><div class="band"></div>';
+  frame.innerHTML = '<img alt="Chart" draggable="false"><div class="band"></div>'
+    + '<div class="ring"></div><div class="readout"><div></div><div></div></div>';
   parentElement.appendChild(frame);
   const img = frame.querySelector("img");
   const band = frame.querySelector(".band");
+  const ring = frame.querySelector(".ring");
+  const readout = frame.querySelector(".readout");
 
+  const pngEnd = pngLength(data);
   const header = new DataView(data.buffer, data.byteOffset, 24);  // PNG: IHDR width, height at 16, 20
-  img.width = header.getUint32(16);
+  // The picture's own width: img.width, once it is shown, is the width it is shown at.
+  const imageWidth = header.getUint32(16);
+  img.width = imageWidth;
   img.height = header.getUint32(20);
-  const url = URL.createObjectURL(new Blob([data], { type: "image/png" }));
+  const url = URL.createObjectURL(new Blob([data.subarray(0, pngEnd)], { type: "image/png" }));
   img.src = url;
+
+  let lines = null;
+  if (pngEnd < data.byteLength) {
+    readLines(data.subarray(pngEnd)).then((read) => { lines = read; }).catch(() => {});
+  }
+  const show = (found, x, y) => {
+    const rect = img.getBoundingClientRect();
+    const scale = rect.width / imageWidth;  // screen pixels per image pixel
+    ring.style.left = found.x * scale + "px";
+    ring.style.top = found.y * scale + "px";
+    ring.style.borderColor = found.color;
+    readout.children[0].textContent = found.name;
+    readout.children[1].textContent = found.value + "  " + found.when;
+    readout.style.borderColor = found.color;
+    ring.style.display = readout.style.display = "block";
+    // Right of the pointer and below it, turned back where that would leave the picture.
+    const width = readout.offsetWidth, height = readout.offsetHeight;
+    readout.style.left = (x + OFFSET_PX + width <= rect.width ? x + OFFSET_PX : Math.max(x - OFFSET_PX - width, 0)) + "px";
+    readout.style.top = (y + OFFSET_PX + height <= rect.height ? y + OFFSET_PX : Math.max(y - OFFSET_PX - height, 0)) + "px";
+  };
+  const hide = () => { ring.style.display = readout.style.display = "none"; };
+  const controller = new Controller(show, hide);
 
   let start = null;
   const point = (event) => {
@@ -342,6 +581,7 @@ export default function (component) {
     band.style.display = "block";
   };
   img.onpointerdown = (event) => {
+    controller.stop();
     if (event.pointerType === "touch" || event.button !== 0) return;
     event.preventDefault();
     img.setPointerCapture(event.pointerId);
@@ -349,8 +589,16 @@ export default function (component) {
     showBand(start, start);
   };
   img.onpointermove = (event) => {
-    if (start) showBand(start, point(event));
+    if (start) {
+      showBand(start, point(event));
+      return;
+    }
+    if (lines === null || event.pointerType === "touch" || event.buttons !== 0) return;
+    const at = point(event);
+    const perScreen = imageWidth / at.width;  // image pixels per screen pixel
+    controller.moved(reading(lines, at.x * perScreen, at.y * perScreen, REACH_PX * perScreen), at.x, at.y);
   };
+  img.onpointerleave = () => controller.moved(null, 0, 0);
   img.onpointerup = (event) => {
     if (!start) return;
     const a = start;
@@ -369,16 +617,30 @@ export default function (component) {
     start = null;
     band.style.display = "none";
   };
-  return () => URL.revokeObjectURL(url);
+  return () => {
+    controller.stop();
+    URL.revokeObjectURL(url);
+  };
 }
-"""
-_CHART_CSS = """
-.chart { position: relative; line-height: 0; }
-.chart img { width: 100%; height: auto; cursor: crosshair; user-select: none; -webkit-user-select: none; }
-.band {
+""".replace("__SHOW_DELAY_MS__", str(hover.SHOW_DELAY_MS)).replace("__HIDE_DELAY_MS__", str(hover.HIDE_DELAY_MS)).replace(
+    "__REACH_PX__", str(hover.REACH_PX)
+).replace("__OFFSET_PX__", str(hover.OFFSET_PX))
+_CHART_CSS = f"""
+.chart {{ position: relative; line-height: 0; }}
+.chart img {{ width: 100%; height: auto; cursor: crosshair; user-select: none; -webkit-user-select: none; }}
+.band {{
   position: absolute; display: none; box-sizing: border-box; pointer-events: none;
   border: 2px dashed #1f5fbf; background: rgba(31, 95, 191, 0.08);
-}
+}}
+.ring {{
+  position: absolute; display: none; box-sizing: border-box; pointer-events: none;
+  width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid; border-radius: 50%;
+}}
+.readout {{
+  position: absolute; display: none; pointer-events: none; z-index: 1; white-space: pre; line-height: 1.35;
+  padding: 3px 7px; border: 1.5px solid; border-radius: 4px; font-size: 13px;
+  background: {hover.BOX_FACE}; color: {hover.BOX_TEXT}; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}}
 """
 def _chart_component():
     """Register the chart component with the running Streamlit and return the command that shows a chart.
@@ -395,6 +657,28 @@ def _png_size(png: bytes) -> tuple[int, int]:
     """Return a PNG's width and height in pixels, read from its header (the IHDR chunk)."""
     width, height = struct.unpack(">II", png[16:24])
     return width, height
+
+
+def _chart_bytes(drawing: Drawing, key: str) -> bytes:
+    """What the chart component gets: the PNG, then, while the hover read-out is on, its data (batch 11.2).
+
+    One payload, since the component takes one: the script finds the PNG's
+    end by its IEND chunk (``_CHART_JS``), and the browser shows the PNG
+    alone, the bytes drawn.
+    """
+    png = drawing.pngs[key]
+    return png + drawing.readouts.get(key, b"") if drawing.config.hover else png
+
+
+def png_part(data: bytes) -> bytes:
+    """The PNG at the head of a chart component's bytes (``_chart_bytes``): its chunks up to and with IEND."""
+    at = 8
+    while at + 8 <= len(data):
+        length, kind = struct.unpack(">I4s", data[at:at + 8])
+        at += 12 + length
+        if kind == b"IEND":
+            return data[:at]
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -1174,6 +1458,7 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
     pngs: dict[str, bytes] = {}
     figures: dict[str, Figure] = {}
     geometry: dict[str, ChartGeometry | None] = {}
+    readouts: dict[str, bytes] = {}
     error: str | None = None
     failed: dict[str, str] = {}
     # Each real download logged, and those reused counted, once the lock is held (http.drawing_downloads).
@@ -1199,6 +1484,9 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
                 figures[country.key] = figure
                 # Measured after savefig, so the axes positions are the final rendered ones (as in the window).
                 geometry[country.key] = ChartGeometry.from_figure(figure, drawn)
+                drawn_lines = hover.chart_lines(figure)
+                if drawn_lines is not None:
+                    readouts[country.key] = zlib.compress(json.dumps(hover.payload(drawn_lines), separators=(",", ":")).encode())
     return Drawing(
         config=config,
         drawn=drawn,
@@ -1212,6 +1500,7 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
         copies=tuple(downloads.copies_used()),
         seconds=time.perf_counter() - began,
         finished=pd.Timestamp.now(tz=MARKET_TIMEZONE),
+        readouts=readouts,
     )
 
 
@@ -1338,7 +1627,7 @@ def _show(drawing: Drawing) -> None:
             with tab:
                 show_chart(
                     key=drawing.chart_key(key),
-                    data=drawing.pngs[key],
+                    data=_chart_bytes(drawing, key),
                     on_box_change=functools.partial(_box_dragged, key),
                 )
                 _export_row(drawing, key)
@@ -1391,6 +1680,13 @@ def main() -> None:
 
     previous: Drawing | None = state.get(_DRAWING)
     forced = state.pop(_FORCE, False)
+    if config is not None and previous is not None and not forced and previous.config != config and config.same_chart(previous.config):
+        # Only the hover read-out's box changed (batch 11.2): it draws nothing,
+        # so the charts stay; the address and the command line follow it.
+        tokens = tuple(command_line_tokens(*choices))
+        state[_DRAWING] = previous = replace(previous, config=config, tokens=tokens)
+        if previous.error is None:
+            _set_address(tokens)
     if config is None:
         st.error("Not drawn: " + "; ".join(problems))
     elif previous is None or previous.config != config or forced:
