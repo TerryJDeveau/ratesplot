@@ -227,9 +227,20 @@ def flags(at: AppTest) -> dict[str, bool]:
     return {box.key.split(":", 1)[1]: box.value for box in at.checkbox if box.key and box.key.startswith("flag:")}
 
 
+def chart_elements(at: AppTest) -> list:
+    """The page's chart components (a ``bidi_component`` to AppTest, as the settings' cookie writer is, batch 24.6)."""
+    return [element for element in at.get("bidi_component") if "-chart:" in element.proto.id]
+
+
 def charts_shown(at: AppTest) -> int:
-    """The charts shown: each is the page's chart component (a ``bidi_component`` to AppTest)."""
-    return len(at.get("bidi_component"))
+    """The charts shown: each is the page's chart component."""
+    return len(chart_elements(at))
+
+
+def memory(at: AppTest) -> dict | None:
+    """What the page's cookie writer was given in its last run (batch 24.6): its cookie's name, line and seconds; None if not laid out."""
+    found = [element for element in at.get("bidi_component") if element.proto.id.endswith("-memory")]
+    return json.loads(found[0].proto.json) if found else None
 
 
 def button(at: AppTest, label: str):
@@ -397,7 +408,7 @@ def check_view_buttons(check: Check) -> None:
     view = new_page("-c -s:2001 --e:2019")
     expected = {"◀ Back": False, "Unzoom": False, "◀ Earlier": True, "Later ▶": True, "Zoom out": True}
     check("view: nothing to undo; the dates can move", enabled(view) == expected, enabled(view))
-    png = view.get("bidi_component")[0].proto.bytes
+    png = chart_elements(view)[0].proto.bytes
     check(
         "the chart component gets the PNG, 2048x1536",
         png[:8] == b"\x89PNG\r\n\x1a\n" and png[16:24] == png_size_bytes(2048, 1536),
@@ -494,7 +505,7 @@ def check_size_boxes(check: Check) -> None:
         "locked: width 2400 gives height 1350, drawn",
         boxes(size) == ("2400", "1350")
         and "--dimensions:2400x1350" in address(size)
-        and size.get("bidi_component")[0].proto.bytes[16:24] == png_size_bytes(2400, 1350),
+        and chart_elements(size)[0].proto.bytes[16:24] == png_size_bytes(2400, 1350),
         (boxes(size), address(size)),
     )
     size.text_input(key="size:height").input("1000")
@@ -1409,11 +1420,81 @@ def check_batch247(check: Check) -> None:
     check("a turn that is not two numbers, or none: nothing", results == [None] * len(nothing), results)
 
 
+@contextlib.contextmanager
+def remembered(line: str):
+    """Visitors whose browsers send ``line`` as the settings remembered (batch 24.6): AppTest sends no cookies."""
+    kept = web._remembered_line
+    web._remembered_line = lambda: line
+    try:
+        yield
+    finally:
+        web._remembered_line = kept
+
+
+def check_batch246(check: Check) -> None:
+    """Batch 24.6: the settings remembered in a cookie, behind "Remember my settings"; an address with a chart first."""
+    year = 365 * 86400
+    at = new_page("-c -s:2015 --e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    box = at.checkbox(key="remember")
+    check("the box, ticked at a visit's start, in the window's words", box.value is True and box.label == frontend.REMEMBER_LABEL
+          and box.help == frontend.REMEMBER_HELP, box.label)
+    check("one line under it saying what is kept", web._REMEMBER_LINE in [caption.value for caption in at.sidebar.caption])
+    kept = memory(at)
+    check("the chart drawn kept: the address's line, for a year",
+          kept == {"name": web.REMEMBER_COOKIE, "line": address(at), "seconds": year} and address(at) == "--C --start:2015 --end:2026-09-01", kept)
+    at.checkbox(key="remember").uncheck().run()
+    check("unticked: nothing written, nothing drawn again", memory(at) is None and charts_shown(at) == 1 and not at.exception)
+    at.checkbox(key="flag:per-capita").check().run()
+    check("a chart drawn while unticked: nothing written; the address follows it", memory(at) is None and "--per-capita" in address(at),
+          address(at))
+    at.checkbox(key="remember").check().run()
+    check("ticked again: the chart shown kept", (memory(at) or {}).get("line") == address(at), memory(at))
+    script = web._MEMORY_JS
+    check("the script encodes the line, writes only a change, and removes the cookie for the defaults' empty line",
+          "encodeURIComponent(line)" in script and 'kept !== name + "=" + value' in script and "max-age=0" in script)
+    check("a line remembered decoded as the script encoded it (spaces, colons, commas, %)",
+          web.remembered_line({web.REMEMBER_COOKIE: "--C%20--top%3A150%25%20--cdn%3Ayields%3A3m%2C10y"}) == "--C --top:150% --cdn:yields:3m,10y")
+    check("no cookie: nothing remembered", web.remembered_line({"other": "x"}) == "")
+    alone = new_page("pizza")
+    warnings = [w.value for w in alone.warning]
+    check("nothing remembered, an address that cannot be read: the defaults, and the warning says so",
+          address(alone) == "" and any("The default charts are shown instead." in w for w in warnings), warnings)
+    with remembered("-u -s:2010 --e:2026-09-01"):
+        bare = new_page()
+        check("no address: the settings remembered drawn, and the address rewritten to them",
+              address(bare) == "--U --start:2010 --end:2026-09-01" and charts_shown(bare) == 1 and not bare.warning,
+              (address(bare), [w.value for w in bare.warning]))
+        shared = new_page("-c -s:2015 --e:2026-09-01")
+        check("an address with a chart wins over them, so a shared link draws what it says",
+              address(shared) == "--C --start:2015 --end:2026-09-01" and (memory(shared) or {}).get("line") == address(shared), address(shared))
+        bad = new_page("pizza")
+        warnings = [w.value for w in bad.warning]
+        check("an address that cannot be read: reported, and the settings remembered drawn",
+              address(bad) == "--U --start:2010 --end:2026-09-01"
+              and any("pizza: not an option" in w and "settings remembered from your last visit are shown" in w for w in warnings), warnings)
+    with remembered("-s:2010 --e:2026-09-01"):  # both nations, as the defaults
+        reset = new_page()
+        button(reset, "Reset").click().run()
+        check("Reset while ticked: the defaults kept, their empty line removing the cookie",
+              address(reset) == "" and memory(reset) == {"name": web.REMEMBER_COOKIE, "line": "", "seconds": year}, memory(reset))
+        unticked = new_page()
+        unticked.checkbox(key="remember").uncheck().run()
+        button(unticked, "Reset").click().run()
+        check("Reset while unticked: nothing written, so the settings remembered survive it", address(unticked) == "" and memory(unticked) is None)
+    with remembered("--pizza -c"):
+        spoilt = new_page()
+        warnings = [w.value for w in spoilt.warning]
+        check("settings remembered that cannot be read: reported, and the defaults drawn (whose drawing removes the cookie)",
+              any("--pizza: not an option" in w and "remembered from your last visit could not be used" in w for w in warnings)
+              and charts_shown(spoilt) == 2 and (memory(spoilt) or {}).get("line") == "", warnings)
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
-    check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247,
+    check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
 )
 
 

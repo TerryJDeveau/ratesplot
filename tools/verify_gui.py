@@ -1794,6 +1794,88 @@ def check_settings_files(check: Check) -> None:
         shutil.rmtree(folder_root, ignore_errors=True)
 
 
+def check_remember(check: Check) -> None:
+    """Batch 24.6: "Remember my settings" under Reset, ticked at every start; unticked, the settings kept are left as they were."""
+    folder_root = tempfile.mkdtemp(prefix="ratesplot_verify_gui_remember_")
+    appdata = os.environ["APPDATA"]
+    os.environ["APPDATA"] = folder_root
+
+    def kept() -> dict:
+        state, _note, _path = frontend.load_state()
+        return state
+
+    def settings(state: dict) -> dict:
+        return {key: state.get(key) for key in gui._SETTINGS_KEYS}
+
+    def brief(state: dict) -> tuple:
+        """What a check shows of the settings kept: the start and the preview mode."""
+        return state.get("payloads", {}).get("start"), state.get("zoom")
+
+    try:
+        with window(f"-c -s:2015 {END}") as w:
+            app = w.app
+            box = app.remember_box
+            check("the box, ticked at the start, in the page's words, under Reset", app.remember.get() is True
+                  and box.cget("text") == frontend.REMEMBER_LABEL and int(box.grid_info()["row"]) == 1, box.cget("text"))
+            check("its tip says what it does, and what is kept either way", frontend.REMEMBER_HELP in gui._REMEMBER_TIP
+                  and "save folder" in gui._REMEMBER_TIP and bool(box.bind("<Enter>")))
+            first = kept()
+            check("ticked, a drawing's settings kept", first.get("payloads", {}).get("start") == "2015" and first.get("zoom") == "fit",
+                  brief(first))
+            app.remember.set(False)  # as a click does: the box has no command of its own
+            w.typed("start", "2001")
+            w.settle()
+            app.zoom.set("actual")
+            w.root.geometry("1700x950+50+50")
+            w.pump(20)
+            app._save_folder = folder_root
+            app._remember()
+            now = kept()
+            check("unticked, a drawing leaves the choices and the preview kept as they were", settings(now) == settings(first)
+                  and w.text("start") == "2001", brief(now))
+            check("the window's size and place and the save folder kept whatever the box says",
+                  now.get("geometry") == app._normal_geometry != first.get("geometry") and now.get("save_folder") == folder_root,
+                  (first.get("geometry"), now.get("geometry")))
+            check("the box's own state is never kept", "remember" not in now and "remember" not in now.get("flags", {}))
+            app.remember.set(True)
+            app._remember()
+            again = kept()
+            check("ticked again: the settings shown kept", again["payloads"]["start"] == "2001" and again["zoom"] == "actual", brief(again))
+            app._reset()
+            w.settle()
+            check("Reset while ticked: the defaults, kept by its drawing", kept()["payloads"]["start"] == "" and kept()["zoom"] == "fit",
+                  brief(kept()))
+            w.typed("start", "2005")
+            w.settle()
+            app.remember.set(False)
+            app._reset()
+            w.settle()
+            check("Reset while unticked: the settings kept survive it", kept()["payloads"]["start"] == "2005" and w.text("start") == "",
+                  brief(kept()))
+        check("closed while unticked: still the settings kept before", kept()["payloads"]["start"] == "2005", brief(kept()))
+        state = kept()
+        root = tk.Tk()
+        try:
+            choices = frontend.starting_choices(cli.parse_args(["--no-gui", "-c", END]), {}, {}, state)[0]
+            started = Window.__new__(Window)  # a window given remembered settings, as run_gui gives them
+            started.root, started.app = root, gui.RatesPlotApp(root, choices, [], state, normal_geometry=SIZE)
+            check("the next start: from the settings kept, the box ticked again", started.text("start") == "2005"
+                  and started.app.remember.get() is True)
+            started.app.remember.set(False)
+            started.settle()
+            started.typed("start", "2010")
+            started.settle()
+            started.close()
+            check("unticked at once: the settings read at the start are what stays kept", settings(kept()) == settings(state),
+                  brief(kept()))
+        except Exception:
+            root.destroy()
+            raise
+    finally:
+        os.environ["APPDATA"] = appdata
+        shutil.rmtree(folder_root, ignore_errors=True)
+
+
 # The groups in the order they run; --group picks some by these names.
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
@@ -1818,6 +1900,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "wheel": check_wheel,
     "not_drawn": check_not_drawn,
     "settings_files": check_settings_files,
+    "remember": check_remember,
 }
 
 
