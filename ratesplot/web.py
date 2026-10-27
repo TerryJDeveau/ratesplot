@@ -41,7 +41,10 @@ Remembered settings
     settings" box, ticked at every visit, with one line saying what is
     kept. A visit opens on the address's chart if it has one, else on the
     settings remembered, else on the defaults; so a shared link draws what
-    it says. Unticked, the cookie is left as it is, neither written nor
+    it says. The page's own script writes the cookie, and reads it back at
+    the start of a visit with no chart in its address, before anything is
+    drawn (``_read_remembered``): Streamlit Community Cloud gives the app no
+    cookies. Unticked, the cookie is left as it is, neither written nor
     cleared. Reset gives the defaults, which the next drawing keeps (the
     cookie removed) while the box is ticked.
 
@@ -127,7 +130,6 @@ import threading
 import time
 import urllib.parse
 import zlib
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 import matplotlib
@@ -231,9 +233,11 @@ _SCRIPT_NAME = "ratesplot.py"
 ADDRESS_KEY = "chart"
 # The settings remembered between visits (batch 24.6): the chart's command
 # line, as the address holds it, in a cookie of this name, kept a year. The
-# page's own script writes it (``_MEMORY_JS``): Streamlit reads the cookies
-# a visit's first request sends (``st.context.cookies``) and sets none. The
-# longest command line measured, four nations with every value set, was 963
+# page's own script writes it (``_MEMORY_JS``) and reads it back
+# (``_READER_JS``): Streamlit sets no cookie, and on Community Cloud the app
+# is given none (its proxy filters them from the visit's first request, so
+# ``st.context.cookies`` was empty there; 6.10, 2026-10-27). The longest
+# command line measured, four nations with every value set, was 963
 # characters encoded (2026-10-27), a quarter of a cookie's 4 KB.
 REMEMBER_COOKIE = "ratesplot_settings"
 _REMEMBER_DAYS = 365
@@ -288,6 +292,8 @@ _ADDRESS_PROBLEMS = "address_problems"
 _REMEMBERED_PROBLEMS = "remembered_problems"  # the settings remembered could not be read (batch 24.6)
 _STARTED_FROM = "started_from"  # "address", "remembered" or "defaults": what the visit opened on
 _REMEMBER = "remember"   # the "Remember my settings" box (batch 24.6)
+_READER = "reader"       # the component that reads the cookie back (batch 24.6)
+_HEARD = "heard"         # the cookie's value as its script sent it; absent until it has answered
 _NOTICE = "notice"   # a message from a control's callback, shown once
 _DRAWING = "drawing"  # the last Drawing
 _FORCE = "force_redraw"
@@ -817,20 +823,52 @@ export default function (component) {
 """
 
 
-def remembered_line(cookies: Mapping[str, str]) -> str:
-    """The command line remembered in a browser's cookies (batch 24.6), decoded as ``_MEMORY_JS`` encoded it; "" if none.
+# The settings remembered, read back (batch 24.6): at the start of a visit
+# whose address names no chart it can draw, the page lays out this component
+# alone, and its script sends the cookie's value as it is ("" for none, or
+# where the browser refuses cookies to scripts) once; the page then starts
+# from it. One round trip, and nothing drawn before the answer. Its script
+# runs wherever the page's charts can be shown, so the page waits for it.
+_READER_JS = """
+export default function (component) {
+  const { data, setTriggerValue } = component;
+  let value = "";
+  try {
+    const kept = document.cookie.split("; ").find((pair) => pair.startsWith(data.name + "="));
+    if (kept !== undefined) value = kept.slice(data.name.length + 1);
+  } catch (error) {
+    value = "";
+  }
+  setTriggerValue("line", value);
+}
+"""
 
-    Text only: Streamlit's AppTest has no browser, and its stand-in's
-    cookies give an object of its own (found 2026-10-27, taken for a line
-    remembered).
+
+def remembered_line(value: object) -> str:
+    """The command line in the cookie's value as the page's script sent it (batch 24.6), decoded as ``_MEMORY_JS`` encoded it.
+
+    "" for anything but text.
     """
-    text = cookies.get(REMEMBER_COOKIE, "")
-    return urllib.parse.unquote(text) if isinstance(text, str) else ""
+    return urllib.parse.unquote(value) if isinstance(value, str) else ""
 
 
-def _remembered_line() -> str:
-    """The command line remembered in this browser at the visit's start: its cookies, as its first request sent them."""
-    return remembered_line(st.context.cookies)
+def _remembered_line() -> str | None:
+    """The command line remembered in this browser (``_READER_JS``); None until the page's script has answered."""
+    heard = st.session_state.get(_HEARD)
+    return None if heard is None else remembered_line(heard)
+
+
+def _cookie_read() -> None:
+    """The page's script has sent the cookie's value: kept for the visit's start ("" for none)."""
+    sent = (st.session_state.get(_READER) or {}).get("line")
+    st.session_state[_HEARD] = sent if isinstance(sent, str) else ""
+
+
+def _read_remembered() -> None:
+    """Ask the page's script for the cookie's value; its answer runs the page again (``_cookie_read``)."""
+    reader = st.components.v2.component("ratesplot_reader", js=_READER_JS)
+    reader(key=_READER, data={"name": REMEMBER_COOKIE}, on_line_change=_cookie_read)
+    st.caption("Looking for the settings remembered in this browser …")
 
 
 def _remember_settings(line: str) -> None:
@@ -928,12 +966,14 @@ def _choices_from_line(text: str) -> tuple[Choices | None, list[str]]:
     return starting_choices(config, payloads, flags, {})[0], []
 
 
-def _starting_choices() -> tuple[Choices, str, list[str], list[str]]:
+def _starting_choices() -> tuple[Choices, str, list[str], list[str]] | None:
     """Return a visit's starting choices, what they came from, and any problems with the address and with the settings remembered.
 
     The address's chart, so a shared link draws what it says; else, or if
     it cannot be read, the settings remembered in this browser (batch 24.6);
     else the defaults. What came from is "address", "remembered" or "defaults".
+    None while the settings remembered are needed and the page's script has
+    not yet sent them (``_read_remembered``).
     """
     address_problems: list[str] = []
     address = st.query_params.get(ADDRESS_KEY, "")
@@ -943,6 +983,8 @@ def _starting_choices() -> tuple[Choices, str, list[str], list[str]]:
             return choices, "address", [], []
     remembered_problems: list[str] = []
     remembered = _remembered_line()
+    if remembered is None:
+        return None
     if remembered.strip():
         choices, remembered_problems = _choices_from_line(remembered)
         if choices is not None:
@@ -1949,7 +1991,11 @@ def main() -> None:
     st.set_page_config(page_title=PAGE_TITLE, page_icon="📈", layout="wide")
     state = st.session_state
     if not state.get(_READY):
-        choices, state[_STARTED_FROM], state[_ADDRESS_PROBLEMS], state[_REMEMBERED_PROBLEMS] = _starting_choices()
+        started = _starting_choices()
+        if started is None:
+            _read_remembered()  # its answer runs the page again
+            return
+        choices, state[_STARTED_FROM], state[_ADDRESS_PROBLEMS], state[_REMEMBERED_PROBLEMS] = started
         _load_choices(choices)
         state[_REMEMBER] = True  # ticked at every visit, its off state never kept (decision 74)
         state[_READY] = True

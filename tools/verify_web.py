@@ -54,6 +54,7 @@ import logging
 import re
 import struct
 import sys
+import urllib.parse
 import zlib
 from dataclasses import replace
 from pathlib import Path
@@ -214,11 +215,19 @@ def check_charts(cases: tuple[str, ...], outdir: Path, verbose: bool = False) ->
 # ---------------------------------------------------------------------------
 
 
-def new_page(chart: str | None = None) -> AppTest:
-    """A fresh visitor's page, with ``chart`` in its address (None: no address), run once."""
+def new_page(chart: str | None = None, heard: str | None = "") -> AppTest:
+    """A fresh visitor's page, with ``chart`` in its address (None: no address), run once.
+
+    ``heard``: the cookie's value as the page's script would send it (batch
+    24.6, ``web._READER_JS``), encoded; "" for nothing remembered. AppTest runs
+    no script, so it is given here; None gives none, and a page with no
+    chart to draw waits for it.
+    """
     at = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
     if chart is not None:
         at.query_params["chart"] = chart
+    if heard is not None:
+        at.session_state["heard"] = heard
     at.run()
     return at
 
@@ -241,6 +250,11 @@ def memory(at: AppTest) -> dict | None:
     """What the page's cookie writer was given in its last run (batch 24.6): its cookie's name, line and seconds; None if not laid out."""
     found = [element for element in at.get("bidi_component") if element.proto.id.endswith("-memory")]
     return json.loads(found[0].proto.json) if found else None
+
+
+def reader_asked(at: AppTest) -> bool:
+    """True if the page's last run laid out its cookie reader (batch 24.6), waiting for the browser's answer."""
+    return any(element.proto.id.endswith("-reader") for element in at.get("bidi_component"))
 
 
 def button(at: AppTest, label: str):
@@ -1420,26 +1434,16 @@ def check_batch247(check: Check) -> None:
     check("a turn that is not two numbers, or none: nothing", results == [None] * len(nothing), results)
 
 
-@contextlib.contextmanager
-def remembered(line: str):
-    """Visitors whose browsers send ``line`` as the settings remembered (batch 24.6): AppTest sends no cookies."""
-    kept = web._remembered_line
-    web._remembered_line = lambda: line
-    try:
-        yield
-    finally:
-        web._remembered_line = kept
-
-
 def check_batch246(check: Check) -> None:
     """Batch 24.6: the settings remembered in a cookie, behind "Remember my settings"; an address with a chart first."""
     year = 365 * 86400
-    at = new_page("-c -s:2015 --e:2026-09-01")
+    at = new_page("-c -s:2015 --e:2026-09-01", heard=None)
     check("no exception", not at.exception, at.exception)
     box = at.checkbox(key="remember")
     check("the box, ticked at a visit's start, in the window's words", box.value is True and box.label == frontend.REMEMBER_LABEL
           and box.help == frontend.REMEMBER_HELP, box.label)
     check("one line under it saying what is kept", web._REMEMBER_LINE in [caption.value for caption in at.sidebar.caption])
+    check("an address with a chart: drawn at once, the cookie not asked for", charts_shown(at) == 1 and not reader_asked(at))
     kept = memory(at)
     check("the chart drawn kept: the address's line, for a year",
           kept == {"name": web.REMEMBER_COOKIE, "line": address(at), "seconds": year} and address(at) == "--C --start:2015 --end:2026-09-01", kept)
@@ -1451,43 +1455,55 @@ def check_batch246(check: Check) -> None:
     at.checkbox(key="remember").check().run()
     check("ticked again: the chart shown kept", (memory(at) or {}).get("line") == address(at), memory(at))
     script = web._MEMORY_JS
-    check("the script encodes the line, writes only a change, and removes the cookie for the defaults' empty line",
+    check("the writer encodes the line, writes only a change, and removes the cookie for the defaults' empty line",
           "encodeURIComponent(line)" in script and 'kept !== name + "=" + value' in script and "max-age=0" in script)
-    check("a line remembered decoded as the script encoded it (spaces, colons, commas, %)",
-          web.remembered_line({web.REMEMBER_COOKIE: "--C%20--top%3A150%25%20--cdn%3Ayields%3A3m%2C10y"}) == "--C --top:150% --cdn:yields:3m,10y")
-    check("no cookie: nothing remembered", web.remembered_line({"other": "x"}) == "")
+    reader = web._READER_JS
+    check("the reader sends the cookie's value once, \"\" for none or where cookies are refused",
+          'setTriggerValue("line", value)' in reader and "catch (error)" in reader and reader.count("setTriggerValue(") == 1)
+    check("a value sent decoded as the writer encoded it (spaces, colons, commas, %)",
+          web.remembered_line("--C%20--top%3A150%25%20--cdn%3Ayields%3A3m%2C10y") == "--C --top:150% --cdn:yields:3m,10y")
+    check("anything but text sent: nothing remembered", [web.remembered_line(sent) for sent in (None, 7, {"line": "-u"}, ["-u"])] == [""] * 4)
+    waiting = new_page(heard=None)
+    check("no address, the reader not yet answered: it alone is laid out, nothing drawn",
+          not waiting.exception and reader_asked(waiting) and charts_shown(waiting) == 0 and memory(waiting) is None
+          and any("Looking for the settings remembered" in caption.value for caption in waiting.caption)
+          and ("ready" not in waiting.session_state or not waiting.session_state["ready"]),
+          [caption.value for caption in waiting.caption])
+    waiting.session_state["heard"] = urllib.parse.quote("-u -s:2010 --e:2026-09-01")
+    waiting.run()
+    check("its answer: the visit starts from it", address(waiting) == "--U --start:2010 --end:2026-09-01" and charts_shown(waiting) == 1,
+          address(waiting))
     alone = new_page("pizza")
     warnings = [w.value for w in alone.warning]
     check("nothing remembered, an address that cannot be read: the defaults, and the warning says so",
           address(alone) == "" and any("The default charts are shown instead." in w for w in warnings), warnings)
-    with remembered("-u -s:2010 --e:2026-09-01"):
-        bare = new_page()
-        check("no address: the settings remembered drawn, and the address rewritten to them",
-              address(bare) == "--U --start:2010 --end:2026-09-01" and charts_shown(bare) == 1 and not bare.warning,
-              (address(bare), [w.value for w in bare.warning]))
-        shared = new_page("-c -s:2015 --e:2026-09-01")
-        check("an address with a chart wins over them, so a shared link draws what it says",
-              address(shared) == "--C --start:2015 --end:2026-09-01" and (memory(shared) or {}).get("line") == address(shared), address(shared))
-        bad = new_page("pizza")
-        warnings = [w.value for w in bad.warning]
-        check("an address that cannot be read: reported, and the settings remembered drawn",
-              address(bad) == "--U --start:2010 --end:2026-09-01"
-              and any("pizza: not an option" in w and "settings remembered from your last visit are shown" in w for w in warnings), warnings)
-    with remembered("-s:2010 --e:2026-09-01"):  # both nations, as the defaults
-        reset = new_page()
-        button(reset, "Reset").click().run()
-        check("Reset while ticked: the defaults kept, their empty line removing the cookie",
-              address(reset) == "" and memory(reset) == {"name": web.REMEMBER_COOKIE, "line": "", "seconds": year}, memory(reset))
-        unticked = new_page()
-        unticked.checkbox(key="remember").uncheck().run()
-        button(unticked, "Reset").click().run()
-        check("Reset while unticked: nothing written, so the settings remembered survive it", address(unticked) == "" and memory(unticked) is None)
-    with remembered("--pizza -c"):
-        spoilt = new_page()
-        warnings = [w.value for w in spoilt.warning]
-        check("settings remembered that cannot be read: reported, and the defaults drawn (whose drawing removes the cookie)",
-              any("--pizza: not an option" in w and "remembered from your last visit could not be used" in w for w in warnings)
-              and charts_shown(spoilt) == 2 and (memory(spoilt) or {}).get("line") == "", warnings)
+    kept_line = urllib.parse.quote("-u -s:2010 --e:2026-09-01")
+    bare = new_page(heard=kept_line)
+    check("no address: the settings remembered drawn, and the address rewritten to them",
+          address(bare) == "--U --start:2010 --end:2026-09-01" and charts_shown(bare) == 1 and not bare.warning,
+          (address(bare), [w.value for w in bare.warning]))
+    shared = new_page("-c -s:2015 --e:2026-09-01", heard=kept_line)
+    check("an address with a chart wins over them, so a shared link draws what it says",
+          address(shared) == "--C --start:2015 --end:2026-09-01" and (memory(shared) or {}).get("line") == address(shared), address(shared))
+    bad = new_page("pizza", heard=kept_line)
+    warnings = [w.value for w in bad.warning]
+    check("an address that cannot be read: reported, and the settings remembered drawn",
+          address(bad) == "--U --start:2010 --end:2026-09-01"
+          and any("pizza: not an option" in w and "settings remembered from your last visit are shown" in w for w in warnings), warnings)
+    both = urllib.parse.quote("-s:2010 --e:2026-09-01")  # both nations, as the defaults
+    reset = new_page(heard=both)
+    button(reset, "Reset").click().run()
+    check("Reset while ticked: the defaults kept, their empty line removing the cookie",
+          address(reset) == "" and memory(reset) == {"name": web.REMEMBER_COOKIE, "line": "", "seconds": year}, memory(reset))
+    unticked = new_page(heard=both)
+    unticked.checkbox(key="remember").uncheck().run()
+    button(unticked, "Reset").click().run()
+    check("Reset while unticked: nothing written, so the settings remembered survive it", address(unticked) == "" and memory(unticked) is None)
+    spoilt = new_page(heard=urllib.parse.quote("--pizza -c"))
+    warnings = [w.value for w in spoilt.warning]
+    check("settings remembered that cannot be read: reported, and the defaults drawn (whose drawing removes the cookie)",
+          any("--pizza: not an option" in w and "remembered from your last visit could not be used" in w for w in warnings)
+          and charts_shown(spoilt) == 2 and (memory(spoilt) or {}).get("line") == "", warnings)
 
 
 PAGE_CHECKS = (
