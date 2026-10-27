@@ -126,6 +126,7 @@ python -m pip install -r requirements.txt
 | `--reg`, `--reg:1` | each right-axis curve fitted by straight pieces, labelled with its growth in %/yr; each piece within 0.3 % of the axis height of the curve (or the percentage given), loosened where monthly figures would otherwise cut a curve into pieces of a few months (the message log says where) |
 | `-s:1990`, `-e:2020` | the date window (without `-s` it starts in 2000, or where the chosen curves all have data if later; the year is `DEFAULT_START_FLOOR` in `ratesplot/config.py`) |
 | `--no-cur` | without the latest daily and intraday values |
+| `--no-projections` | without the projection of each right-axis curve to today; it has its own switch (`--pro`), and `--no-cur` leaves it on |
 
 Each rate on the yield axis is drawn across what it applies to: a central bank's rate or a prime
 rate holds until it changes, so it runs on to the chart's end; an average, a survey or a market's
