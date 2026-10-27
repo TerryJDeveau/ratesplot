@@ -1097,9 +1097,13 @@ class ChartGeometry:
 
     def window_x(self) -> tuple[float, float]:
         """Return the image x of the requested Start and End (inside the axes, which are wider)."""
+        return tuple(self.x_at_number(number) for number in self.window)
+
+    def x_at_number(self, number: float) -> float:
+        """Return the image x of a matplotlib date number (not clamped)."""
         left, _top, right, _bottom = self.box
         low, high = self.xlim
-        return tuple(left + (number - low) / (high - low) * (right - left) for number in self.window)
+        return left + (number - low) / (high - low) * (right - left)
 
     def value_at(self, y: float, side: str) -> float:
         """Return the value at image y on the ``"left"`` or ``"right"`` y axis."""
@@ -1245,11 +1249,19 @@ def scale_dates_updates(geometry: ChartGeometry, factor: float, anchor_x: float)
     """Return Start and End texts for the requested window scaled by ``factor`` about image x ``anchor_x``.
 
     A factor below 1 zooms in, above 1 out; the date under ``anchor_x`` stays put.
+    The window is cut at the first data (``EARLIEST_DATA_START``) as its end
+    is at today (``_date_range_texts``), and before the image x is turned
+    into a date: thirty notches of the wheel out at once (a fast spin, a
+    trackpad's fling) ran past the year 1, which matplotlib's dates cannot
+    hold, and fewer wrote a Start before 1680 (batch 24.7).
     """
     start_x, end_x = geometry.window_x()  # the requested window, as for a pan
-    new_left = anchor_x - (anchor_x - start_x) * factor
-    new_right = anchor_x + (end_x - anchor_x) * factor
-    return _date_range_texts(geometry.date_at(new_left), geometry.date_at(new_right))
+    first_x = geometry.x_at_number(mdates.date2num(EARLIEST_DATA_START))
+    today_x = geometry.x_at_number(mdates.date2num(pd.Timestamp.today().normalize()))
+    new_left = max(anchor_x - (anchor_x - start_x) * factor, first_x)
+    new_right = min(anchor_x + (end_x - anchor_x) * factor, today_x)
+    # Rounding can put the first data's x a hair before 1680-01-01.
+    return _date_range_texts(max(geometry.date_at(new_left), EARLIEST_DATA_START), geometry.date_at(new_right))
 
 
 def move_dates_updates(start: pd.Timestamp, end: pd.Timestamp, *, shift: float = 0.0, scale: float = 1.0) -> dict[str, str]:
