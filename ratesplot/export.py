@@ -42,6 +42,7 @@ from __future__ import annotations
 import csv
 import dataclasses
 import io
+import os
 from collections.abc import Sequence
 
 import matplotlib.dates as mdates
@@ -318,3 +319,69 @@ def per_nation_path(path: str, code: str) -> str:
     """``rates.png`` -> ``rates_ca.png``: the command line's file for one nation's chart (decision 46)."""
     dot = path.rfind(".")
     return f"{path[:dot]}_{code}{path[dot:]}"
+
+
+# The highest "_n" tried before a refusal is taken to be the folder's, and raised.
+_MOST_VERSIONS = 99
+
+
+def versioned_path(path: str, number: int) -> str:
+    """``rates_ca.png`` -> ``rates_ca_1.png``: the name a file another program holds is written under instead (batch 11.3)."""
+    dot = path.rfind(".")
+    return f"{path[:dot]}_{number}{path[dot:]}"
+
+
+class SavedFiles:
+    """The --save files of one run, each written through a temporary file swapped in, and the names they go under (batch 11.3).
+
+    Plan 11.3's notes (Terry): "Each write goes to a temporary file beside
+    the target, which is closed and then swapped in for the old file in one
+    step: a viewer never reads a half-written file, and nothing is held open
+    between refreshes. If another program holds the old file locked, the
+    program says so and appends a version number "_n" to the file name, with
+    n starting at 1; it will keep using this same new name, unless that file
+    also is found to be locked at some point, only then will n be incremented
+    by 1. The version number is added (or incremented) if an existing file is
+    also found to be present the first time that name is used by the program
+    (i.e., not when the program expects to overwrite, but when it expected no
+    existing file of that name)."
+
+    So the name given is replaced as a save always replaces it, and a name
+    with a number is never a file already there. A file is "held" when
+    Windows refuses to replace it (``PermissionError``: open in Excel, or
+    read-only); any other failure is raised.
+    """
+
+    def __init__(self) -> None:
+        # The name given -> the number of the name in use (0: the name given) and whether this run has written it.
+        self._names: dict[str, tuple[int, bool]] = {}
+
+    def write(self, target: str, data: bytes) -> str:
+        """Write ``data`` for ``target`` (``rates_ca.png``) and return the name it went under."""
+        number, written = self._names.get(target, (0, False))
+        held: list[str] = []
+        temporary = f"{target}.{os.getpid()}.tmp"
+        with open(temporary, "wb") as output:
+            output.write(data)
+        try:
+            while True:
+                name = versioned_path(target, number) if number else target
+                if number and not written and os.path.exists(name):
+                    number += 1  # a name of the program's own already taken: never written over
+                    continue
+                try:
+                    os.replace(temporary, name)
+                except PermissionError:
+                    if number >= _MOST_VERSIONS:
+                        raise  # every name refused: the folder itself, not a file another program holds
+                    held.append(name)
+                    number += 1
+                    written = False
+                    continue
+                if held:
+                    print(f"  Held by another program: {', '.join(held)}; written as {name} instead.")
+                self._names[target] = (number, True)
+                return name
+        finally:
+            if os.path.exists(temporary):
+                os.remove(temporary)

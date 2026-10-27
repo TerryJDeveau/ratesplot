@@ -401,6 +401,21 @@ QUOTE_SYMBOLS = {
         "10-Year": "DE10Y-DE", "20-Year": "DE20Y-DE", "30-Year": "DE30Y-DE",
     },
 }
+# The automatic refresh (--auto-refresh:MIN, batch 11.3; ratesplot.refresh):
+# every 5 minutes when no value is given, and never more often, on the web
+# page or anywhere else (Terry, 2026-10-08 and 2026-10-12, decision 23); at
+# least once a day, since a longer wait is no refresh.
+DEFAULT_AUTO_REFRESH_MINUTES = 5
+MIN_AUTO_REFRESH_MINUTES = 5
+MAX_AUTO_REFRESH_MINUTES = 24 * 60
+# The markets' hours for the automatic refresh: Monday to Friday, from the
+# first hour up to the second, in the zone of each chart's market
+# (Nation.market_timezone). Within them each refresh draws again; outside
+# them only when a quote has changed (plan 11.3). A working day's hours in
+# each centre, ending where the U.S. quotes become the next day's session
+# (``latest._NEXT_SESSION_HOUR``); a public holiday is not known, and is
+# refreshed as a working day.
+MARKET_HOURS = (8, 17)
 # Bank of Canada: Government of Canada treasury bills and domestic marketable
 # bonds outstanding, the total (real return bonds with their inflation
 # adjustment), dollars, each business day, a few days behind; from 2025. It is
@@ -1380,6 +1395,13 @@ class PlotConfig:
     # matplotlib windows (ratesplot.hover). It draws nothing on the chart, so
     # the front ends do not draw again when only it changes (``same_chart``).
     hover: bool = True
+    # --auto-refresh[:MIN] (batch 11.3, off by default): every MIN minutes
+    # (None: DEFAULT_AUTO_REFRESH_MINUTES) what Refresh does, in the window, on
+    # the web page and in the plain matplotlib windows, and the --save files
+    # written again (ratesplot.refresh). It draws nothing on the chart, so the
+    # front ends do not draw again when only it changes (``same_chart``).
+    auto_refresh: bool = False
+    auto_refresh_minutes: int | None = None
     # Open the interactive window (ratesplot.gui) rather than plain matplotlib windows.
     gui: bool = True
     # --save:FILE (batch 11.1): write the charts to FILE, the format by its
@@ -1403,8 +1425,48 @@ class PlotConfig:
         return replace(self, **own) if own else self
 
     def same_chart(self, other: PlotConfig | None) -> bool:
-        """Whether ``other`` draws the same charts as this: it may differ in the hover read-out alone, which draws nothing (batch 11.2)."""
-        return other is not None and replace(self, hover=True) == replace(other, hover=True)
+        """Whether ``other`` draws the same charts as this: it may differ in what draws nothing, the hover read-out (batch 11.2) and the automatic refresh (11.3)."""
+        if other is None:
+            return False
+        neither = {"hover": True, "auto_refresh": False, "auto_refresh_minutes": None}
+        return replace(self, **neither) == replace(other, **neither)
+
+    @property
+    def refresh_minutes(self) -> int:
+        """Return the minutes between automatic refreshes (--auto-refresh:MIN; batch 11.3)."""
+        return DEFAULT_AUTO_REFRESH_MINUTES if self.auto_refresh_minutes is None else self.auto_refresh_minutes
+
+    def quoted_columns(self, key: str) -> tuple[str, ...]:
+        """Return the yield columns of nation ``key``'s chart that intraday quotes extend (--cur): those fetched that the feed quotes (``QUOTE_SYMBOLS``).
+
+        The spreads' terms among them: a spread runs on to the day's quotes,
+        as the yields it is taken from do (plotting).
+        """
+        symbols = QUOTE_SYMBOLS.get(key, {})
+        return tuple(column for column in self.for_nation(key).fetched_yield_columns if column in symbols)
+
+    @property
+    def refresh_brings_nothing(self) -> str | None:
+        """Return why an automatic refresh can bring nothing new to these charts, or None when it can (batch 11.3).
+
+        Plan 11.3 (Terry): greyed "when it can bring nothing new: --cur off,
+        End not today, or no yields on any chart shown (only yields have
+        intraday quotes, now, but when new series are added later that have
+        them, this would apply to them also)". So the rule asks for a curve
+        the quotes extend (``quoted_columns``): the spreads count, since a
+        spread runs on to the day's quotes. An End after today keeps it, as
+        the day's quotes are drawn there too. The window and the page grey
+        the box out (``options.auto_refresh_idle``); the command line draws
+        once, with this reason (``cli``).
+        """
+        if not self.current:
+            return "the intraday quotes are off (--no-cur)"
+        if self.end < _today():
+            return f"the End date, {self.end:%Y-%m-%d}, is before today"
+        shown = [nation for nation in NATIONS if getattr(self, nation.show_field)]
+        if not any(self.quoted_columns(nation.key) for nation in shown):
+            return "no chart shown has a yield with intraday quotes"
+        return None
 
     @property
     def figsize_inches(self) -> tuple[float, float]:

@@ -81,6 +81,7 @@ from .export import MACRO_AXIS, YIELD_AXIS, mark_series
 from .frames import filter_to_date_range
 from .fx import rate
 from .hover import attach as attach_hover
+from .hover import detach as detach_hover
 from .hover import mark as mark_reading
 from .hover import mark_quote
 from .http import download_cache_on, in_parallel
@@ -98,6 +99,9 @@ from .latest import (
 from .legend import finish_legend_and_title
 from .measures import express
 from .rates import RateCurve, held_steps, in_window, legend_label, rate_curves, warn_none_drawn
+from .refresh import Ended as RefreshEnded
+from .refresh import Ticker, forget_old_downloads
+from .refresh import attach as attach_refresh
 from .regression import RateLabel, add_regression_segments
 from .regression import legend_entry as regression_legend_entry
 from .de_data import (
@@ -122,6 +126,10 @@ from .uk_data import (
 from .us_data import fetch_us_macro, fetch_us_population, fetch_us_yields, us_series_earliest
 
 YieldLineDrawer = Callable[[Axes, pd.DataFrame, PlotConfig], list[Line2D]]
+# A chart's inputs prepared and the config they were prepared for, as
+# ``draw_country`` takes them: (yields, macro, rates, config). A plain
+# window's automatic refresh hands one to its window's thread (batch 11.3).
+Prepared = tuple[pd.DataFrame, pd.DataFrame, list, PlotConfig]
 
 
 # ---------------------------------------------------------------------------
@@ -612,12 +620,29 @@ def plot_country(
     config: PlotConfig,
     metadata: CountryMetadata,
     draw_yield_lines: YieldLineDrawer,
+    refreshed: Callable[[Ticker], Prepared | None] | None = None,
 ) -> None:
-    """Build one country's chart on a pyplot figure and show it in a matplotlib window, with the hover read-out unless --no-hover."""
+    """Build one country's chart on a pyplot figure and show it in a matplotlib window, with the hover read-out unless --no-hover.
+
+    With ``refreshed`` (--auto-refresh, batch 11.3) the chart is drawn afresh
+    every ``config.refresh_minutes`` from what it returns, its inputs
+    prepared again (``refresh.attach``), until the window is closed.
+    """
     figure, ax_yield = plt.subplots(figsize=config.figsize_inches)
     draw_country(ax_yield, yields, macro, rates, config, metadata, draw_yield_lines)
     if config.hover:
         attach_hover(figure)
+
+    def draw_again(prepared: Prepared) -> None:
+        detach_hover(figure)
+        figure.clear()
+        draw_country(figure.subplots(), *prepared, metadata, draw_yield_lines)
+        if prepared[3].hover:
+            attach_hover(figure)
+        figure.canvas.draw_idle()
+
+    if refreshed is not None:
+        attach_refresh(figure, config.refresh_minutes, refreshed, draw_again)
     plt.show()
 
 
@@ -1058,33 +1083,63 @@ def build_figure(country: Country, config: PlotConfig) -> Figure:
     return figure
 
 
-def run_cdn(config: PlotConfig) -> None:
-    """Fetch all selected Canadian inputs and show the Canadian chart in a matplotlib window."""
+def _refresher(
+    key: str, prepare: Callable[[PlotConfig], tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]], again: Callable[[], PlotConfig] | None
+) -> Callable[[Ticker], Prepared | None] | None:
+    """What a plain window's automatic refresh draws at each tick (batch 11.3), or None without one.
+
+    ``again`` gives the choices afresh (``cli``: the command line read again,
+    so a blank End is today's date). A refresh does what the window's Refresh
+    does: the downloads kept over an hour dropped, then the inputs prepared
+    again, the quotes of the moment among them; outside market hours only
+    when a quote has changed (``refresh.Ticker``). It ends when nothing new
+    can come any more.
+    """
+    if again is None:
+        return None
+
+    def refreshed(ticker: Ticker) -> Prepared | None:
+        config = again()
+        reason = config.refresh_brings_nothing
+        if reason is not None:
+            raise RefreshEnded(reason)
+        if not ticker.due(config):
+            return None
+        dropped = forget_old_downloads()
+        print(f"--- automatic refresh: the latest quotes, and {dropped} download(s) over an hour old fetched again")
+        own = limits_in_own_currency(config.for_nation(key), key)
+        return (*prepare(own), own)
+
+    return refreshed
+
+
+def run_cdn(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) -> None:
+    """Fetch all selected Canadian inputs and show the Canadian chart in a matplotlib window; ``again``: refreshed (``_refresher``)."""
     config = limits_in_own_currency(config.for_nation(CDN.key), CDN.key)
     yields, macro, rates = prepare_cdn(config)
-    plot_country(yields, macro, rates, config, CDN, add_canadian_yield_lines)
+    plot_country(yields, macro, rates, config, CDN, add_canadian_yield_lines, _refresher(CDN.key, prepare_cdn, again))
     print("CDN chart finished.\n")
 
 
-def run_us(config: PlotConfig) -> None:
-    """Fetch all selected U.S. inputs and show the U.S. chart in a matplotlib window."""
+def run_us(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) -> None:
+    """Fetch all selected U.S. inputs and show the U.S. chart in a matplotlib window; ``again``: refreshed (``_refresher``)."""
     config = limits_in_own_currency(config.for_nation(US.key), US.key)
     yields, macro, rates = prepare_us(config)
-    plot_country(yields, macro, rates, config, US, add_us_yield_lines)
+    plot_country(yields, macro, rates, config, US, add_us_yield_lines, _refresher(US.key, prepare_us, again))
     print("US chart finished.\n")
 
 
-def run_uk(config: PlotConfig) -> None:
-    """Fetch all selected UK inputs and show the UK's chart in a matplotlib window."""
+def run_uk(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) -> None:
+    """Fetch all selected UK inputs and show the UK's chart in a matplotlib window; ``again``: refreshed (``_refresher``)."""
     config = limits_in_own_currency(config.for_nation(UK.key), UK.key)
     yields, macro, rates = prepare_uk(config)
-    plot_country(yields, macro, rates, config, UK, add_uk_yield_lines)
+    plot_country(yields, macro, rates, config, UK, add_uk_yield_lines, _refresher(UK.key, prepare_uk, again))
     print("UK chart finished.\n")
 
 
-def run_de(config: PlotConfig) -> None:
-    """Fetch all selected German inputs and show Germany's chart in a matplotlib window."""
+def run_de(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) -> None:
+    """Fetch all selected German inputs and show Germany's chart in a matplotlib window; ``again``: refreshed (``_refresher``)."""
     config = limits_in_own_currency(config.for_nation(DE.key), DE.key)
     yields, macro, rates = prepare_de(config)
-    plot_country(yields, macro, rates, config, DE, add_de_yield_lines)
+    plot_country(yields, macro, rates, config, DE, add_de_yield_lines, _refresher(DE.key, prepare_de, again))
     print("German chart finished.\n")

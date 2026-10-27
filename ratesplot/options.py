@@ -59,6 +59,7 @@ from .config import (
     COMPONENT_SYNONYMS,
     CURRENCY_SYMBOLS,
     DEBT_AGGREGATES,
+    DEFAULT_AUTO_REFRESH_MINUTES,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DEFAULT_MORTGAGE_TERMS,
     DEFAULT_TRACKER_MARGIN,
@@ -66,6 +67,8 @@ from .config import (
     DEFAULT_START_FLOOR,
     DEFAULT_YIELD_TERMS,
     EARLIEST_DATA_START,
+    MAX_AUTO_REFRESH_MINUTES,
+    MIN_AUTO_REFRESH_MINUTES,
     MIN_CANVAS_PX,
     MIN_REGRESSION_TOLERANCE_PCT,
     MIN_WINDOW_DAYS,
@@ -182,6 +185,25 @@ def parse_regression_tolerance(spec: str) -> float:
     if not 0 < parsed <= 100:
         raise ValueError(f"--reg tolerance must be above 0 and at most 100 (% of the axis height), got {spec.strip()}")
     return parsed
+
+
+def parse_auto_refresh_minutes(spec: str) -> int:
+    """Parse the minutes between automatic refreshes (batch 11.3): a whole number, ``MIN_AUTO_REFRESH_MINUTES`` to ``MAX_AUTO_REFRESH_MINUTES``.
+
+    Never more often than every 5 minutes (Terry, 2026-10-08, decision 23):
+    a smaller number is refused, not raised to 5, as every value out of
+    range is.
+    """
+    value = spec.strip()
+    if not value.isdigit():
+        raise ValueError(f"invalid --auto-refresh minutes {spec.strip()!r}: give a whole number of minutes, e.g. --au:10")
+    minutes = int(value)
+    if not MIN_AUTO_REFRESH_MINUTES <= minutes <= MAX_AUTO_REFRESH_MINUTES:
+        raise ValueError(
+            f"--auto-refresh minutes must be at least {MIN_AUTO_REFRESH_MINUTES} and at most "
+            f"{MAX_AUTO_REFRESH_MINUTES} (a day), got {minutes}"
+        )
+    return minutes
 
 
 # A margin's limits (config.MORTGAGE_MARGINS), in points either way: a margin
@@ -492,6 +514,11 @@ def format_regression_tolerance(values: tuple, _config: PlotConfig) -> str:
     return "" if values[0] is None else f"{values[0]:g}"
 
 
+def format_auto_refresh_minutes(values: tuple, _config: PlotConfig) -> str:
+    """Format the minutes between automatic refreshes; blank when unset (the default, shown in grey)."""
+    return "" if values[0] is None else str(values[0])
+
+
 def field_default(name: str) -> object:
     """Return the default of the PlotConfig field ``name`` (one with a plain default, not a factory)."""
     return next(field.default for field in dataclasses.fields(PlotConfig) if field.name == name)
@@ -717,7 +744,7 @@ GROUPS: dict[str, str] = {
     "units": "Measure of debt, GDP, and interest:",
     "labels": "Line labels and regression segments (--reg needs at least \"reg\"):",
     "dates": "Date window (YYYY, YYYY-MM or YYYY-MM-DD; '/' also accepted):",
-    "latest": "Latest data (at least \"cur\"):",
+    "latest": "Latest data (at least \"cur\"; --auto-refresh \"au\"):",
     "canvas": "Final canvas size in pixels (4:3 assumed when only one dimension is given):",
     "yield": "Yield-axis limits (percent):",
     "dollar": (
@@ -1002,6 +1029,24 @@ OPTIONS: tuple[Option, ...] = (
         "on by default: U.S. Treasury daily yields\nand debt, and the day's intraday yield\n"
         "quotes (CNBC), past the regular sources",
         names=("current",), shortest=3, label="Intraday quotes on end date", panel="labels",
+    ),
+    # The automatic refresh (batch 11.3, ratesplot.refresh; Terry, 2026-10-08
+    # and 2026-10-12), off by default. At least "au": no other name begins so.
+    # Greyed in the window and on the page where it can bring nothing new
+    # (``PlotConfig.refresh_brings_nothing``); its box, with the minutes on its row,
+    # in the block with the line labels and the latest data.
+    Option(
+        "auto-refresh", Kind.FLAG, ("auto_refresh",), "latest", "--au / --auto-refresh / --no-au",
+        f"off by default: every {DEFAULT_AUTO_REFRESH_MINUTES} minutes what\n"
+        "Refresh does; outside market hours only\nwhen a quote has changed. With --save the\nfiles are written again until Ctrl-C",
+        names=("auto-refresh",), shortest=2, label="Automatic refresh", panel="labels",
+    ),
+    Option(
+        "auto-refresh-minutes", Kind.VALUE, ("auto_refresh_minutes",), "latest", "--au:MIN / --auto-refresh:MIN",
+        f"the minutes between refreshes (default {DEFAULT_AUTO_REFRESH_MINUTES},\n"
+        f"at least {MIN_AUTO_REFRESH_MINUTES}); turns --au on",
+        names=("auto-refresh",), shortest=2, parse=parse_auto_refresh_minutes, turns_on="auto-refresh",
+        label="interval, minutes", format=format_auto_refresh_minutes, panel="labels",
     ),
     # The projection to today (ratesplot.latest.project_to_now), on by
     # default, a switch of its own since batch 11 (Terry, 2026-10-26, decision
@@ -1448,6 +1493,27 @@ def idle_options(debt: bool, gdp: bool, interest: bool) -> frozenset[str]:
     return frozenset(idle)
 
 
+# The automatic refresh's controls (batch 11.3), greyed together where it can
+# bring nothing new (``auto_refresh_idle``).
+AUTO_REFRESH_OPTIONS = frozenset({"auto-refresh", "auto-refresh-minutes"})
+
+
+def auto_refresh_idle(texts: Mapping[str, str], flags: Mapping[str, bool]) -> bool:
+    """Whether the automatic refresh can bring nothing new to the charts these choices draw (``PlotConfig.refresh_brings_nothing``).
+
+    ``texts`` are the fields a drawing takes (the window's and the page's
+    ``frontend.drawn_payloads``); its own minutes are left out, so the rule
+    never depends on them. False where the choices draw nothing (a field in
+    the wrong, marked as such): the box stays as it is.
+    """
+    own = {key: text.strip() for key, text in texts.items() if key not in AUTO_REFRESH_OPTIONS and text.strip()}
+    try:
+        config = config_from_choices(own, flags)
+    except ValueError:
+        return False
+    return config.refresh_brings_nothing is not None
+
+
 def choices_from_config(config: PlotConfig) -> tuple[dict[str, str], dict[str, bool]]:
     """Return ``(payloads, flags)`` describing ``config``, for filling the GUI's controls.
 
@@ -1662,6 +1728,10 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     idle = idle_options(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True))
     idle_keys = idle_margins(payloads, flags) | idle_aggregates(payloads, flags)
     payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle and key not in idle_keys}
+    # The automatic refresh's minutes are greyed where it brings nothing new
+    # (batch 11.3); its box is written, as every greyed tick is.
+    if payloads.get("auto-refresh-minutes", "").strip() and auto_refresh_idle(payloads, flags):
+        del payloads["auto-refresh-minutes"]
 
     # The nations' switches, unless the ones chosen are those drawn by default.
     countries = [option for option in options_in("country") if option.in_gui]

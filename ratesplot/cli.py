@@ -14,6 +14,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
+from dataclasses import replace
+from datetime import datetime
+from functools import partial
+from typing import Callable
+
+import pandas as pd
 
 from . import export
 from .config import NATIONS, Nation, PlotConfig, nation_by_code, nation_by_key
@@ -33,6 +40,7 @@ from .options import (
 from .http import drawing_downloads, enable_download_cache, enable_last_good_copies, not_drawn_line
 from .http import not_drawn as why_not_drawn
 from .plotting import COUNTRIES, build_figure, resolve_start, run_cdn, run_de, run_uk, run_us
+from .refresh import Ticker, forget_old_downloads
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +262,7 @@ def parse_args(argv: list[str] | None = None) -> PlotConfig:
         parser.error(str(exc))
 
 
-def save_charts(config: PlotConfig) -> list[str]:
+def save_charts(config: PlotConfig, files: export.SavedFiles | None = None) -> list[str]:
     """Draw the charts and write them to ``config.save`` (batch 11.1, decision 46); return the charts not drawn.
 
     Each chart is drawn as the window draws it (``plotting.build_figure``,
@@ -265,11 +273,14 @@ def save_charts(config: PlotConfig) -> list[str]:
     chart is drawn, so a name says whose chart it is; an XLSX is one workbook,
     a sheet for each chart, named as the window's tabs. A chart that cannot be
     drawn is named as the windows' path names it, and the others written.
+    Each file is written through a temporary file swapped in, under "_n"
+    where another program holds it (``files``, one for a run; batch 11.3).
     """
     from .frontend import png_bytes  # the window's PNG bytes: the regression set's, metadata and all
 
     path = config.save
     assert path is not None
+    files = export.SavedFiles() if files is None else files
     extension = export.format_of(path)
     not_drawn: list[str] = []
     sheets: list[tuple[str, export.ChartData]] = []
@@ -293,14 +304,54 @@ def save_charts(config: PlotConfig) -> list[str]:
             data = export.image_bytes(figure, png_bytes(figure), extension)
         else:
             data = export.data_bytes(extension, [(nation.name, export.chart_data(figure, config.for_nation(country.key), country.key))])
-        written = export.per_nation_path(path, nation.codes[0])
-        with open(written, "wb") as output:
-            output.write(data)
+        written = files.write(export.per_nation_path(path, nation.codes[0]), data)
         print(f"Saved {written}")
     if sheets:
-        with open(path, "wb") as output:
-            output.write(export.data_bytes(extension, sheets))
-        print(f"Saved {path} ({len(sheets)} sheet{'s' if len(sheets) > 1 else ''})")
+        written = files.write(path, export.data_bytes(extension, sheets))
+        print(f"Saved {written} ({len(sheets)} sheet{'s' if len(sheets) > 1 else ''})")
+    return not_drawn
+
+
+def _read_again(payloads: dict[str, str], flags: dict[str, bool], start: pd.Timestamp | None) -> PlotConfig:
+    """The command line's choices read again for an automatic refresh (batch 11.3): a blank End is today's date.
+
+    The start found at the first drawing is kept: the automatic start's
+    trial pass would ask every source again, for the same date.
+    """
+    return replace(config_from_choices(payloads, flags), start=start)
+
+
+def keep_saving(again: Callable[[], PlotConfig], files: export.SavedFiles, not_drawn: list[str]) -> list[str]:
+    """Write the --save files again every few minutes until Ctrl-C (--auto-refresh, batch 11.3); return the charts not drawn the last time.
+
+    Each refresh does what the window's Refresh does: the downloads kept over
+    an hour dropped, then the charts drawn and written again, with the quotes
+    of the moment; outside market hours only when a quote has changed
+    (``refresh.Ticker``). ``again`` gives the choices afresh, so a blank End
+    is today's date; when nothing new can come any more (an End given as
+    today, now past), it ends by itself. Between refreshes no file is held open.
+    """
+    config = again()
+    minutes = config.refresh_minutes
+    print(f"Automatic refresh every {minutes} minutes: press Ctrl-C to end it.")
+    ticker = Ticker()
+    try:
+        while True:
+            time.sleep(minutes * 60)
+            config = again()
+            reason = config.refresh_brings_nothing
+            if reason is not None:
+                print(f"Automatic refresh ended: {reason}.")
+                break
+            with drawing_downloads():
+                print(f"--- automatic refresh, {datetime.now():%Y-%m-%d %H:%M:%S}")
+                if not ticker.due(config):
+                    continue
+                dropped = forget_old_downloads()
+                print(f"The latest quotes, and {dropped} download(s) over an hour old fetched again.")
+                not_drawn = save_charts(config, files)
+    except KeyboardInterrupt:
+        print("Automatic refresh ended (Ctrl-C).")
     return not_drawn
 
 
@@ -323,6 +374,16 @@ def main(argv: list[str] | None = None) -> None:
     # with a warning at the end of the run (batch 20). The harnesses replace
     # the cache the copies are kept in, so they never write or read one.
     enable_last_good_copies()
+    # The automatic refresh (batch 11.3): none where nothing new can come, said once.
+    refreshing = config.auto_refresh and config.refresh_brings_nothing is None
+    if config.auto_refresh and not refreshing:
+        print(f"Automatic refresh: nothing new can come, since {config.refresh_brings_nothing}; the charts are drawn once.")
+    if refreshing:
+        # Each download kept, so that a refresh asks again only for the
+        # quotes and what is over an hour old, as the window's Refresh does.
+        enable_download_cache()
+    files = export.SavedFiles()
+    again: Callable[[], PlotConfig] | None = None
     # One drawing for the message log: a line for each real download, the
     # trial pass's included (http.drawing_downloads).
     with drawing_downloads():
@@ -332,10 +393,14 @@ def main(argv: list[str] | None = None) -> None:
             # source is fetched twice.
             enable_download_cache()
             config = resolve_start(config)
+        if refreshing:
+            again = partial(_read_again, payloads, flags, config.start)
         # Each chart on its own: one whose source is down (FRED's maintenance
         # page, 2026-10-21) is named in one line, "NOT DRAWN: ..." (batch 19.4;
         # the traceback too for an unexpected error), and the rest drawn.
-        not_drawn = save_charts(config) if config.save is not None else []
+        not_drawn = save_charts(config, files) if config.save is not None else []
+        if refreshing and config.save is None:
+            print(f"Automatic refresh every {config.refresh_minutes} minutes, while each window is open.")
         for shown, run, name in (
             (config.show_cdn, run_cdn, "Canada"),
             (config.show_us, run_us, "United States"),
@@ -345,13 +410,15 @@ def main(argv: list[str] | None = None) -> None:
             if not shown or config.save is not None:
                 continue
             try:
-                run(config)
+                run(config, again)
             except Exception as exc:  # named here and at the end, never swallowed
                 why, trace = why_not_drawn(exc)
                 if trace is not None:
                     sys.stderr.write(trace)
                 print(not_drawn_line(f"the {name} chart", why))
                 not_drawn.append(name)
+    if again is not None and config.save is not None:
+        not_drawn = keep_saving(again, files, not_drawn)
     if not_drawn:
         print(f"Charts not drawn: {', '.join(not_drawn)}.")
         sys.exit(1)

@@ -69,6 +69,7 @@ from .config import (
     DATE_COLUMN,
     LATEST_QUOTE_TIMEOUT_SECONDS,
     MARKET_TIMEZONE,
+    NATIONS,
     QUOTE_SYMBOLS,
     TREASURY_DEBT_TO_PENNY_URL,
     TREASURY_YIELD_CURVE_URL,
@@ -476,6 +477,39 @@ def intraday_yields_after(
         newest = when if newest is None else max(newest, when)
     frame = pd.DataFrame.from_dict(rows, orient="index").sort_index()
     return frame.reindex(columns=[column for column in symbols if column in frame.columns]), newest
+
+
+def quote_state(config: PlotConfig) -> tuple[tuple[str, str, str, str], ...]:
+    """Return the quotes a drawing of ``config`` would take, as the feed has them now: (symbol, last, change, time) each.
+
+    For the automatic refresh outside market hours (batch 11.3,
+    ``refresh.Ticker``): the charts are drawn again only when this has
+    changed. Each shown chart's quoted columns (``PlotConfig.quoted_columns``)
+    are asked for, one request per nation, as a drawing asks. A quote a
+    drawing leaves out is left out here too, so that it does not draw again
+    for nothing: the next day's session (from ``_NEXT_SESSION_HOUR``) and a
+    day after the chart's end (``intraday_yields_after``). Raises as
+    ``fetch_quotes`` does.
+    """
+    state: list[tuple[str, str, str, str]] = []
+    for nation in NATIONS:
+        if not getattr(config, nation.show_field):
+            continue
+        columns = config.quoted_columns(nation.key)
+        if not columns:
+            continue
+        quotes = fetch_quotes(nation.key, columns)
+        for column, symbol in _quote_symbols(nation.key, columns).items():
+            quote = quotes.get(column)
+            try:
+                when = pd.Timestamp(quote["last_time"]).tz_convert(MARKET_TIMEZONE)
+                last = str(quote["last"])
+            except (TypeError, KeyError, ValueError):
+                continue
+            if when.hour >= _NEXT_SESSION_HOUR or when.tz_localize(None).normalize() > config.end:
+                continue
+            state.append((symbol, last, str(quote.get("change", "")), str(quote["last_time"])))
+    return tuple(state)
 
 
 # ---------------------------------------------------------------------------

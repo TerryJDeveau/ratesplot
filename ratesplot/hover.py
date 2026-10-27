@@ -541,9 +541,17 @@ class _PlainWindow:
         )
         figure.add_artist(self.ring)
         self.controller = Controller(self._start_timer, lambda timer: timer.stop(), self._show, self._hide)
-        self.canvas.mpl_connect("draw_event", self._drawn)
-        self.canvas.mpl_connect("motion_notify_event", self._moved)
-        self.canvas.mpl_connect("figure_leave_event", lambda _event: self.controller.moved(None, 0.0, 0.0))
+        self.connections = [
+            self.canvas.mpl_connect("draw_event", self._drawn),
+            self.canvas.mpl_connect("motion_notify_event", self._moved),
+            self.canvas.mpl_connect("figure_leave_event", lambda _event: self.controller.moved(None, 0.0, 0.0)),
+        ]
+
+    def close(self) -> None:
+        """Stop reading the pointer: its events disconnected, its timers stopped (``detach``)."""
+        self.controller.stop()
+        for connection in self.connections:
+            self.canvas.mpl_disconnect(connection)
 
     def _start_timer(self, milliseconds: int, callback: Callable[[], None]):
         timer = self.canvas.new_timer(interval=milliseconds)
@@ -605,6 +613,14 @@ class _PlainWindow:
 def attach(figure: Figure) -> None:
     """Give a plain matplotlib window's chart the read-out (--no-gui): matplotlib's own mouse events and timers."""
     figure._ratesplot_hover_window = _PlainWindow(figure)  # kept with the figure, or its callbacks would be dropped
+
+
+def detach(figure: Figure) -> None:
+    """Take the read-out off a plain window's chart before it is drawn afresh (the automatic refresh, batch 11.3); ``attach`` gives it again."""
+    window = getattr(figure, "_ratesplot_hover_window", None)
+    if window is not None:
+        window.close()
+        del figure._ratesplot_hover_window
 
 
 def reach_in_image(scale: float) -> float:

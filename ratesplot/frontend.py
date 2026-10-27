@@ -52,6 +52,7 @@ from matplotlib.figure import Figure
 from .config import (
     COMPONENT_LETTERS,
     COMPONENT_SYNONYMS,
+    DEFAULT_AUTO_REFRESH_MINUTES,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     EARLIEST_DATA_START,
     MIN_CANVAS_PX,
@@ -61,12 +62,14 @@ from .config import (
     PlotConfig,
 )
 from .options import (
+    AUTO_REFRESH_OPTIONS,
     GROUPS,
     GROUPS_CHOSEN_TOGETHER,
     OPTIONS,
     Kind,
     NONE_ITEM,
     Option,
+    auto_refresh_idle,
     by_name,
     choices_from_config,
     config_from_choices,
@@ -595,10 +598,22 @@ def idle_controls(flags: Mapping[str, bool]) -> frozenset[str]:
     return frozenset(idle)
 
 
-# Every option ``idle_controls`` can grey out: those idle with no right-axis
-# curve chosen, and GDP (under -r); and a nation's aggregate debts, by its key
-# (``idle_nation_keys``).
-GREYABLE_OPTIONS = idle_options(False, False, False) | {"gdp", "aggregate"}
+def idle_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
+    """Return the options greyed out for these choices: ``idle_controls``, and the automatic refresh's where it can bring nothing new (batch 11.3).
+
+    That one turns on the fields too (the End date, a nation's own yields),
+    so it is judged on the texts a drawing takes (``options.auto_refresh_idle``).
+    """
+    idle = idle_controls(flags)
+    if auto_refresh_idle(_texts_in_effect(payloads, flags), flags):
+        idle |= AUTO_REFRESH_OPTIONS
+    return idle
+
+
+# Every option ``idle_controls`` and ``idle_choices`` can grey out: those idle
+# with no right-axis curve chosen, and GDP (under -r); the automatic refresh's;
+# and a nation's aggregate debts, by its key (``idle_nation_keys``).
+GREYABLE_OPTIONS = idle_options(False, False, False) | {"gdp", "aggregate"} | AUTO_REFRESH_OPTIONS
 
 
 def idle_nation_keys(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
@@ -635,10 +650,19 @@ def drawn_payloads(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> di
     one with no curve to act on (``idle_controls``: Top and Bottom, the
     levels, the tolerance; a nation's margin while its chart draws not its
     term, the prime rate, and its aggregate debts while none is drawn,
-    ``idle_nation_keys``). The field keeps its text for when it applies
-    again, and the written command line leaves it out
+    ``idle_nation_keys``); and the automatic refresh's minutes where it can
+    bring nothing new (``idle_choices``). The field keeps its text for when
+    it applies again, and the written command line leaves it out
     (``options.command_line_tokens``).
     """
+    drawn = _texts_in_effect(payloads, flags)
+    if "auto-refresh-minutes" in drawn and auto_refresh_idle(drawn, flags):
+        del drawn["auto-refresh-minutes"]
+    return drawn
+
+
+def _texts_in_effect(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
+    """``drawn_payloads`` but for the automatic refresh's rule, which is judged on these (``idle_choices``)."""
     idle = idle_controls(flags)
     idle_keys = idle_nation_keys(payloads, flags)
     drawn: dict[str, str] = {}
@@ -1052,7 +1076,8 @@ def field_hints(drawn: PlotConfig | None, geometries: Mapping[str, ChartGeometry
 
     Terry, 2026-10-08 (decision 18): a blank field shows its default or
     automatic value in grey, a typed value in black. The regression
-    tolerance's default always; once charts are drawn (``drawn``, with the
+    tolerance's default always, and the automatic refresh's minutes (batch
+    11.3); once charts are drawn (``drawn``, with the
     start found), the dates they were drawn for (the automatic start, today's
     end) and the axis limits of each chart drawn (``geometries``, by nation),
     as ``"us:max"`` and so on, written as the field would take them (the
@@ -1062,7 +1087,10 @@ def field_hints(drawn: PlotConfig | None, geometries: Mapping[str, ChartGeometry
     curves. The front ends show a hint only while the field is blank and not
     greyed.
     """
-    hints = {"regression-tolerance": f"{DEFAULT_REGRESSION_TOLERANCE_PCT:g}"}
+    hints = {
+        "regression-tolerance": f"{DEFAULT_REGRESSION_TOLERANCE_PCT:g}",
+        "auto-refresh-minutes": f"{DEFAULT_AUTO_REFRESH_MINUTES}",
+    }
     # Each nation's margins at their defaults: the prime margin's 0, the prime
     # rate itself (batch 9.4).
     for margin in margin_options().values():
