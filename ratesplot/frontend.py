@@ -1039,6 +1039,16 @@ def save_dialog_folder(remembered: str | None) -> str:
 _MIN_DRAG_PX = 8
 # The command line insists on at least seven days between start and end.
 _MIN_SPAN_DAYS = MIN_WINDOW_DAYS
+# The wheel over a chart: the notches are collected and the zoom applied once
+# the wheel has been still this long, one redraw per gesture; each notch away
+# from the person scales the dates' span by the factor, about the pointer.
+WHEEL_DELAY_MS = 350
+WHEEL_ZOOM_FACTOR = 0.8
+
+
+def wheel_zoom_text(notches: float) -> str:
+    """What is shown while the wheel turns over a chart, before its zoom is applied."""
+    return f"Zoom ×{WHEEL_ZOOM_FACTOR ** -notches:.2f} (applies when the wheel stops) …"
 
 
 @dataclass(frozen=True)

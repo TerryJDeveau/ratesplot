@@ -134,6 +134,8 @@ from .frontend import (
     NATION_OPTIONS,
     STATE_VERSION,
     TAB_TITLES,
+    WHEEL_DELAY_MS,
+    WHEEL_ZOOM_FACTOR,
     ChartGeometry,
     Choices,
     all_tick,
@@ -174,6 +176,7 @@ from .frontend import (
     size_boxes_at_fault,
     starting_choices,
     version_text,
+    wheel_zoom_text,
     with_leading_zero,
     zoom_updates,
 )
@@ -201,10 +204,6 @@ _TEXT_REDRAW_DELAY_MS = 700
 _POLL_MS = 100
 # Pause after a window resize before the preview is rescaled.
 _RESIZE_DELAY_MS = 150
-# Pause after the last wheel notch before the zoom is applied (one redraw per gesture).
-_WHEEL_DELAY_MS = 350
-# Date range multiplier per wheel notch (towards the pointer).
-_WHEEL_ZOOM_FACTOR = 0.8
 # How many zoom/pan steps "Back" can undo. The view before the first one is
 # always kept, for Unzoom.
 _HISTORY_LIMIT = 50
@@ -2078,15 +2077,15 @@ class RatesPlotApp:
         wheel["x"] = point[0]
         if wheel["after"] is not None:
             self.root.after_cancel(wheel["after"])
-        wheel["after"] = self.root.after(_WHEEL_DELAY_MS, self._apply_wheel)
-        self.status.set(f"Zoom ×{_WHEEL_ZOOM_FACTOR ** -wheel['notches']:.2f} (applies when the wheel stops) …")
+        wheel["after"] = self.root.after(WHEEL_DELAY_MS, self._apply_wheel)
+        self.status.set(wheel_zoom_text(wheel["notches"]))
 
     def _apply_wheel(self) -> None:
         wheel, self._wheel = self._wheel, None
         if wheel is None or self.geometry.get(wheel["key"]) is None:
             return
         geometry = self.geometry[wheel["key"]]
-        factor = _WHEEL_ZOOM_FACTOR ** wheel["notches"]
+        factor = WHEEL_ZOOM_FACTOR ** wheel["notches"]
         self._apply_view(scale_dates_updates(geometry, factor, wheel["x"]), "Zoomed")
 
     def _shown_for(self, key: str) -> PlotConfig | None:
