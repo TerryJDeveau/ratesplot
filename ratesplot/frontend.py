@@ -1044,11 +1044,19 @@ _MIN_SPAN_DAYS = MIN_WINDOW_DAYS
 # from the person scales the dates' span by the factor, about the pointer.
 WHEEL_DELAY_MS = 350
 WHEEL_ZOOM_FACTOR = 0.8
+# The words on either side of the zoom shown while the wheel turns (the
+# page's script writes them too).
+WHEEL_ZOOM_WORDS = ("Zoom ×", " (applies when the wheel stops) …")
 
 
 def wheel_zoom_text(notches: float) -> str:
-    """What is shown while the wheel turns over a chart, before its zoom is applied."""
-    return f"Zoom ×{WHEEL_ZOOM_FACTOR ** -notches:.2f} (applies when the wheel stops) …"
+    """What is shown while the wheel turns over a chart, before its zoom is applied: "Zoom ×1.56 (applies …) …".
+
+    Below a hundredth (21 notches out at once) "<0.01", where two decimals said 0.00.
+    """
+    before, after = WHEEL_ZOOM_WORDS
+    zoom = WHEEL_ZOOM_FACTOR ** -notches
+    return f"{before}{zoom:.2f}{after}" if zoom >= 0.01 else f"{before}<0.01{after}"
 
 
 @dataclass(frozen=True)

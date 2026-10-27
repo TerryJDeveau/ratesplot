@@ -61,6 +61,11 @@ Zoom and dates
     yield Min and Max and the right axis's Top and Bottom (the window's
     rules, ``frontend.zoom_updates``). The chart is a small in-page component
     (``_chart_component``) because ``st.image`` reports no mouse events.
+    The wheel over a chart zooms the dates about the pointer, as in the
+    window (batch 24.7, ``_wheel_turned``, ``frontend.scale_dates_updates``):
+    the notches are collected and applied once the wheel has been still for
+    350 ms, one drawing for each turn; over a chart the page does not
+    scroll, and Ctrl and the wheel is the browser's own zoom.
     "◀ Earlier" and "Later ▶" move the dates by half the window, "Zoom out"
     doubles their span (``frontend.move_dates_updates``: between 1680 and
     today, keeping the span). "Back" undoes one zoom, move, Unzoom or Reset;
@@ -97,8 +102,8 @@ The hover read-out
     draws nothing again.
 
 Not here (the window has them)
-    The wheel's zoom and the right-drag pan (the buttons move the dates),
-    and remembered settings (the address keeps the chart instead).
+    The right-drag pan (the buttons move the dates), and remembered
+    settings (the address keeps the chart instead).
 """
 
 from __future__ import annotations
@@ -106,6 +111,7 @@ from __future__ import annotations
 import datetime
 import functools
 import json
+import math
 import os
 import struct
 import threading
@@ -140,6 +146,9 @@ from .frontend import (  # noqa: E402
     LIMITS,
     NATION_OPTIONS,
     TAB_TITLES,
+    WHEEL_DELAY_MS,
+    WHEEL_ZOOM_FACTOR,
+    WHEEL_ZOOM_WORDS,
     ChartGeometry,
     Choices,
     all_tick,
@@ -171,6 +180,7 @@ from .frontend import (  # noqa: E402
     reset_choices,
     saved_export_name,
     saved_log_name,
+    scale_dates_updates,
     settled_all_ticks,
     size_boxes_at_fault,
     starting_choices,
@@ -233,11 +243,15 @@ _HISTORY_LIMIT = 50
 # The buttons move the dates by this fraction of the window, or scale it by this factor.
 _DATE_STEP_FRACTION = 0.5
 _ZOOM_OUT_FACTOR = 2.0
-# The window's words and bars (Terry, 2026-10-08); the page has no pan or wheel.
+# The window's words and bars (Terry, 2026-10-08); the page has no pan.
 _ZOOM_HINT = (
     "Drag pointer: zoom to box (its width sets the dates, its height the axes' limits) | "
-    "buttons: move the dates | Back: undo a zoom"
+    "wheel: zoom dates | buttons: move the dates | Back: undo a zoom"
 )
+# The notches a wheel's turn may send, either way: the page's script counts
+# what the browser reports, so a check on what reaches the server. More
+# would ask for a span past all the data, which the zoom cuts anyway.
+_WHEEL_MAX_NOTCHES = 60
 
 # Session-state keys: one per control, and the page's own records.
 _FLAG = "flag:"      # + option name: a check box
@@ -322,6 +336,22 @@ class Drawing:
 # chart that fills a phone's screen would otherwise trap it there. On a
 # phone the buttons above the charts move the dates.
 #
+# The wheel over the picture (batch 24.7) zooms the dates as the window's
+# does: the notches are added up (a notch is 100 of the browser's pixels,
+# or 3 lines, or a page; away from the person zooms in), the zoom they make
+# shown beside the pointer in the window's words, and once the wheel has
+# been still for frontend.WHEEL_DELAY_MS the notches and the pointer's place
+# (a fraction of the width) are sent once; _wheel_turned zooms by them. The
+# page does not scroll while the wheel turns over the picture. A turn begun
+# off the picture is the page's scroll, and stays so while its notches keep
+# coming (gaps under the same pause), though the page brings the picture
+# under the pointer: otherwise scrolling down the page with the pointer in
+# the middle ended in a zoom (found in a browser, 2026-10-27; Chrome scrolls
+# such a turn before the page's script sees it, and then hands it to the
+# picture, not cancelable, the sign that is used). Ctrl and the
+# wheel is left to the browser (its zoom, and a trackpad's pinch), and so is
+# a sideways scroll. A turn not yet sent when the page runs again is dropped.
+#
 # Streamlit builds the component's element afresh on every run of the page
 # (measured with Streamlit 1.64: a new parent element each run, and the
 # function returned below called just before), so nothing is kept between
@@ -345,6 +375,22 @@ const HIDE_DELAY_MS = __HIDE_DELAY_MS__;
 const REACH_PX = __REACH_PX__;
 const OFFSET_PX = __OFFSET_PX__;
 const BOX_SLACK_PX = 0.5;
+const WHEEL_DELAY_MS = __WHEEL_DELAY_MS__;
+const WHEEL_ZOOM_FACTOR = __WHEEL_ZOOM_FACTOR__;
+const WHEEL_WORDS = __WHEEL_WORDS__;
+
+// What is shown while the wheel turns (frontend.wheel_zoom_text).
+function wheelText(notches) {
+  const zoom = Math.pow(WHEEL_ZOOM_FACTOR, -notches);
+  return WHEEL_WORDS[0] + (zoom >= 0.01 ? zoom.toFixed(2) : "<0.01") + WHEEL_WORDS[1];
+}
+
+// Right of the pointer and below it, turned back where that would leave the picture.
+function besidePointer(element, x, y, rect) {
+  const width = element.offsetWidth, height = element.offsetHeight;
+  element.style.left = (x + OFFSET_PX + width <= rect.width ? x + OFFSET_PX : Math.max(x - OFFSET_PX - width, 0)) + "px";
+  element.style.top = (y + OFFSET_PX + height <= rect.height ? y + OFFSET_PX : Math.max(y - OFFSET_PX - height, 0)) + "px";
+}
 
 // Where the PNG ends: after its IEND chunk. Anything after it is the read-out's data.
 function pngLength(bytes) {
@@ -536,11 +582,12 @@ export default function (component) {
   const frame = document.createElement("div");
   frame.className = "chart";
   frame.innerHTML = '<img alt="Chart" draggable="false"><div class="band"></div>'
-    + '<div class="readout"></div>';
+    + '<div class="readout"></div><div class="wheel"></div>';
   parentElement.appendChild(frame);
   const img = frame.querySelector("img");
   const band = frame.querySelector(".band");
   const readout = frame.querySelector(".readout");
+  const wheelBox = frame.querySelector(".wheel");
   const rings = [];  // one for each line read, made as needed
 
   const pngEnd = pngLength(data);
@@ -583,10 +630,7 @@ export default function (component) {
     }));
     readout.style.borderColor = readings[0].color;
     readout.style.display = "block";
-    // Right of the pointer and below it, turned back where that would leave the picture.
-    const width = readout.offsetWidth, height = readout.offsetHeight;
-    readout.style.left = (x + OFFSET_PX + width <= rect.width ? x + OFFSET_PX : Math.max(x - OFFSET_PX - width, 0)) + "px";
-    readout.style.top = (y + OFFSET_PX + height <= rect.height ? y + OFFSET_PX : Math.max(y - OFFSET_PX - height, 0)) + "px";
+    besidePointer(readout, x, y, rect);
   };
   const hide = () => {
     for (const ring of rings) ring.style.display = "none";
@@ -648,14 +692,55 @@ export default function (component) {
     start = null;
     band.style.display = "none";
   };
+
+  // A turn begun off the picture scrolls the page, and goes on scrolling it
+  // while its notches keep coming, though the page brings the picture under
+  // the pointer: only a turn begun on the picture zooms.
+  let pageWheelAt = -Infinity;
+  const pageWheel = (event) => { if (!event.composedPath().includes(img)) pageWheelAt = event.timeStamp; };
+  document.addEventListener("wheel", pageWheel, { passive: true, capture: true });
+  let notches = 0, wheelX = 0, wheelTimer = null;
+  img.addEventListener("wheel", (event) => {
+    if (event.ctrlKey || event.deltaY === 0) return;
+    // Not cancelable: the browser has scrolled the page already (a turn begun
+    // where nothing holds the wheel), and only then found the picture under
+    // the pointer.
+    if (!event.cancelable || (wheelTimer === null && event.timeStamp - pageWheelAt < WHEEL_DELAY_MS)) {
+      pageWheelAt = event.timeStamp;  // the page's scroll, carried on
+      return;
+    }
+    event.preventDefault();
+    if (start) return;  // a box is being dragged
+    controller.stop();
+    notches -= event.deltaY / (event.deltaMode === 1 ? 3 : event.deltaMode === 2 ? 1 : 100);
+    const at = point(event);
+    wheelX = at.x / at.width;
+    wheelBox.textContent = wheelText(notches);
+    wheelBox.style.display = "block";
+    besidePointer(wheelBox, at.x, at.y, img.getBoundingClientRect());
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => {
+      wheelTimer = null;
+      if (Math.abs(notches) < 0.005) {  // turned back to where it began: nothing to ask the server
+        wheelBox.style.display = "none";
+      } else {
+        setTriggerValue("wheel", { notches: notches, x: wheelX });
+      }
+      notches = 0;
+    }, WHEEL_DELAY_MS);
+  }, { passive: false });
   return () => {
     controller.stop();
+    clearTimeout(wheelTimer);
+    document.removeEventListener("wheel", pageWheel, { capture: true });
     URL.revokeObjectURL(url);
   };
 }
 """.replace("__SHOW_DELAY_MS__", str(hover.SHOW_DELAY_MS)).replace("__HIDE_DELAY_MS__", str(hover.HIDE_DELAY_MS)).replace(
     "__REACH_PX__", str(hover.REACH_PX)
-).replace("__OFFSET_PX__", str(hover.OFFSET_PX))
+).replace("__OFFSET_PX__", str(hover.OFFSET_PX)).replace("__WHEEL_DELAY_MS__", str(WHEEL_DELAY_MS)).replace(
+    "__WHEEL_ZOOM_FACTOR__", str(WHEEL_ZOOM_FACTOR)
+).replace("__WHEEL_WORDS__", json.dumps(WHEEL_ZOOM_WORDS))
 _CHART_CSS = f"""
 .chart {{ position: relative; line-height: 0; }}
 .chart img {{ width: 100%; height: auto; cursor: crosshair; user-select: none; -webkit-user-select: none; }}
@@ -667,11 +752,12 @@ _CHART_CSS = f"""
   position: absolute; display: none; box-sizing: border-box; pointer-events: none;
   width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid; border-radius: 50%;
 }}
-.readout {{
+.readout, .wheel {{
   position: absolute; display: none; pointer-events: none; z-index: 1; white-space: pre; line-height: 1.35;
   padding: 3px 7px; border: 1.5px solid; border-radius: 4px; font-size: 13px;
   background: {hover.BOX_FACE}; color: {hover.BOX_TEXT}; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }}
+.wheel {{ border-color: #888888; }}
 """
 def _chart_component():
     """Register the chart component with the running Streamlit and return the command that shows a chart.
@@ -988,6 +1074,36 @@ def _box_dragged(key: str) -> None:
         ),
         key,
     )
+
+
+def _wheel_zoom(drawing: Drawing, key: str, wheel: object) -> dict[str, str] | None:
+    """Return the Start and End texts for a turn of the wheel over ``key``'s chart, or None for a turn that is no turn.
+
+    The page's script sends the notches (positive away from the person) and
+    the pointer's place as a fraction of the picture's width. They come from
+    the browser, so a turn that is not two numbers, or none, is ignored, the
+    place is kept to the picture and the notches to ``_WHEEL_MAX_NOTCHES``
+    either way; then the window's rule (``frontend.scale_dates_updates``).
+    """
+    try:
+        notches, x = float(wheel["notches"]), float(wheel["x"])
+    except (TypeError, KeyError, ValueError):
+        return None
+    if not (math.isfinite(notches) and math.isfinite(x)) or notches == 0:
+        return None
+    notches = min(max(notches, -_WHEEL_MAX_NOTCHES), _WHEEL_MAX_NOTCHES)
+    width, _height = _png_size(drawing.pngs[key])
+    return scale_dates_updates(drawing.geometry[key], WHEEL_ZOOM_FACTOR ** notches, min(max(x, 0.0), 1.0) * width)
+
+
+def _wheel_turned(key: str) -> None:
+    """The wheel was turned over ``key``'s chart and is still: zoom the dates about the pointer, as the window does (batch 24.7)."""
+    drawing: Drawing | None = st.session_state.get(_DRAWING)
+    if drawing is None or drawing.geometry.get(key) is None:
+        return
+    updates = _wheel_zoom(drawing, key, (st.session_state.get(drawing.chart_key(key)) or {}).get("wheel"))
+    if updates:
+        _apply_view(updates)
 
 
 def _move_dates(shift: float, scale: float) -> None:
@@ -1672,6 +1788,7 @@ def _show(drawing: Drawing, config: PlotConfig | None = None) -> None:
                     key=drawing.chart_key(key),
                     data=_chart_bytes(drawing, key),
                     on_box_change=functools.partial(_box_dragged, key),
+                    on_wheel_change=functools.partial(_wheel_turned, key),
                 )
                 _export_row(drawing, key)
         st.caption(
