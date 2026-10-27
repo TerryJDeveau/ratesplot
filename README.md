@@ -70,6 +70,20 @@ on the date under the pointer and the date it was observed ("$26.5T  2020-05-15 
 2020-03-31)"); a projection to today, its value on that day, marked "≈" and "(projected)"; an
 intraday quote, its time. "Hover read-out" turns it off, as `--no-hover` does; it changes no chart.
 
+"Automatic refresh" (`--auto-refresh`, at least `--au`; off by default) does what Refresh does every
+5 minutes, or every so many minutes as given (`--au:10`; never fewer than 5): the intraday quotes
+of the moment, and anything downloaded over an hour ago fetched again. Outside market hours
+(8:00 to 17:00 on weekdays, in each chart's own market's time) it asks for the quotes first and
+draws again only when one has changed. It is greyed, its tick kept, where nothing new can come: the
+intraday quotes off, an End before today, or no chart showing a yield (or a spread) that the quotes
+carry on. In the window and on the page its box and minutes sit with the quotes' box, and the page
+says under the charts how often it refreshes. On the command line it draws the plain windows again
+while they are open, or with `--save` writes the files again until Ctrl-C. Every file `--save`
+writes goes first to a temporary file beside it, swapped in once closed, so a viewer never reads a
+half-written file and none is held open between refreshes; a file another program holds (a
+workbook open in Excel) is written as `rates_1.xlsx` instead, and that name kept from then on, a
+numbered name already there skipped.
+
 When a source does not answer (it is down, or sends a web page such as its maintenance notice
 in place of its data), the chart is drawn from the last good copy of that download, which is
 kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_good` on Windows,
@@ -151,6 +165,7 @@ python -m pip install -r requirements.txt
 | `--no-projections` | without the projection of each right-axis curve to today; it has its own switch (`--pro`), and `--no-cur` leaves it on |
 | `--save:rates.png` | the charts written to files and no window opened, the format by the extension: `.png`, `.jpg`, `.pdf` or `.svg`, or the data as `.csv` or `.tsv`, a file for each chart (`rates_ca.png` …); `.xlsx`, one workbook with a sheet for each chart (at least `--sa`, since `--s:` is the start) |
 | `--no-hover` | without the read-out by the pointer resting on a line (at least `--no-ho`, since `--h` is `--help`) |
+| `--au`, `--au:10` | the charts drawn again every 5 minutes (or 10, at least 5) as Refresh draws them, outside market hours only when a quote has changed; with `--save`, the files written again until Ctrl-C |
 
 Each rate on the yield axis is drawn across what it applies to: a central bank's rate or a prime
 rate holds until it changes, so it runs on to the chart's end; an average, a survey or a market's
@@ -166,7 +181,8 @@ used when it is changed (`regress_charts.py`, `verify_cli.py`, `verify_web.py`, 
 window driven from a script, its charts against the command line's and its controls' behaviour, `check_sources.py`,
 `check_drawn_values.py`, every curve on the yield axis against its sources, `check_reg_labels.py`,
 what the regression segments' labels cover, `check_export.py`, the data Export chart writes
-against the lines drawn, `check_last_good.py`, the charts drawn from the
+against the lines drawn, `check_refresh.py`, the automatic refresh's rules and the files `--save`
+writes again, `check_last_good.py`, the charts drawn from the
 last good copies with every source cut off, `check_requests.py`, which failed requests are
 asked again and when a source is asked nothing more, against a server on the same machine, and
 `check_baked.py`, the built-in history's files and how a drawing joins them to what it asks for)
