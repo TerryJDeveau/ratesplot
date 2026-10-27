@@ -32,8 +32,18 @@ The chart's address
     (``options.command_line_tokens``). Opening such a link draws that chart;
     after each drawing the address is updated, so a chart can be bookmarked
     or sent to someone. An address the program cannot read is reported, and
-    the defaults are drawn instead. This replaces the window's remembered
-    settings.
+    the settings remembered, or the defaults, are drawn instead.
+
+Remembered settings
+    As the window remembers its settings, the page keeps the last chart's
+    command line, as the address holds it, in a cookie in the visitor's
+    browser (batch 24.6, ``_remember_settings``), behind a "Remember my
+    settings" box, ticked at every visit, with one line saying what is
+    kept. A visit opens on the address's chart if it has one, else on the
+    settings remembered, else on the defaults; so a shared link draws what
+    it says. Unticked, the cookie is left as it is, neither written nor
+    cleared. Reset gives the defaults, which the next drawing keeps (the
+    cookie removed) while the box is ticked.
 
 Visitors
     Streamlit runs each visitor's page in its own thread, all in one process.
@@ -101,9 +111,8 @@ The hover read-out
     changes no chart: unticking it sends the charts without the data, and
     draws nothing again.
 
-Not here (the window has them)
-    The right-drag pan (the buttons move the dates), and remembered
-    settings (the address keeps the chart instead).
+Not here (the window has it)
+    The right-drag pan (the buttons move the dates).
 """
 
 from __future__ import annotations
@@ -116,7 +125,9 @@ import os
 import struct
 import threading
 import time
+import urllib.parse
 import zlib
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 import matplotlib
@@ -145,6 +156,8 @@ from .frontend import (  # noqa: E402
     LIMIT_COLUMNS,
     LIMITS,
     NATION_OPTIONS,
+    REMEMBER_HELP,
+    REMEMBER_LABEL,
     TAB_TITLES,
     WHEEL_DELAY_MS,
     WHEEL_ZOOM_FACTOR,
@@ -216,6 +229,16 @@ PAGE_SUMMARY = (
 _SCRIPT_NAME = "ratesplot.py"
 # The query parameter that holds the chart's command line.
 ADDRESS_KEY = "chart"
+# The settings remembered between visits (batch 24.6): the chart's command
+# line, as the address holds it, in a cookie of this name, kept a year. The
+# page's own script writes it (``_MEMORY_JS``): Streamlit reads the cookies
+# a visit's first request sends (``st.context.cookies``) and sets none. The
+# longest command line measured, four nations with every value set, was 963
+# characters encoded (2026-10-27), a quarter of a cookie's 4 KB.
+REMEMBER_COOKIE = "ratesplot_settings"
+_REMEMBER_DAYS = 365
+# The one line under the box, saying what is kept (Terry, decision 60).
+_REMEMBER_LINE = "Kept in a cookie in this browser for a year: the chart's settings, as in the address, and nothing else."
 # What a blank field means, shown in it until a drawing gives the value in
 # effect (``frontend.field_hints``: Terry, 2026-10-08, a blank field shows its
 # default or automatic value in grey). The other blank fields mean
@@ -260,8 +283,11 @@ _LEVEL = "level:"    # + nation key + ":" + letter: one of a nation's "By level"
 _CHOICE = "choice:"  # + choice key + ":" + value: one tick box of a list option (Option.choices)
 _CHOICE_OTHERS = "choice_others:"  # + choice key: the values given that no offered box has
 _ALL = "all:"        # + a nation's limit key ("us:max"): its "All" box, one tick for every nation's (batch 18.2)
-_READY = "ready"     # the controls have been set from the address
+_READY = "ready"     # the controls have been set from the address, the settings remembered or the defaults
 _ADDRESS_PROBLEMS = "address_problems"
+_REMEMBERED_PROBLEMS = "remembered_problems"  # the settings remembered could not be read (batch 24.6)
+_STARTED_FROM = "started_from"  # "address", "remembered" or "defaults": what the visit opened on
+_REMEMBER = "remember"   # the "Remember my settings" box (batch 24.6)
 _NOTICE = "notice"   # a message from a control's callback, shown once
 _DRAWING = "drawing"  # the last Drawing
 _FORCE = "force_redraw"
@@ -770,6 +796,49 @@ def _chart_component():
     return st.components.v2.component("ratesplot_chart", js=_CHART_JS, css=_CHART_CSS)
 
 
+# The settings remembered (batch 24.6): a component with nothing to show,
+# whose script writes the chart's command line into the cookie, encoded
+# (spaces, commas and "%" are not allowed in a cookie as they are), or
+# removes the cookie for the defaults, whose line is empty. It writes only
+# when the cookie differs, since Streamlit lays the page out, and runs the
+# script, on every change of a control.
+_MEMORY_JS = """
+export default function (component) {
+  const { name, line, seconds } = component.data;
+  const kept = document.cookie.split("; ").find((pair) => pair.startsWith(name + "="));
+  const value = encodeURIComponent(line);
+  if (line === "") {
+    if (kept !== undefined) document.cookie = name + "=; max-age=0; path=/; SameSite=Lax";
+  } else if (kept !== name + "=" + value) {
+    document.cookie = name + "=" + value + "; max-age=" + seconds + "; path=/; SameSite=Lax"
+      + (location.protocol === "https:" ? "; Secure" : "");
+  }
+}
+"""
+
+
+def remembered_line(cookies: Mapping[str, str]) -> str:
+    """The command line remembered in a browser's cookies (batch 24.6), decoded as ``_MEMORY_JS`` encoded it; "" if none.
+
+    Text only: Streamlit's AppTest has no browser, and its stand-in's
+    cookies give an object of its own (found 2026-10-27, taken for a line
+    remembered).
+    """
+    text = cookies.get(REMEMBER_COOKIE, "")
+    return urllib.parse.unquote(text) if isinstance(text, str) else ""
+
+
+def _remembered_line() -> str:
+    """The command line remembered in this browser at the visit's start: its cookies, as its first request sent them."""
+    return remembered_line(st.context.cookies)
+
+
+def _remember_settings(line: str) -> None:
+    """Keep ``line``, the chart's command line, in this browser's cookie; "" (the defaults) removes it (batch 24.6)."""
+    remember = st.components.v2.component("ratesplot_memory", js=_MEMORY_JS)
+    remember(key="memory", data={"name": REMEMBER_COOKIE, "line": line, "seconds": _REMEMBER_DAYS * 86400})
+
+
 def _png_size(png: bytes) -> tuple[int, int]:
     """Return a PNG's width and height in pixels, read from its header (the IHDR chunk)."""
     width, height = struct.unpack(">II", png[16:24])
@@ -839,27 +908,47 @@ def _value_keys() -> list[tuple[str, Option, Nation | None]]:
     return shared + own
 
 
-def _choices_from_address() -> tuple[Choices, list[str]]:
-    """Return the starting choices from the address's command line, and any problems with it.
+def _choices_from_line(text: str) -> tuple[Choices | None, list[str]]:
+    """Return the choices a command line gives, laid over the defaults; or None and its problems.
 
-    The address is read as the command line is (``cli.sort_tokens``, then
-    ``options.config_from_choices``), and laid over the defaults as the window
-    lays a command line over them (``frontend.starting_choices``, with nothing
-    remembered). If it cannot be read, the defaults are used.
+    Read as the command line is (``cli.sort_tokens``, then
+    ``options.config_from_choices``), and laid over the defaults as the
+    window lays a command line over them (``frontend.starting_choices``,
+    with nothing remembered).
     """
-    text = st.query_params.get(ADDRESS_KEY, "")
     payloads, flags, unmatched, misspelled = sort_tokens(text.split())
     problems = [f"{token}: not an option" for token in unmatched] + misspelled
-    config = PlotConfig()
     if not problems:
         try:
             config = config_from_choices(payloads, flags)
         except ValueError as exc:
             problems.append(str(exc))
     if problems:
-        payloads, flags = {}, {}
-    choices, _notes = starting_choices(config, payloads, flags, {})
-    return choices, problems
+        return None, problems
+    return starting_choices(config, payloads, flags, {})[0], []
+
+
+def _starting_choices() -> tuple[Choices, str, list[str], list[str]]:
+    """Return a visit's starting choices, what they came from, and any problems with the address and with the settings remembered.
+
+    The address's chart, so a shared link draws what it says; else, or if
+    it cannot be read, the settings remembered in this browser (batch 24.6);
+    else the defaults. What came from is "address", "remembered" or "defaults".
+    """
+    address_problems: list[str] = []
+    address = st.query_params.get(ADDRESS_KEY, "")
+    if address.strip():
+        choices, address_problems = _choices_from_line(address)
+        if choices is not None:
+            return choices, "address", [], []
+    remembered_problems: list[str] = []
+    remembered = _remembered_line()
+    if remembered.strip():
+        choices, remembered_problems = _choices_from_line(remembered)
+        if choices is not None:
+            return choices, "remembered", address_problems, []
+    defaults, _notes = starting_choices(PlotConfig(), {}, {}, {})
+    return defaults, "defaults", address_problems, remembered_problems
 
 
 def _load_choices(choices: Choices) -> None:
@@ -1481,6 +1570,9 @@ def _controls() -> None:
         width="stretch",
     )
     buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch")
+    # Changing it draws nothing: it governs only the cookie (batch 24.6).
+    bar.checkbox(REMEMBER_LABEL, key=_REMEMBER, help=REMEMBER_HELP)
+    bar.caption(_REMEMBER_LINE)
     st.session_state[_HINTS] = _field_hints()
     _settle_all_ticks()  # before the "All" boxes are laid out, which fixes their state for this run
     st.session_state[_IDLE] = idle_choices(*_snapshot())
@@ -1857,9 +1949,9 @@ def main() -> None:
     st.set_page_config(page_title=PAGE_TITLE, page_icon="📈", layout="wide")
     state = st.session_state
     if not state.get(_READY):
-        choices, problems = _choices_from_address()
+        choices, state[_STARTED_FROM], state[_ADDRESS_PROBLEMS], state[_REMEMBERED_PROBLEMS] = _starting_choices()
         _load_choices(choices)
-        state[_ADDRESS_PROBLEMS] = problems
+        state[_REMEMBER] = True  # ticked at every visit, its off state never kept (decision 74)
         state[_READY] = True
 
     # Judged before the controls are laid out, so a wrong field's label is red (_WRONG).
@@ -1869,9 +1961,16 @@ def main() -> None:
     st.header(PAGE_TITLE)
     st.caption(PAGE_SUMMARY)
     if state.get(_ADDRESS_PROBLEMS):
+        instead = "The settings remembered from your last visit" if state.get(_STARTED_FROM) == "remembered" else "The default charts"
         st.warning(
             "The chart named in this page's address could not be drawn ("
             + "; ".join(state[_ADDRESS_PROBLEMS])
+            + f"). {instead} are shown instead."
+        )
+    if state.get(_REMEMBERED_PROBLEMS):
+        st.warning(
+            "The settings remembered from your last visit could not be used ("
+            + "; ".join(state[_REMEMBERED_PROBLEMS])
             + "). The default charts are shown instead."
         )
     if state.get(_NOTICE):
@@ -1901,7 +2000,8 @@ def main() -> None:
             drawing = _draw(config, tokens)
         state[_DRAWING] = drawing
         if previous is not None:
-            state[_ADDRESS_PROBLEMS] = []  # the visitor has moved on from the address's chart
+            # The visitor has moved on from the chart the visit opened on.
+            state[_ADDRESS_PROBLEMS] = state[_REMEMBERED_PROBLEMS] = []
         if drawing.error is None:
             _set_address(tokens)
         if _field_hints() != state.get(_HINTS):
@@ -1914,3 +2014,9 @@ def main() -> None:
 
     with st.expander("Every option, as the command line spells it"):
         st.code(help_epilog(), language=None)
+    # The last chart drawn, kept while the box is ticked (batch 24.6): its
+    # line is the address's. At the page's foot, not the sidebar's: a
+    # folded sidebar (a phone's, at first) runs no script of its own
+    # (measured 2026-10-27, Streamlit 1.64: no cookie written).
+    if state.get(_REMEMBER) and drawing is not None and drawing.error is None:
+        _remember_settings(" ".join(drawing.tokens))
