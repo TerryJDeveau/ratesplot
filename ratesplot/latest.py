@@ -1,4 +1,4 @@
-"""The latest values (--cur, on unless --no-cur): newer than the regular series.
+"""The latest values (--cur, on unless --no-cur), and the projections to today (--projections, on unless --no-projections).
 
 The regular sources publish with a lag: FRED's Treasury yields follow the
 Treasury by a business day or more, the Bank of Canada posts each day's
@@ -33,7 +33,9 @@ quarterly statistics already used.
 
 For those, a chart reaching today gets the effect of a debt clock
 (usdebtclock.org, whose figures are each "base + rate x time elapsed";
-Terry, 2026-09-28: emulate it, without scraping it). Each right-axis curve
+Terry, 2026-09-28: emulate it, without scraping it), with --projections,
+which has had no connection with --cur since batch 11 (Terry, 2026-10-27,
+decision 72; --cur turned both on and off before). Each right-axis curve
 is carried from its last observation to the chart's last date along the
 straight line of its own change over the year before
 (``project_to_now``). The projected stretch is drawn fainter, and its end
@@ -186,11 +188,11 @@ def project_to_now(
     debt clock does. With ``market`` (Canadian market debt, from
     ``market_debt_for_projection``) the Canadian debt curves follow it
     instead (``_market_steered``). Rows are added at each starting date so a
-    projection begins exactly where its data end. Only with --cur, on a
-    chart reaching today; the columns projected, with their starting dates,
-    are recorded in ``attrs[PROJECTION_ATTR]``.
+    projection begins exactly where its data end. Only with --projections,
+    whatever --cur is, on a chart reaching today; the columns projected, with
+    their starting dates, are recorded in ``attrs[PROJECTION_ATTR]``.
     """
-    if not config.current or data.empty or not observed or not _quotes_can_reach(config):
+    if not config.projections or data.empty or not observed or not _quotes_can_reach(config):
         return data
     end = data[DATE_COLUMN].max()
     starts = {
@@ -213,7 +215,7 @@ def project_to_now(
             held = data[column].ffill().where(data[column].bfill().notna())
             data.loc[added, column] = held[added]
 
-    print(f"Projecting to {end:%Y-%m-%d} at each curve's pace over the year before its last data (--cur):")
+    print(f"Projecting to {end:%Y-%m-%d} at each curve's pace over the year before its last data (--projections):")
     projected: dict[str, pd.Timestamp] = {}
     steered_columns: list[str] = []
     for column, start in starts.items():
@@ -349,7 +351,7 @@ def treasury_debt_from(first: pd.Timestamp, config: PlotConfig) -> pd.Series:
 _PLAUSIBLE_CDN_MARKET_DEBT = (2e11, 2e13)
 
 
-@downloads_of("Government of Canada market debt (--cur)")
+@downloads_of("Government of Canada market debt (--projections)")
 def cdn_market_debt(first: pd.Timestamp) -> pd.Series:
     """Return Government of Canada market debt outstanding (dollars, date-indexed) from ``first``'s year to the latest day.
 
@@ -379,11 +381,13 @@ def cdn_market_debt(first: pd.Timestamp) -> pd.Series:
 def market_debt_for_projection(observed: dict[str, pd.Timestamp | None], config: PlotConfig) -> pd.Series | None:
     """Return Canadian market debt for ``project_to_now`` when a Canadian debt curve will be projected; else None.
 
-    Fetched only for a chart reaching today, as the projection is. A failure
-    prints a warning; the debt curves then go on at their own pace.
+    Fetched only for a chart reaching today with --projections, as the
+    projection is: it serves the projection alone, so it goes with that
+    switch, not with --cur (decision 72). A failure prints a warning; the
+    debt curves then go on at their own pace.
     """
     starts = [observed[column] for column in _MARKET_STEERED_COLUMNS if observed.get(column) is not None]
-    if not config.current or not starts or not _quotes_can_reach(config):
+    if not config.projections or not starts or not _quotes_can_reach(config):
         return None
     try:
         return cdn_market_debt(min(starts) - pd.Timedelta(days=_PROJECTION_RATE_DAYS))

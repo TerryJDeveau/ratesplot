@@ -1339,6 +1339,12 @@ class PlotConfig:
     # --cur (on unless --no-cur): extend the regular series with the latest
     # values from faster sources, down to intraday quotes (ratesplot.latest).
     current: bool = True
+    # --projections (on unless --no-projections): carry each right-axis curve
+    # from its last observation to today (latest.project_to_now). Its own
+    # switch since batch 11 (Terry, 2026-10-27, decision 72: "a clean break
+    # between controlling projections with --projections and current quotes
+    # with --current"); --cur turned both on and off before.
+    projections: bool = True
     # Open the interactive window (ratesplot.gui) rather than plain matplotlib windows.
     gui: bool = True
 

@@ -992,6 +992,16 @@ OPTIONS: tuple[Option, ...] = (
         "quotes (CNBC), past the regular sources",
         names=("current",), shortest=3, label="Intraday quotes on end date", panel="labels",
     ),
+    # The projection to today (ratesplot.latest.project_to_now), on by
+    # default, a switch of its own since batch 11 (Terry, 2026-10-26, decision
+    # 68: "there is not currently a tick-box to turn off projections";
+    # 2026-10-27, decision 72: no connection with --cur). At least "pro":
+    # "pr" is shared with --prime-margin.
+    Option(
+        "projections", Kind.FLAG, ("projections",), "latest", "--pro / --projections / --no-pro",
+        "on by default: each right-axis curve\ncarried from its last value to today at\nits past year's pace, drawn faint",
+        names=("projections",), shortest=3, label="Projections to today", panel="labels",
+    ),
     # Interface. Spelled in full (Terry, 2026-09-24): "--g" is the GDP curve,
     # and "--gu" nothing.
     Option(
@@ -1391,9 +1401,10 @@ def idle_options(debt: bool, gdp: bool, interest: bool) -> frozenset[str]:
 
     * -r and the levels of government apply to debt and interest (GDP is
       only -r's divisor), so they need one of the two;
-    * -p, the regression segments and the right axis's Top and Bottom apply
-      to any right-axis curve, so they need debt, GDP or interest (under -r
-      GDP is not drawn, but -r then needs debt or interest, which draw).
+    * -p, the regression segments, the right axis's Top and Bottom and the
+      projections to today (batch 11) apply to any right-axis curve, so they
+      need debt, GDP or interest (under -r GDP is not drawn, but -r then
+      needs debt or interest, which draw).
 
     Each was checked on 2026-10-13 to draw a byte-identical chart when idle,
     -r excepted: it hid GDP, which ``config_from_choices`` now stops.
@@ -1402,7 +1413,7 @@ def idle_options(debt: bool, gdp: bool, interest: bool) -> frozenset[str]:
     if not (debt or interest):
         idle |= {"relative", "debt-parts", "interest-parts"}
     if not (debt or gdp or interest):
-        idle |= {"per-capita", "regression", "regression-tolerance", "top", "bottom"}
+        idle |= {"per-capita", "regression", "regression-tolerance", "top", "bottom", "projections"}
     return frozenset(idle)
 
 

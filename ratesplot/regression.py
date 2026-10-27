@@ -202,7 +202,7 @@ def observations(macro: pd.DataFrame, column: str, config: PlotConfig, projected
     row at the window start carrying the values then in effect
     (``cdn_data.align_cdn_macro``, ``us_data.fetch_us_macro``), so its first
     row is never taken as an observation: the value there was observed
-    before the window. Rows after ``projected_from`` (--cur) are projection,
+    before the window. Rows after ``projected_from`` (--projections) are projection,
     not data. Values a log axis cannot show (zero or less) are left out.
     """
     if column not in macro.columns or macro.empty:
@@ -496,7 +496,7 @@ def add_regression_segments(
     ``ax`` is the right axis, with its limits already set (they give the
     tolerance, and the pieces must not change them). ``curves`` pairs each
     drawn curve's line with its column in ``macro``, the whole prepared frame;
-    ``projected`` maps a column to the date its data end (--cur).
+    ``projected`` maps a column to the date its data end (--projections).
     """
     tolerance = tolerance_for(ax, config)
     min_days = min_piece_days(config)

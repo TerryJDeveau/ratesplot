@@ -180,7 +180,7 @@ def add_macro_line(
 ) -> Line2D | None:
     """Plot one macro series if it is enabled and has data; return the (legend) line or ``None``.
 
-    With ``projected_from`` (--cur, ``latest.project_to_now``) the rows after
+    With ``projected_from`` (--projections, ``latest.project_to_now``) the rows after
     that date are a projection, not data: they are drawn as a straight,
     fainter continuation, hidden from the legend, after the curve's steps.
     """
@@ -472,7 +472,7 @@ def draw_country(
     (``build_figure``), so the window and the GUI draw identical charts.
     """
     quote_time = yields.attrs.get(QUOTE_TIME_ATTR)  # --cur: when the day's quotes were taken, if any
-    projected = macro.attrs.get(PROJECTION_ATTR, {})  # --cur: {column: date its data end}
+    projected = macro.attrs.get(PROJECTION_ATTR, {})  # --projections: {column: date its data end}
     yield_lines = draw_yield_lines(ax_yield, yields, config)
     # Policy and mortgage rates and spreads (ratesplot.rates): on the yield
     # axis, listed with the yields.
@@ -514,7 +514,7 @@ def draw_country(
     # -l: every drawn curve gets its last value at its end, written as its
     # axis writes values: yields in percent, right-axis curves as the tick
     # labels there (dollars, or percent of GDP under -r); a projected value
-    # (--cur) reads "≈".
+    # (--projections) reads "≈".
     end_labels: list[tuple[Line2D, ValueFormatter]] = []
     if config.end_labels:
         macro_format = format_percent if config.relative else partial(format_currency, prefix=metadata.currency_prefix)

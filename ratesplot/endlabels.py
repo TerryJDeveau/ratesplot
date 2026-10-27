@@ -110,7 +110,7 @@ def _curve_end(line: Line2D) -> tuple[float, float] | None:
     """Return the rightmost finite point of the curve ``line`` is the legend entry for, or None.
 
     A curve can be drawn in pieces: the Canadian yields are monthly steps to
-    2000 and a daily line after it, and with --cur a right-axis curve's
+    2000 and a daily line after it, and with --projections a right-axis curve's
     projection to today follows its data. The later pieces have the same
     colour and dashes and are hidden from the legend (their labels start with
     "_", matplotlib's mark for that). Such pieces on the same axes are part of
