@@ -52,6 +52,7 @@ import io
 import json
 import logging
 import re
+import struct
 import sys
 import zlib
 from dataclasses import replace
@@ -79,7 +80,7 @@ from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage  
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 import ratesplot  # noqa: E402
-from ratesplot import cli, hover, http, web  # noqa: E402
+from ratesplot import cli, frontend, hover, http, web  # noqa: E402
 from ratesplot.cli import sort_tokens  # noqa: E402
 from ratesplot.config import NATIONS  # noqa: E402
 from ratesplot.frontend import move_dates_updates, starting_choices, version_text  # noqa: E402
@@ -1380,11 +1381,39 @@ def check_batch117(check: Check) -> None:
           and captions[0].startswith(f"v{ratesplot.__version__}"), captions[:1])
 
 
+def check_batch247(check: Check) -> None:
+    """Batch 24.7: the wheel over a chart; its script's numbers and words, and what a turn sent from the browser does."""
+    at = new_page("-c -s:2001 --e:2019")
+    check("no exception", not at.exception, at.exception)
+    check("the hint names the wheel, in the window's words", any("wheel: zoom dates" in caption.value for caption in at.caption),
+          [caption.value for caption in at.caption][:3])
+    script = web._CHART_JS
+    check("the chart's script takes the wheel, its pause, factor and words the window's",
+          'addEventListener("wheel"' in script and "__" not in script
+          and f"const WHEEL_DELAY_MS = {frontend.WHEEL_DELAY_MS};" in script
+          and f"const WHEEL_ZOOM_FACTOR = {frontend.WHEEL_ZOOM_FACTOR};" in script
+          and f"const WHEEL_WORDS = {json.dumps(frontend.WHEEL_ZOOM_WORDS)};" in script)
+    drawing = at.session_state["drawing"]
+    width = struct.unpack(">II", drawing.pngs["cdn"][16:24])[0]
+    geometry = drawing.geometry["cdn"]
+    turn = web._wheel_zoom(drawing, "cdn", {"notches": 2, "x": 0.3})
+    check("two notches away, 30 % across: the window's zoom about that place",
+          turn == frontend.scale_dates_updates(geometry, frontend.WHEEL_ZOOM_FACTOR ** 2, 0.3 * width), turn)
+    check("a place past the picture's edge: kept to it",
+          web._wheel_zoom(drawing, "cdn", {"notches": 1, "x": 7}) == web._wheel_zoom(drawing, "cdn", {"notches": 1, "x": 1.0}))
+    flung = web._wheel_zoom(drawing, "cdn", {"notches": -1e9, "x": 0.5})
+    check("a fling of a billion notches out: the first data (1680) to today", flung == {"start": "1680-01-01", "end": ""}, flung)
+    nothing = [None, {}, {"notches": 2}, {"notches": "two", "x": 0.3}, {"notches": [2], "x": 0.3},
+               {"notches": float("nan"), "x": 0.3}, {"notches": float("inf"), "x": 0.3}, {"notches": 0, "x": 0.5}, "2"]
+    results = [web._wheel_zoom(drawing, "cdn", wheel) for wheel in nothing]
+    check("a turn that is not two numbers, or none: nothing", results == [None] * len(nothing), results)
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
-    check_batch18, check_batch11, check_batch112, check_batch113, check_batch117,
+    check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247,
 )
 
 

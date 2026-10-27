@@ -1606,6 +1606,102 @@ def check_hover(check: Check) -> None:
     check("a plain window's chart saved with the read-out shown: the same bytes", saved.getvalue() == clean.getvalue())
 
 
+def wheel_over(w: Window, widget: tk.Misc, notches: float, x: float | None = None, y: float | None = None) -> None:
+    """The wheel turned ``notches`` over ``widget`` (at x, y in it, else its middle), as Windows sends it: 120 a notch, positive away."""
+    w.root.update()
+    x = widget.winfo_width() / 2 if x is None else x
+    y = widget.winfo_height() / 2 if y is None else y
+    widget.event_generate(
+        "<MouseWheel>", delta=round(notches * 120), x=round(x), y=round(y),
+        rootx=widget.winfo_rootx() + round(x), rooty=widget.winfo_rooty() + round(y),
+    )
+    w.root.update()
+
+
+def wheel_stopped(w: Window) -> None:
+    """Wait out the pause after the last notch, then the drawing the zoom asks for."""
+    began = time.monotonic()
+    while w.app._wheel is not None and time.monotonic() - began < 5:
+        w.root.update()
+        time.sleep(0.02)
+    w.settle()
+
+
+def check_wheel(check: Check) -> None:
+    """Batch 24.7: the wheel over each scrolling area (the column, the log, a chart's scroll bars) scrolls it alone; over a chart, a zoom."""
+    with window(f"-c -s:2001 {END}", size="1728x640+40+40") as w:
+        app, key = w.app, "cdn"
+        column = app._scroll
+        column_canvas = column.master.grid_slaves(row=0, column=0)[0]
+        check("a short window: the column's scroll bar shown", column.winfo_ismapped())
+        # The middle of the column's visible part: whichever control is there.
+        top = column.get()
+        wheel_over(w, column_canvas, -1)
+        check("over the column's controls, a notch towards you: the column scrolls down", column.get()[0] > top[0], (top, column.get()))
+        wheel_over(w, column_canvas, 1)
+        check("and away: back up", column.get() == top, column.get())
+
+        # The log, at the column's foot, in view, filled past its height and shown at its end.
+        column_canvas.yview_moveto(1.0)
+        app.log.configure(state="normal")
+        app.log.insert("end", "\n".join(f"line {n}" for n in range(200)))
+        app.log.configure(state="disabled")
+        log_bar = next(child for child in app.log.master.winfo_children() if isinstance(child, ttk.Scrollbar))
+        for name, widget in (("the log", app.log), ("the log's scroll bar", log_bar)):
+            app.log.yview_moveto(1.0)
+            w.root.update()
+            column_before, log_before = column.get(), app.log.yview()
+            wheel_over(w, widget, 1)  # away from you: up, which the column could do as well
+            check(f"over {name}: the log scrolls, the column stays",
+                  app.log.yview()[0] < log_before[0] and column.get() == column_before,
+                  (log_before, app.log.yview(), column_before, column.get()))
+        before = column.get()
+        wheel_over(w, column, 1)  # at the column's foot, away from you moves it up
+        check("over the column's own scroll bar: the column scrolls", column.get()[0] < before[0], (before, column.get()))
+
+        # Under the chart, the nation's panel: nothing there scrolls, and nothing else moves.
+        canvas = app.canvases[key]
+        x_bar, y_bar = app.scrollbars[key]
+        panel = next(child for child in app.tabs[key].grid_slaves() if child not in (canvas, x_bar, y_bar))
+        fields, before = view_fields(w), column.get()
+        wheel_over(w, panel, -1)
+        check("over the nation's panel: nothing scrolls or zooms",
+              column.get() == before and view_fields(w) == fields and app._wheel is None, (before, column.get()))
+
+        # The chart: the notches collected, the zoom applied once the wheel stops, about the pointer.
+        geometry = app.geometry[key]
+        scale, left, top_px = app.placement[key]
+        g_left, g_top, g_right, g_bottom = geometry.box
+        event_x = left + (g_left + (g_right - g_left) * 0.25) * scale - canvas.canvasx(0)
+        event_y = top_px + (g_top + g_bottom) / 2 * scale - canvas.canvasy(0)
+        history = len(app.history)
+        wheel_over(w, canvas, 1, event_x, event_y)
+        wheel_over(w, canvas, 1, event_x, event_y)
+        check("over the chart: two notches collected, nothing applied yet",
+              view_fields(w) == fields and app.status.get() == frontend.wheel_zoom_text(2), app.status.get())
+        point = app._image_point(key, _Event(event_x, event_y))
+        expected = frontend.scale_dates_updates(geometry, frontend.WHEEL_ZOOM_FACTOR ** 2, point[0])
+        wheel_stopped(w)
+        check("once it stops: one zoom of the dates about the pointer",
+              (w.text("start"), w.text("end")) == (expected["start"], expected["end"]) and len(app.history) == history + 1,
+              (w.text("start"), w.text("end"), expected, len(app.history) - history))
+        wheel_over(w, canvas, -40, event_x, event_y)
+        wheel_stopped(w)
+        check("forty notches out at once: the dates from the first data (1680) to today",
+              (w.text("start"), w.text("end")) == ("1680-01-01", ""), (w.text("start"), w.text("end")))
+
+        # At actual size the picture is larger than its tab: its scroll bars scroll it, and nothing is zoomed.
+        app.zoom.set("actual")
+        app._refresh_all_views()
+        w.root.update()
+        fields = view_fields(w)
+        for name, bar, view in (("vertical", y_bar, canvas.yview), ("horizontal", x_bar, canvas.xview)):
+            before = view()
+            wheel_over(w, bar, -1)
+            check(f"at actual size, over the chart's {name} scroll bar: the chart scrolls, nothing zoomed",
+                  view()[0] > before[0] and view_fields(w) == fields and app._wheel is None, (before, view()))
+
+
 def check_not_drawn(check: Check) -> None:
     """Batch 19.4: a chart that cannot be drawn is named on a line of its own, red and bold, and in the status line, in red."""
     real = gui.build_figure
@@ -1719,6 +1815,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "projections": check_projections,
     "auto_refresh": check_auto_refresh,
     "hover": check_hover,
+    "wheel": check_wheel,
     "not_drawn": check_not_drawn,
     "settings_files": check_settings_files,
 }
