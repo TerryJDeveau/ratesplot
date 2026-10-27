@@ -254,6 +254,18 @@ def delimited_bytes(data: ChartData, delimiter: str) -> bytes:
     return buffer.getvalue().encode("utf-8-sig")
 
 
+def _cell(value: object) -> object:
+    """A cell as a workbook holds it: a date as a date, a number to 15 significant digits, as the CSV's (``_text``).
+
+    openpyxl writes a number to 16 digits (measured 2026-10-27, 3.1.5), which
+    keeps the leftovers of arithmetic (0.5800000000000001) and differs from
+    the CSV's numbers in the last digit; rounded first, the two files agree.
+    """
+    if isinstance(value, pd.Timestamp):
+        return value.to_pydatetime()
+    return float(format(value, ".15g")) if isinstance(value, float) else value
+
+
 def xlsx_bytes(sheets: Sequence[tuple[str, ChartData]]) -> bytes:
     """A workbook with a sheet for each ``(sheet name, data)``: dates as dates shown YYYY-MM-DD, numbers as numbers."""
     from openpyxl import Workbook  # only when a workbook is written: the page installs it, the rest need not
@@ -264,7 +276,7 @@ def xlsx_bytes(sheets: Sequence[tuple[str, ChartData]]) -> bytes:
     for sheet_name, data in sheets:
         sheet = book.create_sheet(sheet_name[:31])  # Excel's limit on a sheet's name
         for row in _table(data):
-            sheet.append([value.to_pydatetime() if isinstance(value, pd.Timestamp) else value for value in row])
+            sheet.append([_cell(value) for value in row])
         sheet["A1"].font = Font(bold=True)
         for cell in sheet["A"][4:]:
             cell.number_format = "yyyy-mm-dd"
