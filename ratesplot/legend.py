@@ -21,9 +21,14 @@ lines drawn on a twin axis, so the legend is placed here instead:
    ``_TARGET_MARGIN_PX`` from every line, the one nearest an axes corner is
    used. Otherwise the target is treated as aspirational: the legend goes
    where it is furthest from both the lines and the axes frame, i.e. centred
-   in the largest pocket. If no shape fits anywhere, the shape/position
-   covering the fewest points is used.
-5. It is drawn exactly where it was placed (``borderaxespad=0``).
+   in the largest pocket.
+5. If no shape fits anywhere without covering a line, the legend goes where
+   it covers the least of the lines' busy stretches (batch 24.1, decision
+   55): of every shape and position, those covering the fewest cells of the
+   -l and --reg labels, then the fewest reversals of direction, then the
+   fewest visible value changes, then the fewest occupied cells
+   (``_busy_tiers``); the first such shape in preference order wins.
+6. It is drawn exactly where it was placed (``borderaxespad=0``).
 
 Font sizes and the pixel distances tied to them (clearance target, frame
 padding, title spacing) are multiplied by ``PlotConfig.font_scale``, so a small
@@ -53,7 +58,7 @@ from .axes import apply_date_xlim
 from .config import CANVAS_DPI, LEGEND_FS, TITLE_FS, PlotConfig
 from .endlabels import ValueFormatter, add_end_labels
 from .export import mark_subtitle
-from .occupancy import CELL_PX, OccupancyGrid, collect_display_samples
+from .occupancy import CELL_PX, OccupancyGrid, Raster, collect_busy_points, collect_display_samples
 from .regression import RateLabel, add_rate_labels
 
 # Least gap between the legend and the axes frame (at font scale 1), used
@@ -172,44 +177,44 @@ class _Placement:
     handles: list[Artist]
     ncols: int
     fontsize: float
-    covered: int  # occupied cells under the legend at its best position
-    clearance: int  # distance to the nearest line, in cells (only meaningful when covered == 0)
+    clearance: int  # distance to the nearest line, in cells (0 where it covers one)
     row: int  # bottom-left cell of the legend
     col: int
     height: int  # legend size in cells
     width: int
 
 
+def _fits(grid: OccupancyGrid, height: int, width: int, edge_cells: int) -> bool:
+    """Whether a ``height × width`` box fits inside the axes at least ``edge_cells`` from the frame."""
+    return height + 2 * edge_cells <= grid.rows and width + 2 * edge_cells <= grid.cols
+
+
+def _interior(sums: np.ndarray, edge_cells: int) -> np.ndarray:
+    """The window sums of the positions at least ``edge_cells`` from the axes frame."""
+    return sums[edge_cells : sums.shape[0] - edge_cells, edge_cells : sums.shape[1] - edge_cells]
+
+
 def _best_position(
     grid: OccupancyGrid, height: int, width: int, edge_cells: int, margin_cells: int, target: int
-) -> tuple[int, int, int, int] | None:
-    """Return ``(covered, clearance, row, col)`` for the best position of a box, or None if it cannot fit.
+) -> tuple[int, int, int] | None:
+    """Return ``(clearance, row, col)`` for the best position of a box that fits, or None if every position covers a line.
 
-    ``covered`` is the number of occupied cells under the box (0 when it
-    obscures nothing) and ``clearance`` its distance from the nearest line,
-    in cells, capped at the grid padding. ``edge_cells`` is the least gap to
-    the axes frame, ``margin_cells`` the gap kept wherever it covers no data
+    ``clearance`` is the box's distance from the nearest line, in cells,
+    capped at the grid padding. ``edge_cells`` is the least gap to the axes
+    frame, ``margin_cells`` the gap kept wherever it covers no data
     (``_FRAME_MARGIN_PX``), and ``target`` the clearance goal from lines
     (``_TARGET_MARGIN_PX``), all scaled and converted to cells.
     """
-    if height + 2 * edge_cells > grid.rows or width + 2 * edge_cells > grid.cols:
-        return None
-
-    def interior(sums: np.ndarray) -> np.ndarray:
-        # Keep the legend at least ``edge_cells`` from the axes frame.
-        return sums[edge_cells : sums.shape[0] - edge_cells, edge_cells : sums.shape[1] - edge_cells]
-
-    covered = interior(grid.window_sums(height, width, margin=0))
+    covered = _interior(grid.window_sums(height, width, margin=0), edge_cells)
     if covered.min() > 0:
-        r, c = np.unravel_index(covered.argmin(), covered.shape)
-        return int(covered.min()), 0, int(r) + edge_cells, int(c) + edge_cells
+        return None
 
     # Clearance map: a position is at least m cells clear when the box grown
     # by m on every side still covers nothing. Growing is monotone, so the
     # number of margins that stay free is the clearance itself.
     clearance = np.zeros(covered.shape, dtype=np.int64)
     for margin in range(1, grid.pad + 1):
-        free = interior(grid.window_sums(height, width, margin=margin)) == 0
+        free = _interior(grid.window_sums(height, width, margin=margin), edge_cells) == 0
         if not free.any():
             break
         clearance += free
@@ -249,7 +254,48 @@ def _best_position(
         score += clearance / (10.0 * grid.pad)
         r, c = np.unravel_index(score.argmax(), covered.shape)
 
-    return 0, int(clearance[r, c]), int(r) + edge_cells, int(c) + edge_cells
+    return int(clearance[r, c]), int(r) + edge_cells, int(c) + edge_cells
+
+
+def _busy_tiers(ax: Axes, grid: OccupancyGrid, obstacles: Sequence[Bbox]) -> list[OccupancyGrid]:
+    """What a legend that must cover a line is measured by, most important first (batch 24.1).
+
+    Terry, 2026-10-24 (decision 55): where nothing fits, the legend covers
+    the least of the lines' busy stretches, "first the fewest reversals of
+    direction under it, and where that doesn't decide the issue, the fewest
+    visible value changes" (``occupancy.collect_busy_points``). Before them,
+    the cells of ``obstacles``, the -l and --reg labels, which a line's
+    counts never see: a legend over a label hides its value outright. After
+    them, the occupied cells (``grid``), the rule before 24.1, so that among
+    equally busy places the legend covers the least ink. Each is a
+    summed-area table, compared in turn (``_least_busy_position``).
+    """
+    no_points = np.empty((0, 2))
+
+    def counted(points: np.ndarray) -> OccupancyGrid:
+        raster = Raster.from_axes(ax, no_points)
+        raster.count_points(points)
+        return OccupancyGrid.from_raster(raster)
+
+    changes, reversals = collect_busy_points(ax)
+    labels = OccupancyGrid.from_raster(Raster.from_axes(ax, no_points, boxes=obstacles))
+    return [labels, counted(reversals), counted(changes), grid]
+
+
+def _least_busy_position(
+    tiers: Sequence[OccupancyGrid], height: int, width: int, edge_cells: int
+) -> tuple[tuple[int, ...], int, int]:
+    """Return ``(counts, row, col)`` for the position of a box covering the least of ``tiers``, compared in turn.
+
+    ``counts`` is what the box covers of each tier there; of positions alike
+    in all, the first (lowest, then leftmost) is taken.
+    """
+    sums = [_interior(tier.window_sums(height, width, margin=0), edge_cells) for tier in tiers]
+    least = np.ones(sums[0].shape, dtype=bool)
+    for tier_sums in sums:
+        least &= tier_sums == tier_sums[least].min()
+    r, c = np.unravel_index(least.argmax(), least.shape)
+    return tuple(int(tier_sums[r, c]) for tier_sums in sums), int(r) + edge_cells, int(c) + edge_cells
 
 
 def auto_place_legend(
@@ -265,14 +311,17 @@ def auto_place_legend(
     margin_cells = math.ceil(_FRAME_MARGIN_PX * font_scale / CELL_PX)
 
     best: _Placement | None = None
+    measured: set[tuple[int, float]] = set()
+    crowded: list[tuple[list[Artist], int, float, int, int]] = []  # shapes that fit only over a line
     for reduction in _FONT_SIZE_REDUCTIONS_PT:
         fontsize = (LEGEND_FS - reduction) * font_scale
         for requested_cols in _COLUMN_PREFERENCE:
             handles, ncols = arrange_legend_groups(groups, requested_cols)
             if not handles:
                 return None
-            if best is not None and (ncols, fontsize) == (best.ncols, best.fontsize):
+            if (ncols, fontsize) in measured:
                 continue  # small legends collapse several requests to the same shape
+            measured.add((ncols, fontsize))
 
             # Measure this shape by drawing it provisionally.
             probe = _draw_legend(ax, handles, ncols=ncols, fontsize=fontsize, anchor=(0.0, 1.0))
@@ -280,19 +329,29 @@ def auto_place_legend(
             probe.remove()
             height = math.ceil(extent.height / CELL_PX)
             width = math.ceil(extent.width / CELL_PX)
+            if not _fits(grid, height, width, edge_cells):
+                continue
 
             result = _best_position(grid, height, width, edge_cells, margin_cells, target)
             if result is None:
+                crowded.append((handles, ncols, fontsize, height, width))
                 continue
-            covered, clearance, row, col = result
-            candidate = _Placement(handles, ncols, fontsize, covered, clearance, row, col, height, width)
-            if covered == 0:
-                best = candidate
-                break
-            if best is None or covered < best.covered:
-                best = candidate
-        if best is not None and best.covered == 0:
+            clearance, row, col = result
+            best = _Placement(handles, ncols, fontsize, clearance, row, col, height, width)
             break
+        if best is not None:
+            break
+
+    if best is None and crowded:
+        # No shape fits without covering a line: the least busy place any
+        # shape can take (decision 55), the earlier shape where two are alike.
+        tiers = _busy_tiers(ax, grid, obstacles)
+        least: tuple[int, ...] | None = None
+        for handles, ncols, fontsize, height, width in crowded:
+            counts, row, col = _least_busy_position(tiers, height, width, edge_cells)
+            if least is None or counts < least:
+                least = counts
+                best = _Placement(handles, ncols, fontsize, 0, row, col, height, width)
 
     if best is None:
         # Nothing fits inside the axes at all; fall back to matplotlib's default corner.
