@@ -266,6 +266,15 @@ CASES: dict[str, list[str]] = {
     "fx_1912": ["--na:ca,gb", "--top:USD15b", "--bottom:USD50m", "-s:1867", "--e:1912"],
     "fx_1947": ["--na:ca,gb", "--top:EUR20b", "--bottom:USD100m", "-s:1926", "--e:1947"],
     "fx_1960_all": ["--na:ca,us,gb,de", "--top:EUR2t", "--bottom:EUR2b", "-s:1956", "--e:1960"],
+    # Batch 24.1: crowded small charts where no legend shape fits without
+    # covering a line (the only two of the measured cases, 2026-10-27), so
+    # the legend takes the fallback: the least busy stretch it can cover.
+    "crowd_u800": [
+        "-u", "--yields:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015",
+    ],
+    "crowd_c800": [
+        "-c", "--yields:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015",
+    ],
 }
 
 
