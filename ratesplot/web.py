@@ -125,6 +125,7 @@ import functools
 import json
 import math
 import os
+import re
 import struct
 import threading
 import time
@@ -979,11 +980,15 @@ def _starting_choices() -> tuple[Choices, str, list[str], list[str]] | None:
     not yet sent them (``_read_remembered``).
     """
     address_problems: list[str] = []
-    address = st.query_params.get(ADDRESS_KEY, "")
-    if address.strip():
+    address = st.query_params.get(ADDRESS_KEY)
+    if address is not None and address.strip():
         choices, address_problems = _choices_from_line(address)
         if choices is not None:
             return choices, "address", [], []
+    if address is not None and not address_problems:
+        # "?chart=" with nothing after it: a link to the defaults (batch 28.5).
+        defaults, _notes = starting_choices(PlotConfig(), {}, {}, {})
+        return defaults, "address", [], []
     remembered_problems: list[str] = []
     remembered = _remembered_line()
     if remembered is None:
@@ -1826,6 +1831,23 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
     )
 
 
+def chart_link(base: str | None, tokens: tuple[str, ...]) -> str:
+    """Return the chart's own link, to share it (batch 28.5): the page's address with the chart's command line.
+
+    ``base`` is the address the page is visited at (``st.context.url``,
+    without its query). On Community Cloud the app runs in a frame whose
+    address ends ``/~/+/`` (measured 2026-10-28), which is cut, so the link
+    is the one the address bar shows. The defaults' link ends ``?chart=``:
+    a bare address would draw what the visitor's browser remembers
+    (``_starting_choices``). With no ``base`` (AppTest) the link is its
+    query alone.
+    """
+    root = re.sub(r"/~/\+/?$", "/", base or "")
+    if root and not urllib.parse.urlsplit(root).path:
+        root += "/"  # "http://localhost:8501", as Streamlit gives it, read as the address bar shows it
+    return f"{root}?{urllib.parse.urlencode({ADDRESS_KEY: ' '.join(tokens)})}"
+
+
 def _set_address(tokens: tuple[str, ...]) -> None:
     """Write the chart's command line into the page's address (nothing at all for the defaults)."""
     text = " ".join(tokens)
@@ -1958,10 +1980,10 @@ def _show(drawing: Drawing, config: PlotConfig | None = None) -> None:
                     on_wheel_change=functools.partial(_wheel_turned, key),
                 )
                 _export_row(drawing, key)
-        st.caption(
-            f"Drawn at {drawing.finished:%Y-%m-%d %H:%M %Z} in {drawing.seconds:.1f} s. "
-            "The page's address holds this chart's settings: copy it from the address bar to share the chart."
-        )
+        # The chart's link in a box with Streamlit's copy button (batch 28.5):
+        # the address bar is out of reach on a phone, and bare after a Reset.
+        st.caption(f"Drawn at {drawing.finished:%Y-%m-%d %H:%M %Z} in {drawing.seconds:.1f} s. This chart's link, to share it:")
+        st.code(chart_link(st.context.url, drawing.tokens), language=None, wrap_lines=True)
         _auto_refresh(config)
     st.markdown("**The same chart from the command line**")
     st.code(" ".join(["python", _SCRIPT_NAME, *drawing.tokens]), language=None, wrap_lines=True)
