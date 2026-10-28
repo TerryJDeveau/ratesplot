@@ -59,7 +59,8 @@ import pandas as pd  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
-from ratesplot import cli, export, hover, latest, plotting, refresh  # noqa: E402
+import ratesplot  # noqa: E402
+from ratesplot import cli, export, frontend, hover, latest, plotting, refresh  # noqa: E402
 from ratesplot.config import PlotConfig  # noqa: E402
 
 TODAY = pd.Timestamp.today().normalize()
@@ -318,6 +319,9 @@ def check_command_line(check) -> None:
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
             cli.main(["--au", "--no-cur", "--save:r.png", "-s:2020"])
+        first = printed.getvalue().splitlines()[0] if printed.getvalue() else ""
+        check("--save's first line: the version and the build, as --version prints them",
+              first == f"ratesplot {frontend.version_text()}" and first.startswith(f"ratesplot v{ratesplot.__version__}, build: "), first)
         check("nothing new can come: said, drawn once", saved == ["r.png"] and "nothing new can come" in printed.getvalue()
               and "Ctrl-C" not in printed.getvalue(), printed.getvalue())
 

@@ -365,11 +365,14 @@ def main(argv: list[str] | None = None) -> None:
     except ValueError as exc:
         parser.error(str(exc))
 
-    if config.version:
+    if config.version or config.save is not None:
         from .frontend import version_text  # the window's and the page's text (batch 11.7)
 
+        # --save shows no window, so its first line says which build wrote
+        # the files (Terry, 2026-10-28): "ratesplot v6.21, build: 1a2b3c4".
         print(f"ratesplot {version_text()}")
-        return
+        if config.version:
+            return
     if config.gui and config.save is None:
         # Imported here so --no-gui runs (and the harnesses) never load tkinter.
         from .gui import run_gui
