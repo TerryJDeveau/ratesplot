@@ -273,8 +273,10 @@ def save_charts(config: PlotConfig, files: export.SavedFiles | None = None) -> l
     chart is drawn, so a name says whose chart it is; an XLSX is one workbook,
     a sheet for each chart, named as the window's tabs. A chart that cannot be
     drawn is named as the windows' path names it, and the others written.
-    Each file is written through a temporary file swapped in, under "_n"
-    where another program holds it (``files``, one for a run; batch 11.3).
+    Each file is written through a temporary file swapped in (``files``, one
+    for a run with all its refreshes; batch 11.3): a name this run wrote is
+    replaced, one already there or held by another program gives way to the
+    next free name, "_1" on (batch 33).
     """
     from .frontend import png_bytes  # the window's PNG bytes: the regression set's, metadata and all
 

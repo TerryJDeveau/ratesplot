@@ -20,7 +20,8 @@ the page and ``--save`` draw it. For each chart:
 Then ``--save`` itself, from the command line (``cli.main``): a PNG per chart
 equal, byte for byte, to the regression set's (``tools/verify_charts.run``),
 and an XLSX read back with openpyxl, a sheet per chart named as its tab, the
-dates as dates, each value the chart's.
+dates as dates, each value the chart's; the XLSX saved again by a run of its
+own written as ``rates_1.xlsx``, the first kept (batch 33).
 
 Usage (from the project root)::
 
@@ -161,6 +162,17 @@ def check_save(check, name: str) -> None:
     book = load_workbook(folder / "rates.xlsx")
     titles = [nation_by_key(key).name for key, _figure, _config in drawn]
     check(f"{name}: --save:rates.xlsx, a sheet per chart named as its tab", book.sheetnames == titles, book.sheetnames)
+    # Batch 33, the case Terry met (2026-10-28): --save:rates.xlsx again, in a
+    # run of its own, keeps the first run's workbook and writes rates_1.xlsx.
+    before = (folder / "rates.xlsx").read_bytes()
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        cli.main([*tokens, f"--save:{folder / 'rates.xlsx'}"])
+    said = printed.getvalue()
+    check(f"{name}: --save:rates.xlsx run again: the first kept, rates_1.xlsx written, and said",
+          (folder / "rates.xlsx").read_bytes() == before and (folder / "rates_1.xlsx").exists()
+          and f"{folder / 'rates.xlsx'} is already there; written as {folder / 'rates_1.xlsx'}." in said
+          and f"Saved {folder / 'rates_1.xlsx'}" in said, said)
     for (key, figure, config), title in zip(drawn, titles):
         if title not in book.sheetnames:
             continue

@@ -43,7 +43,8 @@ import csv
 import dataclasses
 import io
 import os
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 
 import matplotlib.dates as mdates
 import numpy as np
@@ -321,18 +322,72 @@ def per_nation_path(path: str, code: str) -> str:
     return f"{path[:dot]}_{code}{path[dot:]}"
 
 
-# The highest "_n" tried before a refusal is taken to be the folder's, and raised.
-_MOST_VERSIONS = 99
+# The lengths of a number after a name's last underscore that is never
+# counted on (batch 33, Terry, 2026-10-28): four digits, a time or a year
+# (the program's log: ``ratesplot_log_2026-10-28_1507.txt``; ``report_2026``);
+# six and eight, a date or a time written without dashes (``261028``,
+# ``150734``, ``20261028``), which counted on would read as the next one.
+# The program's chart names end in a date with dashes, never a number
+# (``cdn_rates_1981-09-01_2026-09-29.png``).
+_NOT_COUNTED = (4, 6, 8)
+# The most names refused in one write before the refusal is taken to be the
+# folder's, not a file another program holds, and raised (batch 11.3).
+_MOST_HELD = 99
+# A refused replace is tried again after these pauses (seconds) before the
+# file counts as held: a file written a moment before was refused once, in
+# one of four runs of check_refresh on 2026-10-28 (Windows' virus scan or
+# indexer opening it, most likely), and then written as "_1" for nothing.
+# A workbook open in Excel is still held after them.
+_HELD_PAUSES = (0.05, 0.1, 0.2)
 
 
-def versioned_path(path: str, number: int) -> str:
-    """``rates_ca.png`` -> ``rates_ca_1.png``: the name a file another program holds is written under instead (batch 11.3)."""
-    dot = path.rfind(".")
-    return f"{path[:dot]}_{number}{path[dot:]}"
+def _replace(temporary: str, name: str) -> None:
+    """``os.replace``, tried again after each of ``_HELD_PAUSES`` while Windows refuses it; the last refusal raised."""
+    for pause in _HELD_PAUSES:
+        try:
+            os.replace(temporary, name)
+            return
+        except PermissionError:
+            time.sleep(pause)
+    os.replace(temporary, name)
+
+
+def _own_number(stem: str) -> tuple[str, str]:
+    """``a_3`` -> (``a``, ``3``); a stem whose last underscore is not followed by a number counted on -> (the stem, "")."""
+    base, underscore, digits = stem.rpartition("_")
+    if underscore and base and digits.isascii() and digits.isdigit() and len(digits) not in _NOT_COUNTED:
+        return base, digits
+    return stem, ""
+
+
+def next_path(path: str) -> str:
+    """The name after ``path``'s (batches 11.3, 33): ``a.xlsx`` -> ``a_1.xlsx``, ``a_3.xlsx`` -> ``a_4.xlsx``.
+
+    The name's own number is counted on, its width kept (``a_007`` ->
+    ``a_008``); a name without one counted on gets ``_1`` (``a_2026`` ->
+    ``a_2026_1``). A number that would come out at a length never counted on
+    gets a leading zero (``a_999`` -> ``a_01000``), so the program never
+    writes a number it would not count on again (Terry).
+    """
+    folder, name = os.path.split(path)
+    stem, extension = os.path.splitext(name)
+    base, digits = _own_number(stem)
+    number = f"{int(digits) + 1:0{len(digits)}d}" if digits else "1"
+    while len(number) in _NOT_COUNTED:
+        number = f"0{number}"
+    return os.path.join(folder, f"{base}_{number}{extension}") if folder else f"{base}_{number}{extension}"
+
+
+def _same_file_name(path: str) -> str:
+    """``path`` as Windows compares names: absolute, its case and slashes alike."""
+    return os.path.normcase(os.path.abspath(path))
 
 
 class SavedFiles:
-    """The --save files of one run, each written through a temporary file swapped in, and the names they go under (batch 11.3).
+    """The files one job saves, each written through a temporary file swapped in, and the names they go under (batches 11.3, 33).
+
+    A job is a command line's run with all its refreshes (--save), or the
+    window from its opening to its closing (Export chart, Save message log).
 
     Plan 11.3's notes (Terry): "Each write goes to a temporary file beside
     the target, which is closed and then swapped in for the old file in one
@@ -341,47 +396,98 @@ class SavedFiles:
     program says so and appends a version number "_n" to the file name, with
     n starting at 1; it will keep using this same new name, unless that file
     also is found to be locked at some point, only then will n be incremented
-    by 1. The version number is added (or incremented) if an existing file is
-    also found to be present the first time that name is used by the program
-    (i.e., not when the program expects to overwrite, but when it expected no
-    existing file of that name)."
+    by 1."
 
-    So the name given is replaced as a save always replaces it, and a name
-    with a number is never a file already there. A file is "held" when
-    Windows refuses to replace it (``PermissionError``: open in Excel, or
-    read-only); any other failure is raised.
+    Batch 33 (Terry, 2026-10-28, decision 85): "all the ways of saving a file
+    should follow the same rule. If the file already exists, and the current
+    job knows that it exists (because it wrote to it previously) then it can
+    overwrite with no issue and no warning. But if the file already exists,
+    and the current job didn't previously write to it, then it should add an
+    increment to the file name ... unless that number is already taken, or
+    the file name already has [a number] on the end, then keep incrementing
+    until you find an unused number." With an underscore ("let's go with
+    underscore"), since the program's names end in dates; every number
+    counted on but one of four, six or eight digits (Terry's four, a time or
+    a year; six and eight added at his choice, dates without dashes).
+
+    So: a name this job has written is replaced without a word. One it has
+    not written that is already there, or one another program holds, gives
+    way to the next free name (``next_path``: the name's own number counted
+    on, else _1), each name tried skipped while a file has it, and the
+    program says which name it wrote. A name the person picked in the
+    window's Save As dialog, which asked before replacing it (measured
+    2026-10-28, Tk 9.0.4), is replaced as if this job had written it
+    (``chosen``). A file is "held" when Windows refuses to replace it
+    (``PermissionError``: open in Excel, or read-only); any other failure is
+    raised.
     """
 
-    def __init__(self) -> None:
-        # The name given -> the number of the name in use (0: the name given) and whether this run has written it.
-        self._names: dict[str, tuple[int, bool]] = {}
+    def __init__(self, say: Callable[[str], None] = print) -> None:
+        # Where a name went that was not the name given: said once, through ``say``.
+        self._say = say
+        # The name given -> the name it was last written under.
+        self._names: dict[str, str] = {}
+        # Every name this job has written, as Windows compares them.
+        self._written: set[str] = set()
 
-    def write(self, target: str, data: bytes) -> str:
-        """Write ``data`` for ``target`` (``rates_ca.png``) and return the name it went under."""
-        number, written = self._names.get(target, (0, False))
+    def wrote(self, name: str) -> bool:
+        """Whether this job has written ``name``."""
+        return _same_file_name(name) in self._written
+
+    def free_path(self, target: str) -> str:
+        """The name a Save As dialog offers for ``target``: it, or the next name no file has (``next_path``).
+
+        A file this job wrote counts as taken here: the name offered is one
+        Windows' dialog need not ask about, so pressing Save never replaces a
+        file.
+        """
+        name = target
+        while os.path.exists(name):
+            name = next_path(name)
+        return name
+
+    def write(self, target: str, data: bytes, chosen: bool = False) -> str:
+        """Write ``data`` for ``target`` (``rates_ca.png``) and return the name it went under.
+
+        ``chosen``: the person picked ``target`` and confirmed replacing it,
+        so it is tried first, whatever name it went under before.
+        """
+        name = target if chosen else self._names.get(target, target)
         held: list[str] = []
+        taken: list[str] = []
         temporary = f"{target}.{os.getpid()}.tmp"
         with open(temporary, "wb") as output:
             output.write(data)
         try:
             while True:
-                name = versioned_path(target, number) if number else target
-                if number and not written and os.path.exists(name):
-                    number += 1  # a name of the program's own already taken: never written over
+                mine = self.wrote(name) or (chosen and name == target)
+                if not mine and os.path.exists(name):
+                    taken.append(name)  # a file this job did not write: never written over
+                    name = next_path(name)
                     continue
                 try:
-                    os.replace(temporary, name)
+                    _replace(temporary, name)
                 except PermissionError:
-                    if number >= _MOST_VERSIONS:
-                        raise  # every name refused: the folder itself, not a file another program holds
                     held.append(name)
-                    number += 1
-                    written = False
+                    if len(held) >= _MOST_HELD:
+                        raise  # every name refused: the folder itself, not a file another program holds
+                    name = next_path(name)
                     continue
-                if held:
-                    print(f"  Held by another program: {', '.join(held)}; written as {name} instead.")
-                self._names[target] = (number, True)
+                self._say_where(held, taken, name)
+                self._names[target] = name
+                self._written.add(_same_file_name(name))
                 return name
         finally:
             if os.path.exists(temporary):
                 os.remove(temporary)
+
+    def _say_where(self, held: list[str], taken: list[str], name: str) -> None:
+        """Say where a file went that did not go under the name tried first: "a.xlsx is already there; written as a_1.xlsx"."""
+        if not held and not taken:
+            return
+        parts = []
+        if held:
+            parts.append(f"Held by another program: {', '.join(held)}")
+        if taken:
+            parts.append(f"{', '.join(taken)} {'is' if len(taken) == 1 else 'are'} already there")
+        self._say(f"  {'; '.join(parts)}; written as {name}{' instead' if held else ''}.")

@@ -1108,7 +1108,8 @@ OPTIONS: tuple[Option, ...] = (
         "save", Kind.VALUE, ("save",), "interface", "--save:FILE / --sa:FILE",
         "write the charts to FILE, open no window:\nan image (.png .jpg .pdf .svg) or the data\n"
         "(.csv .tsv) a file per chart, named with\nits nation's code (rates_ca.png ...); .xlsx\n"
-        "one workbook, a sheet per chart",
+        "one workbook, a sheet per chart. A file\nalready there is kept and the new one\n"
+        "numbered (rates_ca_1.png ...)",
         names=("save",), shortest=2, parse=parse_save_file, in_gui=False,
     ),
     # The version (batch 11.7), printed, nothing drawn. In the table, not
