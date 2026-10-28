@@ -1077,10 +1077,15 @@ OPTIONS: tuple[Option, ...] = (
     # box and a switch of its own (Terry, 2026-10-26, decision 68: "a tick-box
     # to turn off the hover read-out ..., as some people won't like it"). At
     # least "ho": "--h" is argparse's --help. Its box is in the block with the
-    # line labels; --help lists it with the interface.
+    # line labels; --help lists it with the interface. In the window it also
+    # governs the tips over the controls that have an ⓘ (batch 31.7; Terry,
+    # 2026-10-28); on the page those show only over the ⓘ itself anyway.
+    # The help says "(i)": --help written to a file uses the code page
+    # (cp1252 on Windows), which has no ⓘ.
     Option(
         "hover", Kind.FLAG, ("hover",), "interface", "--ho / --hover / --no-ho",
-        "on by default: the pointer resting on a\nline shows its name, date and value",
+        "on by default: the pointer resting on a\nline shows its name, date and value;\n"
+        "in the window, unticked also hides the\ntips over controls with an (i) beside\nthem (a click on the (i) shows it)",
         names=("hover",), shortest=2, label="Hover read-out", panel="labels",
     ),
     # Interface. Spelled in full (Terry, 2026-09-24): "--g" is the GDP curve,

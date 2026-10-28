@@ -314,21 +314,40 @@ class _Tooltip:
     Every widget given a tip is in ``tips`` with its text (batch 31.6), so a
     check can find a button or box left without one (``tools/verify_gui.py``).
     Weakly, and the text alone: a value referring to its widget would keep it.
+
+    ``info``: the tip of a control whose ⓘ gives the same text on a click.
+    Such tips are shown only while ``info_shown``, which the window's "Hover
+    read-out" box sets (batch 31.7; Terry, 2026-10-28: "Some people may find
+    it annoying to have the hover help constantly popping-up over every
+    control, particularly since they can get the same info by clicking the
+    "i"", and "It would not turn off hover help over those controls that have
+    no "i""). The tips of buttons and of controls with no ⓘ are always shown.
     """
 
     tips: weakref.WeakKeyDictionary[tk.Widget, str] = weakref.WeakKeyDictionary()
+    info_shown = True
+    shown: _Tooltip | None = None  # the tip open now, if any
 
-    def __init__(self, widget: tk.Widget, text: str) -> None:
+    def __init__(self, widget: tk.Widget, text: str, info: bool = False) -> None:
         self.widget = widget
         self.text = text
+        self.info = info
         self.window: tk.Toplevel | None = None
         widget.bind("<Enter>", self._show, add="+")
         widget.bind("<Leave>", self._hide, add="+")
         _Tooltip.tips[widget] = text
 
+    @classmethod
+    def show_info(cls, shown: bool) -> None:
+        """Show the tips that repeat an ⓘ, or not (closing one open now)."""
+        cls.info_shown = shown
+        if not shown and cls.shown is not None and cls.shown.info:
+            cls.shown._hide(None)
+
     def _show(self, _event: tk.Event) -> None:
-        if self.window is not None:
+        if self.window is not None or (self.info and not _Tooltip.info_shown):
             return
+        _Tooltip.shown = self
         self.window = tk.Toplevel(self.widget)
         self.window.wm_overrideredirect(True)
         x = self.widget.winfo_rootx() + 16
@@ -338,10 +357,12 @@ class _Tooltip:
             self.window, text=self.text, justify="left", background="#ffffe0", relief="solid", borderwidth=1, padding=4
         ).pack()
 
-    def _hide(self, _event: tk.Event) -> None:
+    def _hide(self, _event: tk.Event | None) -> None:
         if self.window is not None:
             self.window.destroy()
             self.window = None
+        if _Tooltip.shown is self:
+            _Tooltip.shown = None
 
 
 class _Hint:
@@ -374,7 +395,7 @@ class _Hint:
             cursor="xterm",
         )
         self.label.bind("<Button-1>", self._click)
-        _Tooltip(self.label, tip)
+        _Tooltip(self.label, tip, info=True)  # its field's ⓘ gives the same
         variable.trace_add("write", lambda *_args: self.update())
         entry.bind("<Configure>", lambda _event: self.update(), add="+")
 
@@ -596,7 +617,7 @@ class _ChoicesEditor:
             self.boxes[value] = variable
             check = ttk.Checkbutton(self.frame, text=text, variable=variable, command=lambda v=value: self.box_changed(v))
             check.grid(row=self.rows, column=column, sticky="w", padx=(0, 6))
-            _Tooltip(check, _tooltip_text(self.option))
+            _Tooltip(check, _tooltip_text(self.option), info=True)  # the list's ⓘ gives the same
             self.widgets.append(check)
         self.rows += 1
 
@@ -1031,7 +1052,12 @@ class RatesPlotApp:
         # a click on a widget that takes no focus leaves the box no FocusOut.
         self.root.bind_all("<ButtonPress>", self._clicked_anywhere, add="+")
         self._set_column_width(state.get("column_width"))
+        # The tips that repeat an ⓘ follow the "Hover read-out" box (batch
+        # 31.7), however it is set: a click, the command line, Back, Reset.
+        hover_box = self.flag_vars["hover"]
+        hover_box.trace_add("write", lambda *_args: _Tooltip.show_info(hover_box.get()))
         self._load_choices(choices)
+        _Tooltip.show_info(hover_box.get())
         for name, keep in state.get("keep_ratio", {}).items():
             if name in self.size_editors and isinstance(keep, bool):
                 self.size_editors[name].keep_ratio.set(keep)
@@ -1265,7 +1291,7 @@ class RatesPlotApp:
         )
         box.grid(row=row, column=0, sticky="w")
         self.flag_boxes[option.name] = box
-        _Tooltip(box, _tooltip_text(option))
+        _Tooltip(box, _tooltip_text(option), info=True)
         self._info_mark(cell, option.name, option, _tooltip_text(option)).grid(row=row, column=1, sticky="w", padx=(1, 0))
         if value is not None and field is not None:
             before, _comma, after = value.label.partition(", ")
@@ -1304,7 +1330,7 @@ class RatesPlotApp:
         self.value_entries[key] = entry
         tip = _tooltip_text(option) + "\nBlank = default (shown in grey)."
         for widget in (label, entry):
-            _Tooltip(widget, tip)
+            _Tooltip(widget, tip, info=True)
         self.hints[key] = _Hint(entry, variable, tip)
         # Last in the row, after the unit, the calendar or a limit's "All" (columns 2 and 3).
         self._info_mark(frame, key, option, tip).grid(row=row, column=9, sticky="w", padx=(3, 0), pady=pady)
@@ -1341,8 +1367,8 @@ class RatesPlotApp:
             check = ttk.Checkbutton(cell, text=text, variable=editor.boxes[letter], command=editor.box_changed)
             check.grid(row=1 + index // 2, column=index % 2, sticky="w", padx=(0, 6))
             editor.widgets.append(check)
-            _Tooltip(check, tip)
-        _Tooltip(label, tip)
+            _Tooltip(check, tip, info=True)
+        _Tooltip(label, tip, info=True)
         self._info_mark(head, key, option, tip).pack(side="left", padx=(3, 0))
 
     def _add_choices_control(self, frame: ttk.LabelFrame, row: int, option: Option, nation: Nation | None = None) -> None:
@@ -1369,7 +1395,7 @@ class RatesPlotApp:
             label = ttk.Label(head, text=option.label)
             label.pack(side="left")
             self.value_labels[key] = label
-            _Tooltip(label, tip)
+            _Tooltip(label, tip, info=True)
             self._info_mark(head, key, option, tip).pack(side="left", padx=(3, 0))
             box.grid(row=1, column=row, sticky="nw")
         elif option.turns_on:
@@ -1380,7 +1406,7 @@ class RatesPlotApp:
             label = ttk.Label(head, text=option.label)
             label.pack(side="left")
             self.value_labels[option.name] = label
-            _Tooltip(label, tip)
+            _Tooltip(label, tip, info=True)
             self._info_mark(head, key, option, tip).pack(side="left", padx=(3, 0))
             box.grid(row=row, column=1, columnspan=2, sticky="w", pady=1)
         editor = _ChoicesEditor(option, payload, box, on_change=self._choices_changed, refuse=self.status.set, nation=nation)
@@ -1445,7 +1471,7 @@ class RatesPlotApp:
             entry.bind("<Return>", lambda _event: self.request_redraw())
         tip = _tooltip_text(option) + "\nWidth x height in pixels. Blank = default (shown in grey)."
         for widget in (label, width_entry, height_entry):
-            _Tooltip(widget, tip)
+            _Tooltip(widget, tip, info=True)
         self._info_mark(cell, option.name, option, tip).grid(row=0, column=2, sticky="w", padx=(3, 0), pady=1)
         default = PlotConfig()
         for entry, variable, pixels in (

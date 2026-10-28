@@ -87,6 +87,8 @@ a curve drawn as steps (a quarterly figure, a rate held until changed) gives the
 on the date under the pointer and the date it was observed ("$26.5T  2020-05-15 (observed
 2020-03-31)"); a projection to today, its value on that day, marked "≈" and "(projected)"; an
 intraday quote, its time. "Hover read-out" turns it off, as `--no-hover` does; it changes no chart.
+In the window it also hides the tips that pop up over the controls with an ⓘ beside them, whose
+text a click on the ⓘ shows; the buttons keep theirs.
 
 "Automatic refresh" (`--auto-refresh`, at least `--au`; off by default) does what Refresh does every
 5 minutes, or every so many minutes as given (`--au:10`; never fewer than 5): the intraday quotes

@@ -2186,6 +2186,36 @@ def check_batch31(check: Check) -> None:
         copy.invoke()
         check("its Copy copies the address", copied == [app.web_address.get()] and app.status.get() == "Web page address copied.",
               (copied, app.status.get()))
+        # 31.7: the "Hover read-out" box also governs the tips that repeat an ⓘ; the others stay.
+        def tip_over(widget) -> bool:
+            """True if the pointer coming over ``widget`` opens its tip (closed again after)."""
+            widget.event_generate("<Enter>")
+            root.update()
+            opened = gui._Tooltip.shown is not None and gui._Tooltip.shown.widget is widget
+            widget.event_generate("<Leave>")
+            root.update()
+            return opened
+
+        gdp, start = app.flag_boxes["gdp"], app.value_entries["start"]
+        check("31.7: ticked, the tips over controls with an ⓘ shown, and the buttons'",
+              tip_over(gdp) and tip_over(start) and tip_over(refresh))
+        gdp.event_generate("<Enter>")
+        root.update()
+        w.tick("hover", False)
+        root.update()
+        check("unticked: a tip open over a control with an ⓘ closed", gui._Tooltip.shown is None and not gui._Tooltip.info_shown)
+        gdp.event_generate("<Leave>")
+        check("... and none shown over such controls (a box, a field), while the buttons' and an “All” box's still are",
+              not tip_over(gdp) and not tip_over(start) and tip_over(refresh) and tip_over(app.export_button)
+              and tip_over(app.all_boxes["cdn:max"]))
+        app.info_marks["gdp"].event_generate("<Button-1>")
+        root.update()
+        check("a click on the ⓘ still shows the same text", app.info_panel is not None and app.info_shown is not None
+              and app.info_shown[1] == gui._Tooltip.tips[gdp], app.info_shown)
+        app._close_info()
+        w.tick("hover", True)
+        root.update()
+        check("ticked again: the tips back", tip_over(gdp) and tip_over(start))
         buttons = [refresh, reset, *app._bar_buttons]
         check(f"at the narrowest width ({narrowest} px): all four buttons whole and inside the column",
               app._current_column_width() == narrowest
@@ -2210,6 +2240,14 @@ def check_batch31(check: Check) -> None:
                       gui._Tooltip.tips.get(blank))
             finally:
                 picker.top.destroy()
+
+    with window(f"-c --no-hover {END}") as w:
+        box = w.app.flag_boxes["gdp"]
+        box.event_generate("<Enter>")
+        w.root.update()
+        check("31.7: a window started with --no-hover: no tip over a control with an ⓘ from the start",
+              not w.app.flag_vars["hover"].get() and gui._Tooltip.shown is None)
+        box.event_generate("<Leave>")
 
 
 # The groups in the order they run; --group picks some by these names.
