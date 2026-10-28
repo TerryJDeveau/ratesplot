@@ -2351,6 +2351,79 @@ def check_batch31(check: Check) -> None:
         box.event_generate("<Leave>")
 
 
+def check_batch33(check: Check) -> None:
+    """Batch 33: the window's saves by the one rule: a name no file has offered; a name picked replaced; one held numbered."""
+    folder = Path(tempfile.mkdtemp(prefix="ratesplot_verify_gui_b33_"))
+    log_name = gui.saved_log_name
+    try:
+        with window(f"-c -s:2015 {END}") as w:
+            app = w.app
+            app._save_folder = str(folder)
+            asked: list[dict] = []
+
+            def save(how: Callable[[], None], name: str | None = None) -> dict:
+                """``how`` with its dialog answered by ``name`` in the folder (None: the name offered, as typed); what the dialog was given."""
+                def answer(**kwargs) -> str:
+                    asked.append(kwargs)
+                    if name:
+                        return str(folder / name)
+                    typed, extension = kwargs["initialfile"], kwargs["defaultextension"]
+                    return str(folder / (typed if Path(typed).suffix == extension else f"{typed}{extension}"))
+                dialog = gui.filedialog.asksaveasfilename
+                gui.filedialog.asksaveasfilename = answer
+                try:
+                    how()
+                finally:
+                    gui.filedialog.asksaveasfilename = dialog
+                return asked[-1]
+
+            app.export_type.set("PNG image")
+            figure, drawn = app.figures["cdn"]
+            stem = frontend.saved_export_name("cdn", drawn, "")
+            chart = folder / f"{stem}.png"
+            numbered = folder / f"{stem}_1.png"
+            first = save(app._export_chart)
+            check("Export chart: the chart's name offered where no file has it, and written",
+                  first.get("initialfile") == stem and chart.read_bytes() == app.pngs["cdn"], first.get("initialfile"))
+            check("the status line names the file", app.status.get() == f"Exported {chart.as_posix()}"
+                  or app.status.get() == f"Exported {chart}", app.status.get())
+            second = save(app._export_chart, chart.name)
+            check("again: the next name offered (the window's own file there), the same name picked: replaced, no _1",
+                  second.get("initialfile") == f"{stem}_1" and not numbered.exists() and chart.read_bytes() == app.pngs["cdn"],
+                  (second.get("initialfile"), sorted(path.name for path in folder.iterdir())))
+            theirs = folder / "theirs.png"
+            theirs.write_bytes(b"another program's")
+            save(app._export_chart, theirs.name)
+            check("a file already there, picked (Windows asked first): replaced", theirs.read_bytes() == app.pngs["cdn"])
+            held = open(chart, "rb")  # Python opens without sharing deletion: Windows refuses to replace it
+            try:
+                save(app._export_chart, chart.name)
+            finally:
+                held.close()
+            status = app.status.get()
+            check("a file held: left as it was, the chart written as _1", numbered.exists() and numbered.read_bytes() == app.pngs["cdn"],
+                  sorted(path.name for path in folder.iterdir()))
+            check("the status line says so, and names _1", status.startswith("Held by another program:") and numbered.name in status, status)
+            check("the message log too", "Held by another program:" in app.log.get("1.0", "end-1c"))
+            check("no temporary file left", not list(folder.glob("*.tmp")), sorted(path.name for path in folder.iterdir()))
+
+            gui.saved_log_name = lambda _when: "ratesplot_log_2026-10-28_1507.txt"
+            (folder / "ratesplot_log_2026-10-28_1507.txt").write_bytes(b"an earlier window's")
+            offered = save(app._save_log)
+            written = folder / "ratesplot_log_2026-10-28_1507_1.txt"
+            check("Save log file: the log's name there, so _1 offered (its time not counted on)",
+                  offered.get("initialfile") == written.name, offered.get("initialfile"))
+            data = written.read_bytes() if written.exists() else b""
+            check("the log written there, as shown, with Windows line ends",
+                  data.decode("utf-8").replace("\r\n", "\n") == app.log.get("1.0", "end-1c")
+                  and data.count(b"\n") == data.count(b"\r\n") > 0, len(data))
+            check("the earlier file kept", (folder / "ratesplot_log_2026-10-28_1507.txt").read_bytes() == b"an earlier window's")
+            check("the status line names the file", written.name in app.status.get(), app.status.get())
+    finally:
+        gui.saved_log_name = log_name
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 # The groups in the order they run; --group picks some by these names.
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
@@ -2382,6 +2455,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch291": check_batch291,
     "batch292": check_batch292,
     "batch31": check_batch31,
+    "batch33": check_batch33,
 }
 
 

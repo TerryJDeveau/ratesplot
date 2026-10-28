@@ -1001,6 +1001,10 @@ class RatesPlotApp:
         # The folder last saved to by either save dialog, remembered with the settings (batch 11.5).
         remembered = state.get("save_folder")
         self._save_folder: str | None = remembered if isinstance(remembered, str) else None
+        # The files this window has saved, from its opening to its closing,
+        # and where one went that was not the name picked (batch 33).
+        self._saved_files = export.SavedFiles(say=self._note_saved)
+        self._saved_note = ""
         # "Remember my settings" (batch 24.6): ticked at every start, its off
         # state never saved; and the settings remembered now, which the box
         # unticked leaves as they are (``_remember``).
@@ -2634,6 +2638,10 @@ class RatesPlotApp:
         the worker draws on its own (matplotlib's font cache is shared). The
         data are written while a drawing runs: reading a figure's lines draws
         nothing, and each chart's are read with the config it was drawn with.
+
+        The dialog offers the chart's name with the type's extension where no
+        file has it, else the next free name (``SavedFiles.free_path``, batch
+        33), and the file is written as ``_write_saved`` writes it.
         """
         key = self._current_tab_key()
         if key is None or key not in self.figures:
@@ -2643,14 +2651,16 @@ class RatesPlotApp:
         types = {caption: (extension, every) for caption, extension, every in EXPORT_CHOICES}
         if self.export_type.get() not in types:
             self.export_type.set(EXPORT_CHOICES[0][0])
+        folder = save_dialog_folder(self._save_folder)
+        offered = self._saved_files.free_path(os.path.join(folder, saved_export_name(key, drawn, types[self.export_type.get()][0])))
         path = filedialog.asksaveasfilename(
             parent=self.root,
             title="Export chart",
             filetypes=[(caption, f"*{extension}") for caption, extension, _every in EXPORT_CHOICES],
             typevariable=self.export_type,
             defaultextension=types[self.export_type.get()][0],
-            initialfile=saved_export_name(key, drawn, ""),
-            initialdir=save_dialog_folder(self._save_folder),
+            initialfile=os.path.splitext(os.path.basename(offered))[0],
+            initialdir=folder,
         )
         if not path:
             return
@@ -2678,40 +2688,60 @@ class RatesPlotApp:
                     for each in shown
                 ]
                 data = export.data_bytes(extension, sheets)
-            with open(path, "wb") as output:
-                output.write(data)
+            written = self._write_saved(path, data)
         except ImportError as exc:  # openpyxl, imported only for a workbook
             self.status.set(f"Not exported: a workbook needs the openpyxl package ({exc}).")
             return
         except OSError as exc:
             self.status.set(f"Not exported: {exc}")
             return
-        self.status.set(f"Exported {path}")
+        self.status.set(self._saved_note or f"Exported {written}")
 
     def _save_log(self) -> None:
         """Save the whole message log, as shown, to a text file (Terry, 2026-10-13, batch 15.3).
 
-        Named by the minute of saving (``frontend.saved_log_name``); written
-        as UTF-8, with Windows line endings on Windows (text mode).
+        Named by the minute of saving (``frontend.saved_log_name``), or the
+        next free name where a file has it (batch 33); written as UTF-8, with
+        Windows line endings on Windows (as text mode wrote it before), as
+        ``_write_saved`` writes it.
         """
+        folder = save_dialog_folder(self._save_folder)
+        offered = self._saved_files.free_path(os.path.join(folder, saved_log_name(pd.Timestamp.now())))
         path = filedialog.asksaveasfilename(
             parent=self.root,
             title="Save message log",
             defaultextension=".txt",
             filetypes=[("Text file", "*.txt"), ("All files", "*.*")],
-            initialfile=saved_log_name(pd.Timestamp.now()),
-            initialdir=save_dialog_folder(self._save_folder),
+            initialfile=os.path.basename(offered),
+            initialdir=folder,
         )
         if not path:
             return
         self._save_folder = os.path.dirname(path)
         try:
-            with open(path, "w", encoding="utf-8") as output:
-                output.write(self.log.get("1.0", "end-1c"))
+            written = self._write_saved(path, self.log.get("1.0", "end-1c").replace("\n", os.linesep).encode("utf-8"))
         except OSError as exc:
             self.status.set(f"Message log not saved: {exc}")
             return
-        self.status.set(f"Saved the message log to {path}")
+        self.status.set(self._saved_note or f"Saved the message log to {written}")
+
+    def _write_saved(self, path: str, data: bytes) -> str:
+        """Write ``data`` to the file picked in a save dialog, by the rule every save follows (batch 33); return the name written.
+
+        Windows' dialog asked before replacing a file already there
+        (measured 2026-10-28 with Tk 9.0.4, with and without a default
+        extension), so the name picked is replaced, and counts as written by
+        the window. A file another program holds (a workbook open in Excel)
+        is left as it is and the data written under the next free name,
+        which the message log and the status line say (``_note_saved``).
+        """
+        self._saved_note = ""
+        return self._saved_files.write(path, data, chosen=True)
+
+    def _note_saved(self, text: str) -> None:
+        """Where a saved file went instead of the name picked (``export.SavedFiles``): into the message log, and kept for the status line."""
+        self._saved_note = text.strip()
+        self._append_log(f"{self._saved_note}\n")
 
     def _refresh(self) -> None:
         """Draw again with the latest data: the quotes of the moment, and anything downloaded over an hour ago.
