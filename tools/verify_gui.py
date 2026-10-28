@@ -137,8 +137,7 @@ class Window:
         payloads, flags, _parser = cli.parse_choices(tokens.split())
         config = cli.config_from_choices(payloads, flags)
         choices, notes = frontend.starting_choices(config, payloads, flags, {})
-        self.root = tk.Tk()
-        self.root.geometry(size)
+        self.root = new_root(size)
         self.app = gui.RatesPlotApp(self.root, choices, notes, {}, normal_geometry=size)
         if settle:
             self.settle()
@@ -193,6 +192,13 @@ class Window:
 def placed(dimensions: str, shift: int = 0) -> str:
     """A window's geometry: ``dimensions`` ("WxH") at the windows' place (``PLACE``), ``shift`` pixels right and down."""
     return f"{dimensions}+{PLACE[0] + shift}+{PLACE[1] + shift}"
+
+
+def new_root(size: str | None = None) -> tk.Tk:
+    """A Tk root at the windows' place, of ``size`` ("WxH+X+Y") or its own: a bare ``tk.Tk()`` opens where Windows puts it."""
+    root = tk.Tk()
+    root.geometry(size or f"+{PLACE[0]}+{PLACE[1]}")
+    return root
 
 
 def cli_png(tokens: list[str], key: str) -> bytes:
@@ -695,7 +701,7 @@ def check_save_folders(check: Check) -> None:
             app._remember()
             state, _note, _path = frontend.load_state()
             check("the folder last saved to remembered with the settings", state.get("save_folder") == str(elsewhere), state.get("save_folder"))
-        root = tk.Tk()
+        root = new_root(SIZE)
         try:
             app = gui.RatesPlotApp(root, frontend.starting_choices(cli.parse_args(["--no-gui", "-c", END]), {}, {}, {})[0], [],
                                    {"save_folder": str(elsewhere)}, normal_geometry=SIZE)
@@ -1553,7 +1559,7 @@ def check_hover(check: Check) -> None:
           and cli.parse_args(["--no-hover"]).same_chart(cli.parse_args([])))
 
     # The plain matplotlib windows (--no-gui): matplotlib's own mouse events and timers, on a Tk canvas here.
-    root = tk.Tk()
+    root = new_root()
     try:
         figure, ax = _made_up_chart()
         canvas = FigureCanvasTkAgg(figure, master=root)
@@ -1867,7 +1873,7 @@ def check_remember(check: Check) -> None:
                   brief(kept()))
         check("closed while unticked: still the settings kept before", kept()["payloads"]["start"] == "2005", brief(kept()))
         state = kept()
-        root = tk.Tk()
+        root = new_root(SIZE)
         try:
             choices = frontend.starting_choices(cli.parse_args(["--no-gui", "-c", END]), {}, {}, state)[0]
             started = Window.__new__(Window)  # a window given remembered settings, as run_gui gives them
