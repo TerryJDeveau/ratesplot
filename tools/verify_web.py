@@ -1575,12 +1575,54 @@ def check_batch281(check: Check) -> None:
     check("the size lock unticked: Reset active", not button(at, "Reset").disabled)
 
 
+def check_batch28s2(check: Check) -> None:
+    """Batch 28.2 and 28.5: Unzoom goes back no further than the last Reset; the chart's link in a box, ?chart= for the defaults."""
+    at = new_page("-c -s:2001 --e:2019")
+    at.checkbox(key="flag:gdp").uncheck()
+    at.run()
+    button(at, "Reset").click()
+    at.run()
+    check("a Reset with no zoom or move since: Unzoom greyed, Back possible",
+          not enabled(at)["Unzoom"] and enabled(at)["◀ Back"] and flags(at)["gdp"], enabled(at))
+    button(at, "◀ Earlier").click()
+    at.run()
+    moved = address(at)
+    check("a move after it: Unzoom possible", enabled(at)["Unzoom"] and "--start:" in moved, moved)
+    button(at, "Unzoom").click()
+    at.run()
+    check("Unzoom: the charts after the Reset, GDP still ticked, Unzoom greyed",
+          address(at) == "--C" and flags(at)["gdp"] and not enabled(at)["Unzoom"], (address(at), enabled(at)))
+    button(at, "◀ Back").click()
+    at.run()
+    check("Back after Unzoom: the move again", address(at) == moved, address(at))
+    for _ in range(2):  # the move, then the Reset
+        button(at, "◀ Back").click()
+        at.run()
+    check("Back undoes the Reset as before: GDP unticked, the dates typed; nothing left to undo",
+          not flags(at)["gdp"] and "--start:2001" in address(at) and not enabled(at)["◀ Back"] and not enabled(at)["Unzoom"],
+          (address(at), enabled(at)))
+
+    page = new_page("-c -s:2001 --e:2019")
+    link = "?" + urllib.parse.urlencode({"chart": address(page)})
+    check("the chart's link under the Drawn line, in a box with a copy button (AppTest gives no address: its query alone)",
+          link in [code.value for code in page.code]
+          and any("This chart's link, to share it:" in caption.value for caption in page.caption), link)
+    defaults = new_page("", heard=urllib.parse.quote("-u -s:2010 --e:2026-09-01"))
+    check("?chart= with nothing after it: the defaults, not the settings remembered, and its link ?chart=",
+          not defaults.exception and address(defaults) == "" and charts_shown(defaults) == 2 and "?chart=" in [c.value for c in defaults.code],
+          (address(defaults), charts_shown(defaults)))
+    check("chart_link: the cloud frame's /~/+/ cut; a slash after a bare host",
+          web.chart_link("https://ratesplot.streamlit.app/~/+/", ("--C", "--end:2025-01-01"))
+          == "https://ratesplot.streamlit.app/?chart=--C+--end%3A2025-01-01"
+          and web.chart_link("http://localhost:8501", ()) == "http://localhost:8501/?chart=")
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
-    check_batch281,
+    check_batch281, check_batch28s2,
 )
 
 

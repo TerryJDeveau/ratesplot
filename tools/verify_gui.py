@@ -1942,6 +1942,35 @@ def check_batch281(check: Check) -> None:
         check("the lock ticked again: Reset greyed", not enabled(app.reset_button))
 
 
+def check_batch282(check: Check) -> None:
+    """Batch 28.2: Unzoom goes back to the view before the first zoom since the last Reset, and is greyed while there is none."""
+    with window(f"-c -s:2001 {END}") as w:
+        app = w.app
+        w.tick("gdp", False)
+        w.settle()
+        app._reset()
+        w.settle()
+        check("a Reset with no zoom since: Unzoom greyed, Back possible",
+              not enabled(app.unzoom_button) and enabled(app.back_button) and app.flag_vars["gdp"].get())
+        after_reset = app._snapshot()
+        app._apply_view({"start": "2010-01-01"}, "Zoomed")
+        w.settle()
+        check("a zoom after it: Unzoom possible", enabled(app.unzoom_button))
+        app._unzoom()
+        w.settle()
+        check("Unzoom: the view after the Reset, GDP still ticked; Unzoom greyed",
+              app._snapshot() == after_reset and app.flag_vars["gdp"].get() and not enabled(app.unzoom_button))
+        for _ in range(3):  # Unzoom, the zoom, the Reset
+            app._back()
+            w.settle()
+        check("Back undoes them all, the Reset as before: GDP unticked, the dates typed",
+              not app.flag_vars["gdp"].get() and w.text("start") == "2001" and not app.history, (w.text("start"), len(app.history)))
+        trimmed = [((("z",), {}), None)] * 3 + [((("r",), {}), ("fit", {}))] + [(((str(n),), {}), None) for n in range(60)]
+        frontend.trim_history(trimmed, 50)
+        check("past 50 steps: the oldest go, never the last Reset or the step after it",
+              len(trimmed) == 50 and frontend.unzoom_target(trimmed) == 1 and trimmed[1][0][0] == ("0",), trimmed[:2])
+
+
 # The groups in the order they run; --group picks some by these names.
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
@@ -1968,6 +1997,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "settings_files": check_settings_files,
     "remember": check_remember,
     "batch281": check_batch281,
+    "batch282": check_batch282,
 }
 
 
