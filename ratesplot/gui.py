@@ -172,6 +172,7 @@ from .frontend import (
     panel_lists,
     png_bytes,
     problem_text,
+    reset_changes_nothing,
     reset_choices,
     save_state,
     saved_export_name,
@@ -400,7 +401,10 @@ class DatePicker:
         footer = ttk.Frame(self.top, padding=4)
         footer.pack(fill="x")
         ttk.Button(footer, text="Today", command=lambda: self._pick(self.today)).pack(side="left")
-        ttk.Button(footer, text="Blank (default)", command=self._blank).pack(side="left", padx=4)
+        # Greyed while the field is blank already, where it would do nothing (batch 28.1).
+        blank = ttk.Button(footer, text="Blank (default)", command=self._blank)
+        blank.state(["!disabled"] if variable.get().strip() else ["disabled"])
+        blank.pack(side="left", padx=4)
         ttk.Button(footer, text="Cancel", command=self.top.destroy).pack(side="right")
 
         self._draw_days()
@@ -932,6 +936,11 @@ class RatesPlotApp:
         for name, keep in state.get("keep_ratio", {}).items():
             if name in self.size_editors and isinstance(keep, bool):
                 self.size_editors[name].keep_ratio.set(keep)
+        # Reset is greyed at the defaults, the preview's two settings among
+        # them, which change without a drawing (batch 28.1).
+        self.zoom.trace_add("write", lambda *_args: self._update_view_buttons())
+        for editor in self.size_editors.values():
+            editor.keep_ratio.trace_add("write", lambda *_args: self._update_view_buttons())
         if state.get("tab") in self.tabs:
             self.notebook.select(self.tabs[state["tab"]])
         for note in notes or []:
@@ -1389,7 +1398,8 @@ class RatesPlotApp:
 
         buttons = ttk.Frame(panel)
         buttons.pack(fill="x", pady=(0, 6))
-        ttk.Button(buttons, text="Reset to defaults", command=self._reset).grid(row=0, column=0, sticky="ew", padx=1, pady=1)
+        self.reset_button = ttk.Button(buttons, text="Reset to defaults", command=self._reset)
+        self.reset_button.grid(row=0, column=0, sticky="ew", padx=1, pady=1)
         # Under Reset rather than beside it, so the column's narrowest width is unchanged.
         self.remember_box = ttk.Checkbutton(buttons, text=REMEMBER_LABEL, variable=self.remember)
         self.remember_box.grid(row=1, column=0, sticky="w", padx=1, pady=(2, 0))
@@ -2239,9 +2249,18 @@ class RatesPlotApp:
         return not self.history or self.history[0][0] == self._snapshot()
 
     def _update_view_buttons(self) -> None:
-        """Grey Back and Unzoom while they would do nothing (Terry, 2026-10-08), as the web page does."""
+        """Grey Back, Unzoom and Reset while they would do nothing (Terry, 2026-10-08; Reset since batch 28.1), as the web page does."""
         self.back_button.state(["!disabled"] if self.history else ["disabled"])
         self.unzoom_button.state(["disabled"] if self._unzoomed() else ["!disabled"])
+        self.reset_button.state(["disabled"] if self._at_reset() else ["!disabled"])
+
+    def _at_reset(self) -> bool:
+        """True when Reset would change nothing: the choices at their defaults (``frontend.reset_changes_nothing``), "Fit to window", every size lock ticked."""
+        return (
+            reset_changes_nothing(self._snapshot())
+            and self.zoom.get() == _DEFAULT_PREVIEW
+            and all(editor.keep_ratio.get() for editor in self.size_editors.values())
+        )
 
     def _back(self) -> None:
         if not self.history:

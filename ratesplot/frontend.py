@@ -451,6 +451,20 @@ def reset_choices(flags: Mapping[str, bool]) -> Choices:
     return payloads, {**defaults, **dict.fromkeys(ALL_TICKS, False), **kept}
 
 
+def reset_changes_nothing(choices: Choices) -> bool:
+    """True when Reset would leave every one of these choices as it is (``reset_choices``): the window and the page grey it then (batch 28.1).
+
+    Text by text, a blank and a missing field alike; a greyed field's text
+    counts, since Reset clears it too. The preview's settings, which Reset
+    also sets, are each front end's to add.
+    """
+    payloads, flags = choices
+    reset_payloads, reset_flags = reset_choices(flags)
+    if any(payloads.get(key, "").strip() != reset_payloads.get(key, "").strip() for key in {*payloads, *reset_payloads}):
+        return False
+    return all(bool(flags.get(name, False)) == value for name, value in reset_flags.items())
+
+
 def current_tab(shown: Sequence[str], current: str | None, ticked: str | None = None) -> str | None:
     """Return the tab (a nation's key) to make current among those ``shown`` after a drawing (batch 17.4).
 
@@ -518,14 +532,22 @@ def all_tick_offered(payloads: Mapping[str, str], flags: Mapping[str, bool], key
     non-blank (non-auto-generated) and there is more than one nation
     selected". A box blanked by typing (``blanked``) counts as not blank
     until Return is typed in it or it is left (decision 47). Greyed too
-    while its box is (Top and Bottom with no right-axis curve). Top and
+    while its box is (Top and Bottom with no right-axis curve), and since
+    batch 28.1 while its text is one the box's own parser refuses, which
+    ticking would copy to every nation (``field_problems``). Top and
     Bottom in amounts are copied with their currency since batch 18.3
     (``limit_copies``); until then they took "All" only as percentages of GDP.
     """
-    name = option_of(key).name
-    if not (payloads.get(key, "").strip() or key in blanked):
+    option = option_of(key)
+    text = payloads.get(key, "").strip()
+    if not (text or key in blanked):
         return False
-    return nations_ticked(flags) >= 2 and name not in idle_controls(flags)
+    if text:
+        try:
+            option.parse(text)
+        except ValueError:
+            return False
+    return nations_ticked(flags) >= 2 and option.name not in idle_controls(flags)
 
 
 def limit_copies(updates: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:

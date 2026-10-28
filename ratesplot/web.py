@@ -192,6 +192,7 @@ from .frontend import (  # noqa: E402
     panel_lists,
     png_bytes,
     problem_text,
+    reset_changes_nothing,
     reset_choices,
     saved_export_name,
     saved_log_name,
@@ -1434,6 +1435,8 @@ def _date_control(where, option: Option) -> None:
             on_click=_date_blanked,
             args=(option.name,),
             help=_PLACEHOLDERS.get(option.name, _DEFAULT_PLACEHOLDER).capitalize() + " when blank.",
+            # Greyed while the field is blank already, where it would do nothing (batch 28.1).
+            disabled=not st.session_state.get(_VALUE + option.name, "").strip(),
         )
 
 
@@ -1612,7 +1615,9 @@ def _controls() -> None:
         help="Draw again with the latest data: the intraday quotes of the moment, and anything downloaded over an hour ago.",
         width="stretch",
     )
-    buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch")
+    # Greyed at the defaults, the size lock ticked among them, where it would do nothing (batch 28.1).
+    at_reset = reset_changes_nothing(_snapshot()) and st.session_state.get(_SIZE + "lock", True)
+    buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch", disabled=at_reset)
     # Changing it draws nothing: it governs only the cookie (batch 24.6).
     bar.checkbox(REMEMBER_LABEL, key=_REMEMBER, help=REMEMBER_HELP)
     bar.caption(_REMEMBER_LINE)
