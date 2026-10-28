@@ -13,6 +13,7 @@ import matplotlib.dates as mdates
 import matplotlib.ticker as ticker
 import numpy as np
 import pandas as pd
+from pandas.errors import OutOfBoundsDatetime
 from matplotlib.axes import Axes
 
 from .config import (
@@ -482,7 +483,13 @@ def apply_axes_formatting(
 def apply_date_xlim(ax: Axes, config: PlotConfig) -> None:
     """Pad the requested date range slightly so lines do not touch the plot border."""
     span_days = max((config.end - config.start).days, MIN_DATE_PAD_DAYS)
-    # In seconds, not pandas' default nanoseconds, whose timestamps begin
-    # 1677-09-21: a chart may start at 1600 (batch 28.3, config.EARLIEST_DATE).
-    pad = pd.Timedelta(days=max(span_days * DATE_PAD_FRACTION, MIN_DATE_PAD_DAYS)).as_unit("s")
-    ax.set_xlim(config.start - pad, config.end + pad)
+    pad = pd.Timedelta(days=max(span_days * DATE_PAD_FRACTION, MIN_DATE_PAD_DAYS))
+    try:
+        left = config.start - pad
+    except OutOfBoundsDatetime:
+        # Before pandas' nanosecond timestamps begin (1677-09-21): a chart may
+        # start at 1600 (batch 28.3, config.EARLIEST_DATE). The margin in
+        # seconds there only: in seconds everywhere, it moved every chart's
+        # limits by part of a second, and some PNGs by a pixel.
+        left = config.start - pad.as_unit("s")
+    ax.set_xlim(left, config.end + pad)
