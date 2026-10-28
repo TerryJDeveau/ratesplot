@@ -367,7 +367,9 @@ def add_rate_lines(
     Each part is marked for Export chart under that name; a band's as its
     lower limit, its upper limits another curve (``export.mark_series``);
     and for the hover read-out, a spread's values in points as its end label
-    writes them, the others' in percent (``hover.mark``).
+    writes them, the others' in percent (``hover.mark``). A change drawn from
+    its bank's announcement (``RateCurve.announced``, batch 32) is a piece of
+    its own from that day, its riser with it, read out as "2.50% (announced)".
     """
     yield_colours = {line.get_label(): line.get_color() for line in yield_lines}
     drawn: list[tuple[Line2D, RateCurve]] = []
@@ -382,16 +384,20 @@ def add_rate_lines(
         style = curve.style
         if curve.color_of is not None and f"{curve.color_of} Yield" in yield_colours:
             style = style | {"color": yield_colours[f"{curve.color_of} Yield"]}
-        if curve.steps_until is None:
-            parts = [(values, style)]
+        reading = format_spread if curve.spread else format_yield
+        if curve.announced is not None:
+            published, announced = _apart_at(values, curve.announced)
+            parts = [(published, style, reading), (announced, style, _announced_reading)]
+        elif curve.steps_until is None:
+            parts = [(values, style, reading)]
         else:
             monthly = values.loc[values.index <= curve.steps_until]
             daily = values.loc[values.index > curve.steps_until]
-            parts = [(monthly, style | {"drawstyle": "steps-post"}), (daily, style)]
+            parts = [(monthly, style | {"drawstyle": "steps-post"}, reading), (daily, style, reading)]
         name = legend_label(curve, config)
         exported = f"{name}, lower limit" if curve.upper is not None else name
         first: Line2D | None = None
-        for part, part_style in parts:
+        for part, part_style, part_reading in parts:
             if part.empty:
                 continue
             # The second part in the first's colour, and only the first in the legend.
@@ -400,7 +406,7 @@ def add_rate_lines(
             (drawn_line,) = ax.plot(part.index, part.to_numpy(), label=label, **(part_style | colour))
             mark_series(drawn_line, exported, YIELD_AXIS)
             # A spread runs on to the day's quotes, as the yields it is taken from do.
-            mark_reading(drawn_line, format_spread if curve.spread else format_yield, quoted=curve.spread)
+            mark_reading(drawn_line, part_reading, quoted=curve.spread)
             first = first or drawn_line
             if curve.spread:
                 as_steps = part_style.get("drawstyle") == "steps-post"
@@ -415,6 +421,26 @@ def add_rate_lines(
         if first is not None:
             drawn.append((first, curve))
     return drawn
+
+
+def _apart_at(values: pd.Series, first: pd.Timestamp) -> tuple[pd.Series, pd.Series]:
+    """``values``, a rate's drawn steps (``rates.held_steps``), as the stretch before ``first`` and the stretch from it.
+
+    Each is drawn to where the other begins: the earlier held to the later's
+    first point, and the riser there drawn with the later (it starts from the
+    earlier's last value), so the two draw what the whole did.
+    """
+    before = values.loc[values.index < first]
+    after = values.loc[values.index >= first]
+    if before.empty or after.empty:
+        return before, after
+    held = pd.Series([before.iloc[-1]], index=pd.DatetimeIndex([after.index[0]]))
+    return pd.concat([before, held]), pd.concat([held, after])
+
+
+def _announced_reading(value: float) -> str:
+    """How the read-out writes a rate drawn from its bank's announcement (batch 32): "2.50% (announced)"."""
+    return f"{format_yield(value)} (announced)"
 
 
 def _add_band(ax: Axes, curve: RateCurve, lower: pd.Series, config: PlotConfig, style: dict, exported: str) -> bool:

@@ -15,10 +15,12 @@ left out; nothing is substituted silently.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
+from .announced import Releases, announcements_needed, boc_releases, boe_releases, joined
 from .baked import read_series
 from .cdn_data import BOC_VALET_FROM, STATCAN_BAKED_SOURCE, boc_valet_series, statcan_download
 from .config import (
@@ -288,6 +290,10 @@ class RateCurve:
     # The words the parts' names are written in ("Overnight Rate ({})" around
     # "EONIA, €STR from 2019-10", batch 24.5); "{}": the names alone.
     named_in: str = "{}"
+    # A policy rate's first day drawn from its bank's announcement rather than
+    # its series (batch 32, ``with_announced``): drawn as a piece of its own,
+    # named in the legend ("Announced from 2026-10-29") and the read-out.
+    announced: pd.Timestamp | None = None
 
     @property
     def first(self) -> pd.Timestamp:
@@ -309,16 +315,22 @@ def legend_label(curve: RateCurve, config: PlotConfig) -> str:
     is shown from its first date to the next part's (an announced rate's
     last value is in force until then), in the curve's own words
     (``RateCurve.named_in``: "Overnight Rate (€STR)" on a chart from 2022).
-    A curve of one source: its label.
+    A curve of one source: its label. A change drawn from its bank's
+    announcement (batch 32) is named after them as a part, by its day:
+    "Official Bank Rate, Announced from 2026-11-05".
     """
     if not curve.parts:
-        return curve.label
-    shown = tuple(
-        part
-        for position, part in enumerate(curve.parts)
-        if part[0] <= config.end and (position + 1 == len(curve.parts) or curve.parts[position + 1][0] > config.start)
-    )
-    return curve.named_in.format(_named(shown or curve.parts[-1:]))
+        label = curve.label
+    else:
+        shown = tuple(
+            part
+            for position, part in enumerate(curve.parts)
+            if part[0] <= config.end and (position + 1 == len(curve.parts) or curve.parts[position + 1][0] > config.start)
+        )
+        label = curve.named_in.format(_named(shown or curve.parts[-1:]))
+    if curve.announced is not None and curve.announced <= config.end:
+        label += f", Announced from {curve.announced:%Y-%m-%d}"
+    return label
 
 
 def held_steps(curve: RateCurve, config: PlotConfig, values: pd.Series | None = None) -> pd.Series:
@@ -814,6 +826,44 @@ def _steps_until(yields: pd.DataFrame, columns: tuple[str, str]) -> pd.Timestamp
     return max(through) if through else None
 
 
+# Each nation whose policy target is read from its bank's announcements too
+# (batch 32, decision 83): its releases, what they are called when they fail,
+# and its own series as the messages name it. The U.S. needs none: FRED's
+# range has a change's day on the morning it takes effect (measured
+# 2026-10-28, 32.3). The ECB's is to be seen at its next change.
+_ANNOUNCING: dict[str, tuple[Callable[[], Releases], str, str]] = {
+    "cdn": (lambda: boc_releases(CDN_BANK_RATE_ABOVE_TARGET), "Bank of Canada press releases", f"Valet's {CDN_TARGET_SERIES}"),
+    "uk": (boe_releases, "Bank of England news", f"the Bank of England's {UK_POLICY_SERIES}"),
+}
+
+
+def with_announced(country: str, curve: RateCurve | None, end: pd.Timestamp) -> RateCurve | None:
+    """Return ``curve``, a nation's policy target, with the changes its bank has announced and its series does not have yet (batch 32).
+
+    Asked only where a chart ending ``end`` reaches past the series' last
+    day (``announced.announcements_needed``), for a nation in
+    ``_ANNOUNCING``; each change added holds until changed, as the series'
+    values do, and is drawn from the day it takes effect whenever the End
+    reaches it (``announced.joined`` says what is read and checked). If the
+    releases cannot be had, the series alone, with a warning.
+    """
+    if curve is None or country not in _ANNOUNCING or not announcements_needed(curve.values, end):
+        return curve
+    assert curve.upper is None and curve.holds is not None, curve.label  # Canada's and the UK's targets: one rate each day
+    releases, called, series = _ANNOUNCING[country]
+    try:
+        found = releases()
+    except Exception as exc:
+        print(f"  Warning: {called} unavailable ({exc}); a change announced since "
+              f"{curve.values.index[-1]:%Y-%m-%d} is not drawn.")
+        return curve
+    values, first = joined(curve.values, found, series, end)
+    if first is None:
+        return curve
+    added = values.loc[values.index >= first]
+    return replace(curve, values=values, holds=pd.concat([curve.holds, holding(added, HELD)]), announced=first)
+
+
 # Each nation's policy terms (batch 9.1).
 _POLICY_TARGETS = {"us": us_policy_target, "cdn": cdn_policy_target, "uk": uk_policy_target, "de": de_policy_target}
 _POLICY_MARKETS = {"us": us_policy_market, "cdn": cdn_policy_market, "uk": uk_policy_market, "de": de_policy_market}
@@ -840,7 +890,7 @@ def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[
                 style = POLICY_MARKET_STYLE if "target" in config.policy_terms else POLICY_RATE_STYLE
                 curves.append(_POLICY_MARKETS[country](style))
             if "target" in config.policy_terms:
-                curves.append(_POLICY_TARGETS[country]())
+                curves.append(with_announced(country, _POLICY_TARGETS[country](), config.end))
     if config.mortgages:
         terms = [term for term in config.mortgage_terms if country in MORTGAGE_TERMS[term][0]]
         if not terms:

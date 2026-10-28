@@ -52,6 +52,8 @@ uk_archive_data   baked UK history from the Bank of England's "A millennium of
                   macroeconomic data" (rewritten by tools/bake_archives.py)
 rates             the yield axis's other curves, each only when chosen: policy rates,
                   mortgage rates, yield spreads
+announced         policy rates as announced (batch 32): Canada's and the UK's change
+                  read from the bank's own release, drawn before its series has it
 fx                exchange rates, for Top and Bottom given in another currency
                   (batch 18.3): FRED's from 1971, older ones baked (18.4)
 measures          the right-axis measure: dollars, % of GDP (-r) or per person (-p)
@@ -79,7 +81,7 @@ plotting, http}; cli -> {options, plotting, http}; frontend -> {options,
 config}; plotting -> {axes, legend, endlabels, regression, measures, rates,
 cdn_data, us_data, uk_data, de_data, joins, latest, baked} -> {frames, http} -> config;
 {cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data, us_data, de_data} -> baked -> {http, config};
-rates -> {cdn_data, uk_data, us_data, de_data, baked, http}; cdn_data -> us_data (FRED's
+rates -> {cdn_data, uk_data, us_data, de_data, baked, announced, http}; announced -> http; cdn_data -> us_data (FRED's
 Canadian GDP); plotting -> fx -> {us_data, cdn_archive_data, uk_archive_data};
 plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
