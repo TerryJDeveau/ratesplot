@@ -67,6 +67,7 @@ from .config import (
     DEFAULT_START_FLOOR,
     DEFAULT_YIELD_TERMS,
     EARLIEST_DATA_START,
+    EARLIEST_DATE,
     MAX_AUTO_REFRESH_MINUTES,
     MIN_AUTO_REFRESH_MINUTES,
     MIN_CANVAS_PX,
@@ -106,6 +107,8 @@ def parse_date_spec(spec: str, *, kind: str) -> pd.Timestamp:
     """Parse ``YYYY``, ``YYYY-MM`` or ``YYYY-MM-DD`` (``/`` also accepted) to a Timestamp.
 
     Omitted month/day default to 1. ``kind`` ("start"/"end") is used in messages.
+    A date before ``config.EARLIEST_DATE`` (1600-01-01) is refused (batch 28.3):
+    "1500" reached pandas' own words about nanoseconds before.
     """
     value = spec.strip()
     if not value:
@@ -123,7 +126,10 @@ def parse_date_spec(spec: str, *, kind: str) -> pd.Timestamp:
     max_day = calendar.monthrange(year, month)[1]
     if not 1 <= day <= max_day:
         raise ValueError(f"invalid {kind} day {day} for {year}-{month:02d}: month has only {max_day} days")
-    return pd.Timestamp(year=year, month=month, day=day)
+    date = pd.Timestamp(year=year, month=month, day=day)
+    if date < EARLIEST_DATE:
+        raise ValueError(f"{kind} date {spec!r} is before {EARLIEST_DATE:%Y-%m-%d}, the earliest a chart shows")
+    return date
 
 
 def parse_dimensions_spec(spec: str) -> tuple[int, int]:

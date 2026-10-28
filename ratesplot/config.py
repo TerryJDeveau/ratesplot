@@ -29,6 +29,15 @@ import requests
 # (frontend.move_dates_updates). Before batch 3 it was 1867-01-01; no Canadian
 # or U.S. curve begins before that, so their automatic start is as it was.
 EARLIEST_DATA_START = pd.Timestamp("1680-01-01")
+# The earliest date a chart may show, and so the earliest Start or End given,
+# and the first day the calendars, "Earlier", "Zoom out" and the wheel reach
+# (Terry, 2026-10-26, plan 28.3: "make the earliest legal date 1600-01-01 ...
+# it can be useful to have a nice round number as the left-most label on the
+# date axis"). It is before pandas' nanosecond timestamps begin (1677-09-21),
+# so a date this early must never be cast to nanoseconds (batch 28.3, which
+# found the date axis's margin doing so). The data are still prepared from
+# EARLIEST_DATA_START, before which no series begins.
+EARLIEST_DATE = pd.Timestamp("1600-01-01")
 # Without --start the chart begins no earlier than this date (Terry,
 # 2026-10-06: he kept setting the start by hand, "so maybe just making the
 # default 2000 is just as good as anything else"). The start is the later of
