@@ -42,6 +42,7 @@ Usage (from the project root)::
     python tools/verify_gui.py --group limits,levels    # some of the window's groups
     python tools/verify_gui.py --list                   # the chart cases and the groups
     python tools/verify_gui.py --synthetic              # made-up data, no network
+    python tools/verify_gui.py --place +988+-3800       # the windows' top left elsewhere (Buddug: an upper monitor's)
 
 Exit code 1 on any DIFFER or FAIL.
 """
@@ -55,6 +56,7 @@ import dataclasses
 import hashlib
 import io
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -109,6 +111,11 @@ CHART_CASES = (
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
+# Where the windows open, their top left: --place's. They take the keyboard
+# focus and must not be covered (Terry, 2026-10-28: on Buddug, the upper left
+# of one of the upper monitors, his 2 or 3; "+988+-3800" is his 2's; ``placed``).
+PLACE = (40, 40)
+PLACE_PATTERN = re.compile(r"\+(-?\d+)\+(-?\d+)")
 # Terry's window on Ambergris (its gui_state.json, 2026-09-29): the size a new control is checked at.
 SIZE = "1728x972+40+40"
 SETTLE_SECONDS = 300  # a drawing whose downloads are not cached yet takes about 15 s; Germany's longer
@@ -125,7 +132,8 @@ Check = Callable[..., None]
 class Window:
     """A window opened on a command line, as ``gui.run_gui`` opens it, and the calls its controls make."""
 
-    def __init__(self, tokens: str, size: str = SIZE, settle: bool = True) -> None:
+    def __init__(self, tokens: str, size: str | None = None, settle: bool = True) -> None:
+        size = size or SIZE  # read when called: --place sets it
         payloads, flags, _parser = cli.parse_choices(tokens.split())
         config = cli.config_from_choices(payloads, flags)
         choices, notes = frontend.starting_choices(config, payloads, flags, {})
@@ -182,6 +190,11 @@ class Window:
         self.app._close()
 
 
+def placed(dimensions: str, shift: int = 0) -> str:
+    """A window's geometry: ``dimensions`` ("WxH") at the windows' place (``PLACE``), ``shift`` pixels right and down."""
+    return f"{dimensions}+{PLACE[0] + shift}+{PLACE[1] + shift}"
+
+
 def cli_png(tokens: list[str], key: str) -> bytes:
     """The chart the command line draws for ``tokens``, through the same ``build_figure``, in this process."""
     config = cli.parse_args(["--no-gui", *tokens])
@@ -192,7 +205,7 @@ def cli_png(tokens: list[str], key: str) -> bytes:
 
 
 @contextlib.contextmanager
-def window(tokens: str, size: str = SIZE):
+def window(tokens: str, size: str | None = None):
     """A ``Window``, closed afterwards whatever happens."""
     opened = Window(tokens, size)
     try:
@@ -469,7 +482,7 @@ def check_fit(check: Check) -> None:
     with window(f"-c -s:2001 {END} -dim:1100x825") as w:
         app, key = w.app, "cdn"
         canvas = app.canvases[key]
-        w.root.geometry("3400x2000+20+20")
+        w.root.geometry(placed("3400x2000", -20))
         w.pump(5)
         app._refresh_view(key)
         scale, left, top = app.placement[key]
@@ -491,7 +504,7 @@ def check_fit(check: Check) -> None:
         check("Actual size: pixel for pixel", app.placement[key][0] == 1.0)
         app.zoom.set("fit")
         app._refresh_all_views()
-        w.root.geometry("1100x700+20+20")
+        w.root.geometry(placed("1100x700", -20))
         w.pump(5)
         app._refresh_view(key)
         check("a small window: shrunk", app.placement[key][0] < 1.0, app.placement[key][0])
@@ -567,7 +580,7 @@ def hint(w: Window, key: str) -> tuple[bool, str]:
 
 def check_grey_values(check: Check) -> None:
     """Batches 7 and 8: a blank field shows the value drawn in grey, hidden by typing, back when cleared, hidden while greyed."""
-    with window(f"-u --reg {END}", size="1600x1000+40+40") as w:
+    with window(f"-u --reg {END}", size=placed("1600x1000")) as w:
         w.pump()
         check("Start: the automatic start in grey", hint(w, "start") == (True, "2000-01-01"), hint(w, "start"))
         check("End typed: no grey value", not hint(w, "end")[0], hint(w, "end"))
@@ -917,7 +930,7 @@ def check_levels(check: Check) -> None:
         check("none ticked at first", not any(var.get() for editor in app.level_editors.values() for var in editor.boxes.values()))
         # Each panel's boxes fit its tab at Terry's two window sizes (Ambergris's, and Buddug's large screen).
         for size in ("1728x972", "3743x1931"):
-            w.root.geometry(size + "+0+0")
+            w.root.geometry(placed(size, -40))
             w.pump(30)
             for key, tab in app.tabs.items():
                 app.notebook.select(tab)
@@ -1629,7 +1642,7 @@ def wheel_stopped(w: Window) -> None:
 
 def check_wheel(check: Check) -> None:
     """Batch 24.7: the wheel over each scrolling area (the column, the log, a chart's scroll bars) scrolls it alone; over a chart, a zoom."""
-    with window(f"-c -s:2001 {END}", size="1728x640+40+40") as w:
+    with window(f"-c -s:2001 {END}", size=placed("1728x640")) as w:
         app, key = w.app, "cdn"
         column = app._scroll
         column_canvas = column.master.grid_slaves(row=0, column=0)[0]
@@ -1826,7 +1839,7 @@ def check_remember(check: Check) -> None:
             w.typed("start", "2001")
             w.settle()
             app.zoom.set("actual")
-            w.root.geometry("1700x950+50+50")
+            w.root.geometry(placed("1700x950", 10))
             w.pump(20)
             app._save_folder = folder_root
             app._remember()
@@ -2170,7 +2183,15 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument("--verbose", action="store_true", help="show the command line's own output")
     parser.add_argument("--list", action="store_true", help="list the chart cases and the window's groups, and exit")
+    parser.add_argument("--place", help="the windows' top left as +X+Y, X and Y may be negative (default +40+40; on Buddug +988+-3800)")
     args = parser.parse_args(argv)
+    if args.place:
+        match = PLACE_PATTERN.fullmatch(args.place)
+        if not match:
+            parser.error(f"--place {args.place}: give it as +X+Y, e.g. +988+-3800")
+        global PLACE, SIZE
+        PLACE = (int(match[1]), int(match[2]))
+        SIZE = placed(SIZE.split("+", 1)[0])
     cases = tuple(args.cases.split(",")) if args.cases else CHART_CASES
     groups = args.group.split(",") if args.group else list(WINDOW_CHECKS)
     unknown = [name for name in cases if name not in CASES] + [name for name in groups if name not in WINDOW_CHECKS]
