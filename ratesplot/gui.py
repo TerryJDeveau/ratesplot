@@ -120,7 +120,9 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog, ttk
+from tkinter import font as tkfont
 
 import pandas as pd
 from PIL import Image, ImageTk
@@ -145,8 +147,10 @@ from .frontend import (
     WHEEL_ZOOM_FACTOR,
     ChartGeometry,
     Choices,
+    HelpBlock,
     all_tick,
     all_tick_offered,
+    all_tick_reason,
     bound_keys,
     bounds_in_other_units,
     choice_refusal,
@@ -158,6 +162,10 @@ from .frontend import (
     drawn_payloads,
     field_hints,
     field_problems,
+    greyed_line,
+    greyed_reason,
+    help_blocks,
+    help_text,
     idle_choices,
     idle_nation_keys,
     level_letters,
@@ -231,6 +239,10 @@ _HOVER_TAG = "hover"
 _HOVER_PAD_PX = 5
 # A blank field's grey value (``_Hint``), on the field's own background.
 _HINT_FOREGROUND = "#8c8c8c"
+# The ⓘ beside each control (batch 29.1), a link's blue, never greyed; its
+# panel's text wraps at this width, about the window's tips' widest line.
+_INFO_FOREGROUND = "#1a5fb4"
+_INFO_WRAP_PX = 420
 _FIELD_BACKGROUND = "SystemWindow" if sys.platform == "win32" else "white"
 _GEOMETRY_PATTERN = re.compile(r"^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$")
 # A remembered window is put back where it was if this much of its title bar
@@ -792,6 +804,41 @@ def _tooltip_text(option: Option) -> str:
     return "\n".join(option_help_lines(option))
 
 
+def _render_help(text: tk.Text, blocks: list[HelpBlock]) -> None:
+    """Put a help topic's blocks into ``text`` (batch 29.1): headings larger and bold, items bulleted, links clickable.
+
+    Each link a tag of its own, opened in the browser by a click
+    (``webbrowser``); the program's own topics name no file on this machine.
+    """
+    base = tkfont.nametofont("TkTextFont").actual()
+    size = abs(int(base["size"])) or 10
+    text.configure(font=(base["family"], size), spacing3=6)
+    text.tag_configure("h1", font=(base["family"], size + 5, "bold"), spacing1=4, spacing3=8)
+    text.tag_configure("h2", font=(base["family"], size + 2, "bold"), spacing1=8, spacing3=4)
+    text.tag_configure("bold", font=(base["family"], size, "bold"))
+    text.tag_configure("code", font=("Consolas", size))
+    text.tag_configure("item", lmargin1=12, lmargin2=26, spacing3=3)
+    text.tag_configure("link", foreground=_INFO_FOREGROUND, underline=True)
+    for number, block in enumerate(blocks):
+        if block.kind == "heading":
+            tags: tuple[str, ...] = ("h1" if block.level == 1 else "h2",)
+        elif block.kind == "item":
+            tags = ("item",)
+            text.insert("end", "•  ", tags)
+        else:
+            tags = ()
+        for place, span in enumerate(block.spans):
+            if span.style == "link":
+                link = f"link-{number}-{place}"
+                text.tag_bind(link, "<Button-1>", lambda _event, url=span.url: webbrowser.open(url))
+                text.tag_bind(link, "<Enter>", lambda _event: text.configure(cursor="hand2"))
+                text.tag_bind(link, "<Leave>", lambda _event: text.configure(cursor="arrow"))
+                text.insert("end", span.text, (*tags, "link", link))
+            else:
+                text.insert("end", span.text, (*tags, span.style) if span.style else tags)
+        text.insert("end", "\n", tags)
+
+
 def _enable_windows_dpi_awareness() -> None:
     """Ask Windows to render this process at native resolution.
 
@@ -859,6 +906,13 @@ class RatesPlotApp:
         # flag for every nation's box of the limit ("all-max", in flag_vars).
         self.unit_labels: dict[str, ttk.Label] = {}
         self.all_boxes: dict[str, ttk.Checkbutton] = {}
+        # Help beside each control (batch 29.1, decision 76): its ⓘ, keyed as
+        # its control; the ⓘ's panel open now (one at a time), and the More
+        # window open for each topic (one each).
+        self.info_marks: dict[str, ttk.Label] = {}
+        self.info_panel: tk.Toplevel | None = None
+        self.info_shown: tuple[str, str, str] | None = None  # the open panel's key, tip and reason
+        self.topic_windows: dict[str, tk.Toplevel] = {}
         for tick in ALL_TICKS:
             self.flag_vars[tick] = tk.BooleanVar(value=False)
         # Limit boxes blanked by typing, not yet by Return or by leaving the
@@ -1084,6 +1138,7 @@ class RatesPlotApp:
         style = ttk.Style(self.root)
         style.configure("Error.TLabel", foreground=_ERROR_FOREGROUND)
         style.configure("Error.TEntry", foreground=_ERROR_FOREGROUND)
+        style.configure("Info.TLabel", foreground=_INFO_FOREGROUND)
 
         self.flows: list[tuple[str, _Flow]] = []
         for key, title, members in control_blocks():
@@ -1154,6 +1209,7 @@ class RatesPlotApp:
         box.grid(row=row, column=0, sticky="w")
         self.flag_boxes[option.name] = box
         _Tooltip(box, _tooltip_text(option))
+        self._info_mark(cell, option.name, option, _tooltip_text(option)).grid(row=row, column=1, sticky="w", padx=(1, 0))
         if value is not None and field is not None:
             before, _comma, after = value.label.partition(", ")
             # No padding: the row stays as tall as a check box.
@@ -1193,6 +1249,8 @@ class RatesPlotApp:
         for widget in (label, entry):
             _Tooltip(widget, tip)
         self.hints[key] = _Hint(entry, variable, tip)
+        # Last in the row, after the unit, the calendar or a limit's "All" (columns 2 and 3).
+        self._info_mark(frame, key, option, tip).grid(row=row, column=9, sticky="w", padx=(3, 0), pady=pady)
         if option.editor == "date":
             button = ttk.Button(
                 frame, text="📅", width=3,
@@ -1213,8 +1271,10 @@ class RatesPlotApp:
         key = nation_choice(nation, option)
         payload = tk.StringVar()
         self.payload_vars[key] = payload
-        label = ttk.Label(cell, text=option.label)
-        label.grid(row=0, column=0, columnspan=2, sticky="w")
+        head = ttk.Frame(cell)  # the label and its ⓘ
+        head.grid(row=0, column=0, columnspan=2, sticky="w")
+        label = ttk.Label(head, text=option.label)
+        label.pack(side="left")
         self.value_labels[key] = label
         # A level ticked greys the UK's aggregate debts (batch 10.4): the dependent controls first.
         editor = _LevelsEditor(payload, on_change=self._choices_changed, nation=nation)
@@ -1226,6 +1286,7 @@ class RatesPlotApp:
             editor.widgets.append(check)
             _Tooltip(check, tip)
         _Tooltip(label, tip)
+        self._info_mark(head, key, option, tip).pack(side="left", padx=(3, 0))
 
     def _add_choices_control(self, frame: ttk.LabelFrame, row: int, option: Option, nation: Nation | None = None) -> None:
         """A list option as tick boxes (``Option.choices``), one row of boxes per row offered.
@@ -1243,25 +1304,35 @@ class RatesPlotApp:
         payload = tk.StringVar()
         self.payload_vars[key] = payload
         box = ttk.Frame(frame)
+        tip = _tooltip_text(option)
         if nation is not None:
             # A cell of the panel's flow, which puts the gap between cells.
-            label = ttk.Label(frame, text=option.label)
-            label.grid(row=0, column=row, sticky="w")
+            head = ttk.Frame(frame)  # the label and its ⓘ
+            head.grid(row=0, column=row, sticky="w")
+            label = ttk.Label(head, text=option.label)
+            label.pack(side="left")
             self.value_labels[key] = label
-            _Tooltip(label, _tooltip_text(option))
+            _Tooltip(label, tip)
+            self._info_mark(head, key, option, tip).pack(side="left", padx=(3, 0))
             box.grid(row=1, column=row, sticky="nw")
         elif option.turns_on:
             box.grid(row=row, column=0, columnspan=3, sticky="w", padx=(22, 0), pady=(0, 2))
         else:
-            label = ttk.Label(frame, text=option.label)
-            label.grid(row=row, column=0, sticky="nw", padx=(0, 6), pady=(3, 1))
+            head = ttk.Frame(frame)
+            head.grid(row=row, column=0, sticky="nw", padx=(0, 6), pady=(3, 1))
+            label = ttk.Label(head, text=option.label)
+            label.pack(side="left")
             self.value_labels[option.name] = label
-            _Tooltip(label, _tooltip_text(option))
+            _Tooltip(label, tip)
+            self._info_mark(head, key, option, tip).pack(side="left", padx=(3, 0))
             box.grid(row=row, column=1, columnspan=2, sticky="w", pady=1)
         editor = _ChoicesEditor(option, payload, box, on_change=self._choices_changed, refuse=self.status.set, nation=nation)
         for caption, boxes in choice_rows(option, "", nation):
             editor.add_row(caption, boxes)
         self.choice_editors[key] = editor
+        if nation is None and option.turns_on:
+            # A list with no label of its own, under its check box: its ⓘ ends its first row of boxes.
+            self._info_mark(box, key, option, tip).grid(row=0, column=99, sticky="w")
         if nation is None or option.fields != ("mortgage_terms",):
             return
         for term, margin in margin_options().items():
@@ -1318,6 +1389,7 @@ class RatesPlotApp:
         tip = _tooltip_text(option) + "\nWidth x height in pixels. Blank = default (shown in grey)."
         for widget in (label, width_entry, height_entry):
             _Tooltip(widget, tip)
+        self._info_mark(cell, option.name, option, tip).grid(row=0, column=2, sticky="w", padx=(3, 0), pady=1)
         default = PlotConfig()
         for entry, variable, pixels in (
             (width_entry, editor.width, default.width_px),
@@ -1540,6 +1612,105 @@ class RatesPlotApp:
         entry = self.value_entries[key]
         entry.bind("<Return>", lambda _event: self._limit_settled(key), add="+")
         entry.bind("<FocusOut>", lambda _event: self._limit_settled(key), add="+")
+
+    # -- help beside each control (batch 29.1) --------------------------------
+
+    def _info_mark(self, parent: tk.Widget, key: str, option: Option, tip: str) -> ttk.Label:
+        """An ⓘ in ``parent`` for control ``key`` (an option's name, or a nation's field: "us:max"), placed by the caller.
+
+        Terry, 2026-10-27 (decision 76): "a small clickable “i” in a circle
+        ... next to just about every control. It would not be greyed out when
+        that control is greyed out." A ttk label whose state is never set, so
+        ``_update_dependent_controls`` leaves it as it is; a click opens its
+        panel (``_show_info``) with ``tip``, the control's own tooltip text.
+        """
+        mark = ttk.Label(parent, text="ⓘ", style="Info.TLabel", cursor="hand2")
+        mark.bind("<Button-1>", lambda _event: self._show_info(mark, key, option, tip))
+        self.info_marks[key] = mark
+        return mark
+
+    def _info_reason(self, key: str) -> str:
+        """Why control ``key`` is greyed now, as its panel says it ("" while it is not); a limit's "All" box's too."""
+        payloads, flags = self._snapshot()
+        lines = [greyed_line(greyed_reason(key, payloads, flags))]
+        if key in self.all_boxes:
+            reason = all_tick_reason(payloads, flags, key, self._blanked)
+            if reason:
+                lines.append(f"“All” beside it is greyed because {reason}.")
+        return "\n".join(line for line in lines if line)
+
+    def _show_info(self, mark: ttk.Label, key: str, option: Option, tip: str) -> None:
+        """The ⓘ's panel, by it: the control's tip, why it is greyed now if it is, and More where it has a topic.
+
+        Terry, 2026-10-27: "When clicked, a short explanation of what the
+        control does would be displayed, and where there is more to say
+        (sources, etc.) a “More” button would be in the lower right to open a
+        separate window". One panel at a time, a small window of its own;
+        Escape or Close shuts it. The reason is judged at the click
+        (``frontend.greyed_reason``), from the rules that grey the control.
+        """
+        self._close_info()
+        panel = tk.Toplevel(self.root)
+        panel.title(option.label or option.name)
+        panel.transient(self.root)
+        panel.resizable(False, False)
+        frame = ttk.Frame(panel, padding=10)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text=tip, justify="left", wraplength=_INFO_WRAP_PX).pack(anchor="w")
+        reason = self._info_reason(key)
+        if reason:
+            ttk.Label(frame, text=reason, justify="left", wraplength=_INFO_WRAP_PX).pack(anchor="w", pady=(8, 0))
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", pady=(10, 0))
+        # Packed from the right: More in the lower right corner, Close left of
+        # it. More shuts the panel, whose window would otherwise stay in front.
+        if option.topic:
+            ttk.Button(buttons, text="More", command=lambda: (self._close_info(), self._show_topic(option.topic))).pack(side="right")
+        ttk.Button(buttons, text="Close", command=self._close_info).pack(side="right", padx=(0, 6) if option.topic else 0)
+        panel.bind("<Escape>", lambda _event: self._close_info())
+        panel.protocol("WM_DELETE_WINDOW", self._close_info)
+        # Right of the ⓘ, its top level with it, kept on the screen.
+        panel.update_idletasks()
+        x = min(mark.winfo_rootx() + mark.winfo_width() + 6, panel.winfo_screenwidth() - panel.winfo_reqwidth() - 8)
+        y = min(mark.winfo_rooty(), panel.winfo_screenheight() - panel.winfo_reqheight() - 48)
+        panel.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        panel.focus_set()
+        self.info_panel = panel
+        self.info_shown = (key, tip, reason)  # what the panel says, for tools/verify_gui.py
+
+    def _close_info(self) -> None:
+        """Shut the ⓘ's panel, if one is open."""
+        if self.info_panel is not None and self.info_panel.winfo_exists():
+            self.info_panel.destroy()
+        self.info_panel = None
+
+    def _show_topic(self, topic: str) -> None:
+        """More: topic ``topic``'s text in a window of its own, scrollable, its links clickable; one window per topic.
+
+        The text is ``docs/help/TOPIC.md``, the page's help view shows the
+        same file. Tk shows no Markdown, so its headings, paragraphs, items,
+        bold, code and links are rendered simply (``frontend.help_blocks``).
+        """
+        window = self.topic_windows.get(topic)
+        if window is not None and window.winfo_exists():
+            window.deiconify()
+            window.lift()
+            window.focus_set()
+            return
+        blocks = help_blocks(help_text(topic))
+        window = tk.Toplevel(self.root)
+        heading = next((block for block in blocks if block.kind == "heading"), None)
+        window.title(" ".join(span.text for span in heading.spans) if heading else topic)
+        window.geometry("680x600")
+        text = tk.Text(window, wrap="word", padx=14, pady=10, borderwidth=0, cursor="arrow")
+        bar = ttk.Scrollbar(window, command=text.yview)
+        text.configure(yscrollcommand=bar.set)
+        bar.pack(side="right", fill="y")
+        text.pack(side="left", fill="both", expand=True)
+        _render_help(text, blocks)
+        text.configure(state="disabled")
+        window.bind("<Escape>", lambda _event: window.destroy())
+        self.topic_windows[topic] = window
 
     # -- choices ------------------------------------------------------------
 

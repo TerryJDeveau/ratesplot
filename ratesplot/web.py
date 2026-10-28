@@ -165,6 +165,7 @@ from .frontend import (  # noqa: E402
     NATION_OPTIONS,
     REMEMBER_HELP,
     REMEMBER_LABEL,
+    HELP_KEY,
     TAB_TITLES,
     WHEEL_DELAY_MS,
     WHEEL_ZOOM_FACTOR,
@@ -172,7 +173,7 @@ from .frontend import (  # noqa: E402
     ChartGeometry,
     Choices,
     all_tick,
-    all_tick_offered,
+    all_tick_reason,
     bound_keys,
     bounds_in_other_units,
     choice_refusal,
@@ -184,6 +185,9 @@ from .frontend import (  # noqa: E402
     drawn_payloads,
     field_hints,
     field_problems,
+    greyed_line,
+    greyed_reasons,
+    help_text,
     idle_choices,
     idle_nation_keys,
     level_letters,
@@ -319,6 +323,7 @@ _TICKED = "ticked"       # a nation ticked by hand, whose tab is shown once its 
 _EXPORT = "export"       # the format last chosen under any chart, by its caption (batch 11.1)
 _EXPORT_MENU = "export:"  # + country key: the format menu under that nation's chart
 _IDLE = "idle"           # the options greyed out, judged once as the controls are laid out (frontend.idle_choices)
+_REASONS = "reasons"     # why each greyed control is greyed, by key, judged with _IDLE (frontend.greyed_reasons, batch 29.1)
 _AUTO_TICKER = "auto_ticker"  # the automatic refresh's Ticker for this visitor (batch 11.3)
 _AUTO_LAID_OUT = "auto_laid_out"  # True while its fragment runs as part of the whole page's run
 # The calendar's first day: the earliest date a chart shows (config.EARLIEST_DATE, batch 28.3).
@@ -1329,9 +1334,24 @@ def _unzoom() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _help(option: Option, extra: str = "") -> str:
-    """The option's help, as the window's tooltip, one paragraph per line (Markdown)."""
-    return "\n\n".join([*option_help_lines(option), *([extra] if extra else [])])
+def _help(option: Option, extra: str = "", key: str | None = None) -> str:
+    """The option's help, as the window's ⓘ panel: one paragraph per line (Markdown), then why it is greyed and More.
+
+    Batch 29.1 (decision 76): the "?" stays live while its control is
+    greyed (measured 2026-10-27), so its tip says why the control is greyed
+    now (``frontend.greyed_reasons``, judged as the controls are laid out),
+    and ends with a link to the option's topic where it has one, opened
+    alone in a new tab (``_show_help``). ``key`` names a nation's own control
+    ("us:max"), else the option's.
+    """
+    reason = st.session_state.get(_REASONS, {}).get(key or option.name, "")
+    more = f"[More]({_help_address(option.topic)})" if option.topic else ""
+    return "\n\n".join(line for line in (*option_help_lines(option), extra, greyed_line(reason), more) if line)
+
+
+def _help_address(topic: str) -> str:
+    """The address of topic ``topic``'s help view: this page's, with only ``?help=TOPIC`` (``frontend.HELP_KEY``)."""
+    return f"?{HELP_KEY}={topic}"
 
 
 def _flag_control(where, option: Option) -> None:
@@ -1429,7 +1449,7 @@ def _value_control(where, option: Option, key: str | None = None, label: str | N
         key=_VALUE + key,
         on_change=_field_typed,
         args=(key,),
-        help=_help(option, "Blank = default (shown in grey)."),
+        help=_help(option, "Blank = default (shown in grey).", key),
         placeholder=st.session_state.get(_HINTS, {}).get(key) or _PLACEHOLDERS.get(option.name, _DEFAULT_PLACEHOLDER),
         disabled=flag_off or option.name in _idle() or key in idle_nation_keys(*_snapshot()),
         width=width,
@@ -1601,7 +1621,7 @@ def _levels_control(where, option: Option, nation: Nation) -> None:
     chart. A row that wraps, as the nations' and the rates' (``_controls``;
     the window's rule, Terry, 2026-10-14, batch 15.2).
     """
-    where.markdown(f"**{option.label}**", help=_help(option, "None ticked = debt and interest in total."))
+    where.markdown(f"**{option.label}**", help=_help(option, "None ticked = debt and interest in total.", nation_choice(nation, option)))
     idle = option.name in _idle()  # greyed without debt or interest, as in the window
     row = where.container(horizontal=True, wrap=True)
     for letter, caption in nation.level_boxes:
@@ -1626,7 +1646,7 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     disabled = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
     disabled = disabled or option.name in _idle() or key in idle_nation_keys(*_snapshot())
     if option.turns_on is None or nation is not None:
-        where.markdown(f"**{option.label}**", help=_help(option))
+        where.markdown(f"**{option.label}**", help=_help(option, key=key))
     others = st.session_state.get(_CHOICE_OTHERS + key, [])
     rows = [row for row in choice_rows(option, "", nation)]
     if others:
@@ -1686,6 +1706,8 @@ def _controls() -> None:
     st.session_state[_HINTS] = _field_hints()
     _settle_all_ticks()  # before the "All" boxes are laid out, which fixes their state for this run
     st.session_state[_IDLE] = idle_choices(*_snapshot())
+    every = _snapshot()
+    st.session_state[_REASONS] = greyed_reasons([*every[0], *every[1]], *every)
     for key, title, members in control_blocks():
         if title:
             bar.subheader(title, divider="gray")
@@ -1793,6 +1815,7 @@ def _limit_control(where, nation: Nation, option: Option) -> None:
     """
     key = nation_choice(nation, option)
     payloads, flags = _snapshot()
+    unoffered = all_tick_reason(payloads, flags, key)  # "" while its "All" can be ticked (frontend.all_tick_offered)
     row = where.container(horizontal=True, vertical_alignment="bottom", gap="small")
     _value_control(row, option, key=key, width=_LIMIT_FIELD_PX)
     # Kept as wide as the widest symbol ("C$"), so the "All" boxes line up,
@@ -1808,13 +1831,14 @@ def _limit_control(where, nation: Nation, option: Option) -> None:
         key=_ALL + key,
         on_change=_all_changed,
         args=(key,),
-        disabled=not all_tick_offered(payloads, flags, key),
-        help=(
+        disabled=bool(unoffered),
+        help="\n\n".join(line for line in (
             f"This {option.label} for every nation's chart. Ticked, the value goes into every nation's field, and a value "
             "entered in any of them goes into the others; unticked, each keeps its own. Top and Bottom go with their "
             "currency (20t from the U.S. field as USD20t), each chart converting them at the rate of its end date. "
-            "Greyed while the field is blank or only one nation is ticked."
-        ),
+            "Greyed while the field is blank or only one nation is ticked.",
+            greyed_line(unoffered),  # why it is greyed now (batch 29.1)
+        ) if line),
     )
 
 
@@ -2104,9 +2128,47 @@ def _auto_refresh_tick(config: PlotConfig) -> None:
     st.caption(f"{note} Asked at {pd.Timestamp.now(tz=MARKET_TIMEZONE):%H:%M %Z}: no quote has changed since the last refresh.")
 
 
+# Streamlit's "?" beside a label made an ⓘ, as the window's (batch 29.1;
+# Terry, 2026-10-27: "If there isn't a simple way for streamlit to change the
+# label of its control from "?" to "ⓘ", then it's ok to leave it as "?"").
+# One style rule: Streamlit 1.64 draws the "?" as an SVG in a button labelled
+# "Help for …" (measured 2026-10-28), hidden here, the ⓘ shown in its place;
+# the tip of a button (Refresh) wraps the button itself and is left alone.
+# Never greyed (Terry: "It would not be greyed out when that control is
+# greyed out"): a greyed control's label colour, the text colour at 40 %,
+# reaches the ⓘ, which takes it back at full strength, in either theme.
+_INFO_ICON_STYLE = """<style>
+[data-testid="stTooltipIcon"] button[aria-label^="Help for"] svg { display: none; }
+[data-testid="stTooltipIcon"] button[aria-label^="Help for"]::after {
+  content: "ⓘ"; font-size: 1rem; line-height: 1; color: rgb(from currentColor r g b / 1);
+}
+</style>"""
+
+
+def _show_help(topic: str) -> None:
+    """The help view (batch 29.1): topic ``topic``'s text alone, in the tab a More link opened.
+
+    Its address holds only ``?help=TOPIC`` (``_help_address``): no chart is
+    drawn, no control laid out, and the remembered settings are neither read
+    nor written, so the visit the link came from is left as it was. The
+    topic's Markdown is shown as it is; a name no option gives is refused
+    (``frontend.help_text``), so the address cannot reach another file.
+    """
+    try:
+        text = help_text(topic)
+    except KeyError:
+        st.error(f"There is no help page named “{topic}”.")
+        return
+    st.markdown(text)
+
+
 def main() -> None:
     """Draw the page (Streamlit runs this from the top on every change of a control)."""
     st.set_page_config(page_title=PAGE_TITLE, page_icon="📈", layout="wide")
+    topic = st.query_params.get(HELP_KEY)
+    if topic is not None:
+        _show_help(topic)
+        return
     state = st.session_state
     if not state.get(_READY):
         started = _starting_choices()
@@ -2123,6 +2185,7 @@ def main() -> None:
     config, problems = _config_for(choices)
     if config is not None:
         config = for_screen(config, bool(state.get(_NARROW)))
+    st.html(_INFO_ICON_STYLE)
     _controls()
     _read_width()
     st.header(PAGE_TITLE)

@@ -78,11 +78,11 @@ from .options import (
     format_dollar_bound,
     group_title,
     field_default,
-    idle_aggregates,
-    idle_margins,
-    idle_options,
+    idle_aggregate_reasons,
+    idle_margin_reasons,
+    idle_option_reasons,
     is_percent_bound,
-    latest_idle,
+    latest_idle_reasons,
     margin_options,
     list_switch,
     nation_choice,
@@ -91,6 +91,7 @@ from .options import (
     options_of,
     per_nation,
     switch_of,
+    unticked,
 )
 
 # The start date written out before it became automatic (Terry, 2026-09-29):
@@ -569,16 +570,23 @@ def all_tick_offered(payloads: Mapping[str, str], flags: Mapping[str, bool], key
     Bottom in amounts are copied with their currency since batch 18.3
     (``limit_copies``); until then they took "All" only as percentages of GDP.
     """
+    return not all_tick_reason(payloads, flags, key, blanked)
+
+
+def all_tick_reason(payloads: Mapping[str, str], flags: Mapping[str, bool], key: str, blanked: Collection[str] = ()) -> str:
+    """Return why the "All" box beside ``key`` is greyed (``all_tick_offered``), a clause to follow "Greyed because"; "" while it is offered (batch 29.1)."""
     option = option_of(key)
     text = payloads.get(key, "").strip()
     if not (text or key in blanked):
-        return False
+        return f"the {option.label} box is blank"
     if text:
         try:
             option.parse(text)
         except ValueError:
-            return False
-    return nations_ticked(flags) >= 2 and option.name not in idle_controls(flags)
+            return f"the {option.label} box's text is not a value it takes"
+    if nations_ticked(flags) < 2:
+        return "only one nation is ticked"
+    return idle_control_reasons(flags).get(option.name, "")
 
 
 def limit_copies(updates: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
@@ -654,14 +662,23 @@ def idle_controls(flags: Mapping[str, bool]) -> frozenset[str]:
     axis's range. A blank flag is its default (every curve on, the rates
     off).
     """
-    idle = set(idle_options(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True)))
-    if flags.get("relative", False) and "relative" not in idle:
-        idle.add("gdp")
+    return frozenset(idle_control_reasons(flags))
+
+
+def idle_control_reasons(flags: Mapping[str, bool]) -> dict[str, str]:
+    """Return ``idle_controls``' names, each with why it is greyed, a clause to follow "Greyed because" (batch 29.1).
+
+    Each rule gives its reason where it greys, so that the reason the
+    window's ⓘ panel and the page's "?" tip give cannot part from the rule.
+    """
+    reasons = idle_option_reasons(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True))
+    if flags.get("relative", False) and "relative" not in reasons:
+        reasons["gdp"] = "under % of GDP, GDP is the divisor and is not drawn"
     if not flags.get("yield", True):
-        idle.add("yields")
+        reasons["yields"] = unticked("yield")
         if not any(flags.get(name, False) for name in _LEFT_AXIS_RATES):
-            idle |= {"min", "max"}
-    return frozenset(idle)
+            reasons |= dict.fromkeys(("min", "max"), "nothing is drawn on the yield axis: no yields, spreads, policy or mortgage rates")
+    return reasons
 
 
 # The switches of the curves of ``ratesplot.rates``, drawn on the yield axis
@@ -677,7 +694,12 @@ def idle_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> froz
     too, so they are judged on the texts a drawing takes
     (``options.latest_idle``).
     """
-    return idle_controls(flags) | latest_idle(_texts_in_effect(payloads, flags), flags)
+    return frozenset(idle_choice_reasons(payloads, flags))
+
+
+def idle_choice_reasons(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
+    """Return ``idle_choices``' names, each with why it is greyed; one greyed by both gives ``idle_control_reasons``' (batch 29.1)."""
+    return latest_idle_reasons(_texts_in_effect(payloads, flags), flags) | idle_control_reasons(flags)
 
 
 # Every option ``idle_controls`` and ``idle_choices`` can grey out: those idle
@@ -685,7 +707,7 @@ def idle_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> froz
 # and Max (batch 28.1); the latest values' (``options.latest_idle``); and a
 # nation's aggregate debts, by its key (``idle_nation_keys``).
 GREYABLE_OPTIONS = (
-    idle_options(False, False, False)
+    frozenset(idle_option_reasons(False, False, False))
     | {"gdp", "aggregate", "yields", "min", "max", "current"}
     | AUTO_REFRESH_OPTIONS
 )
@@ -697,7 +719,53 @@ def idle_nation_keys(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> 
     ``options.idle_margins`` (the prime rate's, the tracker's) and
     ``options.idle_aggregates`` (batch 10.4).
     """
-    return idle_margins(payloads, flags) | idle_aggregates(payloads, flags)
+    return frozenset(idle_nation_key_reasons(payloads, flags))
+
+
+def idle_nation_key_reasons(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
+    """Return ``idle_nation_keys``' keys, each with why it is greyed, a clause to follow "Greyed because" (batch 29.1)."""
+    return idle_margin_reasons(payloads, flags) | idle_aggregate_reasons(payloads, flags)
+
+
+def greyed_reason(key: str, payloads: Mapping[str, str], flags: Mapping[str, bool]) -> str:
+    """Return why the control ``key`` (an option's name, or a nation's own field: "us:max") is greyed now, or "" while it is not (batch 29.1).
+
+    The window's rule and the page's (``gui._update_dependent_controls``,
+    ``web._value_control``): what changes nothing on any chart
+    (``idle_choices``), a value whose box is unticked (the tolerance without
+    the regression segments), and a nation's field that changes nothing on
+    its chart (``idle_nation_keys``). Shown in the window's ⓘ panel and the
+    page's "?" tip as "Greyed because …" (``greyed_line``), so that the rule
+    that greys what has no effect explains itself.
+    """
+    return greyed_reasons((key,), payloads, flags).get(key, "")
+
+
+def greyed_reasons(keys: Collection[str], payloads: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
+    """Return ``greyed_reason`` for each of ``keys`` that is greyed, the rules judged once (the page asks for every control as it lays them out).
+
+    The "All" ticks (``ALL_TICKS``) are kept with the flags but name no
+    option; ``all_tick_reason`` gives theirs, so they are passed over here.
+    """
+    idle = idle_choice_reasons(payloads, flags)
+    nations = idle_nation_key_reasons(payloads, flags)
+    reasons: dict[str, str] = {}
+    for key in keys:
+        if key in ALL_TICKS:
+            continue
+        option = option_of(key)
+        if option.name in idle:
+            reasons[key] = idle[option.name]
+        elif option.turns_on is not None and not flags.get(option.turns_on, False):
+            reasons[key] = unticked(option.turns_on)
+        elif key in nations:
+            reasons[key] = nations[key]
+    return reasons
+
+
+def greyed_line(reason: str) -> str:
+    """The line a greyed control's help gains: "Greyed because “Bond yields” is unticked." ("" for no reason)."""
+    return f"Greyed because {reason}." if reason else ""
 
 
 # A number typed without the 0 before its point: ".3", "-.25", "+.5t".
@@ -988,6 +1056,113 @@ def option_help_lines(option: Option) -> tuple[str, str, str]:
         f"{option.label}: {' '.join(option.help.split())}",
         f"Command line: {option.usage}",
     )
+
+
+# ---------------------------------------------------------------------------
+# The long help (batch 29.1, decision 76)
+# ---------------------------------------------------------------------------
+
+# One Markdown file per topic an option names (``Option.topic``), kept in the
+# repository with the code it describes. The window's More opens it in a
+# window of its own (``help_blocks``); the page opens it alone in a new tab,
+# at its address with ``?help=TOPIC`` (``HELP_KEY``).
+HELP_DIR = Path(__file__).resolve().parent.parent / "docs" / "help"
+HELP_KEY = "help"
+
+
+def help_topics() -> dict[str, tuple[Option, ...]]:
+    """Return every topic the options name, each with the options that name it, in the table's order."""
+    topics: dict[str, list[Option]] = {}
+    for option in OPTIONS:
+        if option.topic:
+            topics.setdefault(option.topic, []).append(option)
+    return {topic: tuple(named) for topic, named in topics.items()}
+
+
+def help_text(topic: str) -> str:
+    """Return topic ``topic``'s Markdown; KeyError for a name no option gives (the page's address may hold anything)."""
+    if topic not in help_topics():
+        raise KeyError(topic)
+    return (HELP_DIR / f"{topic}.md").read_text(encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class HelpSpan:
+    """A piece of a help block's text: plain, bold, code, or a link to ``url``."""
+
+    text: str
+    style: str = ""  # "", "bold", "code" or "link"
+    url: str = ""
+
+
+@dataclass(frozen=True)
+class HelpBlock:
+    """A heading (``level`` 1 for "#"), a paragraph or a list item of a help topic, as its spans."""
+
+    kind: str  # "heading", "paragraph" or "item"
+    spans: tuple[HelpSpan, ...]
+    level: int = 0
+
+
+_HELP_HEADING = re.compile(r"(#{1,6})\s+(.*)")
+_HELP_ITEM = re.compile(r"[-*]\s+(.*)")
+_HELP_INLINE = re.compile(r"\*\*(?P<bold>.+?)\*\*|`(?P<code>[^`]+)`|\[(?P<link>[^\]]+)\]\((?P<url>[^)\s]+)\)")
+
+
+def help_blocks(markdown: str) -> list[HelpBlock]:
+    """Return a topic's Markdown as the window shows it: headings, paragraphs and list items, each in spans.
+
+    Tk shows no Markdown, so the window renders this much of it in a Text
+    widget (the plan's note to 29.1); the page shows the Markdown itself. A
+    blank line ends a paragraph or an item, whose lines are joined; "#" to
+    "######" start a heading, "- " or "* " an item; within a block,
+    **bold**, `code` and [text](url).
+    """
+    blocks: list[HelpBlock] = []
+    lines: list[str] = []
+    kind = "paragraph"
+
+    def finish() -> None:
+        if lines:
+            blocks.append(HelpBlock(kind, _help_spans(" ".join(lines))))
+            lines.clear()
+
+    for line in (raw.strip() for raw in markdown.splitlines()):
+        heading, item = _HELP_HEADING.fullmatch(line), _HELP_ITEM.fullmatch(line)
+        if not line:
+            finish()
+            kind = "paragraph"
+        elif heading:
+            finish()
+            blocks.append(HelpBlock("heading", _help_spans(heading.group(2)), len(heading.group(1))))
+            kind = "paragraph"
+        elif item:
+            finish()
+            kind = "item"
+            lines.append(item.group(1))
+        else:
+            lines.append(line)
+    finish()
+    return blocks
+
+
+def _help_spans(text: str) -> tuple[HelpSpan, ...]:
+    """``text``'s plain, bold, code and link pieces, in order."""
+    spans: list[HelpSpan] = []
+    place = 0
+    for found in _HELP_INLINE.finditer(text):
+        if found.start() > place:
+            spans.append(HelpSpan(text[place:found.start()]))
+        if found["bold"] is not None:
+            spans.append(HelpSpan(found["bold"], "bold"))
+        elif found["code"] is not None:
+            spans.append(HelpSpan(found["code"], "code"))
+        else:
+            spans.append(HelpSpan(found["link"], "link", found["url"]))
+        place = found.end()
+    if place < len(text):
+        spans.append(HelpSpan(text[place:]))
+    return tuple(spans)
 
 
 def png_bytes(figure: Figure) -> bytes:

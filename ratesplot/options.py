@@ -78,6 +78,7 @@ from .config import (
     NATIONS,
     PER_NATION_FIELDS,
     POLICY_TERMS,
+    QUOTE_MAX_AGE_DAYS,
     YIELD_TERMS,
     Nation,
     PlotConfig,
@@ -698,6 +699,11 @@ class Option:
     # mortgages ticked in one block, the regression segments in a block of
     # their own under the measure, the latest data with the line labels.
     panel: str | None = None
+    # Its long help (batch 29.1, decision 76): a topic, whose text is
+    # docs/help/TOPIC.md in the repository, opened by More beside the short
+    # text (``help``) in the window's ⓘ panel and the page's "?" tip. ""
+    # where there is nothing more to say. Several options may share a topic.
+    topic: str = ""
 
 
 # The tick boxes of the list options (Option.choices). Yield terms: the five
@@ -947,6 +953,7 @@ OPTIONS: tuple[Option, ...] = (
         "relative", Kind.SWITCH, ("relative",), "units", "--R / -r / --relative",
         "debt and interest as % of TTM GDP (log\npercent axis); GDP itself is not drawn;\nno effect without debt or interest",
         names=("relative",), flag="--R", flag_help="debt and interest as a percentage of GDP", label="As % of GDP",
+        topic="percent-of-gdp",
     ),
     Option(
         "per-capita", Kind.SWITCH, ("per_capita",), "units", "--P / -p / --per-capita",
@@ -1255,8 +1262,13 @@ def idle_margins(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> froz
     and the written command line leaves it out: written, ``--cdn:prime:0.5``
     would add the prime term to Canada's chart (``config_from_choices``).
     """
+    return frozenset(idle_margin_reasons(payloads, flags))
+
+
+def idle_margin_reasons(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
+    """Return ``idle_margins``' keys, each with why it is idle, a clause to follow "Greyed because" (batch 29.1)."""
     terms = by_name("mortgage-terms")
-    idle = set()
+    reasons: dict[str, str] = {}
     for nation in NATIONS:
         text = payloads.get(nation_choice(nation, terms), "").strip() or payloads.get(terms.name, "").strip()
         try:
@@ -1264,9 +1276,11 @@ def idle_margins(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> froz
         except ValueError:
             chosen = ()
         for term, margin in margin_options().items():
-            if not flags.get(terms.turns_on, False) or term not in nation.view("mortgage_terms", chosen):
-                idle.add(nation_choice(nation, margin))
-    return frozenset(idle)
+            if not flags.get(terms.turns_on, False):
+                reasons[nation_choice(nation, margin)] = unticked(terms.turns_on)
+            elif term not in nation.view("mortgage_terms", chosen):
+                reasons[nation_choice(nation, margin)] = f"its term, “{term}”, is not among the {nation.adjective} chart's mortgage terms"
+    return reasons
 
 
 def idle_aggregates(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
@@ -1280,6 +1294,11 @@ def idle_aggregates(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> f
     their ticks, and the written command line leaves the list out
     (batch 10.4), as for a margin (``idle_margins``).
     """
+    return frozenset(idle_aggregate_reasons(payloads, flags))
+
+
+def idle_aggregate_reasons(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
+    """Return ``idle_aggregates``' keys, each with why it is idle, a clause to follow "Greyed because" (batch 29.1)."""
     option = by_name("aggregate")
 
     def has_levels(nation: Nation) -> bool:
@@ -1293,11 +1312,15 @@ def idle_aggregates(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> f
                     return True
         return False
 
-    return frozenset(
-        nation_choice(nation, option)
-        for nation in NATIONS
-        if not flags.get("debt", True) or has_levels(nation) or len(nation.debt_aggregates) < 2
-    )
+    reasons: dict[str, str] = {}
+    for nation in NATIONS:
+        if not flags.get("debt", True):
+            reasons[nation_choice(nation, option)] = unticked("debt")
+        elif has_levels(nation):
+            reasons[nation_choice(nation, option)] = "levels of government are ticked, and their lines replace the aggregate debts"
+        elif len(nation.debt_aggregates) < 2:
+            reasons[nation_choice(nation, option)] = f"the {nation.adjective} chart has one aggregate debt only"
+    return reasons
 
 
 def _nation_settings(payloads: Mapping[str, str], values: Mapping[str, object]) -> tuple:
@@ -1500,12 +1523,25 @@ def idle_options(debt: bool, gdp: bool, interest: bool) -> frozenset[str]:
     Each was checked on 2026-10-13 to draw a byte-identical chart when idle,
     -r excepted: it hid GDP, which ``config_from_choices`` now stops.
     """
-    idle: set[str] = set()
+    return frozenset(idle_option_reasons(debt, gdp, interest))
+
+
+def idle_option_reasons(debt: bool, gdp: bool, interest: bool) -> dict[str, str]:
+    """Return ``idle_options``' names, each with why it is idle, a clause to follow "Greyed because" (batch 29.1)."""
+    reasons: dict[str, str] = {}
     if not (debt or interest):
-        idle |= {"relative", "debt-parts", "interest-parts"}
+        reasons |= dict.fromkeys(("relative", "debt-parts", "interest-parts"), "it acts on debt and interest, and neither is ticked")
     if not (debt or gdp or interest):
-        idle |= {"per-capita", "regression", "regression-tolerance", "top", "bottom", "projections"}
-    return frozenset(idle)
+        reasons |= dict.fromkeys(
+            ("per-capita", "regression", "regression-tolerance", "top", "bottom", "projections"),
+            "it acts on the right axis's curves, and none of debt, GDP and interest is ticked",
+        )
+    return reasons
+
+
+def unticked(name: str) -> str:
+    """Why a control is idle while the box of option ``name`` is unticked: "“Mortgage rates” is unticked" (batch 29.1)."""
+    return f"“{by_name(name).label}” is unticked"
 
 
 # The automatic refresh's controls (batch 11.3), greyed together where it can
@@ -1536,19 +1572,27 @@ def latest_idle(texts: Mapping[str, str], flags: Mapping[str, bool]) -> frozense
     ``texts`` as for ``auto_refresh_idle``; none where the choices draw
     nothing.
     """
+    return frozenset(latest_idle_reasons(texts, flags))
+
+
+def latest_idle_reasons(texts: Mapping[str, str], flags: Mapping[str, bool]) -> dict[str, str]:
+    """Return ``latest_idle``'s names, each with why it is idle, a clause to follow "Greyed because" (batch 29.1)."""
     own = {key: text.strip() for key, text in texts.items() if key not in AUTO_REFRESH_OPTIONS and text.strip()}
     try:
         config = config_from_choices(own, flags)
     except ValueError:
-        return frozenset()
-    idle: set[str] = set()
+        return {}
+    reasons: dict[str, str] = {}
     if config.refresh_brings_nothing is not None:
-        idle |= AUTO_REFRESH_OPTIONS
+        reasons |= dict.fromkeys(AUTO_REFRESH_OPTIONS, f"a refresh can bring nothing new: {config.refresh_brings_nothing}")
     if config.current_brings_nothing is not None:
-        idle.add("current")
+        reasons["current"] = f"the quotes can add nothing: {config.current_brings_nothing}"
     if not config.quotes_can_reach:
-        idle.add("projections")
-    return frozenset(idle)
+        reasons["projections"] = (
+            f"the End date, {config.end:%Y-%m-%d}, is more than {QUOTE_MAX_AGE_DAYS} days before today: "
+            "a chart ending then is not projected to today"
+        )
+    return reasons
 
 
 def choices_from_config(config: PlotConfig) -> tuple[dict[str, str], dict[str, bool]]:
