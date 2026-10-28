@@ -102,6 +102,19 @@ AXIS_LABEL_PAD_PT = 8
 # keeps them legible. At the floor the title may still be too wide, so it is
 # also shrunk to fit on its own (see ``legend.finish_legend_and_title``).
 MIN_FONT_SCALE = 0.5
+# The web page on a narrow screen (batch 28.4; Terry, 2026-10-28, chose a
+# higher floor for the font scale, for the page alone): below this width, in
+# the browser's pixels, the page draws on PHONE_CANVAS_PX unless a size is
+# typed, and never with text smaller than PHONE_FONT_SCALE of its default
+# size (``PlotConfig.font_floor``). Measured 2026-10-28 with the chart shown
+# 370 px wide, as a phone shows it: at the floor of 0.5 the legend and ticks
+# could not be read; at 0.8 they could, and a busy chart's legend (the UK's
+# rates) still left its curves in view; at 1.0 it covered much of them. The
+# smallest canvas allowed (MIN_CANVAS_PX each side) is square, which suits a
+# phone held upright. The command line and the window are unchanged.
+PHONE_WIDTH_PX = 700
+PHONE_CANVAS_PX = (800, 800)
+PHONE_FONT_SCALE = 0.8
 
 # Regression segments (--reg, ratesplot.regression): how far a piece's line
 # may lie from any observation it covers, as a percentage of the right axis's
@@ -1324,6 +1337,9 @@ class PlotConfig:
     end: pd.Timestamp = field(default_factory=_today)
     width_px: int = DEFAULT_CANVAS_PX[0]
     height_px: int = DEFAULT_CANVAS_PX[1]
+    # The least font scale (``font_scale``): MIN_FONT_SCALE but on the web
+    # page on a narrow screen (batch 28.4); no option sets it.
+    font_floor: float = MIN_FONT_SCALE
     yield_ymin: float | None = None
     yield_ymax: float | None = None
     macro_bottom: float | None = None
@@ -1524,11 +1540,12 @@ class PlotConfig:
         Otherwise it is the smaller of the width and height ratios to the
         default. That way a wide, short canvas is scaled for the height it
         lacks, and a tall, narrow one for the width. It never goes below
-        ``MIN_FONT_SCALE``. Canvases larger than the default scale up, so text
-        does not shrink to a speck on a 4096 px render.
+        ``font_floor`` (``MIN_FONT_SCALE``, or ``PHONE_FONT_SCALE`` on the web
+        page on a narrow screen). Canvases larger than the default scale up,
+        so text does not shrink to a speck on a 4096 px render.
         """
         ratio = min(self.width_px / DEFAULT_CANVAS_PX[0], self.height_px / DEFAULT_CANVAS_PX[1])
-        return max(MIN_FONT_SCALE, ratio)
+        return max(self.font_floor, ratio)
 
     @property
     def line_scale(self) -> float:

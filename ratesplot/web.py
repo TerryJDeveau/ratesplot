@@ -145,11 +145,15 @@ from . import export, hover, http  # noqa: E402
 from .cli import sort_tokens  # noqa: E402
 from .config import (  # noqa: E402
     DEFAULT_AUTO_REFRESH_MINUTES,
+    DEFAULT_CANVAS_PX,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DOWNLOAD_MAX_AGE_SECONDS,
     EARLIEST_DATE,
     MARKET_TIMEZONE,
     NATIONS,
+    PHONE_CANVAS_PX,
+    PHONE_FONT_SCALE,
+    PHONE_WIDTH_PX,
     Nation,
     PlotConfig,
 )
@@ -298,6 +302,8 @@ _STARTED_FROM = "started_from"  # "address", "remembered" or "defaults": what th
 _REMEMBER = "remember"   # the "Remember my settings" box (batch 24.6)
 _READER = "reader"       # the component that reads the cookie back (batch 24.6)
 _HEARD = "heard"         # the cookie's value as its script sent it; absent until it has answered
+_WIDTH = "width"         # the component that says whether the screen is narrow (batch 28.4)
+_NARROW = "narrow"       # True below PHONE_WIDTH_PX; absent until the page's script has said
 _NOTICE = "notice"   # a message from a control's callback, shown once
 _DRAWING = "drawing"  # the last Drawing
 _FORCE = "force_redraw"
@@ -846,6 +852,54 @@ export default function (component) {
   setTriggerValue("line", value);
 }
 """
+
+
+# The screen's width (batch 28.4): a component with nothing to show, whose
+# script says whether the browser's window is narrower than the limit, at the
+# visit's start and when it crosses it (a phone turned). It speaks only when
+# its answer differs from the page's, which the page hands it, so its answer
+# does not run the page again and again.
+_WIDTH_JS = """
+export default function (component) {
+  const { data, setTriggerValue } = component;
+  const tell = () => {
+    const narrow = window.innerWidth < data.limit;
+    if (narrow !== data.narrow) setTriggerValue("narrow", narrow);
+  };
+  tell();
+  window.addEventListener("resize", tell);
+  return () => window.removeEventListener("resize", tell);
+}
+"""
+
+
+def _width_told() -> None:
+    """The page's script has said whether the screen is narrow (``_WIDTH_JS``)."""
+    st.session_state[_NARROW] = bool((st.session_state.get(_WIDTH) or {}).get("narrow"))
+
+
+def _read_width() -> None:
+    """Lay out the width's component; its answer, when it differs, runs the page again (``_width_told``)."""
+    width = st.components.v2.component("ratesplot_width", js=_WIDTH_JS)
+    width(key=_WIDTH, data={"narrow": st.session_state.get(_NARROW), "limit": PHONE_WIDTH_PX}, on_narrow_change=_width_told)
+
+
+def for_screen(config: PlotConfig, narrow: bool) -> PlotConfig:
+    """Return ``config`` as the page draws it on a narrow screen (batch 28.4), else as it is.
+
+    Terry, 2026-10-28: a higher floor for the font scale, for the page alone.
+    Below ``PHONE_WIDTH_PX`` the text is never smaller than
+    ``PHONE_FONT_SCALE`` of its default size, and the canvas is
+    ``PHONE_CANVAS_PX`` unless a size other than the default is given (the
+    size field holds the default, 2048x1536, until one is). The chart's command line,
+    its link and the address are the controls' as before, so they draw the
+    full-size chart; the line under the chart says so.
+    """
+    if not narrow:
+        return config
+    default = (config.width_px, config.height_px) == DEFAULT_CANVAS_PX
+    size = {"width_px": PHONE_CANVAS_PX[0], "height_px": PHONE_CANVAS_PX[1]} if default else {}
+    return replace(config, font_floor=PHONE_FONT_SCALE, **size)
 
 
 def remembered_line(value: object) -> str:
@@ -1982,7 +2036,16 @@ def _show(drawing: Drawing, config: PlotConfig | None = None) -> None:
                 _export_row(drawing, key)
         # The chart's link in a box with Streamlit's copy button (batch 28.5):
         # the address bar is out of reach on a phone, and bare after a Reset.
-        st.caption(f"Drawn at {drawing.finished:%Y-%m-%d %H:%M %Z} in {drawing.seconds:.1f} s. This chart's link, to share it:")
+        narrow = drawing.drawn is not None and drawing.drawn.font_floor > PlotConfig().font_floor
+        st.caption(
+            f"Drawn at {drawing.finished:%Y-%m-%d %H:%M %Z} in {drawing.seconds:.1f} s"
+            + (
+                f", for a narrow screen: {drawing.drawn.width_px} x {drawing.drawn.height_px} px and larger text, as"
+                " the download gives it; the link and the command line draw the full-size chart"
+                if narrow else ""
+            )
+            + ". This chart's link, to share it:"
+        )
         st.code(chart_link(st.context.url, drawing.tokens), language=None, wrap_lines=True)
         _auto_refresh(config)
     st.markdown("**The same chart from the command line**")
@@ -2058,7 +2121,10 @@ def main() -> None:
     # Judged before the controls are laid out, so a wrong field's label is red (_WRONG).
     choices = _snapshot()
     config, problems = _config_for(choices)
+    if config is not None:
+        config = for_screen(config, bool(state.get(_NARROW)))
     _controls()
+    _read_width()
     st.header(PAGE_TITLE)
     st.caption(PAGE_SUMMARY)
     if state.get(_ADDRESS_PROBLEMS):
