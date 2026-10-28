@@ -103,9 +103,20 @@ carry on. In the window and on the page its box and minutes sit with the quotes'
 says under the charts how often it refreshes. On the command line it draws the plain windows again
 while they are open, or with `--save` writes the files again until Ctrl-C. Every file `--save`
 writes goes first to a temporary file beside it, swapped in once closed, so a viewer never reads a
-half-written file and none is held open between refreshes; a file another program holds (a
-workbook open in Excel) is written as `rates_1.xlsx` instead, and that name kept from then on, a
-numbered name already there skipped.
+half-written file and none is held open between refreshes.
+
+Every way of saving follows one rule: `--save` (refreshed or not), the window's Export chart and
+its Save log file. A file the same run or window wrote before is replaced without a word. A file
+already there that it did not write, or one another program holds (a workbook open in Excel), is
+left as it is, and the new one written under the next free name, an underscore and a number:
+`rates.xlsx` gives `rates_1.xlsx`, and a name already ending in an underscore and a number counts
+on from it (`rates_3.xlsx` gives `rates_4.xlsx`, `rates_007.xlsx` `rates_008.xlsx`), except a number
+of four, six or eight digits, which may be a year, a time or a date (`rates_2026.xlsx` gives
+`rates_2026_1.xlsx`, `rates_20261028.xlsx` `rates_20261028_1.xlsx`); a count that would reach one
+of those lengths gets a leading zero (`rates_999.xlsx` gives `rates_01000.xlsx`). The program says
+which name it wrote, and a refreshed `--save` keeps that name from then on. The window's save dialogs offer a name no
+file has; a file picked there, which Windows asks before replacing, is replaced. The page's Export
+chart is the browser's download, which names the file itself.
 
 When a source does not answer (it is down, or sends a web page such as its maintenance notice
 in place of its data), the chart is drawn from the last good copy of that download, which is
