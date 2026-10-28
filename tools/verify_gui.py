@@ -734,9 +734,9 @@ def check_export(check: Check) -> None:
     folder.mkdir(exist_ok=True)
     with window(f"-s:2015 {END}") as w:
         app = w.app
-        button = app._bar_buttons[1]
-        check("the pinned bar's button: Export chart… (Ctrl+S)", str(button.cget("text")) == "Export chart… (Ctrl+S)",
-              button.cget("text"))
+        button = app.export_button
+        check("the pinned bar's button: Export chart… (Ctrl+S)", str(button.cget("text")) == "Export chart… (Ctrl+S)"
+              and button in app._bar_buttons, button.cget("text"))
         asked: dict = {}
         answers: list[tuple[str, str]] = []  # (the type to choose, the name to give), one per dialog
 
@@ -1651,7 +1651,7 @@ def check_wheel(check: Check) -> None:
     with window(f"-c -s:2001 {END}", size=placed("1728x640")) as w:
         app, key = w.app, "cdn"
         column = app._scroll
-        column_canvas = column.master.grid_slaves(row=0, column=0)[0]
+        column_canvas = next(slave for slave in column.master.grid_slaves() if isinstance(slave, tk.Canvas))  # under the top bar since 31.2
         check("a short window: the column's scroll bar shown", column.winfo_ismapped())
         # The middle of the column's visible part: whichever control is there.
         top = column.get()
@@ -2147,6 +2147,31 @@ def check_batch31(check: Check) -> None:
 
     with window(f"-c {END}") as w:
         app, root = w.app, w.root
+        w.pump(20)
+        top, refresh, reset, box = app.version_label.master, app.refresh_button, app.reset_button, app.remember_box
+        first_block = app.flows[0][1].frame
+
+        def bottom(widget) -> int:
+            return widget.winfo_rooty() + widget.winfo_height()
+
+        check("31.2: under the version, Refresh and Reset side by side, as wide as each other, the box under them",
+              refresh.winfo_rooty() == reset.winfo_rooty() >= bottom(app.version_label) and refresh.winfo_rootx() < reset.winfo_rootx()
+              and refresh.winfo_width() == reset.winfo_width() and box.winfo_rooty() >= bottom(refresh),
+              [(widget.winfo_rootx(), widget.winfo_rooty(), widget.winfo_width()) for widget in (refresh, reset, box)])
+        check("above the controls, in a bar of the column that does not scroll", top.master is app.column
+              and first_block.winfo_rooty() >= bottom(box), (str(top.master), first_block.winfo_rooty(), bottom(box)))
+        check("Export chart and Save log file left in the bar under the controls, Refresh no longer there",
+              [str(button.cget("text")) for button in app._bar_buttons] == ["Export chart… (Ctrl+S)", "Save log file…"]
+              and refresh not in app._bar_buttons and app._bar.master.master is app.column)
+        narrowest = int(app.paned.panecget(app.column, "minsize"))
+        app.paned.sash_place(0, narrowest, 0)
+        w.pump(30)
+        right = app.column.winfo_rootx() + app.column.winfo_width()
+        buttons = [refresh, reset, *app._bar_buttons]
+        check(f"at the narrowest width ({narrowest} px): all four buttons whole and inside the column",
+              app._current_column_width() == narrowest
+              and all(b.winfo_width() >= b.winfo_reqwidth() and b.winfo_rootx() + b.winfo_width() <= right for b in buttons),
+              [(str(b.cget("text"))[:7], b.winfo_reqwidth(), b.winfo_width()) for b in buttons])
         found = [widget for widget in all_widgets(root) if widget.winfo_class() in BUTTON_CLASSES]
         missing = [widget.cget("text") or str(widget) for widget in found if widget not in gui._Tooltip.tips]
         check(f"every button and box in the window has a tip ({len(found)}, every nation's panel among them)",

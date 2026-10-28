@@ -35,9 +35,11 @@ Controls
     limit box its unit ("%", the nation's currency) and an "All" tick that
     copies its value to every nation's box and keeps them alike while
     ticked (batch 18, ``frontend.settled_all_ticks``). The controls scroll when the
-    window is too short for them; Refresh, Export chart and Save log file sit in
-    a bar under them that does not, so they are always in sight (the log's
-    button under the other two when the column is narrow). A handle between the
+    window is too short for them. Above them, under the version, Refresh,
+    Reset and "Remember my settings", where the page has them (batch 31.2);
+    under them Export chart and Save log file (the log's button under the
+    other when the column is narrow). Neither bar scrolls, so what is in them
+    is always in sight. A handle between the
     controls and the charts sets the column's width, remembered while
     "Remember my settings" is ticked (batch 31.1); each block lays its
     controls out in as many columns as fit (``_Flow``): two at the default
@@ -1064,12 +1066,12 @@ class RatesPlotApp:
             opaqueresize=True,
         )
         self.paned.grid(row=0, column=0, sticky="nsew")
-        self.column, panel, pinned = self._build_control_column(self.paned)
+        self.column, top, panel, pinned = self._build_control_column(self.paned)
         # The version, small and grey at the column's top left (batch 11.7).
-        self.version_label = ttk.Label(panel, text=version_text(), foreground=_VERSION_FOREGROUND, font=("TkDefaultFont", 8))
+        self.version_label = ttk.Label(top, text=version_text(), foreground=_VERSION_FOREGROUND, font=("TkDefaultFont", 8))
         self.version_label.pack(anchor="w", pady=(0, 2))
         self._build_option_controls(panel)
-        self._build_actions(panel, pinned)
+        self._build_actions(top, panel, pinned)
         self._build_log(panel)
 
         charts = ttk.Frame(self.paned, padding=(2, 8, 8, 8))
@@ -1099,8 +1101,8 @@ class RatesPlotApp:
         self.root.bind("<Control-s>", lambda _event: self._export_chart())
         self.root.bind("<Alt-Left>", lambda _event: self._back())
 
-    def _build_control_column(self, master: tk.Widget) -> tuple[ttk.Frame, ttk.Frame, ttk.Frame]:
-        """Return the column, and the frames the controls go in: a part that scrolls when the window is too short, and a bar below it.
+    def _build_control_column(self, master: tk.Widget) -> tuple[ttk.Frame, ttk.Frame, ttk.Frame, ttk.Frame]:
+        """Return the column, and the frames the controls go in: a part that scrolls when the window is too short, and a bar above and below it.
 
         On a laptop screen (a 972 px window) the controls filled the column
         exactly, with the log out of sight, and one more row would have hidden
@@ -1109,23 +1111,29 @@ class RatesPlotApp:
         frame is stretched to the window and the log takes the rest, as
         before; when it is shorter, a scroll bar appears, and the mouse wheel
         scrolls the column while the pointer is over it (over the log, the log).
-        The bar under it does not scroll: Refresh and Save go there, so they
-        are always in sight however many controls there are (Terry,
-        2026-10-06; batch 1 added a panel, and the buttons fell below the
-        fold at 1728x972); Save log file joined them in batch 15. The
+        The bars above and under it do not scroll, so what is in them is
+        always in sight however many controls there are (Terry, 2026-10-06;
+        batch 1 added a panel, and the buttons fell below the fold at
+        1728x972). Above: the version, then Refresh, Reset and "Remember my
+        settings", where the page has them, first in its sidebar (batch 31.2;
+        Terry, 2026-10-28: "They should be in the same place. I think the web
+        version has them in the better place"). Under: Export chart and Save
+        log file (batch 15; Refresh was there too until batch 31.2). The
         column's width is the handle's (batch 7): the controls' frame takes
         the canvas's width, and each block lays its controls out to fit it
         (``_Flow``).
         """
         outer = ttk.Frame(master)
-        outer.rowconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=1)
         outer.columnconfigure(0, weight=1)
+        top = ttk.Frame(outer, padding=(_PANEL_PAD_PX, _PANEL_PAD_PX, _PANEL_PAD_PX, 2))
+        top.grid(row=0, column=0, columnspan=2, sticky="ew")
         pinned = ttk.Frame(outer, padding=(8, 4, 8, 8))
-        pinned.grid(row=1, column=0, columnspan=2, sticky="ew")
+        pinned.grid(row=2, column=0, columnspan=2, sticky="ew")
         background = ttk.Style(self.root).lookup("TFrame", "background") or None
         # width=1: the canvas asks for no width of its own; the handle sets it.
         canvas = tk.Canvas(outer, highlightthickness=0, borderwidth=0, background=background, width=1)
-        canvas.grid(row=0, column=0, sticky="nsew")
+        canvas.grid(row=1, column=0, sticky="nsew")
         scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scroll.set)
         panel = ttk.Frame(canvas, padding=_PANEL_PAD_PX)
@@ -1137,7 +1145,7 @@ class RatesPlotApp:
             canvas.configure(scrollregion=(0, 0, width, height))
             canvas.itemconfigure(window, width=width, height=height)
             if needed > canvas.winfo_height():
-                scroll.grid(row=0, column=1, sticky="ns")
+                scroll.grid(row=1, column=1, sticky="ns")
             else:
                 scroll.grid_remove()
                 canvas.yview_moveto(0)
@@ -1163,7 +1171,7 @@ class RatesPlotApp:
         panel.bind("<Configure>", fit)
         self.root.bind_all("<MouseWheel>", wheel, add="+")
         self._scroll = scroll
-        return outer, panel, pinned
+        return outer, top, panel, pinned
 
     def _build_option_controls(self, panel: ttk.Frame) -> None:
         """One frame per block of the column (``frontend.control_blocks``), one control per GUI option, all from the table.
@@ -1444,8 +1452,9 @@ class RatesPlotApp:
         on 2026-10-08 (the nations, the four rates, Start and End, the size
         with its lock, the measure: ``_TWO_COLUMN_BLOCKS``), and never
         narrower than the narrowest. The narrowest is what every block needs
-        in one column, the Preview panel and the pinned bar in two rows; the
-        handle stops there, and the charts keep at least ``_MIN_CHARTS_PX``.
+        in one column, the Preview panel, the bar above the controls and the
+        pinned bar in two rows; the handle stops there, and the charts keep
+        at least ``_MIN_CHARTS_PX``.
         A remembered width outside those bounds (another screen) is not used.
         """
         # The Preview's note at its narrowest wrap: it widens with the column
@@ -1456,7 +1465,7 @@ class RatesPlotApp:
         one = [flow.width_for(1) + _block_overhead(flow.frame) for _key, flow in self.flows]
         two = [flow.width_for(2) + _block_overhead(flow.frame) for key, flow in self.flows if key in _TWO_COLUMN_BLOCKS]
         bar = self._pinned.winfo_reqwidth() - self._bar.winfo_reqwidth() + self._bar_width(2)  # its padding, and two rows
-        narrowest = max(max(one) + around, self._preview.winfo_reqwidth() + around, bar)
+        narrowest = max(max(one) + around, self._preview.winfo_reqwidth() + around, bar, self._top.winfo_reqwidth())
         default = max([narrowest, *(width + around for width in two)])
         widest = self.root.winfo_screenwidth() - _MIN_CHARTS_PX
         width = remembered if isinstance(remembered, int) and narrowest <= remembered <= widest else default
@@ -1469,8 +1478,8 @@ class RatesPlotApp:
             self._column_width = self.paned.sash_coord(0)[0]
         return self._column_width
 
-    def _build_actions(self, panel: ttk.Frame, pinned: ttk.Frame) -> None:
-        """The Preview panel and the Reset button in the column; Refresh, Export chart and Save log file in the ``pinned`` bar."""
+    def _build_actions(self, top: ttk.Frame, panel: ttk.Frame, pinned: ttk.Frame) -> None:
+        """Refresh, Reset and "Remember my settings" in the ``top`` bar; the Preview panel in the column; Export chart and Save log file in the ``pinned`` bar."""
         preview = ttk.LabelFrame(panel, text="Preview", padding=(8, 4))
         preview.pack(fill="x", pady=(0, 6))
         self._preview, self._pinned = preview, pinned
@@ -1491,56 +1500,61 @@ class RatesPlotApp:
         preview.bind("<Configure>", lambda event: hint.configure(wraplength=max(_NOTE_WRAP_PX, event.width - 24)), add="+")
         self._zoom_note = hint
 
-        # The pinned bar: Refresh, Export chart (Save PNG until batch 11.1)
-        # and Save log file (Terry, 2026-10-14, batch 15.3: the third button
-        # beside the other two). In one row when the column is wide enough
-        # (at the default width), else the log's button under the other two
-        # (``_arrange_bar``): the bar takes two rows, as the blocks do, rather
-        # than making the column's narrowest width larger.
+        # Above the controls, under the version, as first in the page's
+        # sidebar (batch 31.2): Refresh and Reset side by side, as wide as
+        # each other, and "Remember my settings" under them.
+        self._top = top
+        buttons = ttk.Frame(top)
+        buttons.pack(fill="x")
+        buttons.columnconfigure((0, 1), weight=1, uniform="buttons")
+        self.refresh_button = ttk.Button(buttons, text="Refresh (F5)", command=self._refresh)
+        self.refresh_button.grid(row=0, column=0, sticky="ew", padx=1, pady=1)
+        _Tooltip(self.refresh_button, REFRESH_HELP)
+        self.reset_button = ttk.Button(buttons, text="Reset to defaults", command=self._reset)
+        self.reset_button.grid(row=0, column=1, sticky="ew", padx=1, pady=1)
+        _Tooltip(self.reset_button, RESET_HELP)
+        self.remember_box = ttk.Checkbutton(buttons, text=REMEMBER_LABEL, variable=self.remember)
+        self.remember_box.grid(row=1, column=0, columnspan=2, sticky="w", padx=1, pady=(2, 0))
+        _Tooltip(self.remember_box, _REMEMBER_TIP)
+
+        # The pinned bar under the controls: Export chart (Save PNG until
+        # batch 11.1) and Save log file (Terry, 2026-10-14, batch 15.3), with
+        # Refresh until batch 31.2. In one row when the column is wide enough,
+        # else the log's button under the other (``_arrange_bar``): the bar
+        # takes two rows, as the blocks do, rather than making the column's
+        # narrowest width larger.
         self._bar = ttk.Frame(pinned)
         self._bar.pack(fill="x")
         self._bar_buttons = []
         for text, command, tip in (
-            ("Refresh (F5)", self._refresh, REFRESH_HELP),
             (f"{EXPORT_LABEL}… (Ctrl+S)", self._export_chart, EXPORT_HELP),
             ("Save log file…", self._save_log, _SAVE_LOG_TIP),
         ):
             self._bar_buttons.append(ttk.Button(self._bar, text=text, command=command))
             _Tooltip(self._bar_buttons[-1], tip)
+        self.export_button = self._bar_buttons[0]
         self._bar_rows = 0
         self._arrange_bar(1)
         self._bar.bind("<Configure>", lambda event: self._arrange_bar(1 if event.width >= self._bar_width(1) else 2), add="+")
 
-        buttons = ttk.Frame(panel)
-        buttons.pack(fill="x", pady=(0, 6))
-        self.reset_button = ttk.Button(buttons, text="Reset to defaults", command=self._reset)
-        self.reset_button.grid(row=0, column=0, sticky="ew", padx=1, pady=1)
-        _Tooltip(self.reset_button, RESET_HELP)
-        # Under Reset rather than beside it, so the column's narrowest width is unchanged.
-        self.remember_box = ttk.Checkbutton(buttons, text=REMEMBER_LABEL, variable=self.remember)
-        self.remember_box.grid(row=1, column=0, sticky="w", padx=1, pady=(2, 0))
-        _Tooltip(self.remember_box, _REMEMBER_TIP)
-        buttons.columnconfigure(0, weight=1)
-
     def _bar_width(self, rows: int) -> int:
-        """The width the pinned bar's buttons need in one row, or in two (the log's button under the other two)."""
+        """The width the pinned bar's buttons need in one row, or in two (the log's button under the other)."""
         widths = [button.winfo_reqwidth() + 2 for button in self._bar_buttons]  # each with its padx of 1 a side
-        return sum(widths) if rows == 1 else max(widths[0] + widths[1], widths[2])
+        return sum(widths) if rows == 1 else max(widths)
 
     def _arrange_bar(self, rows: int) -> None:
-        """Put the pinned bar's buttons in one row, or the log's button under the other two."""
+        """Put the pinned bar's buttons in one row, or the log's button under the other."""
         if rows == self._bar_rows:
             return
         self._bar_rows = rows
-        refresh, save, log = self._bar_buttons
-        refresh.grid(row=0, column=0, sticky="ew", padx=1, pady=1)
-        save.grid(row=0, column=1, sticky="ew", padx=1, pady=1)
+        export_button, log = self._bar_buttons
+        export_button.grid(row=0, column=0, sticky="ew", padx=1, pady=1)
         if rows == 1:
-            log.grid(row=0, column=2, columnspan=1, sticky="ew", padx=1, pady=1)
+            log.grid(row=0, column=1, sticky="ew", padx=1, pady=1)
         else:
-            log.grid(row=1, column=0, columnspan=2, sticky="ew", padx=1, pady=1)
-        self._bar.columnconfigure((0, 1), weight=1)
-        self._bar.columnconfigure(2, weight=1 if rows == 1 else 0)
+            log.grid(row=1, column=0, sticky="ew", padx=1, pady=1)
+        self._bar.columnconfigure(0, weight=1)
+        self._bar.columnconfigure(1, weight=1 if rows == 1 else 0)
 
     def _build_log(self, panel: ttk.Frame) -> None:
         frame = ttk.LabelFrame(panel, text="Message log", padding=4)
