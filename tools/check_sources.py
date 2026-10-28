@@ -100,6 +100,9 @@ QUARTERLY = 200
 # The policy announcements (batch 32): eight a year from each bank, at most
 # eight weeks apart (Canada's of 2026-09-02 and 2026-10-28).
 ANNOUNCED = 70
+# Since this Wednesday Canada's prime rate has stood 2.20 above the target on
+# every one (measured 2026-10-28; rates.CDN_PRIME_ABOVE_TARGET).
+PRIME_ABOVE_FROM = pd.Timestamp("2020-03-11")
 # The spread cross-checks fail when more than this share of days disagree.
 _SPREAD_MISMATCH_LIMIT = 0.001
 # The Bank of England's monthly quoted mortgage rates, dated here by the
@@ -251,8 +254,10 @@ def _policy_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
 
     Canada's target before 2001 is the weekly Bank Rate less a quarter point
     (``rates.CDN_TARGET_FROM``), checked here on every Wednesday the daily
-    target has; the U.S. range's width; EONIA less €STR while both were
-    published (the German market rate's step at the join).
+    target has; Canada's prime rate 2.20 above the target, on which a change
+    of the target is carried to it (batch 32.5); the U.S. range's width;
+    EONIA less €STR while both were published (the German market rate's step
+    at the join).
     """
     notes = []
     weekly, daily = rates._valet(rates.CDN_WEEKLY_BANK_RATE_SERIES), rates._valet(rates.CDN_TARGET_SERIES)
@@ -264,6 +269,19 @@ def _policy_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
         print(f"  Warning: the weekly Bank Rate less {rates.CDN_BANK_RATE_ABOVE_TARGET} differs from the daily target on "
               f"{int(differ.sum())} Wednesdays, the first {both.index[differ.to_numpy()][0]:%Y-%m-%d}; "
               f"the Canadian target before {daily.index[0]:%Y-%m-%d} is drawn from it (rates.CDN_TARGET_FROM)")
+    # Batch 32.5: the prime rate carries the target's change while it stands
+    # this far above it on its last Wednesday (rates.with_followed).
+    prime = rates._valet(rates.CDN_MORTGAGE_SERIES["prime"])
+    in_force = daily.reindex(daily.index.union(prime.index)).ffill().reindex(prime.index).dropna()
+    above = (prime.loc[in_force.index] - in_force).round(4)
+    since = above.loc[above.index >= PRIME_ABOVE_FROM]
+    held = (since - rates.CDN_PRIME_ABOVE_TARGET).abs() < 1e-9
+    notes.append(f"Canada: the prime rate stands {rates.CDN_PRIME_ABOVE_TARGET:.2f} above the target on {int(held.sum()):,} "
+                 f"of {len(since):,} Wednesdays from {PRIME_ABOVE_FROM:%Y-%m-%d}, {above.iloc[-1]:.2f} on "
+                 f"{above.index[-1]:%Y-%m-%d}")
+    if not held.iloc[-1]:
+        print(f"  Warning: the prime rate stands {above.iloc[-1]:.2f} above the target on {above.index[-1]:%Y-%m-%d}, not "
+              f"{rates.CDN_PRIME_ABOVE_TARGET:.2f}; a change of the target is not carried to it (rates.CDN_PRIME_ABOVE_TARGET)")
     low, high = (rates._fred(code) for code in rates.US_TARGET_RANGE_SERIES)
     widths = (high - low).dropna().round(4).value_counts()
     notes.append("U.S. target range: " + ", ".join(f"{width:g} points wide on {count:,} days" for width, count in widths.items()))

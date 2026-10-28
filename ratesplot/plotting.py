@@ -103,7 +103,7 @@ from .legend import finish_legend_and_title
 from .measures import express
 from .rates import (
     RateCurve,
-    draws_policy_target,
+    draws_announced,
     held_steps,
     in_window,
     legend_label,
@@ -997,9 +997,10 @@ def curve_first_dates(
 
 
 def end_to_resolve(config: PlotConfig) -> bool:
-    """Whether ``config``'s End is blank and could be later than today (``resolve_end``): a chart shown draws its policy target."""
+    """Whether ``config``'s End is blank and could be later than today (``resolve_end``): a chart shown draws its policy target, or a curve that follows it."""
     return config.end_blank and any(
-        getattr(config, country.show_field) and draws_policy_target(config.for_nation(country.key)) for country in COUNTRIES
+        getattr(config, country.show_field) and draws_announced(country.key, config.for_nation(country.key))
+        for country in COUNTRIES
     )
 
 
@@ -1013,24 +1014,27 @@ def resolve_end(config: PlotConfig) -> PlotConfig:
     blank end date, it would be simpler for everyone if they all did so". Of
     the series drawn only a policy target can hold a value after today: a
     change its bank has announced (batch 32.1, 32.2) or a bank's own series
-    dated ahead; the others end by today. So each chart shown that draws its
-    target has it read with its announcements (``rates.policy_target_last``),
-    side by side and silently, as the automatic start's trial pass is: the
-    drawing reads the same and says what it reads. A target that cannot be
-    read is left out here; its chart says why.
+    dated ahead; the others end by today, but for the curves that follow the
+    target, which carry its change from the same day (32.5). So each chart
+    shown that draws its target, or a curve following it
+    (``rates.draws_announced``), has the target read with its announcements
+    (``rates.policy_target_last``), side by side and silently, as the
+    automatic start's trial pass is: the drawing reads the same and says what
+    it reads. A target that cannot be read is left out here; its chart says
+    why.
     """
     if not end_to_resolve(config):
         return config
     targets = [
         country.key for country in COUNTRIES
-        if getattr(config, country.show_field) and draws_policy_target(config.for_nation(country.key))
+        if getattr(config, country.show_field) and draws_announced(country.key, config.for_nation(country.key))
     ]
     with this_thread_output_to(None):
         lasts = in_parallel([partial(policy_target_last, key) for key in targets])
     latest = max((last for last in lasts if isinstance(last, pd.Timestamp)), default=None)
     if latest is None or latest <= config.end:
         return config
-    print(f"End {latest:%Y-%m-%d}, the last day a policy target drawn holds (a change announced); a blank End is today or later.")
+    print(f"End {latest:%Y-%m-%d}, the last day a rate drawn holds (a change announced); a blank End is today or later.")
     return replace(config, end=latest)
 
 

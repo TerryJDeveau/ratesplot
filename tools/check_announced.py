@@ -17,6 +17,11 @@
 * the policy target through ``rates.with_announced``, with the feed read
   from the fixture: asked only when the End passes the series' last day, the
   legend's "Announced from", a feed that fails;
+* a blank End (32.4), and the curves that follow the target (32.5,
+  ``rates.with_followed``): Canada's prime rate 2.20 above it and the UK
+  tracker, a change carried until their own series have it, asked only when
+  the End passes their last day, refused where the prime no longer stands
+  2.20 above, each note said once with the target drawn too;
 * the drawing (``plotting.add_rate_lines``): the announced stretch a piece
   of its own with its riser, the hover read-out's "(announced)" on it alone,
   Export chart's values day by day.
@@ -32,6 +37,8 @@ Exit code 1 if any check fails.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -232,24 +239,47 @@ def check_joined() -> None:
 
 
 class _Feed:
-    """``canadian_get`` replaced: the saved feed for its address, counted."""
+    """``canadian_get`` (or ``uk_get``) replaced: the saved feed for its address (or ``body``), counted."""
 
-    def __init__(self, fail: bool = False) -> None:
+    def __init__(self, fail: bool = False, body: bytes | None = None, url: str = announced.BOC_PRESS_RELEASES_FEED) -> None:
         self.asked: list[str] = []
         self.fail = fail
+        self.body = body if body is not None else (FIXTURES / "boc_press_releases.xml").read_bytes()
+        self.url = url
 
     def __call__(self, url: str, params: dict | None = None, **_kwargs: object) -> object:
         self.asked.append(url)
         if self.fail:
             raise ConnectionError("refused")
-        assert url == announced.BOC_PRESS_RELEASES_FEED, url
-        return type("Response", (), {"content": (FIXTURES / "boc_press_releases.xml").read_bytes()})()
+        assert url == self.url, url
+        return type("Response", (), {"content": self.body})()
 
 
 def target_curve() -> rates.RateCurve:
     values = series(("2025-10-30", 2.25), ("2026-10-27", 2.25))
     return rates.RateCurve("policy", "Target for the Overnight Rate", values, POLICY_RATE_STYLE, title="Policy Rate",
                            holds=rates.holding(values, rates.HELD))
+
+
+class _Published:
+    """``rates._ANNOUNCING[nation].published`` replaced for a block: ``values`` (or a failure), each call counted."""
+
+    def __init__(self, nation: str, values: pd.Series | None) -> None:
+        self.nation, self.values, self.asked = nation, values, 0
+        self.real = rates._ANNOUNCING[nation]
+
+    def __call__(self) -> pd.Series:
+        self.asked += 1
+        if self.values is None:
+            raise ConnectionError("refused")
+        return self.values
+
+    def __enter__(self) -> _Published:
+        rates._ANNOUNCING[self.nation] = self.real._replace(published=self)
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        rates._ANNOUNCING[self.nation] = self.real
 
 
 def check_with_announced() -> None:
@@ -287,9 +317,12 @@ def check_blank_end() -> None:
         return replace(config, end=today) if config.end_blank else config
 
     real_get, real_targets = announced.canadian_get, dict(rates._POLICY_TARGETS)
+    # Canada's target read for a blank End is its last part alone (32.5): the series replaced is that.
+    published = _Published("cdn", target_curve().values)
     try:
         feed = announced.canadian_get = _Feed()
         rates._POLICY_TARGETS.update(cdn=target_curve, us=target_curve)
+        published.__enter__()
         check("no End given: end_blank; one given: not", parsed("-c").end_blank and not parsed("-c", "--e:2026-10-01").end_blank)
         check("a PlotConfig built directly keeps its End", not PlotConfig().end_blank)
         resolved = plotting.resolve_end(parsed("-c", "--policy"))
@@ -310,10 +343,145 @@ def check_blank_end() -> None:
               and both.for_nation("us").end == both.for_nation("cdn").end == DAY("2026-10-29"), both.end)
         check("resolve_start finds the End first, a Start given", plotting.resolve_start(
               parsed("-c", "--policy", "-s:2026-06-01")).end == DAY("2026-10-29"))
+        feed.asked.clear()
+        published.asked = 0
+        prime = plotting.resolve_end(parsed("-c", "--mortgages:prime"))
+        check("Canada's prime rate alone, which follows the target (32.5): 2026-10-29, the target's last part read",
+              prime.end == DAY("2026-10-29") and published.asked == 1 and len(feed.asked) == 1, (prime.end, published.asked))
+        feed.asked.clear()
+        check("Canada's 5-year mortgage alone: today, nothing asked",
+              plotting.resolve_end(parsed("-c", "--mortgages:5")).end == today and not feed.asked, feed.asked)
+        check("the U.S. prime rate alone, which follows nothing read: today, nothing asked",
+              plotting.resolve_end(parsed("-u", "--mortgages:prime")).end == today and not feed.asked, feed.asked)
         announced.canadian_get = _Feed(fail=True)
         check("the feed failing: today", plotting.resolve_end(parsed("-c", "--policy")).end == today)
     finally:
         announced.canadian_get = real_get
+        rates._POLICY_TARGETS.clear()
+        rates._POLICY_TARGETS.update(real_targets)
+        published.__exit__()
+
+
+def prime_curve(*pairs: tuple[str, float], margin: float = 0.0) -> rates.RateCurve:
+    """Canada's prime rate as ``rates.mortgage_rate`` returns it, its values ``pairs`` plus ``margin``."""
+    values = series(*pairs) + margin
+    return rates.RateCurve("mortgage_prime", rates._mortgage_label("prime", "cdn", margin), values,
+                           rates._mortgage_style("prime"), title="Mortgage Rates", holds=rates.holding(values, rates.HELD))
+
+
+def follow(nation: str, term: str, curve: rates.RateCurve, margin: float = 0.0, end: str = "2026-11-01",
+           target_drawn: bool = False) -> tuple[rates.RateCurve, list[str]]:
+    """``rates.with_followed``, and what it said."""
+    said = io.StringIO()
+    with contextlib.redirect_stdout(said):
+        followed = rates.with_followed(nation, term, curve, margin, DAY(end), target_drawn)
+    return followed, said.getvalue().splitlines()
+
+
+PRIME = (("2026-10-14", 4.45), ("2026-10-21", 4.45))
+PRIME_NOTE = ("  Note: Prime Rate (chartered banks): 4.70% from 2026-10-29, the policy target's change carried to it; "
+              "not yet in Valet's V80691311.")
+
+
+def check_followed() -> None:
+    """The curves that follow the policy target (32.5): Canada's prime rate and the UK tracker."""
+    real_cdn, real_uk = announced.canadian_get, announced.uk_get
+    try:
+        feed = announced.canadian_get = _Feed()
+        with _Published("cdn", target_curve().values) as published:
+            curve, said = follow("cdn", "prime", prime_curve(*PRIME))
+            check("Canada's prime: the target's change carried, 2.20 above it, from 2026-10-29",
+                  curve.announced == DAY("2026-10-29") and curve.values.index[-1] == DAY("2026-10-29")
+                  and abs(curve.values.iloc[-1] - 4.70) < 1e-9 and curve.holds.iloc[-1] == rates.HELD, curve.values.tail(2))
+            check("… the bank's note and the prime's, the target not drawn", len(said) == 2
+                  and said[0].startswith("  Note: 2.50% from 2026-10-29, as the Bank of Canada") and said[1] == PRIME_NOTE, said)
+            late = PlotConfig(start=DAY("2026-06-01"), end=DAY("2026-11-01"))
+            check("… named in the legend as announced", rates.legend_label(curve, late)
+                  == "Prime Rate (chartered banks), Announced from 2026-10-29", rates.legend_label(curve, late))
+            _curve, said = follow("cdn", "prime", prime_curve(*PRIME), target_drawn=True)
+            check("… the target drawn too: only the prime's note (the bank's is the target's)", said == [PRIME_NOTE], said)
+            curve, said = follow("cdn", "prime", prime_curve(*PRIME, margin=0.5), margin=0.5)
+            check("… with a margin of 0.50: 5.20%, the margin kept", abs(curve.values.iloc[-1] - 5.20) < 1e-9
+                  and said[-1].startswith("  Note: Prime Rate + 0.50 (chartered banks): 5.20% from 2026-10-29"), said)
+            curve, said = follow("cdn", "prime", prime_curve(*PRIME), end="2026-10-28")
+            check("… an End before the change: added, the note saying it takes effect after the chart ends",
+                  curve.announced == DAY("2026-10-29") and said[-1].endswith("takes effect after the chart ends; not drawn."), said)
+            feed.asked.clear()
+            published.asked = 0
+            original = prime_curve(*PRIME)
+            curve, said = follow("cdn", "prime", original, end="2026-10-21")
+            check("an End on the prime's last day: nothing asked, nothing said", curve is original and not said
+                  and published.asked == 0 and not feed.asked, (published.asked, feed.asked))
+            curve, said = follow("cdn", "prime", original, end="2026-10-25")
+            check("an End before the target's last day: the target's series asked, not the feed; no change, nothing said",
+                  curve is original and not said and published.asked == 1 and not feed.asked, (published.asked, feed.asked))
+            for nation, term in (("us", "prime"), ("cdn", "5")):
+                curve, said = follow(nation, term, original)
+                check(f"{nation}'s {term}, which follows nothing read: as it is, nothing asked",
+                      curve is original and not said and published.asked == 1, said)
+            stray = prime_curve(("2026-10-21", 4.40))
+            curve, said = follow("cdn", "prime", stray)
+            check("a prime not 2.20 above the target on its last day: a warning, nothing carried", curve is stray
+                  and said[-1].startswith("  Warning: Prime Rate (chartered banks) stood 2.15 above the policy target on "
+                                          "2026-10-21, not 2.20"), said)
+        with _Published("cdn", series(("2026-10-27", 2.25), ("2026-10-29", 2.5))):
+            curve, said = follow("cdn", "prime", prime_curve(("2026-10-28", 4.45)))
+            check("the target's series has the change, the prime's not yet: carried, said once",
+                  curve.announced == DAY("2026-10-29") and said == [PRIME_NOTE], said)
+        with _Published("cdn", series(("2026-10-27", 2.25), ("2026-10-29", 2.5), ("2026-11-04", 2.5))):
+            caught_up = prime_curve(("2026-10-28", 4.45), ("2026-11-04", 4.70))
+            curve, said = follow("cdn", "prime", caught_up, end="2026-11-05")
+            check("the prime's series has it: as it is, nothing said", curve is caught_up and not said, said)
+        with _Published("cdn", None):
+            original = prime_curve(*PRIME)
+            curve, said = follow("cdn", "prime", original)
+            check("the target's series failing: a warning, the prime alone", curve is original and len(said) == 1
+                  and said[0].startswith("  Warning: Valet's CBC20210 unavailable (refused)"), said)
+        announced.canadian_get = _Feed(fail=True)
+        with _Published("cdn", target_curve().values):
+            curve, said = follow("cdn", "prime", original)
+            check("the feed failing, the target not drawn: its warning, nothing carried", curve is original
+                  and len(said) == 1 and said[0].startswith("  Warning: Bank of Canada press releases unavailable"), said)
+        cut = boe_feed(("Thu, 05 Nov 2026 12:00:00 Z", "Bank Rate reduced to 3.5% - November 2026 Monetary Policy Summary "
+                        "and Minutes", DECISION))
+        announced.uk_get = _Feed(body=cut, url=announced.BOE_NEWS_FEED)
+        bank_rate = series(("2025-12-18", 3.75), ("2026-11-04", 3.75))
+        with _Published("uk", bank_rate):
+            values = bank_rate + 1.75
+            tracker = rates.RateCurve("mortgage_tracker", rates._mortgage_label("tracker", "uk", 1.75), values,
+                                      rates._mortgage_style("tracker"), title="Mortgage Rates",
+                                      holds=rates.holding(values, rates.HELD))
+            curve, said = follow("uk", "tracker", tracker, margin=1.75, end="2026-11-05")
+            check("the UK tracker: Bank Rate's cut carried the day it is announced, its margin kept",
+                  curve.announced == DAY("2026-11-05") and abs(curve.values.iloc[-1] - 5.25) < 1e-9
+                  and rates.legend_label(curve, PlotConfig(start=DAY("2026-06-01"), end=DAY("2026-11-05")))
+                  == "Tracker Mortgage (Bank Rate + 1.75), Announced from 2026-11-05", curve.values.tail(2))
+            check("… said: the bank's note, then the tracker's", len(said) == 2 and said[1] == (
+                "  Note: Tracker Mortgage (Bank Rate + 1.75): 5.25% from 2026-11-05, the policy target's change carried "
+                "to it; not yet in the Bank of England's IUDBEDR."), said)
+    finally:
+        announced.canadian_get, announced.uk_get = real_cdn, real_uk
+
+
+def check_rate_curves() -> None:
+    """``rates.rate_curves``: the target and the prime drawn together, each change said once."""
+    real_get, real_mortgage, real_targets = announced.canadian_get, rates.mortgage_rate, dict(rates._POLICY_TARGETS)
+    try:
+        announced.canadian_get = _Feed()
+        rates.mortgage_rate = lambda term, country=None, margin=0.0: prime_curve(*PRIME, margin=margin)
+        rates._POLICY_TARGETS["cdn"] = target_curve
+        with _Published("cdn", target_curve().values):
+            for tokens, notes in ((("--policy", "--mortgages:prime"), 2), (("--mortgages:prime",), 2)):
+                config = replace(cli.parse_args(["--no-gui", "-c", *tokens]).for_nation("cdn"), end=DAY("2026-11-01"))
+                said = io.StringIO()
+                with contextlib.redirect_stdout(said):
+                    curves = rates.rate_curves("cdn", pd.DataFrame(), config)
+                lines = [line for line in said.getvalue().splitlines() if "Note:" in line]
+                check(f"{' '.join(tokens)}: every curve announced from 2026-10-29, each note said once",
+                      [curve.announced for curve in curves] == [DAY("2026-10-29")] * len(curves) and len(lines) == notes
+                      and sum(PRIME_NOTE == line for line in lines) == 1, lines)
+    finally:
+        announced.canadian_get, rates.mortgage_rate = real_get, real_mortgage
         rates._POLICY_TARGETS.clear()
         rates._POLICY_TARGETS.update(real_targets)
 
@@ -366,7 +534,8 @@ def check_drawing() -> None:
 
 
 def main() -> int:
-    for group in (check_saved_feeds, check_wordings, check_joined, check_with_announced, check_blank_end, check_drawing):
+    for group in (check_saved_feeds, check_wordings, check_joined, check_with_announced, check_blank_end, check_followed,
+                  check_rate_curves, check_drawing):
         print(f"-- {group.__doc__.splitlines()[0]}")
         try:
             group()

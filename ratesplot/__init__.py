@@ -53,7 +53,8 @@ uk_archive_data   baked UK history from the Bank of England's "A millennium of
 rates             the yield axis's other curves, each only when chosen: policy rates,
                   mortgage rates, yield spreads
 announced         policy rates as announced (batch 32): Canada's and the UK's change
-                  read from the bank's own release, drawn before its series has it
+                  read from the bank's own release, drawn before its series has it;
+                  carried to the prime rate and the UK tracker (32.5, rates)
 fx                exchange rates, for Top and Bottom given in another currency
                   (batch 18.3): FRED's from 1971, older ones baked (18.4)
 measures          the right-axis measure: dollars, % of GDP (-r) or per person (-p)

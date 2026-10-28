@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from typing import NamedTuple
 
 import pandas as pd
 
@@ -110,6 +111,16 @@ CDN_CORRA_SERIES = "AVG.INTWO"
 # convention the top of the fed funds target range plus 3 points.
 US_MORTGAGE_SERIES = {"30": "MORTGAGE30US", "15": "MORTGAGE15US", "prime": "DPRIME"}
 CDN_MORTGAGE_SERIES = {"5": "V80691335", "3": "V80691334", "1": "V80691333", "5v": "BROKER_AVERAGE_5YR_VRM", "prime": "V80691311"}
+# Canada's prime rate against the target (batch 32.5, measured 2026-10-28
+# from Valet's V80691311 and CBC20210): 2.20 above it on every Wednesday from
+# 2020-03-11 to 2026-10-21, and from 2015-07-22 but for the Wednesdays a
+# change took effect before 2021, when the banks moved the day after; 2.00
+# from 2008-12 to 2015-01, and in 2015 the banks passed on 15 of each 25
+# basis points twice. At each of the target's 19 changes from 2022 the prime
+# had moved by the same amount at the first Wednesday after it. Valet dates
+# it by the Wednesday and has it the next day (2026-10-21's between 14:34 and
+# 16:32 UTC on the 22nd, by the daily job's commits).
+CDN_PRIME_ABOVE_TARGET = 2.20
 # Batch 19.2: each drawing asks Valet for a baked series' last two months
 # (config.RECENT_PART_UNREVISED), the rates being announced or observed, not
 # revised; the brokers' variable rate, which Valet calls an estimate, for its
@@ -826,42 +837,134 @@ def _steps_until(yields: pd.DataFrame, columns: tuple[str, str]) -> pd.Timestamp
     return max(through) if through else None
 
 
+class _Announcing(NamedTuple):
+    """A nation whose policy target is read from its bank's announcements too (``_ANNOUNCING``)."""
+
+    releases: Callable[[], Releases]
+    called: str  # what the releases are called when they fail
+    series: str  # the bank's own series of the target, as the messages name it
+    published: Callable[[], pd.Series]  # that series, the target's last part, which the announcements are joined to
+
+
 # Each nation whose policy target is read from its bank's announcements too
-# (batch 32, decision 83): its releases, what they are called when they fail,
-# and its own series as the messages name it. The U.S. needs none: FRED's
-# range has a change's day on the morning it takes effect (measured
-# 2026-10-28, 32.3). The ECB's is to be seen at its next change.
-_ANNOUNCING: dict[str, tuple[Callable[[], Releases], str, str]] = {
-    "cdn": (lambda: boc_releases(CDN_BANK_RATE_ABOVE_TARGET), "Bank of Canada press releases", f"Valet's {CDN_TARGET_SERIES}"),
-    "uk": (boe_releases, "Bank of England news", f"the Bank of England's {UK_POLICY_SERIES}"),
+# (batch 32, decision 83). The U.S. needs none: FRED's range has a change's
+# day on the morning it takes effect (measured 2026-10-28, 32.3). The ECB's
+# is to be seen at its next change.
+_ANNOUNCING: dict[str, _Announcing] = {
+    "cdn": _Announcing(lambda: boc_releases(CDN_BANK_RATE_ABOVE_TARGET), "Bank of Canada press releases",
+                       f"Valet's {CDN_TARGET_SERIES}", lambda: _valet(CDN_TARGET_SERIES)),
+    "uk": _Announcing(boe_releases, "Bank of England news", f"the Bank of England's {UK_POLICY_SERIES}",
+                      lambda: _clean(iadb_series(UK_POLICY_SERIES))),
 }
+
+
+def _announced_values(
+    country: str, published: pd.Series, end: pd.Timestamp, say: Callable[[str], None] = print
+) -> tuple[pd.Series, pd.Timestamp | None]:
+    """Return ``published``, nation ``country``'s policy target, with the changes its bank has announced and it does not have yet, and the first such day (None: none added).
+
+    Asked only where a chart ending ``end`` reaches past the series' last
+    day (``announced.announcements_needed``), for a nation in
+    ``_ANNOUNCING`` (``announced.joined`` says what is read and checked). If
+    the releases cannot be had, the series alone, with a warning. ``say``:
+    where the messages go.
+    """
+    if country not in _ANNOUNCING or not announcements_needed(published, end):
+        return published, None
+    announcing = _ANNOUNCING[country]
+    try:
+        found = announcing.releases()
+    except Exception as exc:
+        say(f"  Warning: {announcing.called} unavailable ({exc}); a change announced since "
+            f"{published.index[-1]:%Y-%m-%d} is not drawn.")
+        return published, None
+    return joined(published, found, announcing.series, end, say)
 
 
 def with_announced(country: str, curve: RateCurve | None, end: pd.Timestamp) -> RateCurve | None:
     """Return ``curve``, a nation's policy target, with the changes its bank has announced and its series does not have yet (batch 32).
 
-    Asked only where a chart ending ``end`` reaches past the series' last
-    day (``announced.announcements_needed``), for a nation in
-    ``_ANNOUNCING``; each change added holds until changed, as the series'
-    values do, and is drawn from the day it takes effect whenever the End
-    reaches it (``announced.joined`` says what is read and checked). If the
-    releases cannot be had, the series alone, with a warning.
+    Each change added (``_announced_values``) holds until changed, as the
+    series' values do, and is drawn from the day it takes effect whenever
+    the End reaches it.
     """
     if curve is None or country not in _ANNOUNCING or not announcements_needed(curve.values, end):
         return curve
     assert curve.upper is None and curve.holds is not None, curve.label  # Canada's and the UK's targets: one rate each day
-    releases, called, series = _ANNOUNCING[country]
-    try:
-        found = releases()
-    except Exception as exc:
-        print(f"  Warning: {called} unavailable ({exc}); a change announced since "
-              f"{curve.values.index[-1]:%Y-%m-%d} is not drawn.")
-        return curve
-    values, first = joined(curve.values, found, series, end)
+    values, first = _announced_values(country, curve.values, end)
     if first is None:
         return curve
     added = values.loc[values.index >= first]
     return replace(curve, values=values, holds=pd.concat([curve.holds, holding(added, HELD)]), announced=first)
+
+
+# The curves that follow a nation's policy target (batch 32.5, decision 90),
+# each a mortgage term of an announcing nation: how far above the target it
+# stands, and its own series as the messages name it. The UK tracker is Bank
+# Rate itself (its margin is added by ``mortgage_rate``); Canada's prime rate
+# is the chartered banks' own, measured against the target
+# (``CDN_PRIME_ABOVE_TARGET``).
+_FOLLOWERS: dict[tuple[str, str], tuple[float, str]] = {
+    ("uk", "tracker"): (0.0, f"the Bank of England's {UK_MORTGAGE_SERIES['tracker']}"),
+    ("cdn", "prime"): (CDN_PRIME_ABOVE_TARGET, f"Valet's {CDN_MORTGAGE_SERIES['prime']}"),
+}
+
+
+def with_followed(
+    country: str, term: str, curve: RateCurve | None, margin: float, end: pd.Timestamp, target_drawn: bool
+) -> RateCurve | None:
+    """Return ``curve``, mortgage term ``term``, with the policy target's changes after its last day if it follows the target (``_FOLLOWERS``; batch 32.5).
+
+    Decision 90 (Terry, 2026-10-28): an announced change of policy rate
+    carries to the curves that follow it. Asked only where a chart ending
+    ``end`` reaches past the curve's last day: the target's series, with
+    the changes its bank has announced (``_announced_values``); each of its
+    changes after the curve's last day is carried to the curve, the
+    distance above the target plus ``margin`` (the curve's own, already in
+    its values), from the day it takes effect, held until changed, and drawn
+    and named as announced (``RateCurve.announced``) until the curve's own
+    series has it. Canada's prime rate, weekly, carries a change for a week
+    or so (Valet dates it by the Wednesday after), so the change in the
+    target's own series as well as the one announced. Carried only while the
+    curve stood that distance above the target on its last day; otherwise a
+    warning, and the curve alone. Where the chart draws the target too
+    (``target_drawn``), the messages about the releases are its, not said
+    twice.
+    """
+    if curve is None or (country, term) not in _FOLLOWERS or not announcements_needed(curve.values, end):
+        return curve
+    above, own = _FOLLOWERS[(country, term)]
+    announcing = _ANNOUNCING[country]
+    last = curve.values.index[-1]
+    try:
+        target = announcing.published()
+    except Exception as exc:
+        print(f"  Warning: {announcing.series} unavailable ({exc}); a change of the policy target since "
+              f"{last:%Y-%m-%d} is not carried to {curve.label}.")
+        return curve
+    target, _first = _announced_values(country, target, end, (lambda _said: None) if target_drawn else print)
+    in_force = target.loc[target.index <= last]
+    if in_force.empty:
+        return curve
+    changes: list[tuple[pd.Timestamp, float]] = []
+    rate = float(in_force.iloc[-1])
+    for day, value in target.loc[target.index > last].items():
+        if abs(float(value) - rate) > 1e-9:
+            rate = float(value)
+            changes.append((pd.Timestamp(day), rate))
+    if not changes:
+        return curve
+    stood = float(curve.values.iloc[-1]) - margin - float(in_force.iloc[-1])
+    if abs(stood - above) > 1e-9:
+        print(f"  Warning: {curve.label} stood {stood:.2f} above the policy target on {last:%Y-%m-%d}, not {above:.2f}; "
+              f"the target's change from {changes[0][0]:%Y-%m-%d} is not carried to it.")
+        return curve
+    added = pd.Series([rate + above + margin for _day, rate in changes], index=pd.DatetimeIndex([day for day, _rate in changes]))
+    for day, value in added.items():
+        drawn = f"; not yet in {own}" if day <= end else ", takes effect after the chart ends; not drawn"
+        print(f"  Note: {curve.label}: {value:.2f}% from {day:%Y-%m-%d}, the policy target's change carried to it{drawn}.")
+    return replace(curve, values=pd.concat([curve.values, added]), holds=pd.concat([curve.holds, holding(added, HELD)]),
+                   announced=added.index[0])
 
 
 # Each nation's policy terms (batch 9.1).
@@ -880,15 +983,30 @@ def draws_policy_target(config: PlotConfig) -> bool:
     return config.policy_rates and "target" in config.policy_terms
 
 
+def draws_announced(country: str, config: PlotConfig) -> bool:
+    """Whether nation ``country``'s chart (``config``, its ``PlotConfig.for_nation``) draws its policy target or a curve that follows it (``_FOLLOWERS``; batch 32.4, 32.5)."""
+    return draws_policy_target(config) or (
+        config.mortgages and any((country, term) in _FOLLOWERS for term in config.mortgage_terms)
+    )
+
+
 def policy_target_last(country: str) -> pd.Timestamp | None:
     """Return the last day nation ``country``'s policy target holds a value, the changes its bank has announced with it (batch 32.4).
 
     The day a blank End reaches (``plotting.resolve_end``): later than today
     only for a change announced to take effect after it (``with_announced``),
-    or a bank's own series dated ahead. None where the target has no values.
+    or a bank's own series dated ahead; a curve that follows the target
+    carries the change from the same day (``with_followed``, 32.5). For a
+    nation in ``_ANNOUNCING``, the target's last part alone, which its
+    announcements are joined to and which ends it, so a chart drawing only a
+    curve that follows the target asks for no other part. None where the
+    target has no values.
     """
     today = pd.Timestamp.today().normalize()
-    curve = with_announced(country, _POLICY_TARGETS[country](), today + _TARGET_LOOK_AHEAD)
+    if country in _ANNOUNCING:
+        values, _first = _announced_values(country, _ANNOUNCING[country].published(), today + _TARGET_LOOK_AHEAD)
+        return None if values.empty else values.index[-1]
+    curve = _POLICY_TARGETS[country]()
     return None if curve is None or curve.values.empty else curve.values.index[-1]
 
 
@@ -921,10 +1039,10 @@ def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[
             warn_none_drawn(country, "mortgage rate", f"none of its mortgage terms ({own}) is chosen")
         else:
             with downloads_of(f"{adjective} mortgage rates"):
-                curves += [
-                    mortgage_rate(term, country, getattr(config, MORTGAGE_MARGINS[term]) if term in MORTGAGE_MARGINS else 0.0)
-                    for term in terms
-                ]
+                for term in terms:
+                    margin = getattr(config, MORTGAGE_MARGINS[term]) if term in MORTGAGE_MARGINS else 0.0
+                    curve = mortgage_rate(term, country, margin)
+                    curves.append(with_followed(country, term, curve, margin, config.end, draws_policy_target(config)))
     if config.spreads:
         curves += yield_spreads(country, yields, config)
     chosen = []
