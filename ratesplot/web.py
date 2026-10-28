@@ -80,7 +80,7 @@ Zoom and dates
     350 ms, one drawing for each turn; over a chart the page does not
     scroll, and Ctrl and the wheel is the browser's own zoom.
     "◀ Earlier" and "Later ▶" move the dates by half the window, "Zoom out"
-    doubles their span (``frontend.move_dates_updates``: between 1680 and
+    doubles their span (``frontend.move_dates_updates``: between 1600 and
     today, keeping the span). "Back" undoes one zoom, move, Unzoom or Reset;
     "Unzoom" returns to the charts before the first zoom or move since the
     last Reset (batch 28.2), as one more step that Back undoes; each is
@@ -90,7 +90,7 @@ Zoom and dates
 
 Dates
     Beside each date field a 📅 button opens Streamlit's calendar (between
-    1680 and today) and a "Blank (default)" button, as the window's does:
+    1600 and today) and a "Blank (default)" button, as the window's does:
     picking a day writes ``YYYY-MM-DD`` in the field, and typing ``YYYY`` or
     ``YYYY-MM`` still works (``_date_control``).
 
@@ -147,7 +147,7 @@ from .config import (  # noqa: E402
     DEFAULT_AUTO_REFRESH_MINUTES,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DOWNLOAD_MAX_AGE_SECONDS,
-    EARLIEST_DATA_START,
+    EARLIEST_DATE,
     MARKET_TIMEZONE,
     NATIONS,
     Nation,
@@ -315,8 +315,8 @@ _EXPORT_MENU = "export:"  # + country key: the format menu under that nation's c
 _IDLE = "idle"           # the options greyed out, judged once as the controls are laid out (frontend.idle_choices)
 _AUTO_TICKER = "auto_ticker"  # the automatic refresh's Ticker for this visitor (batch 11.3)
 _AUTO_LAID_OUT = "auto_laid_out"  # True while its fragment runs as part of the whole page's run
-# The calendar's first day: no series starts earlier (config.EARLIEST_DATA_START).
-_CALENDAR_FIRST = EARLIEST_DATA_START.date()
+# The calendar's first day: the earliest date a chart shows (config.EARLIEST_DATE, batch 28.3).
+_CALENDAR_FIRST = EARLIEST_DATE.date()
 # A date field with its calendar button: room for a whole YYYY-MM-DD.
 _DATE_ROW_PX = 230
 # The blocks whose check boxes share rows (Terry, 2026-10-08: the nations,
@@ -1178,7 +1178,7 @@ def _apply_view(updates: dict[str, str], key: str | None = None) -> None:
     """Write a zoom's or a date move's texts into the fields, undoably (Back), as the window does.
 
     Nothing is kept for Back when the fields already say it (e.g. Zoom out
-    from 1680 to today). The axis limits go into the fields of the chart's
+    from 1600 to today). The axis limits go into the fields of the chart's
     own nation (``key``); the dates are the same for every chart.
     """
     nation = next((nation for nation in NATIONS if nation.key == key), None)
@@ -1863,7 +1863,7 @@ def _view_buttons(drawing: Drawing) -> None:
     """Back, Unzoom and the date buttons, in one row over the charts, and how to zoom."""
     history = st.session_state.get(_HISTORY, [])
     drawn = drawing.drawn
-    at_first = drawn is None or drawn.start <= EARLIEST_DATA_START
+    at_first = drawn is None or drawn.start <= EARLIEST_DATE
     at_today = drawn is None or drawn.end >= pd.Timestamp.today().normalize()
     buttons = (
         ("◀ Back", _back, (), not history, "Undo the last zoom, move of the dates, Unzoom or Reset."),

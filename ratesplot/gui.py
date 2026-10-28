@@ -128,7 +128,7 @@ from PIL import Image, ImageTk
 from matplotlib.figure import Figure
 
 from . import export, hover, http
-from .config import DOWNLOAD_MAX_AGE_SECONDS, NATIONS, Nation, PlotConfig
+from .config import DOWNLOAD_MAX_AGE_SECONDS, EARLIEST_DATE, NATIONS, Nation, PlotConfig
 from .console import this_thread_output_to
 from .export import EXPORT_CHOICES, IMAGE_FORMATS
 from .frontend import (
@@ -393,7 +393,8 @@ class DatePicker:
         )
         months.pack(side="left", padx=4)
         months.bind("<<ComboboxSelected>>", lambda _event: self._draw_days())
-        years = ttk.Spinbox(header, from_=1900, to=2100, textvariable=self.year, width=6, command=self._draw_days)
+        # From the earliest date a chart shows (batch 28.3; 1900 before).
+        years = ttk.Spinbox(header, from_=EARLIEST_DATE.year, to=2100, textvariable=self.year, width=6, command=self._draw_days)
         years.pack(side="left")
         years.bind("<Return>", lambda _event: self._draw_days())
         years.bind("<FocusOut>", lambda _event: self._draw_days())

@@ -56,7 +56,7 @@ from .config import (
     COMPONENT_SYNONYMS,
     DEFAULT_AUTO_REFRESH_MINUTES,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
-    EARLIEST_DATA_START,
+    EARLIEST_DATE,
     MIN_CANVAS_PX,
     MIN_WINDOW_DAYS,
     NATIONS,
@@ -1345,19 +1345,20 @@ def scale_dates_updates(geometry: ChartGeometry, factor: float, anchor_x: float)
     """Return Start and End texts for the requested window scaled by ``factor`` about image x ``anchor_x``.
 
     A factor below 1 zooms in, above 1 out; the date under ``anchor_x`` stays put.
-    The window is cut at the first data (``EARLIEST_DATA_START``) as its end
+    The window is cut at the earliest date a chart shows (``EARLIEST_DATE``,
+    1600-01-01 since batch 28.3; the first data, 1680, before) as its end
     is at today (``_date_range_texts``), and before the image x is turned
     into a date: thirty notches of the wheel out at once (a fast spin, a
     trackpad's fling) ran past the year 1, which matplotlib's dates cannot
-    hold, and fewer wrote a Start before 1680 (batch 24.7).
+    hold (batch 24.7).
     """
     start_x, end_x = geometry.window_x()  # the requested window, as for a pan
-    first_x = geometry.x_at_number(mdates.date2num(EARLIEST_DATA_START))
+    first_x = geometry.x_at_number(mdates.date2num(EARLIEST_DATE))
     today_x = geometry.x_at_number(mdates.date2num(pd.Timestamp.today().normalize()))
     new_left = max(anchor_x - (anchor_x - start_x) * factor, first_x)
     new_right = min(anchor_x + (end_x - anchor_x) * factor, today_x)
-    # Rounding can put the first data's x a hair before 1680-01-01.
-    return _date_range_texts(max(geometry.date_at(new_left), EARLIEST_DATA_START), geometry.date_at(new_right))
+    # Rounding can put the earliest date's x a hair before it.
+    return _date_range_texts(max(geometry.date_at(new_left), EARLIEST_DATE), geometry.date_at(new_right))
 
 
 def move_dates_updates(start: pd.Timestamp, end: pd.Timestamp, *, shift: float = 0.0, scale: float = 1.0) -> dict[str, str]:
@@ -1365,8 +1366,8 @@ def move_dates_updates(start: pd.Timestamp, end: pd.Timestamp, *, shift: float =
 
     ``shift`` moves the window by that fraction of its span (negative:
     earlier); ``scale`` multiplies the span about its middle (2: zoom out).
-    The window is kept between the first data (``EARLIEST_DATA_START``) and
-    today by moving it back inside rather than cutting it, so "Later" on a
+    The window is kept between the earliest date a chart shows
+    (``EARLIEST_DATE``, 1600-01-01 since batch 28.3) and today by moving it back inside rather than cutting it, so "Later" on a
     window that nearly reaches today keeps its span, where a pan by pixels
     would shorten it (``_date_range_texts`` caps the end at today). Whole
     days throughout: half a window of an odd number of days would otherwise
@@ -1374,13 +1375,14 @@ def move_dates_updates(start: pd.Timestamp, end: pd.Timestamp, *, shift: float =
     """
     today = pd.Timestamp.today().normalize()
     days = (end - start).days
-    # Never longer than all the data. Days are added as a date offset, not a
-    # pandas Timedelta, which ends at 292 years (the data reach back 326).
-    new_days = min(round(days * scale), (today - EARLIEST_DATA_START).days)
+    # Never longer than the earliest date allows. Days are added as a date
+    # offset, not a pandas Timedelta, which ends at 292 years in nanoseconds
+    # (the earliest date is 426 years back).
+    new_days = min(round(days * scale), (today - EARLIEST_DATE).days)
     new_start = start + pd.offsets.Day(round(days * shift) - (new_days - days) // 2)
     new_end = new_start + pd.offsets.Day(new_days)
     if new_end > today:
         new_start, new_end = new_start - (new_end - today), today
-    if new_start < EARLIEST_DATA_START:
-        new_start, new_end = EARLIEST_DATA_START, min(today, new_end + (EARLIEST_DATA_START - new_start))
+    if new_start < EARLIEST_DATE:
+        new_start, new_end = EARLIEST_DATE, min(today, new_end + (EARLIEST_DATE - new_start))
     return _date_range_texts(new_start, new_end)
