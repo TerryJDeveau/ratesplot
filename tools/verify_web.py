@@ -1720,11 +1720,13 @@ def check_batch291(check: Check) -> None:
 
 
 def check_batch292(check: Check) -> None:
-    """Batch 29.2: the curves', per capita's and the rates' tips end with More to their topics; a topic's link to another is the page's own address."""
+    """Batch 29.2: the curves', per capita's, the rates' and the nations' tips end with More to their topics; a topic's link to another is the page's own address."""
     at = new_page("-c --e:2026-09-01")
     flags = {"gdp": "gdp", "debt": "debt", "interest": "interest", "per-capita": "per-capita",
              # 29.2b, the rates' pages.
-             "yield": "yields", "policy": "policy-rates", "mortgages": "mortgages", "spreads": "spreads", "current": "latest-values"}
+             "yield": "yields", "policy": "policy-rates", "mortgages": "mortgages", "spreads": "spreads", "current": "latest-values",
+             # 29.2c, the nations' pages.
+             "cdn": "canada", "us": "united-states", "uk": "united-kingdom", "germany": "germany"}
     for name, topic in flags.items():
         box = at.checkbox(key=f"flag:{name}")
         check(f"{name}: its tip ends with More to its topic", not at.exception and box.help.endswith(f"[More](?help={topic})"), box.help[-50:])
@@ -1761,6 +1763,17 @@ def check_batch292(check: Check) -> None:
           and all(f"## {nation}" in shown for nation in ("Canada", "The United States", "The United Kingdom", "Germany")), shown[:60])
     check("its links to other topics written as the page's own address, followed in the help view",
           "[By level](?help=levels)" in shown and "[As % of GDP](?help=percent-of-gdp)" in shown)
+    # 29.2c: each nation's page links to the curves' pages and to the other nations'.
+    for topic, title in (("canada", "Canada"), ("united-states", "The United States"), ("united-kingdom", "The United Kingdom"),
+                         ("germany", "Germany")):
+        view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+        view.query_params["help"] = topic
+        view.run()
+        shown = "\n".join(block.value for block in view.markdown)
+        others = [other for other in ("canada", "united-states", "united-kingdom", "germany") if other != topic]
+        check(f"?help={topic}: its title, its links to the curves' pages and to the other nations'", not view.exception
+              and f"# {title}" in shown.splitlines() and all(f"(?help={curve})" in shown for curve in ("gdp", "debt", "yields", "mortgages"))
+              and all(f"(?help={other})" in shown for other in others), shown[:60])
 
 
 def check_batch31(check: Check) -> None:

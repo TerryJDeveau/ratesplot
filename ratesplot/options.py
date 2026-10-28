@@ -769,13 +769,15 @@ GROUPS: dict[str, str] = {
 
 OPTIONS: tuple[Option, ...] = (
     # Country selection: argparse store_true flags; no flag at all means both.
+    # Each nation's topic (batch 29.2c, decision 79) is a page of its own
+    # that links to the curves' pages rather than repeating them.
     Option(
         "cdn", Kind.SWITCH, ("show_cdn",), "country", "--C / -C / --canada / --cdn", "Canadian chart only",
-        names=("canada", "cdn"), flag="--C", flag_help="Canadian chart only", label="Canada",
+        names=("canada", "cdn"), flag="--C", flag_help="Canadian chart only", label="Canada", topic="canada",
     ),
     Option(
         "us", Kind.SWITCH, ("show_us",), "country", "--U / -U / --us / --usa", "U.S. chart only",
-        names=("us", "usa"), flag="--U", flag_help="U.S. chart only", label="United States",
+        names=("us", "usa"), flag="--U", flag_help="U.S. chart only", label="United States", topic="united-states",
     ),
     # The other nations (batch 3 the UK, batch 4 Germany): drawn only when
     # named, and named only by --nations:LIST (Terry, 2026-10-07; batch 3 had
@@ -787,12 +789,12 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "uk", Kind.SWITCH, ("show_uk",), "country", "--nations:gb",
         "the UK's chart (only when named; with\n-c or -u, those too)",
-        names=("uk", "gb"), shortest=2, label="United Kingdom", command_line=False,
+        names=("uk", "gb"), shortest=2, label="United Kingdom", command_line=False, topic="united-kingdom",
     ),
     Option(
         "germany", Kind.SWITCH, ("show_de",), "country", "--nations:de",
         "Germany's chart (only when named; with\n-c or -u, those too)",
-        names=("germany",), shortest=3, label="Germany", command_line=False,
+        names=("germany",), shortest=3, label="Germany", command_line=False, topic="germany",
     ),
     # The same by the nations' codes, for when there are more than two
     # (batch 2). The command line turns it into the switches of the nations it

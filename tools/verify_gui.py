@@ -2036,7 +2036,8 @@ def check_batch291(check: Check) -> None:
         check("More shut the panel", app.info_panel is None)
         app._show_topic("percent-of-gdp")
         check("a second More: the same window", app.topic_windows["percent-of-gdp"] is topic)
-        app.info_marks["cdn"].event_generate("<Button-1>")
+        # The canvas's size: the nations name topics since batch 29.2c.
+        app.info_marks["dimensions"].event_generate("<Button-1>")
         root.update()
         check("a control not greyed and with no topic: no reason, Close alone",
               app.info_shown[2] == "" and set(panel_buttons(app)) == {"Close"}, (app.info_shown[2], sorted(panel_buttons(app))))
@@ -2064,12 +2065,13 @@ def check_batch291(check: Check) -> None:
 
 
 def check_batch292(check: Check) -> None:
-    """Batch 29.2: the sources' pages named by their controls; a topic's link to another opens that topic's window."""
+    """Batch 29.2: the sources' and the nations' pages named by their controls; a topic's link to another opens that topic's window."""
     with window(f"--na:ca,gb {END}") as w:
         app, root = w.app, w.root
         rates = ("yield", "policy", "mortgages", "spreads", "current", "cdn:yields", "cdn:policy-terms", "cdn:mortgage-terms",
                  "cdn:prime-margin", "cdn:spread-pairs", "uk:tracker-margin")  # 29.2b
-        for key in ("gdp", "debt", "interest", "per-capita", "cdn:debt-parts", *rates):
+        nations = ("cdn", "us", "uk", "germany")  # 29.2c
+        for key in ("gdp", "debt", "interest", "per-capita", "cdn:debt-parts", *rates, *nations):
             app.info_marks[key].event_generate("<Button-1>")
             root.update()
             buttons = {widget.cget("text") for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton"}
@@ -2100,6 +2102,25 @@ def check_batch292(check: Check) -> None:
         check("the yields' page: its title, its links to the spreads' and the latest values' pages and to the sources",
               app.topic_windows["yields"].title() == "Bond yields" and {"Yield spreads", "the latest values", "DGS10"} <= links,
               (app.topic_windows["yields"].title(), sorted(links)[:6]))
+        # 29.2c: a nation's page links to the curves' pages and to the other nations'.
+        app._show_topic("united-kingdom")
+        root.update()
+        text = next(widget for widget in all_widgets(app.topic_windows["united-kingdom"]) if widget.winfo_class() == "Text")
+        links = {text.get(*text.tag_ranges(tag)[:2]): tag for tag in text.tag_names() if tag.startswith("link-")}
+        check("the UK's page: its title, its links to the curves' pages and to the other nations'",
+              app.topic_windows["united-kingdom"].title() == "The United Kingdom"
+              and {"Aggregate public debt", "Bond yields", "Mortgage rates", "Canada", "Germany"} <= set(links),
+              (app.topic_windows["united-kingdom"].title(), sorted(links)))
+        start = text.tag_ranges(links["Germany"])[0]
+        text.see(start)
+        root.update()
+        x, y, _width, height = text.bbox(start)
+        text.event_generate("<Motion>", x=x + 2, y=y + height // 2)
+        text.event_generate("<Button-1>", x=x + 2, y=y + height // 2)
+        root.update()
+        germany = app.topic_windows.get("germany")
+        check("a click on “Germany”: Germany's page in its own window", germany is not None and germany.title() == "Germany",
+              germany.title() if germany is not None else None)
 
 
 # The window's buttons and boxes, by Tk's class names, ttk's and Tk's own.
