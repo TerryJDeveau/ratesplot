@@ -7,7 +7,8 @@
 * every topic an option names (``Option.topic``) has its file,
   ``docs/help/TOPIC.md``, and every file there is named by an option;
 * each topic reads as the window renders it (``frontend.help_blocks``): a
-  heading first, every link to an http(s) address; a name no option gives is
+  heading first, every link to an http(s) address or to another topic
+  (``?help=TOPIC``, batch 29.2), which must exist; a name no option gives is
   refused (``frontend.help_text``), as the page's address may hold anything;
 * ``frontend.greyed_reason`` gives a reason exactly where the window greys a
   control (the rule of ``gui._update_dependent_controls`` and
@@ -50,7 +51,9 @@ from ratesplot.frontend import (  # noqa: E402
     greyed_line,
     greyed_reason,
     greyed_reasons,
+    help_address,
     help_blocks,
+    help_link_topic,
     help_text,
     help_topics,
     idle_choices,
@@ -100,8 +103,13 @@ def check_topics() -> None:
         check(f"{topic} (named by {', '.join(option.name for option in named)}): opens with a heading",
               bool(blocks) and blocks[0].kind == "heading" and blocks[0].level == 1, blocks[0] if blocks else None)
         links = [span.url for block in blocks for span in block.spans if span.style == "link"]
-        bad = [url for url in links if not url.startswith(("https://", "http://"))]
-        check(f"{topic}: its {len(links)} links all to http(s) addresses", not bad, bad)
+        between = [help_link_topic(url) for url in links if help_link_topic(url) is not None]
+        bad = [url for url in links if help_link_topic(url) is None and not url.startswith(("https://", "http://"))]
+        check(f"{topic}: its {len(links) - len(between)} other links all to http(s) addresses", not bad, bad)
+        unknown = [name for name in between if name not in topics or name == topic]
+        check(f"{topic}: its {len(between)} links to topics each name another topic", not unknown, unknown)
+    check("a topic's link is read back as its topic", help_link_topic(help_address("debt")) == "debt"
+          and help_link_topic("https://example.org/?help=debt") is None)
     for name in ("../README", "nonsense", ""):
         try:
             help_text(name)

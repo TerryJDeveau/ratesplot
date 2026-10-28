@@ -187,6 +187,7 @@ from .frontend import (  # noqa: E402
     field_problems,
     greyed_line,
     greyed_reasons,
+    help_address,
     help_text,
     idle_choices,
     idle_nation_keys,
@@ -1345,13 +1346,8 @@ def _help(option: Option, extra: str = "", key: str | None = None) -> str:
     ("us:max"), else the option's.
     """
     reason = st.session_state.get(_REASONS, {}).get(key or option.name, "")
-    more = f"[More]({_help_address(option.topic)})" if option.topic else ""
+    more = f"[More]({help_address(option.topic)})" if option.topic else ""
     return "\n\n".join(line for line in (*option_help_lines(option), extra, greyed_line(reason), more) if line)
-
-
-def _help_address(topic: str) -> str:
-    """The address of topic ``topic``'s help view: this page's, with only ``?help=TOPIC`` (``frontend.HELP_KEY``)."""
-    return f"?{HELP_KEY}={topic}"
 
 
 def _flag_control(where, option: Option) -> None:
@@ -2148,7 +2144,8 @@ _INFO_ICON_STYLE = """<style>
 def _show_help(topic: str) -> None:
     """The help view (batch 29.1): topic ``topic``'s text alone, in the tab a More link opened.
 
-    Its address holds only ``?help=TOPIC`` (``_help_address``): no chart is
+    Its address holds only ``?help=TOPIC`` (``frontend.help_address``), as
+    does a topic's link to another (batch 29.2), followed as it is: no chart is
     drawn, no control laid out, and the remembered settings are neither read
     nor written, so the visit the link came from is left as it was. The
     topic's Markdown is shown as it is; a name no option gives is refused

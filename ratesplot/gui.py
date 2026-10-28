@@ -121,6 +121,7 @@ import sys
 import threading
 import tkinter as tk
 import webbrowser
+from collections.abc import Callable
 from tkinter import filedialog, ttk
 from tkinter import font as tkfont
 
@@ -165,6 +166,7 @@ from .frontend import (
     greyed_line,
     greyed_reason,
     help_blocks,
+    help_link_topic,
     help_text,
     idle_choices,
     idle_nation_keys,
@@ -804,11 +806,13 @@ def _tooltip_text(option: Option) -> str:
     return "\n".join(option_help_lines(option))
 
 
-def _render_help(text: tk.Text, blocks: list[HelpBlock]) -> None:
+def _render_help(text: tk.Text, blocks: list[HelpBlock], open_topic: Callable[[str], None]) -> None:
     """Put a help topic's blocks into ``text`` (batch 29.1): headings larger and bold, items bulleted, links clickable.
 
-    Each link a tag of its own, opened in the browser by a click
-    (``webbrowser``); the program's own topics name no file on this machine.
+    Each link a tag of its own, opened by a click: a link to another topic
+    (``?help=TOPIC``, batch 29.2) by ``open_topic``, in that topic's window;
+    any other in the browser (``webbrowser``). The program's own topics name
+    no file on this machine.
     """
     base = tkfont.nametofont("TkTextFont").actual()
     size = abs(int(base["size"])) or 10
@@ -830,7 +834,11 @@ def _render_help(text: tk.Text, blocks: list[HelpBlock]) -> None:
         for place, span in enumerate(block.spans):
             if span.style == "link":
                 link = f"link-{number}-{place}"
-                text.tag_bind(link, "<Button-1>", lambda _event, url=span.url: webbrowser.open(url))
+                topic = help_link_topic(span.url)
+                if topic is not None:
+                    text.tag_bind(link, "<Button-1>", lambda _event, topic=topic: open_topic(topic))
+                else:
+                    text.tag_bind(link, "<Button-1>", lambda _event, url=span.url: webbrowser.open(url))
                 text.tag_bind(link, "<Enter>", lambda _event: text.configure(cursor="hand2"))
                 text.tag_bind(link, "<Leave>", lambda _event: text.configure(cursor="arrow"))
                 text.insert("end", span.text, (*tags, "link", link))
@@ -1707,7 +1715,7 @@ class RatesPlotApp:
         text.configure(yscrollcommand=bar.set)
         bar.pack(side="right", fill="y")
         text.pack(side="left", fill="both", expand=True)
-        _render_help(text, blocks)
+        _render_help(text, blocks, self._show_topic)
         text.configure(state="disabled")
         window.bind("<Escape>", lambda _event: window.destroy())
         self.topic_windows[topic] = window

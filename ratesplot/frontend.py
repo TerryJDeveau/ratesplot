@@ -1070,6 +1070,22 @@ HELP_DIR = Path(__file__).resolve().parent.parent / "docs" / "help"
 HELP_KEY = "help"
 
 
+def help_address(topic: str) -> str:
+    """The address of topic ``topic``'s help view, relative to the page: ``?help=TOPIC``, the query replaced whole.
+
+    The page's More links to it (batch 29.1), and since batch 29.2 a topic
+    links to another the same way: the page follows the link as it is, the
+    window opens that topic's own window (``help_link_topic``).
+    """
+    return f"?{HELP_KEY}={topic}"
+
+
+def help_link_topic(url: str) -> str | None:
+    """The topic a help link names, written as ``help_address`` writes it; None for a link to another site."""
+    prefix = help_address("")
+    return url[len(prefix):] if url.startswith(prefix) else None
+
+
 def help_topics() -> dict[str, tuple[Option, ...]]:
     """Return every topic the options name, each with the options that name it, in the table's order."""
     topics: dict[str, list[Option]] = {}
