@@ -467,6 +467,35 @@ def reset_changes_nothing(choices: Choices) -> bool:
     return all(bool(value) == reset_flags.get(name, False) for name, value in flags.items() if name in reset_flags)
 
 
+def unzoom_target(history: Sequence[tuple[Choices, object]]) -> int | None:
+    """Return the index of the step Unzoom goes back to in the window's or the page's history, or None for none (batch 28.2).
+
+    Each step is (the choices before it, the preview's settings or None).
+    Only a Reset's step keeps the preview's settings, so a step with them
+    is a Reset's and every other one a zoom's or a move's (a drag, the
+    wheel, the date buttons, Unzoom's own). Unzoom goes back to the choices
+    before the first zoom or move since the last Reset; None while none
+    has followed it, when the button is greyed. Until batch 28.2 it went
+    back to the first step whatever came after, so after a Reset it
+    brought back the chart from before the Reset (found 2026-10-25).
+    """
+    resets = [index for index, (_choices, preview) in enumerate(history) if preview is not None]
+    first = resets[-1] + 1 if resets else 0
+    return first if first < len(history) else None
+
+
+def trim_history(history: list, limit: int) -> None:
+    """Drop the oldest steps of ``history`` past ``limit``, never Unzoom's target or the last Reset it is counted from (batch 28.2).
+
+    With no Reset, the oldest after the first go, as before batch 28.2.
+    """
+    resets = [index for index, (_choices, preview) in enumerate(history) if preview is not None]
+    kept = {resets[-1], resets[-1] + 1} if resets else {0}
+    doomed = [index for index in range(len(history)) if index not in kept][: max(0, len(history) - limit)]
+    for index in reversed(doomed):
+        del history[index]
+
+
 def current_tab(shown: Sequence[str], current: str | None, ticked: str | None = None) -> str | None:
     """Return the tab (a nation's key) to make current among those ``shown`` after a drawing (batch 17.4).
 

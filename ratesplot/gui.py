@@ -66,8 +66,9 @@ Zoom and pan
     Start/End, its height sets the yield Min/Max and the right-axis Top/Bottom of
     whichever axes are drawn. Right- or middle-drag pans. The wheel zooms the
     dates about the pointer. "Back" undoes one zoom, pan, Unzoom or Reset;
-    "Unzoom" returns to the view before the first zoom, as one more step that
-    Back undoes (Terry, 2026-10-08: Back after Unzoom did nothing). Each is
+    "Unzoom" returns to the view before the first zoom since the last Reset
+    (batch 28.2), as one more step that Back undoes (Terry, 2026-10-08: Back
+    after Unzoom did nothing). Each is
     greyed while it would do nothing. The axis limits are each nation's own (the
     panel under its tab), so zooming one chart's axes leaves the other's; the
     dates are shared, as on the command line.
@@ -182,6 +183,8 @@ from .frontend import (
     settled_all_ticks,
     size_boxes_at_fault,
     starting_choices,
+    trim_history,
+    unzoom_target,
     version_text,
     wheel_zoom_text,
     with_leading_zero,
@@ -2223,12 +2226,11 @@ class RatesPlotApp:
         """Keep the controls' choices for Back and Unzoom, before a zoom, pan, Unzoom or Reset changes them.
 
         ``preview``: keep the preview's settings too (a Reset changes them).
-        At most ``_HISTORY_LIMIT`` steps; the oldest after the first go, so
-        Unzoom still returns to the view before the first zoom.
+        At most ``_HISTORY_LIMIT`` steps; the oldest go, but never Unzoom's
+        target or the Reset it is counted from (``frontend.trim_history``).
         """
         self.history.append((self._snapshot(), self._preview_settings() if preview else None))
-        if len(self.history) > _HISTORY_LIMIT:
-            del self.history[1 : len(self.history) - _HISTORY_LIMIT + 1]
+        trim_history(self.history, _HISTORY_LIMIT)
 
     def _preview_settings(self) -> tuple[str, dict[str, bool]]:
         """The preview's mode ("fit" or "actual") and each size's aspect-ratio lock."""
@@ -2245,8 +2247,9 @@ class RatesPlotApp:
             editor.lock_changed()
 
     def _unzoomed(self) -> bool:
-        """True when there is no view before the first zoom to return to, or it is the one shown."""
-        return not self.history or self.history[0][0] == self._snapshot()
+        """True when there is no view before the first zoom or move since the last Reset to go back to, or it is the one shown (``frontend.unzoom_target``)."""
+        target = unzoom_target(self.history)
+        return target is None or self.history[target][0] == self._snapshot()
 
     def _update_view_buttons(self) -> None:
         """Grey Back, Unzoom and Reset while they would do nothing (Terry, 2026-10-08; Reset since batch 28.1), as the web page does."""
@@ -2273,11 +2276,11 @@ class RatesPlotApp:
         self.request_redraw()
 
     def _unzoom(self) -> None:
-        """Return to the view before the first zoom: one more step, so Back returns to the zoom."""
+        """Return to the view before the first zoom or move since the last Reset: one more step, so Back returns to the zoom."""
         if self._unzoomed():
             self.status.set("Not zoomed.")
             return
-        first = self.history[0][0]
+        first = self.history[unzoom_target(self.history)][0]
         self._remember_step()
         self._load_choices(first)
         self.request_redraw()
