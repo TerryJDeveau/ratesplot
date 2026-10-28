@@ -1988,6 +1988,62 @@ def check_batch283(check: Check) -> None:
         picker.top.destroy()
 
 
+def check_batch291(check: Check) -> None:
+    """Batch 29.1: an ⓘ beside each control, never greyed; its panel says why the control is greyed; More opens the topic."""
+
+    def panel_buttons(app) -> dict[str, tk.Widget]:
+        return {widget.cget("text"): widget for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton"}
+
+    with window(f"-c -u --no-debt --no-GDP --no-interest {END}") as w:
+        app, root = w.app, w.root
+        controls = set(app.flag_boxes) | set(app.payload_vars)
+        missing = sorted(controls - set(app.info_marks))
+        check(f"an ⓘ beside each of the {len(controls)} controls", not missing, missing)
+        check("% of GDP greyed, its ⓘ not (never greyed)",
+              app.flag_boxes["relative"].instate(["disabled"]) and not app.info_marks["relative"].instate(["disabled"]))
+        app.info_marks["relative"].event_generate("<Button-1>")
+        root.update()
+        key, tip, reason = app.info_shown
+        check("a click opens its panel: the control's tip", key == "relative" and "As % of GDP: debt and interest" in tip, tip)
+        check("the panel says why it is greyed", reason == "Greyed because it acts on debt and interest, and neither is ticked.", reason)
+        check("More in the lower right, Close beside it", set(panel_buttons(app)) == {"More", "Close"}, sorted(panel_buttons(app)))
+        panel_buttons(app)["More"].invoke()
+        root.update()
+        topic = app.topic_windows.get("percent-of-gdp")
+        text = next((widget for widget in all_widgets(topic) if widget.winfo_class() == "Text"), None) if topic else None
+        check("More: the topic in a window of its own, titled by its heading",
+              topic is not None and topic.title() == "As % of GDP (-r)" and "When the ratio is taken" in text.get("1.0", "end"),
+              topic.title() if topic else None)
+        check("More shut the panel", app.info_panel is None)
+        app._show_topic("percent-of-gdp")
+        check("a second More: the same window", app.topic_windows["percent-of-gdp"] is topic)
+        app.info_marks["cdn"].event_generate("<Button-1>")
+        root.update()
+        check("a control not greyed and with no topic: no reason, Close alone",
+              app.info_shown[2] == "" and set(panel_buttons(app)) == {"Close"}, (app.info_shown[2], sorted(panel_buttons(app))))
+        app.info_marks["cdn:prime-margin"].event_generate("<Button-1>")
+        root.update()
+        check("a click on another ⓘ: its panel instead", app.info_shown[0] == "cdn:prime-margin")
+        check("a nation's field: why it is greyed", app.info_shown[2] == "Greyed because “Mortgage rates” is unticked.", app.info_shown[2])
+        # A key goes where the focus is, which a window driven from a script
+        # may not have been given: the panel takes it, as at a person's click.
+        app.info_panel.focus_force()
+        root.update()
+        app.info_panel.event_generate("<Escape>")
+        root.update()
+        check("Escape shuts the panel", app.info_panel is None)
+        check("the charts drawn as the command line draws them", w.written_draws_the_same(), w.command_tokens())
+    with window(f"-c {END}") as w:
+        app, root = w.app, w.root
+        w.typed("cdn:max", "8")
+        w.settle()
+        app.info_marks["cdn:max"].event_generate("<Button-1>")
+        root.update()
+        check("a limit with one nation: why its “All” is greyed",
+              app.info_shown[2] == "“All” beside it is greyed because only one nation is ticked.", app.info_shown[2])
+        app._close_info()
+
+
 # The groups in the order they run; --group picks some by these names.
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
@@ -2016,6 +2072,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch281": check_batch281,
     "batch282": check_batch282,
     "batch283": check_batch283,
+    "batch291": check_batch291,
 }
 
 

@@ -139,6 +139,13 @@ refuses; and Reset when everything is at its defaults. On the page a country's o
 only while its box is ticked, as the window shows a tab only for a ticked country, and keeps its
 values for when it is ticked again.
 
+Beside each control is an ⓘ, never greyed. In the window a click on it opens a small panel: what
+the control does, its command-line spelling, why it is greyed if it is ("Greyed because “Bond
+yields” is unticked."), and, where there is more to say, More, which opens a window of its own
+with the whole of it. On the page the ⓘ is Streamlit's tip, which says the same and ends with a
+More link that opens the longer text alone in a new tab (`?help=percent-of-gdp`). The longer texts
+are in `docs/help/`, one file per topic; so far there is one, on % of GDP.
+
 Right of each country's axis limit is its unit (% for Max and Min, the country's currency for Top
 and Bottom, none for a percentage of GDP) and an "All" box. Ticked, the limit goes into every
 country's box, and a value typed into any of them goes into the others; the command line writes it
@@ -211,9 +218,12 @@ what the regression segments' labels cover, `check_export.py`, the data Export c
 against the lines drawn, `check_refresh.py`, the automatic refresh's rules and the files `--save`
 writes again, `check_last_good.py`, the charts drawn from the
 last good copies with every source cut off, `check_requests.py`, which failed requests are
-asked again and when a source is asked nothing more, against a server on the same machine, and
+asked again and when a source is asked nothing more, against a server on the same machine,
+`check_help.py`, the help beside each control: its texts, its topics' files, and a reason given
+exactly where a control is greyed, and
 `check_baked.py`, the built-in history's files and how a drawing joins them to what it asks for)
 and the bake of the historical data (`bake_archives.py`), which also writes `ratesplot/data/`:
 the live sources' history, one file per series (`bake_archives.py --only boe`, `--only boc`,
 `--only fred`, `--only ecb`, `--only eurostat`, `--only ons`, `--only bbk`, `--only statcan`), re-baked by running it again or by the daily job
-(`rebake.py`); nothing else writes there.
+(`rebake.py`); nothing else writes there. `docs/help/` holds the longer help texts, one Markdown
+file per topic an option names.

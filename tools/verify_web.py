@@ -1674,12 +1674,43 @@ def check_batch284(check: Check) -> None:
           and web.for_screen(replace(config, width_px=1600, height_px=1200), True).width_px == 1600)
 
 
+def check_batch291(check: Check) -> None:
+    """Batch 29.1: each "?" tip says why its control is greyed and ends with More to its topic; the help view at ?help=TOPIC."""
+    at = new_page("-c --no-debt --no-GDP --no-interest --e:2026-09-01")
+    box = at.checkbox(key="flag:relative")
+    check("% of GDP greyed, its tip saying why, then More to its topic", not at.exception and box.disabled
+          and "Greyed because it acts on debt and interest, and neither is ticked." in box.help
+          and box.help.endswith("[More](?help=percent-of-gdp)"), box.help)
+    per = at.checkbox(key="flag:per-capita")
+    check("Per capita greyed: why, and no More (it names no topic)", "Greyed because" in per.help and "[More]" not in per.help, per.help)
+    check("a box not greyed: no reason", "Greyed because" not in at.checkbox(key="flag:cdn").help)
+    margin = at.text_input(key="value:cdn:prime-margin")
+    check("a nation's field greyed: why", margin.disabled and "Greyed because “Mortgage rates” is unticked." in margin.help, margin.help)
+    at = new_page("-c --max:8 --e:2026-09-01")
+    tick = at.checkbox(key="all:cdn:max")
+    check("an “All” with one nation ticked: why it is greyed", tick.disabled and "Greyed because only one nation is ticked." in tick.help,
+          tick.help)
+    check("the style rule that makes each “?” an ⓘ, scoped to the help buttons",
+          'button[aria-label^="Help for"]' in web._INFO_ICON_STYLE and "ⓘ" in web._INFO_ICON_STYLE)
+    view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+    view.query_params["help"] = "percent-of-gdp"
+    view.run()
+    check("?help=percent-of-gdp: the topic alone, no control, no chart", not view.exception
+          and any("## When the ratio is taken" in block.value for block in view.markdown)
+          and not view.checkbox and not view.text_input and not chart_elements(view), [block.value[:40] for block in view.markdown])
+    view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+    view.query_params["help"] = "../README"
+    view.run()
+    check("?help= a name no option gives: refused, nothing else read", not view.exception
+          and [error.value for error in view.error] == ["There is no help page named “../README”."], [e.value for e in view.error])
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
-    check_batch281, check_batch28s2, check_batch283, check_batch284,
+    check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291,
 )
 
 
