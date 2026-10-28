@@ -1518,11 +1518,69 @@ def check_batch246(check: Check) -> None:
           and charts_shown(spoilt) == 2 and (memory(spoilt) or {}).get("line") == "", warnings)
 
 
+def check_batch281(check: Check) -> None:
+    """Batch 28.1: greyed where they would do nothing (Min and Max, the yield terms, the quotes, the projections, Blank, All, Reset); an unticked nation's section gone, its values kept."""
+
+    def disabled(page: AppTest, key: str) -> bool:
+        return next(box for box in [*page.checkbox, *page.text_input, *page.button] if box.key == key).disabled
+
+    at = new_page("--no-yield --e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    terms = [box.key for box in at.checkbox if box.key and box.key.startswith("choice:cdn:yields:")]
+    check("yields off: the yield terms greyed", terms and all(disabled(at, key) for key in terms), terms)
+    check("nothing on the yield axis: Min and Max greyed, Top active",
+          disabled(at, "value:cdn:min") and disabled(at, "value:cdn:max") and not disabled(at, "value:cdn:top"))
+    at.checkbox(key="flag:policy").check()
+    at.run()
+    check("the policy rate on: Min and Max active, the yield terms still greyed",
+          not disabled(at, "value:cdn:min") and not disabled(at, "value:cdn:max") and all(disabled(at, key) for key in terms))
+    check("the policy rate drawn", not at.exception and charts_shown(at) == 2, at.exception)
+
+    at = new_page("--C --e:2025-01-01")
+    check("Canada alone, End too early for quotes: the quotes and the projections greyed",
+          disabled(at, "flag:current") and disabled(at, "flag:projections"), flags(at))
+    check("greyed, their ticks kept, and written as they are", flags(at)["current"] and flags(at)["projections"], address(at))
+    at.checkbox(key="flag:us").check()
+    at.run()
+    check("the U.S. ticked: the quotes active (the Treasury's daily values), the projections still greyed",
+          not disabled(at, "flag:current") and disabled(at, "flag:projections"))
+
+    at = new_page("--na:ca,us --e:2026-09-01")
+    check("the calendar's Blank: greyed for the blank Start, active for the End",
+          disabled(at, "blank:start") and not disabled(at, "blank:end"))
+    at.text_input(key="value:us:max").input("abc")
+    at.run()
+    check("a Max its field refuses: its All greyed", disabled(at, "all:us:max") and at.error, [e.value for e in at.error])
+    at.text_input(key="value:us:max").input("8")
+    at.run()
+    check("a Max it takes: its All active", not disabled(at, "all:us:max") and not at.error, [e.value for e in at.error])
+    at.checkbox(key="flag:us").uncheck()
+    at.run()
+    shown = {widget.key for widget in at.text_input}
+    check("the U.S. unticked: its section gone, its Max kept",
+          "value:us:max" not in shown and at.session_state["value:us:max"] == "8", sorted(key for key in shown if key.startswith("value:")))
+    at.checkbox(key="flag:us").check()
+    at.run()
+    check("ticked again: its section back with its Max", at.text_input(key="value:us:max").value == "8", address(at))
+    check("drawn with it", not at.exception and "--us:max:8" in address(at) and charts_shown(at) == 2, address(at))
+
+    check("not at the defaults: Reset active", not button(at, "Reset").disabled)
+    button(at, "Reset").click()
+    at.run()
+    check("at the defaults after Reset: Reset greyed", button(at, "Reset").disabled and not at.exception, address(at))
+    check("End blank: the quotes and the projections active",
+          not disabled(at, "flag:current") and not disabled(at, "flag:projections"))
+    at.checkbox(key="size:lock").uncheck()
+    at.run()
+    check("the size lock unticked: Reset active", not button(at, "Reset").disabled)
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
+    check_batch281,
 )
 
 
