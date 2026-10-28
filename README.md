@@ -125,12 +125,22 @@ automatic start, today's end, each chart's axis limits as drawn); a value typed 
 and a number typed without the 0 before its point (`.3`) gets it (`0.3`). A country ticked
 becomes the current tab once its chart is drawn; Reset leaves the country boxes as they are.
 
+A control that would change nothing is greyed, its tick or text kept for when it applies again:
+% of GDP, Per capita, the levels and the regression segments with no right-axis curve; Max and Min
+with nothing on the yield axis, and the yield terms with Bond yields off; the intraday quotes when
+the End is more than four days before today and no U.S. chart is shown (the U.S. chart takes the
+Treasury's daily yields and debt at any End), and the projections to today when the End is more
+than four days back; Blank in a calendar whose field is blank; an "All" box beside a value its box
+refuses; and Reset when everything is at its defaults. On the page a country's own section shows
+only while its box is ticked, as the window shows a tab only for a ticked country, and keeps its
+values for when it is ticked again.
+
 Right of each country's axis limit is its unit (% for Max and Min, the country's currency for Top
 and Bottom, none for a percentage of GDP) and an "All" box. Ticked, the limit goes into every
 country's box, and a value typed into any of them goes into the others; the command line writes it
 once, for every chart (`--max:8`). Unticked, each box keeps its value. A box emptied unticks its
-"All" once Enter is pressed or the box is left. "All" needs two countries ticked and a value in the
-box. Top and Bottom go to the other countries with their currency: 20t in the U.S. box becomes
+"All" once Enter is pressed or the box is left. "All" needs two countries ticked and a value the
+box takes. Top and Bottom go to the other countries with their currency: 20t in the U.S. box becomes
 `USD20t` in the others.
 
 Top and Bottom may be given in any of the four currencies, its code first: `--top:USD20t`,
