@@ -59,7 +59,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, cdn_data, de_archive_data, de_data, latest, rates, uk_archive_data, uk_data, us_data  # noqa: E402
+from ratesplot import announced, bake, cdn_data, de_archive_data, de_data, latest, rates, uk_archive_data, uk_data, us_data  # noqa: E402
 from ratesplot.cli import parse_args  # noqa: E402
 from ratesplot.config import (  # noqa: E402
     CDN_DEBT_COLUMN,
@@ -92,6 +92,9 @@ QUOTES = 4  # Friday's last quotes on the Tuesday after a long weekend
 # A quarter's figures come out one to three months after it ends and stay the
 # newest until the next quarter's do: up to about half a year.
 QUARTERLY = 200
+# The policy announcements (batch 32): eight a year from each bank, at most
+# eight weeks apart (Canada's of 2026-09-02 and 2026-10-28).
+ANNOUNCED = 70
 # The spread cross-checks fail when more than this share of days disagree.
 _SPREAD_MISMATCH_LIMIT = 0.001
 # The Bank of England's monthly quoted mortgage rates, dated here by the
@@ -265,6 +268,29 @@ def _policy_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     gaps = (eonia - estr).dropna().round(4).value_counts()
     notes.append("EONIA less €STR: " + ", ".join(f"{gap:+g} on {count:,} days" for gap, count in gaps.items()))
     return None, "; ".join(notes)
+
+
+def _announced(fetch: Callable[[], announced.Releases], target: Callable[[], rates.RateCurve | None], series: str) -> Callable[[PlotConfig], tuple[pd.Timestamp | None, str]]:
+    """A bank's announcements (batch 32) through the program's own reader, joined to its series as a chart would join them.
+
+    The newest announcement read is the date; every one the feed holds is
+    compared with the series where it has the day (a ``Warning:`` if they
+    differ), and a release about the rate that cannot be read is a warning.
+    """
+
+    def run(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+        found = fetch()
+        curve = target()
+        if curve is None:
+            return None, "its series not fetched"
+        announced.joined(curve.values, found, series, TODAY)  # its warnings are the check
+        if not found.found:
+            return None, f"none read, {len(found.unread)} about the rate not readable"
+        last = max(found.found, key=lambda announcement: announcement.announced)
+        return last.announced, (f"{len(found.found)} read, {len(found.unread)} not; the newest {last.rate:.2f}% "
+                                f"from {last.effective:%Y-%m-%d}: “{last.words}”")
+
+    return run
 
 
 def _spread_crosscheck(series_id: str, pair: tuple[str, str]) -> Callable[[PlotConfig], tuple[pd.Timestamp | None, str]]:
@@ -506,6 +532,10 @@ CHECKS: tuple[Check, ...] = (
     Check("fred_dff", "FRED DFF effective federal funds rate (--policy:market)", DAILY, _rate(rates.us_policy_market)),
     Check("boc_target", "Bank of Canada Bank Rate V122530, V80691310, target CBC20210 (--policy)", DAILY, _rate(rates.cdn_policy_target)),
     Check("boc_corra", "Bank of Canada CORRA AVG.INTWO (--policy:market)", DAILY, _rate(rates.cdn_policy_market)),
+    # Batch 32: the policy rate as announced, before the series has it.
+    Check("boc_announced", "Bank of Canada press releases: the target as announced (--policy)", ANNOUNCED,
+          _announced(lambda: announced.boc_releases(rates.CDN_BANK_RATE_ABOVE_TARGET), rates.cdn_policy_target,
+                     f"Valet's {rates.CDN_TARGET_SERIES}")),
     Check("policy_joins", "Policy rates: what their joins rest on (a measurement)", None, _policy_joins),
     Check("fred_mortgage30", "FRED MORTGAGE30US (--mortgages:30)", DAILY, _rate(partial(rates.mortgage_rate, "30"))),
     Check("fred_mortgage15", "FRED MORTGAGE15US (--mortgages:15)", DAILY, _rate(partial(rates.mortgage_rate, "15"))),
@@ -530,6 +560,8 @@ CHECKS: tuple[Check, ...] = (
     Check("boe_yields", "Bank of England par yields IUDSNPY, IUDMNPY, IUDLNPY (5, 10, 20 years)", DAILY, _uk_yields),
     Check("boe_bank_rate", "Bank of England Bank Rate IUDBEDR (--policy)", DAILY, _rate(rates.uk_policy_target)),
     Check("boe_sonia", "Bank of England SONIA IUDSOIA (--policy:market)", DAILY, _rate(rates.uk_policy_market)),
+    Check("boe_announced", "Bank of England news: Bank Rate as announced (--policy)", ANNOUNCED,
+          _announced(announced.boe_releases, rates.uk_policy_target, f"the Bank of England's {rates.UK_POLICY_SERIES}")),
     Check("boe_mortgage2f", "Bank of England IUMBV34 quoted 2-year fixed", MONTHLY, _rate(partial(rates.mortgage_rate, "2f"))),
     Check("boe_mortgage3f", "Bank of England IUMBV37 quoted 3-year fixed", MONTHLY, _rate(partial(rates.mortgage_rate, "3f"))),
     Check("boe_mortgage5f", "Bank of England IUMBV42 quoted 5-year fixed", MONTHLY, _rate(partial(rates.mortgage_rate, "5f"))),
