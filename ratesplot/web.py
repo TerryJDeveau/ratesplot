@@ -46,7 +46,10 @@ Remembered settings
     drawn (``_read_remembered``): Streamlit Community Cloud gives the app no
     cookies. Unticked, the cookie is left as it is, neither written nor
     cleared. Reset gives the defaults, which the next drawing keeps (the
-    cookie removed) while the box is ticked.
+    cookie removed) while the box is ticked. The sidebar's width, which
+    Streamlit keeps in the browser once it is dragged, is kept only while
+    the box is ticked, as the window's column's is (batch 31.1,
+    ``_keep_sidebar_width``).
 
 Visitors
     Streamlit runs each visitor's page in its own thread, all in one process.
@@ -263,7 +266,10 @@ ADDRESS_KEY = "chart"
 REMEMBER_COOKIE = "ratesplot_settings"
 _REMEMBER_DAYS = 365
 # The one line under the box, saying what is kept (Terry, decision 60).
-_REMEMBER_LINE = "Kept in a cookie in this browser for a year: the chart's settings, as in the address, and nothing else."
+_REMEMBER_LINE = (
+    "Kept in this browser: the chart's settings, as in the address, in a cookie for a year; and the sidebar's width once "
+    "it is dragged."
+)
 # What a blank field means, shown in it until a drawing gives the value in
 # effect (``frontend.field_hints``: Terry, 2026-10-08, a blank field shows its
 # default or automatic value in grey). The other blank fields mean
@@ -865,6 +871,55 @@ export default function (component) {
   setTriggerValue("line", value);
 }
 """
+
+
+# The sidebar's width, kept only while "Remember my settings" is ticked
+# (batch 31.1, as the window's column). Streamlit keeps it itself: a drag of
+# the sidebar's edge writes it into the browser's localStorage under
+# SIDEBAR_WIDTH_KEY, whatever the box says, and the sidebar is built at it
+# at the next visit (measured 2026-10-28 in Chrome, Streamlit 1.64; nothing
+# is kept before a drag). The page cannot stop that write, so this
+# component, with nothing to show, laid out on every run, notes the width
+# kept when the box is unticked and puts it back as the visit ends
+# ("pagehide": the tab closed, the page left or reloaded), or takes it away
+# if none was kept. Streamlit reads it only when it builds the sidebar, so
+# the visit keeps the width dragged to. Ticked again, nothing is put back:
+# the width shown stays kept, as the window keeps its column's. The note is
+# the page's own (``window``), so a new visit starts with none.
+SIDEBAR_WIDTH_KEY = "sidebarWidth"
+_SIDEBAR_JS = """
+export default function (component) {
+  const { remember, key } = component.data;
+  if (remember) {
+    window.ratesplotSidebarKept = undefined;
+  } else if (window.ratesplotSidebarKept === undefined) {
+    let width = null;
+    try {
+      width = localStorage.getItem(key);
+    } catch (error) {
+      return;  // the browser keeps nothing for this page: nothing to put back
+    }
+    window.ratesplotSidebarKept = { width };
+  }
+  if (window.ratesplotSidebarPutBack === undefined) {
+    window.ratesplotSidebarPutBack = () => {
+      const kept = window.ratesplotSidebarKept;
+      if (kept === undefined) return;
+      try {
+        if (kept.width === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, kept.width);
+      } catch (error) {}
+    };
+    window.addEventListener("pagehide", window.ratesplotSidebarPutBack);
+  }
+}
+"""
+
+
+def _keep_sidebar_width(remember: bool) -> None:
+    """Lay out the sidebar width's keeper (``_SIDEBAR_JS``): with the box unticked, the width kept is put back as the visit ends."""
+    keeper = st.components.v2.component("ratesplot_sidebar", js=_SIDEBAR_JS)
+    keeper(key="sidebar_width", data={"remember": remember, "key": SIDEBAR_WIDTH_KEY})
 
 
 # The screen's width (batch 28.4): a component with nothing to show, whose
@@ -2249,3 +2304,5 @@ def main() -> None:
     # (measured 2026-10-27, Streamlit 1.64: no cookie written).
     if state.get(_REMEMBER) and drawing is not None and drawing.error is None:
         _remember_settings(" ".join(drawing.tokens))
+    # The sidebar's width, kept only while the box is ticked (batch 31.1): on every run, so its script knows the box.
+    _keep_sidebar_width(bool(state.get(_REMEMBER)))

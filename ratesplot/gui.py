@@ -38,9 +38,10 @@ Controls
     window is too short for them; Refresh, Export chart and Save log file sit in
     a bar under them that does not, so they are always in sight (the log's
     button under the other two when the column is narrow). A handle between the
-    controls and the charts sets the column's width, remembered with the
-    window's; each block lays its controls out in as many columns as fit,
-    (``_Flow``): two at the default width, one when narrow, each row
+    controls and the charts sets the column's width, remembered while
+    "Remember my settings" is ticked (batch 31.1); each block lays its
+    controls out in as many columns as fit (``_Flow``): two at the default
+    width, one when narrow, each row
     filled before the next, so four boxes go three and one where three fit.
 
 Remembered settings
@@ -54,10 +55,10 @@ Remembered settings
     they name: a value option individually; the curves, the countries or the
     measure each as a group, because naming one curve on the command line
     means "only this one". "Remember my settings" under Reset (batch 24.6),
-    ticked at every start: unticked, the choices, the preview mode and the
-    tab remembered are left as they were, for charts that should not replace
-    them; the window's size and place, the column's width and the save
-    folder are remembered whatever it says.
+    ticked at every start: unticked, the choices, the preview mode, the tab
+    and the column's width (batch 31.1) remembered are left as they were,
+    for charts that should not replace them; the window's size and place
+    and the save folder are remembered whatever it says.
 
 Zoom and pan
     The mouse edits the same fields a user would type in, so the fields remain
@@ -280,12 +281,16 @@ _NOTE_WRAP_PX = 150
 # Terry's wording, 2026-10-08: "Drag pointer", "right/middle click", bars between.
 _ZOOM_HINT = "Drag pointer: zoom to box | right/middle click-drag: pan | wheel: zoom dates"
 # What "Remember my settings" (batch 24.6) governs in the remembered state:
-# the chart's choices and the preview's. With the box unticked these are
-# left as they were; the rest (the window's size and place, whether it is
-# maximized and on which monitor, the column's width, the save folder) is
-# kept whatever the box says (Terry, decision 74).
-_SETTINGS_KEYS = ("payloads", "flags", "zoom", "tab", "keep_ratio")
-_REMEMBER_TIP = f"{REMEMBER_HELP} The window's size and place, the column's width and the save folder are kept either way."
+# the chart's choices, the preview's, and the column's width (batch 31.1;
+# Terry, 2026-10-28: "The default width of the main option panel ... is
+# remembered for next time even with "Remember my settings" turned off.
+# Probably should not be"). With the box unticked these are left as they
+# were; the rest (the window's size and place, whether it is maximized and
+# on which monitor, the save folder) is kept whatever the box says (Terry,
+# decision 74: "Other things that are presently remembered even with the
+# option off are ok").
+_SETTINGS_KEYS = ("payloads", "flags", "zoom", "tab", "keep_ratio", "column_width")
+_REMEMBER_TIP = f"{REMEMBER_HELP} The window's size and place and the save folder are kept either way."
 # The tips of the window's buttons that the page has no match for (batch
 # 31.6; the others are the page's, from ``frontend``).
 _FIT_TIP = "Each chart scaled to fill its tab, keeping its shape."
@@ -1047,7 +1052,7 @@ class RatesPlotApp:
         # The control column and the charts side by side, with a handle
         # between them that sets the column's width (Terry, 2026-10-08: "The
         # ability to adjust the horizontal width of the main options pane").
-        # The width is remembered with the window's size (``_remember``).
+        # The width is remembered while "Remember my settings" is ticked (``_remember``, batch 31.1).
         background = ttk.Style(self.root).lookup("TFrame", "background") or None
         self.paned = tk.PanedWindow(
             self.root,
@@ -2730,9 +2735,10 @@ class RatesPlotApp:
     def _remember(self) -> None:
         """Save the last drawn choices and the window layout for the next session.
 
-        With "Remember my settings" unticked (batch 24.6), the choices and the
-        preview's settings saved are those remembered before (``_SETTINGS_KEYS``),
-        and the layout is saved as it is now.
+        With "Remember my settings" unticked (batch 24.6), the choices, the
+        preview's settings and the column's width (batch 31.1) saved are
+        those remembered before (``_SETTINGS_KEYS``), and the rest of the
+        layout is saved as it is now.
         """
         if self.drawn_choices is None:
             return
@@ -2749,6 +2755,7 @@ class RatesPlotApp:
                 "zoom": self.zoom.get(),
                 "tab": self._current_tab_key(),
                 "keep_ratio": {name: editor.keep_ratio.get() for name, editor in self.size_editors.items()},
+                "column_width": self._current_column_width(),
             }
         geometry = self._normal_geometry or self.root.geometry()
         error = save_state(
@@ -2762,7 +2769,6 @@ class RatesPlotApp:
                 # is gone at the next start, the window keeps its place relative
                 # to another's corner (batch 15.4). None off Windows.
                 "monitor": _window_monitor(geometry),
-                "column_width": self._current_column_width(),
                 # Where the save dialogs open next (batch 11.5; frontend.save_dialog_folder).
                 "save_folder": self._save_folder,
             }

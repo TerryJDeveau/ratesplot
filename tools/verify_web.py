@@ -257,6 +257,12 @@ def reader_asked(at: AppTest) -> bool:
     return any(element.proto.id.endswith("-reader") for element in at.get("bidi_component"))
 
 
+def sidebar_keeper(at: AppTest) -> dict | None:
+    """What the sidebar width's keeper was given in the page's last run (batch 31.1); None if not laid out."""
+    found = [element for element in at.get("bidi_component") if element.proto.id.endswith("-sidebar_width")]
+    return json.loads(found[0].proto.json) if found else None
+
+
 def button(at: AppTest, label: str):
     return next(b for b in at.button if b.label == label)
 
@@ -1734,6 +1740,17 @@ def check_batch31(check: Check) -> None:
     check("the chart's download button reads Export chart, with the window's tip", len(exports) == 1
           and exports[0].proto.label == "Export chart" and exports[0].proto.help == web.EXPORT_HELP,
           [(b.proto.label, b.proto.help) for b in exports])
+    # 31.1: the sidebar width's keeper, whose script puts back the width kept while the box is unticked (AppTest runs no script).
+    check("31.1: the sidebar width's keeper laid out, told the box is ticked", sidebar_keeper(at) == {"remember": True, "key": "sidebarWidth"},
+          sidebar_keeper(at))
+    at.checkbox(key="remember").uncheck().run()
+    check("the box unticked: the keeper told so, nothing drawn", not at.exception and sidebar_keeper(at) == {"remember": False, "key": "sidebarWidth"},
+          sidebar_keeper(at))
+    at.checkbox(key="remember").check().run()
+    check("ticked again: told so", sidebar_keeper(at) == {"remember": True, "key": "sidebarWidth"}, sidebar_keeper(at))
+    check("the line under the box names the width", any("sidebar's width" in caption.value for caption in at.sidebar.caption))
+    bad = new_page("-c --start:nonsense")
+    check("laid out with no chart drawn too", sidebar_keeper(bad) is not None, sidebar_keeper(bad))
 
 
 PAGE_CHECKS = (

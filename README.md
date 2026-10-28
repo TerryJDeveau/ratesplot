@@ -39,7 +39,8 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   address holds the chart's settings, so a chart can be bookmarked or
   sent; under the charts its link is in a box with a copy button (the default charts' link
   ends `?chart=`). The page remembers your last chart for your next visit, in a cookie in your
-  browser, while "Remember my settings" is ticked; a link with a chart in it opens on that chart.
+  browser, while "Remember my settings" is ticked, and the panel's width once you drag it; a link
+  with a chart in it opens on that chart.
   On a narrow screen (under 700 px, a phone) the page draws the chart 800 x 800 px with larger
   text, unless another size is given; its link and command line still draw the full-size chart.
   To run it on your own machine: `streamlit run streamlit_app.py`.
@@ -48,7 +49,7 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   its own, so several windows can be open at once; a window whose monitor has gone comes back
   at its size on another. Untick "Remember my settings" (on the page too) to draw other charts
   without replacing the settings kept; it is ticked again at every start. The handle between the controls and the charts sets the controls'
-  width, and each row of controls takes as many as fit it. "Save log file" saves the
+  width, remembered with the settings, and each row of controls takes as many as fit it. "Save log file" saves the
   message log as text (on the page, a button under the log). Its dialog and Export chart's open in
   the folder last saved to, remembered with the settings, and the first time in Documents; never in
   the program's own folder, so nothing saved lands among the repository's files.

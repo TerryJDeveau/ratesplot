@@ -2098,7 +2098,53 @@ BUTTON_CLASSES = {"TButton", "TCheckbutton", "TRadiobutton", "Button", "Checkbut
 
 
 def check_batch31(check: Check) -> None:
-    """Batch 31: the window and the page alike: every button and box with a tip, the page's words where it has the button."""
+    """Batch 31: the window and the page alike: the column's width kept only while ticked; every button and box with a tip."""
+    folder_root = tempfile.mkdtemp(prefix="ratesplot_verify_gui_b31_")
+    appdata = os.environ["APPDATA"]
+    os.environ["APPDATA"] = folder_root
+
+    def kept() -> dict:
+        return frontend.load_state()[0]
+
+    try:
+        with window(f"-c {END}") as w:
+            app = w.app
+            app._remember()
+            first = app._current_column_width()
+            check("31.1: ticked, the column's width kept with the settings", kept().get("column_width") == first,
+                  (first, kept().get("column_width")))
+            app.remember.set(False)
+            app.paned.sash_place(0, first + 120, 0)
+            w.pump(20)
+            moved = app._current_column_width()
+            app._remember()
+            check("unticked, the handle moved: the width kept as it was, the window's place still kept as it is",
+                  moved == first + 120 and kept().get("column_width") == first and kept().get("geometry") == app._normal_geometry,
+                  (first, moved, kept().get("column_width")))
+            app.remember.set(True)
+            app._remember()
+            check("ticked again: the width shown kept", kept().get("column_width") == moved, kept().get("column_width"))
+            app.remember.set(False)
+            app.paned.sash_place(0, first, 0)
+            w.pump(20)
+        check("closed while unticked: the width kept before", kept().get("column_width") == moved, kept().get("column_width"))
+        state = kept()
+        root = new_root(SIZE)
+        try:
+            choices = frontend.starting_choices(cli.parse_args(["--no-gui", "-c", END]), {}, {}, state)[0]
+            started = Window.__new__(Window)
+            started.root, started.app = root, gui.RatesPlotApp(root, choices, [], state, normal_geometry=SIZE)
+            started.settle()
+            check("the next start: the column at the width kept", started.app._current_column_width() == moved,
+                  started.app._current_column_width())
+            started.close()
+        except Exception:
+            root.destroy()
+            raise
+    finally:
+        os.environ["APPDATA"] = appdata
+        shutil.rmtree(folder_root, ignore_errors=True)
+
     with window(f"-c {END}") as w:
         app, root = w.app, w.root
         found = [widget for widget in all_widgets(root) if widget.winfo_class() in BUTTON_CLASSES]
