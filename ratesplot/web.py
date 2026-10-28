@@ -101,10 +101,11 @@ Size
     (``_size_control``). The ``WxH`` text behind them stays the source of truth.
 
 Downloads
-    Under each chart a menu of formats and a Download button, the window's
-    Export chart (batch 11.1, ``export``): the chart as a PNG (the bytes
-    shown), JPG, PDF or SVG, or the data it shows as XLSX, CSV or TSV, or a
-    workbook of every chart. The file is made on the click (``_export_bytes``).
+    Under each chart a menu of formats and an "Export chart" button, named as
+    the window's ("Download" until batch 31.4; batch 11.1, ``export``): the
+    chart as a PNG (the bytes shown), JPG, PDF or SVG, or the data it shows
+    as XLSX, CSV or TSV, or a workbook of every chart. The file is made on
+    the click (``_export_bytes``).
 
 The hover read-out
     As in the window (batch 11.2, ``hover``): the pointer resting on a line
@@ -160,11 +161,18 @@ from .config import (  # noqa: E402
 from .console import this_thread_output_to  # noqa: E402
 from .export import EXPORT_CHOICES, IMAGE_FORMATS, MIME_TYPES  # noqa: E402
 from .frontend import (  # noqa: E402
+    BACK_HELP,
+    BLANK_DATE_WORDS,
+    EXPORT_HELP,
+    EXPORT_LABEL,
     LIMIT_COLUMNS,
     LIMITS,
     NATION_OPTIONS,
+    REFRESH_HELP,
     REMEMBER_HELP,
     REMEMBER_LABEL,
+    RESET_HELP,
+    UNZOOM_HELP,
     HELP_KEY,
     TAB_TITLES,
     WHEEL_DELAY_MS,
@@ -261,8 +269,7 @@ _REMEMBER_LINE = "Kept in a cookie in this browser for a year: the chart's setti
 # default or automatic value in grey). The other blank fields mean
 # "automatic" (the axis limits) or are filled with their default.
 _PLACEHOLDERS = {
-    "start": "automatic",
-    "end": "today",
+    **BLANK_DATE_WORDS,
     "regression-tolerance": f"{DEFAULT_REGRESSION_TOLERANCE_PCT:g}",
     "auto-refresh-minutes": f"{DEFAULT_AUTO_REFRESH_MINUTES}",  # batch 11.3
     # The margins at their defaults: the prime margin's 0 (batch 9.4).
@@ -1687,15 +1694,10 @@ def _controls() -> None:
     buttons = bar.columns(2)
     # One button, as in the window (Terry, 2026-10-08: "Refresh", meaning
     # reload data): a drawing after a change of the controls is automatic.
-    buttons[0].button(
-        "Refresh",
-        on_click=_force_redraw,
-        help="Draw again with the latest data: the intraday quotes of the moment, and anything downloaded over an hour ago.",
-        width="stretch",
-    )
+    buttons[0].button("Refresh", on_click=_force_redraw, help=REFRESH_HELP, width="stretch")
     # Greyed at the defaults, the size lock ticked among them, where it would do nothing (batch 28.1).
     at_reset = reset_changes_nothing(_snapshot()) and st.session_state.get(_SIZE + "lock", True)
-    buttons[1].button("Reset", on_click=_reset, help="Back to the default charts.", width="stretch", disabled=at_reset)
+    buttons[1].button("Reset", on_click=_reset, help=RESET_HELP, width="stretch", disabled=at_reset)
     # Changing it draws nothing: it governs only the cookie (batch 24.6).
     bar.checkbox(REMEMBER_LABEL, key=_REMEMBER, help=REMEMBER_HELP)
     bar.caption(_REMEMBER_LINE)
@@ -1940,8 +1942,8 @@ def _view_buttons(drawing: Drawing) -> None:
     at_first = drawn is None or drawn.start <= EARLIEST_DATE
     at_today = drawn is None or drawn.end >= pd.Timestamp.today().normalize()
     buttons = (
-        ("◀ Back", _back, (), not history, "Undo the last zoom, move of the dates, Unzoom or Reset."),
-        ("Unzoom", _unzoom, (), _unzoomed(), "Back to the charts before the first zoom or move since the last Reset (Back undoes it)."),
+        ("◀ Back", _back, (), not history, BACK_HELP),
+        ("Unzoom", _unzoom, (), _unzoomed(), UNZOOM_HELP),
         ("◀ Earlier", _move_dates, (-_DATE_STEP_FRACTION, 1.0), at_first, "Move the dates back by half the window."),
         ("Later ▶", _move_dates, (_DATE_STEP_FRACTION, 1.0), at_today, "Move the dates on by half the window, up to today."),
         ("Zoom out", _move_dates, (0.0, _ZOOM_OUT_FACTOR), at_first and at_today, "Twice the span of dates, about its middle."),
@@ -1981,7 +1983,7 @@ def _export_chosen(menu: str) -> None:
 
 
 def _export_row(drawing: Drawing, key: str) -> None:
-    """Under a chart: a menu of the formats (``export.EXPORT_CHOICES``) and the download button (the window's Export chart).
+    """Under a chart: a menu of the formats (``export.EXPORT_CHOICES``) and the download button, "Export chart" as in the window.
 
     The file is named as the window's Save PNG named it, with the format's
     extension (``frontend.saved_export_name``), and made only on the click
@@ -2005,13 +2007,13 @@ def _export_row(drawing: Drawing, key: str) -> None:
         width=300,
     )
     row.download_button(
-        "Download",
+        EXPORT_LABEL,
         data=functools.partial(_export_bytes, drawing, key, extension, every),
         file_name=saved_export_name(key, drawing.drawn, extension, every),
         mime=MIME_TYPES[extension],
         on_click="ignore",
         key=f"download:{key}",
-        help="The chart as an image, or the data it shows: each line's value on each date in the window.",
+        help=EXPORT_HELP,
     )
 
 

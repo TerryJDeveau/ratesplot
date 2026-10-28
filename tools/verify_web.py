@@ -1217,7 +1217,7 @@ def check_batch18(check: Check) -> None:
 
 
 def check_batch11(check: Check) -> None:
-    """Batch 11.1: under each chart a menu of formats and Download, the file made on the click, the format shared by the tabs."""
+    """Batch 11.1: under each chart a menu of formats and Export chart, the file made on the click, the format shared by the tabs."""
     from openpyxl import load_workbook
 
     at = new_page("-s:2015 --e:2026-09-01")
@@ -1228,10 +1228,10 @@ def check_batch11(check: Check) -> None:
           sorted(menus) == ["export:cdn", "export:us"] and all(list(box.options) == captions and box.value == "PNG image"
                                                                 for box in menus.values()),
           {key: (box.value, len(box.options)) for key, box in menus.items()})
-    buttons = sorted(b.proto.id.rsplit("-", 1)[1] for b in at.get("download_button") if b.proto.label == "Download")
-    check("a Download button under each chart, its file made on the click",
+    buttons = sorted(b.proto.id.rsplit("-", 1)[1] for b in at.get("download_button") if b.proto.label == web.EXPORT_LABEL)
+    check("an Export chart button under each chart (Download until batch 31.4), its file made on the click",
           buttons == ["download:cdn", "download:us"] and all(b.proto.deferred_file_id for b in at.get("download_button")
-                                                             if b.proto.label == "Download"), buttons)
+                                                             if b.proto.label == web.EXPORT_LABEL), buttons)
     drawing = at.session_state["drawing"]
     finished, chart = drawing.finished, address(at)
     name, kind, data = clicked_download(at, "download:us")
@@ -1256,7 +1256,7 @@ def check_batch11(check: Check) -> None:
     check("the other tab's menu shows the format last chosen", at.selectbox(key="export:cdn").value == captions[-1],
           at.selectbox(key="export:cdn").value)
     name, _kind, data = clicked_download(at, "download:cdn")
-    check("... and its Download gives its own chart's", name == "cdn_rates_2015-01-01_2026-09-01.tsv" and data
+    check("... and its Export chart gives its own chart's", name == "cdn_rates_2015-01-01_2026-09-01.tsv" and data
           == web.export.delimited_bytes(web.export.chart_data(drawing.figures["cdn"], drawing.drawn.for_nation("cdn"), "cdn"), "\t"),
           name)
     check("choosing formats drew nothing, the address unchanged",
@@ -1723,12 +1723,25 @@ def check_batch292(check: Check) -> None:
           "[By level](?help=levels)" in shown and "[As % of GDP](?help=percent-of-gdp)" in shown)
 
 
+def check_batch31(check: Check) -> None:
+    """Batch 31: the window and the page alike: the buttons' tips from frontend, as the window's; Export chart, not Download."""
+    at = new_page("-c -s:2001 --e:2019")
+    tips = {b.label: b.help for b in at.button}
+    page = {"Refresh": web.REFRESH_HELP, "Reset": web.RESET_HELP, "◀ Back": web.BACK_HELP, "Unzoom": web.UNZOOM_HELP}
+    check("Refresh, Reset, Back and Unzoom: the tips the window's buttons have", not at.exception
+          and all(tips.get(label) == text for label, text in page.items()), {label: tips.get(label) for label in page})
+    exports = [b for b in at.get("download_button") if b.proto.id.endswith("download:cdn")]
+    check("the chart's download button reads Export chart, with the window's tip", len(exports) == 1
+          and exports[0].proto.label == "Export chart" and exports[0].proto.help == web.EXPORT_HELP,
+          [(b.proto.label, b.proto.help) for b in exports])
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
-    check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292,
+    check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch31,
 )
 
 

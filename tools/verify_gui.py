@@ -2074,6 +2074,35 @@ def check_batch292(check: Check) -> None:
               levels.title() if levels is not None else None)
 
 
+# The window's buttons and boxes, by Tk's class names, ttk's and Tk's own.
+BUTTON_CLASSES = {"TButton", "TCheckbutton", "TRadiobutton", "Button", "Checkbutton", "Radiobutton"}
+
+
+def check_batch31(check: Check) -> None:
+    """Batch 31: the window and the page alike: every button and box with a tip, the page's words where it has the button."""
+    with window(f"-c {END}") as w:
+        app, root = w.app, w.root
+        found = [widget for widget in all_widgets(root) if widget.winfo_class() in BUTTON_CLASSES]
+        missing = [widget.cget("text") or str(widget) for widget in found if widget not in gui._Tooltip.tips]
+        check(f"every button and box in the window has a tip ({len(found)}, every nation's panel among them)",
+              len(found) > 100 and not missing, missing)
+        tips = {widget.cget("text"): gui._Tooltip.tips.get(widget) for widget in found if widget.winfo_class() == "TButton"}
+        page = {"Refresh (F5)": frontend.REFRESH_HELP, "Reset to defaults": frontend.RESET_HELP, "◀ Back (Alt+←)": frontend.BACK_HELP,
+                "Unzoom": frontend.UNZOOM_HELP, f"{frontend.EXPORT_LABEL}… (Ctrl+S)": frontend.EXPORT_HELP}
+        check("Refresh, Reset, Back, Unzoom and Export chart: the page's tips, from frontend",
+              all(tips.get(label) == text for label, text in page.items()), {label: tips.get(label) for label in page})
+        for kind, words in (("start", "Automatic when blank."), ("end", "Today when blank.")):
+            app.payload_vars[kind].set("2015" if kind == "start" else "2019")
+            picker = gui.DatePicker(app.value_entries[kind], app.payload_vars[kind], kind, on_pick=lambda: None)
+            try:
+                blank = next(widget for widget in all_widgets(picker.top) if widget.winfo_class() == "TButton"
+                             and widget.cget("text") == "Blank (default)")
+                check(f"the calendar's Blank (default) beside {kind.capitalize()}: the page's tip", gui._Tooltip.tips.get(blank) == words,
+                      gui._Tooltip.tips.get(blank))
+            finally:
+                picker.top.destroy()
+
+
 # The groups in the order they run; --group picks some by these names.
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
@@ -2104,6 +2133,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch283": check_batch283,
     "batch291": check_batch291,
     "batch292": check_batch292,
+    "batch31": check_batch31,
 }
 
 

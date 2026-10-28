@@ -63,8 +63,8 @@ major.minor: the major goes up when a batch of the plan adds a new type of serie
 each push of a build (`ratesplot.__version__`).
 
 Each chart can be kept as a picture or as the data it shows: in the window "Export chart…"
-(Ctrl+S), the type chosen in its dialog; on the page a menu of types beside "Download" under each
-chart; on the command line `--save:FILE`. PNG is the chart as drawn; JPG, PDF and SVG the same
+(Ctrl+S), the type chosen in its dialog; on the page a menu of types beside "Export chart" under
+each chart; on the command line `--save:FILE`. PNG is the chart as drawn; JPG, PDF and SVG the same
 chart in those formats (PDF and SVG stay sharp at any size). XLSX, CSV and TSV hold the data: the
 title and the dates, then a column for each curve as its legend names it, with its unit, and a row
 for each date in the window on which any curve has a point, holding the value each line shows on

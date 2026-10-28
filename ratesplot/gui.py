@@ -120,6 +120,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import weakref
 import webbrowser
 from collections.abc import Callable
 from tkinter import filedialog, ttk
@@ -136,14 +137,21 @@ from .console import this_thread_output_to
 from .export import EXPORT_CHOICES, IMAGE_FORMATS
 from .frontend import (
     ALL_TICKS,
+    BACK_HELP,
+    BLANK_DATE_WORDS,
+    EXPORT_HELP,
+    EXPORT_LABEL,
     GREYABLE_OPTIONS,
     LIMIT_COLUMNS,
     LIMITS,
     NATION_OPTIONS,
+    REFRESH_HELP,
     REMEMBER_HELP,
     REMEMBER_LABEL,
+    RESET_HELP,
     STATE_VERSION,
     TAB_TITLES,
+    UNZOOM_HELP,
     WHEEL_DELAY_MS,
     WHEEL_ZOOM_FACTOR,
     ChartGeometry,
@@ -278,6 +286,12 @@ _ZOOM_HINT = "Drag pointer: zoom to box | right/middle click-drag: pan | wheel: 
 # kept whatever the box says (Terry, decision 74).
 _SETTINGS_KEYS = ("payloads", "flags", "zoom", "tab", "keep_ratio")
 _REMEMBER_TIP = f"{REMEMBER_HELP} The window's size and place, the column's width and the save folder are kept either way."
+# The tips of the window's buttons that the page has no match for (batch
+# 31.6; the others are the page's, from ``frontend``).
+_FIT_TIP = "Each chart scaled to fill its tab, keeping its shape."
+_ACTUAL_TIP = "Each chart pixel for pixel, as the file it is saved as, with scroll bars."
+_COPY_COMMAND_TIP = "Copy the command line, to draw the same chart from a command prompt."
+_SAVE_LOG_TIP = "Save the whole message log as a text file."
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +300,14 @@ _REMEMBER_TIP = f"{REMEMBER_HELP} The window's size and place, the column's widt
 
 
 class _Tooltip:
-    """Show ``text`` in a small borderless window while the pointer is over ``widget``."""
+    """Show ``text`` in a small borderless window while the pointer is over ``widget``.
+
+    Every widget given a tip is in ``tips`` with its text (batch 31.6), so a
+    check can find a button or box left without one (``tools/verify_gui.py``).
+    Weakly, and the text alone: a value referring to its widget would keep it.
+    """
+
+    tips: weakref.WeakKeyDictionary[tk.Widget, str] = weakref.WeakKeyDictionary()
 
     def __init__(self, widget: tk.Widget, text: str) -> None:
         self.widget = widget
@@ -294,6 +315,7 @@ class _Tooltip:
         self.window: tk.Toplevel | None = None
         widget.bind("<Enter>", self._show, add="+")
         widget.bind("<Leave>", self._hide, add="+")
+        _Tooltip.tips[widget] = text
 
     def _show(self, _event: tk.Event) -> None:
         if self.window is not None:
@@ -423,6 +445,7 @@ class DatePicker:
         blank = ttk.Button(footer, text="Blank (default)", command=self._blank)
         blank.state(["!disabled"] if variable.get().strip() else ["disabled"])
         blank.pack(side="left", padx=4)
+        _Tooltip(blank, f"{BLANK_DATE_WORDS.get(kind, 'automatic').capitalize()} when blank.")  # the page's tip (batch 31.6)
         ttk.Button(footer, text="Cancel", command=self.top.destroy).pack(side="right")
 
         self._draw_days()
@@ -1059,7 +1082,9 @@ class RatesPlotApp:
         bar.columnconfigure(1, weight=1)
         ttk.Label(bar, text="Command line:").grid(row=0, column=0, sticky="w")
         ttk.Entry(bar, textvariable=self.command, state="readonly").grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(bar, text="Copy", command=self._copy_command).grid(row=0, column=2)
+        copy = ttk.Button(bar, text="Copy", command=self._copy_command)
+        copy.grid(row=0, column=2)
+        _Tooltip(copy, _COPY_COMMAND_TIP)
         self.status_label = ttk.Label(bar, textvariable=self.status, anchor="w")
         self.status_label.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         # Red only while it names a chart not drawn (batch 19.4, ``_render_finished``): any new text is the usual colour.
@@ -1445,14 +1470,16 @@ class RatesPlotApp:
         preview.pack(fill="x", pady=(0, 6))
         self._preview, self._pinned = preview, pinned
         preview.columnconfigure((0, 1), weight=1)
-        for column, (value, text) in enumerate((("fit", "Fit to window"), ("actual", "Actual size"))):
-            ttk.Radiobutton(preview, text=text, value=value, variable=self.zoom, command=self._refresh_all_views).grid(
-                row=0, column=column, sticky="w"
-            )
+        for column, (value, text, tip) in enumerate((("fit", "Fit to window", _FIT_TIP), ("actual", "Actual size", _ACTUAL_TIP))):
+            mode = ttk.Radiobutton(preview, text=text, value=value, variable=self.zoom, command=self._refresh_all_views)
+            mode.grid(row=0, column=column, sticky="w")
+            _Tooltip(mode, tip)
         self.back_button = ttk.Button(preview, text="◀ Back (Alt+←)", command=self._back)
         self.back_button.grid(row=1, column=0, sticky="ew", padx=1, pady=1)
+        _Tooltip(self.back_button, BACK_HELP)
         self.unzoom_button = ttk.Button(preview, text="Unzoom", command=self._unzoom)
         self.unzoom_button.grid(row=1, column=1, sticky="ew", padx=1, pady=1)
+        _Tooltip(self.unzoom_button, UNZOOM_HELP)
         hint = ttk.Label(preview, text=_ZOOM_HINT, wraplength=_NOTE_WRAP_PX, foreground="#555555")
         hint.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
         # The note wraps to the column's width, whatever the handle makes it.
@@ -1467,15 +1494,14 @@ class RatesPlotApp:
         # than making the column's narrowest width larger.
         self._bar = ttk.Frame(pinned)
         self._bar.pack(fill="x")
-        self._bar_buttons = [
-            ttk.Button(self._bar, text=text, command=command)
-            for text, command in (
-                ("Refresh (F5)", self._refresh),
-                ("Export chart… (Ctrl+S)", self._export_chart),
-                ("Save log file…", self._save_log),
-            )
-        ]
-        _Tooltip(self._bar_buttons[2], "Save the whole message log as a text file.")
+        self._bar_buttons = []
+        for text, command, tip in (
+            ("Refresh (F5)", self._refresh, REFRESH_HELP),
+            (f"{EXPORT_LABEL}… (Ctrl+S)", self._export_chart, EXPORT_HELP),
+            ("Save log file…", self._save_log, _SAVE_LOG_TIP),
+        ):
+            self._bar_buttons.append(ttk.Button(self._bar, text=text, command=command))
+            _Tooltip(self._bar_buttons[-1], tip)
         self._bar_rows = 0
         self._arrange_bar(1)
         self._bar.bind("<Configure>", lambda event: self._arrange_bar(1 if event.width >= self._bar_width(1) else 2), add="+")
@@ -1484,6 +1510,7 @@ class RatesPlotApp:
         buttons.pack(fill="x", pady=(0, 6))
         self.reset_button = ttk.Button(buttons, text="Reset to defaults", command=self._reset)
         self.reset_button.grid(row=0, column=0, sticky="ew", padx=1, pady=1)
+        _Tooltip(self.reset_button, RESET_HELP)
         # Under Reset rather than beside it, so the column's narrowest width is unchanged.
         self.remember_box = ttk.Checkbutton(buttons, text=REMEMBER_LABEL, variable=self.remember)
         self.remember_box.grid(row=1, column=0, sticky="w", padx=1, pady=(2, 0))

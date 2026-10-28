@@ -11,6 +11,7 @@ may not have it) and the two cannot drift apart:
 * the starting choices: defaults, remembered settings and the command line
   combined (``starting_choices``), and the window's remembered settings file;
   the words of the "Remember my settings" box (``REMEMBER_LABEL``, batch 24.6);
+  the tips of the buttons both have (``REFRESH_HELP`` and the rest, batch 31.6);
 * each nation's own controls (``NATION_OPTIONS``, under its tab in the window
   and in its own sidebar section on the page), keyed "NATION:OPTION";
 * each option's help as the controls show it (``option_help_lines``);
@@ -1308,6 +1309,21 @@ REMEMBER_HELP = (
     "they are, neither written nor cleared, so the charts drawn meanwhile do not replace them; ticked again, the settings "
     "shown are kept."
 )
+
+# The buttons the window and the page both have, and their tips, from one
+# place so that the two read alike (batch 31.6; Terry, 2026-10-28: "Some
+# controls (buttons, etc.) don't have working "hover over" help on the
+# Windows version, even though they do on the Web version"). The page's
+# download button is named as the window's button (batch 31.4).
+REFRESH_HELP = "Draw again with the latest data: the intraday quotes of the moment, and anything downloaded over an hour ago."
+RESET_HELP = "Back to the default charts."
+BACK_HELP = "Undo the last zoom, move of the dates, Unzoom or Reset."
+UNZOOM_HELP = "Back to the charts before the first zoom or move since the last Reset (Back undoes it)."
+EXPORT_LABEL = "Export chart"
+EXPORT_HELP = "The chart as an image, or the data it shows: each line's value on each date in the window."
+# What a blank date field means, in its grey value on the page and in the tip
+# of the calendar's "Blank (default)" in both ("Today when blank.").
+BLANK_DATE_WORDS = {"start": "automatic", "end": "today"}
 
 
 # ---------------------------------------------------------------------------
