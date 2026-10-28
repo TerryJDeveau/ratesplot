@@ -88,6 +88,11 @@ RECENT = TODAY - pd.Timedelta(days=21)
 
 # Usual age limits (days since the date the newest value describes).
 DAILY = 7  # business days, a long weekend, a day's publication lag
+# Valet's prime rate: a Wednesday's value comes the next day (2026-10-21's
+# between 14:34 and 16:32 UTC on the 22nd, a day after the posted mortgage
+# rates; measured 2026-10-28), so it is eight days old on a Thursday morning,
+# nine if that Thursday is a holiday.
+WEEKLY_NEXT_DAY = 9
 QUOTES = 4  # Friday's last quotes on the Tuesday after a long weekend
 # A quarter's figures come out one to three months after it ends and stay the
 # newest until the next quarter's do: up to about half a year.
@@ -543,7 +548,7 @@ CHECKS: tuple[Check, ...] = (
     Check("boc_mortgage3", "Bank of Canada V80691334 posted 3-year", DAILY, _rate(partial(rates.mortgage_rate, "3"))),
     Check("boc_mortgage1", "Bank of Canada V80691333 posted 1-year", DAILY, _rate(partial(rates.mortgage_rate, "1"))),
     Check("boc_mortgage5v", "Bank of Canada BROKER_AVERAGE_5YR_VRM 5-year variable", DAILY, _rate(partial(rates.mortgage_rate, "5v"))),
-    Check("boc_prime", "Bank of Canada V80691311 prime rate", DAILY, _rate(partial(rates.mortgage_rate, "prime", "cdn"))),
+    Check("boc_prime", "Bank of Canada V80691311 prime rate", WEEKLY_NEXT_DAY, _rate(partial(rates.mortgage_rate, "prime", "cdn"))),
     # Batch 9.4: the U.S. banks' prime loan rate, the prime term on the U.S. chart.
     Check("fred_dprime", "FRED DPRIME bank prime loan rate (--mortgages:prime, U.S.)", DAILY, _rate(partial(rates.mortgage_rate, "prime", "us"))),
     Check("statcan_mortgage", "StatCan 34-10-0145 CMHC 5-year rate (monthly; before 1975)", None, _cmhc_history),
