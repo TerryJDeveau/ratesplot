@@ -18,7 +18,7 @@ Each older source is scaled to meet the newer one by the median ratio of the two
 
 ## The United Kingdom
 
-- **1946 on.** General government interest and dividends paid to the private sector and the rest of the world, [NMYX at the ONS](https://www.ons.gov.uk/economy/governmentpublicsectorandtaxes/publicsectorfinance/timeseries/nmyx/pusf), quarterly from 1946, millions of pounds, not seasonally adjusted, from the public sector finances. Paid outside general government, so consolidated; the chart's label is "TTM Interest Paid (consolidated)". The release of 2026-10-21 brought the third quarter of 2026; the next is on 2026-11-20.
+- **1946 on.** General government interest and dividends paid to the private sector and the rest of the world, [NMYX at the ONS](https://www.ons.gov.uk/economy/governmentpublicsectorandtaxes/publicsectorfinance/timeseries/nmyx/pusf), quarterly from 1946, millions of pounds, not seasonally adjusted, from the public sector finances. Paid outside general government, so consolidated; the chart's label is "TTM Interest Paid". The release of 2026-10-21 brought the third quarter of 2026; the next is on 2026-11-20.
 
 ## Germany
 

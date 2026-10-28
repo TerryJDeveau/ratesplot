@@ -1270,8 +1270,11 @@ UK = CountryMetadata(
     debt_title="UK General Government Gross Debt",
     interest_column=UK_INTEREST_COLUMN,
     # ONS NMYX: interest (and the odd dividend) the government sector pays
-    # outside itself, so consolidated as the other aggregates are.
-    interest_label="TTM Interest Paid (consolidated)",
+    # outside itself, so consolidated as the other aggregates are. The label
+    # does not say so, as Canada's and the U.S.' do not: "consolidated" only
+    # where it tells a figure from an unconsolidated one a reader could ask
+    # for (Terry, 2026-10-28, batch 31.5), and the UK offers no such total.
+    interest_label="TTM Interest Paid",
     federal_debt_column=UK_NATIONAL_DEBT_COLUMN,
     federal_debt_label="UK National Debt (pre-1975)",
     federal_debt_title="UK National Debt",
@@ -1306,8 +1309,9 @@ DE = CountryMetadata(
     debt_title="German General Government Gross Debt",
     interest_column=DE_INTEREST_COLUMN,
     # D.41 payable by general government, consolidated (less than the sum of
-    # its subsectors' by 0.2 % on average, 2002-2026).
-    interest_label="TTM Interest Payable (consolidated)",
+    # its subsectors' by 0.2 % on average, 2002-2026); not said in the label,
+    # as for the UK (batch 31.5).
+    interest_label="TTM Interest Payable",
     # Bund, Länder, Gemeinden (ratesplot.de_data); the social security funds
     # are no level of the chart.
     level_names=(("f", "Federal"), ("n", "Länder & Local"), ("p", "Länder"), ("m", "Local")),
