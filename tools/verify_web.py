@@ -1720,11 +1720,39 @@ def check_batch291(check: Check) -> None:
 
 
 def check_batch292(check: Check) -> None:
-    """Batch 29.2: the curves' and per capita's tips end with More to their topics; a topic's link to another is the page's own address."""
+    """Batch 29.2: the curves', per capita's and the rates' tips end with More to their topics; a topic's link to another is the page's own address."""
     at = new_page("-c --e:2026-09-01")
-    for name in ("gdp", "debt", "interest", "per-capita"):
+    flags = {"gdp": "gdp", "debt": "debt", "interest": "interest", "per-capita": "per-capita",
+             # 29.2b, the rates' pages.
+             "yield": "yields", "policy": "policy-rates", "mortgages": "mortgages", "spreads": "spreads", "current": "latest-values"}
+    for name, topic in flags.items():
         box = at.checkbox(key=f"flag:{name}")
-        check(f"{name}: its tip ends with More to its topic", not at.exception and box.help.endswith(f"[More](?help={name})"), box.help[-50:])
+        check(f"{name}: its tip ends with More to its topic", not at.exception and box.help.endswith(f"[More](?help={topic})"), box.help[-50:])
+    # A list's help is on its label alone (``web._choices_control``).
+    labels = {block.value: block.proto.help for block in at.markdown}
+    for label, topic in (("Yield terms", "yields"), ("Policy rates", "policy-rates"), ("Mortgage terms", "mortgages"), ("Spreads", "spreads")):
+        tip = labels.get(f"**{label}**", "")
+        check(f"{label}: its label's tip ends with More to its topic", tip.endswith(f"[More](?help={topic})"), tip[-50:])
+    margin = at.text_input(key="value:cdn:prime-margin")
+    check("the prime margin, greyed: its reason, then More to the mortgages' topic",
+          "Greyed because" in margin.help and margin.help.endswith("[More](?help=mortgages)"), margin.help[-80:])
+    tracker = new_page("--na:gb --e:2026-09-01").text_input(key="value:uk:tracker-margin")
+    check("the UK's tracker margin: More to the mortgages' topic", tracker.help.endswith("[More](?help=mortgages)"), tracker.help[-50:])
+    for topic, link in (("yields", "[Yield spreads](?help=spreads)"), ("policy-rates", None), ("mortgages", "[Policy rates](?help=policy-rates)"),
+                        ("spreads", "[Bond yields](?help=yields)")):
+        view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+        view.query_params["help"] = topic
+        view.run()
+        shown = "\n".join(block.value for block in view.markdown)
+        check(f"?help={topic}: a section per nation" + (", its link to another topic" if link else ""), not view.exception
+              and all(f"## {nation}" in shown for nation in ("Canada", "The United States", "The United Kingdom", "Germany"))
+              and (link is None or link in shown), shown[:60])
+    view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+    view.query_params["help"] = "latest-values"
+    view.run()
+    shown = "\n".join(block.value for block in view.markdown)
+    check("?help=latest-values: the Treasury's figures and the quotes", not view.exception and "# Latest values" in shown
+          and "## The day's quotes, every nation" in shown, shown[:60])
     view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
     view.query_params["help"] = "debt"
     view.run()

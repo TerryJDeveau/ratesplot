@@ -1,0 +1,33 @@
+# Mortgage rates
+
+Rates on loans for buying a home, in percent a year, drawn on the left axis as dashed steps: each in the colour of the bond yield of its term where the program has one (the 5-year mortgage as the 5-year yield), the variable rates dash-dotted, the prime rate dotted. Mortgage rates draws them; Mortgage terms chooses the terms: by default the U.S. 30-year and Canada's 5-year, and all of the UK's and Germany's. A term is drawn on its own nation's chart only.
+
+The kind of rate differs from nation to nation, so a level on one chart isn't the same measure as on another: survey averages of the rates offered in the U.S., the major banks' posted rates in Canada, quoted rates in the UK, and averages of the rates on new loans in Germany.
+
+The prime rate is a term too, for Canada and the U.S.: the base rate banks price variable loans from. Prime margin (points) draws it plus a margin, as in "Prime Rate + 0.50", which the legend shows; a negative margin is allowed. Tracker margin (points) does the same for the UK's tracker mortgage, below.
+
+## Canada
+
+- **5-year, 1951 to 1974: the CMHC rate.** Canada Mortgage and Housing Corporation's conventional mortgage lending rate for a 5-year term, monthly from 1951, Statistics Canada's table [34-10-0145](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3410014501). It is drawn only before the posted rate begins, so the program draws it from what it holds, without asking. At the join there is no jump: 11.88 in 1974-12, then 12.00.
+- **5-, 3- and 1-year: the posted rates.** The major chartered banks' posted rates for conventional mortgages, weekly (Wednesdays): the 5-year from 1975-01-01 (V80691335), the 3- and 1-year from 1980-01-02 (V80691334, V80691333) ([Interest rates posted for selected products by the major chartered banks](https://www.bankofcanada.ca/rates/banking-and-financial-statistics/posted-interest-rates-offered-by-chartered-banks/)). The Bank of Canada typically publishes them on Wednesdays by 14:30 Eastern time. The legend says "(posted)".
+- **5-year variable, from 2011-01-06: the estimated rate.** The Bank of Canada's estimated 5-year variable mortgage rate, weekly (Thursdays), an average of brokers' rates, as the series' code (BROKER_AVERAGE_5YR_VRM) says ([Canadian interest rates and monetary policy variables](https://www.bankofcanada.ca/rates/interest-rates/canadian-interest-rates/)); the legend says "(broker avg.)". It is missing for 28 days from 2013-05-30 and 14 days from 2014-12-04, breaks in the line.
+- **Prime, from 1975: the chartered banks' prime rate.** Weekly (Wednesdays, V80691311), from the same page of posted rates. Each bank sets its own prime rate from its cost of funding, which the Bank of Canada's target for the overnight rate influences.
+
+## The United States
+
+- **30- and 15-year: Freddie Mac's survey.** The Primary Mortgage Market Survey ([PMMS](https://www.freddiemac.com/pmms)), read from FRED: the 30-year fixed rate from 1971-04-02 ([MORTGAGE30US](https://fred.stlouisfed.org/series/MORTGAGE30US)), the 15-year from 1991-08-30 ([MORTGAGE15US](https://fred.stlouisfed.org/series/MORTGAGE15US)), weekly. Freddie Mac publishes it each Thursday at noon Eastern time, the average of the rates on loans offered from the Thursday before through Wednesday. Since 2022-11-17 it has been based on the applications lenders across the country submit to Freddie Mac.
+- **Prime, from 1955-08-04: the bank prime loan rate.** The rate posted by a majority of the top 25 insured U.S.-chartered commercial banks, daily, from the Federal Reserve's H.15 release ([DPRIME](https://fred.stlouisfed.org/series/DPRIME)).
+
+## The United Kingdom
+
+- **2-, 3- and 5-year fixed, and the standard variable rate, from 1995-01.** The Bank of England's quoted rates, monthly weighted averages of the rates offered to households ([Quoted household interest rates](https://www.bankofengland.co.uk/statistics/visual-summaries/quoted-household-interest-rates)): fixed for 2, 3 or 5 years on a loan of 75 % of the property's value (IUMBV34, IUMBV37, IUMBV42), and the standard variable rate a fixed rate reverts to (IUMTLMV). Each month is drawn from its first day. On 2026-10-28 the latest month was 2026-09.
+- **The standard variable rate, 1939 to 1994: the millennium dataset.** The Bank of England's dataset ([Research datasets](https://www.bankofengland.co.uk/statistics/research-datasets)) has a spliced variable mortgage rate, monthly from 1939-09; it carries the standard variable rate back until the quoted rate begins. The line is labelled "Standard Variable Rate (SVR)" throughout.
+- **Tracker, from 1997-01-01: Bank Rate plus a margin.** A tracker mortgage follows Bank Rate at a fixed margin, so the program draws Bank Rate ([Policy rates](?help=policy-rates)) plus Tracker margin (points), by default 1.75, from 1997-01, the first month of the Bank's quoted lifetime tracker rate (IUMBV24). That rate stood 1.71 above Bank Rate in its last month, 2025-03.
+
+## Germany
+
+- **Over 1 to 5, over 5 to 10 and over 10 years, from 2000-01.** The ECB's bank interest rate statistics for Germany: the rates on new loans to households for house purchase, by the period the rate is fixed for, monthly ([over 1 to 5](https://data.ecb.europa.eu/data/datasets/MIR/MIR.M.DE.B.A2C.I.R.A.2250.EUR.N), [over 5 to 10](https://data.ecb.europa.eu/data/datasets/MIR/MIR.M.DE.B.A2C.O.R.A.2250.EUR.N), [over 10](https://data.ecb.europa.eu/data/datasets/MIR/MIR.M.DE.B.A2C.P.R.A.2250.EUR.N)). The legend says "(new loans, avg.)". Each month is drawn from its first day. On 2026-10-28 the latest month was 2026-08.
+
+## How the program keeps these figures
+
+Each source's figures are kept in the program as the source published them. A job on GitHub asks every live source each day and adds the new figures; a revision of older ones waits for review before it is taken. When a chart is drawn, the program takes only the newest figures from each source and draws the older ones from what it holds: those from 24 months before the last figure it holds where the source revises its figures (GDP, debt, interest, population and the mortgage rates from surveys), from two months before where it doesn't (the yields, and the rates that are set or traded). If a source doesn't answer, the chart is drawn from what the program holds, with a warning naming the source and its last date. The sources that have stopped (Statistics Canada's old tables, Historical Statistics of Canada, the Bank of Canada's historical tables, the Bank of England's dataset, and the series the Federal Reserve, the Bundesbank and the ECB no longer update) are kept as they were last published, and asked nothing.

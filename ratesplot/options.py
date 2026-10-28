@@ -851,7 +851,7 @@ OPTIONS: tuple[Option, ...] = (
     ),
     Option(
         "yield", Kind.TOGGLE, ("include_yield",), "curves", "--yield / --no-yield", "bond yields",
-        names=("yield", "yields"), label="Bond yields", panel="rates",
+        names=("yield", "yields"), label="Bond yields", panel="rates", topic="yields",
     ),
     # The yield terms (config.YIELD_TERMS): named, or dropped from the default
     # five. They choose which yield lines the curve draws; they do not name a
@@ -864,7 +864,7 @@ OPTIONS: tuple[Option, ...] = (
         f"{','.join(DEFAULT_YIELD_TERMS)}); Canada has all but 20\n(1m 6m 1 3 7 from 2001), the U.S. all but\n3, "
         "the UK 5 10 20 (its default),\nGermany 1 2 5 7 10 20 30 (its default\n2 5 10 30)",
         names=("yields",), parse=partial(parse_terms, kind="--yields"), label="Yield terms", format=format_terms,
-        editor="choices", choices=_YIELD_CHOICES,
+        editor="choices", choices=_YIELD_CHOICES, topic="yields",
     ),
     Option(
         "no-yields", Kind.VALUE, ("yield_terms",), "curves", "--no-yields:LIST / --no-y:LIST",
@@ -879,7 +879,7 @@ OPTIONS: tuple[Option, ...] = (
         "each country's policy rate, the central\nbank's official rate: the fed funds\n"
         "target (a range from 2008, the monthly\naverage before 1982-09); the Bank Rate,\n"
         "the overnight target from 1996; the UK's\nBank Rate; Germany's: the Bundesbank's\ndiscount rate, the ECB's main\nrefinancing rate from 1999",
-        names=("policy-rates",), shortest=2, label="Policy rate",
+        names=("policy-rates",), shortest=2, label="Policy rate", topic="policy-rates",
     ),
     # Batch 9.1 (Terry, decision 27): the official rate by default, the
     # market's overnight rate a second term. Per nation (--us:policy:market).
@@ -889,13 +889,14 @@ OPTIONS: tuple[Option, ...] = (
         "effective fed funds rate, CORRA from\n1997, SONIA from 1997, EONIA from 1999\nthen €STR), or both; turns --policy on",
         names=("policy-rates",), shortest=2, parse=parse_policy_terms, turns_on="policy",
         label="Policy rates", format=format_terms, editor="choices", choices=_POLICY_CHOICES,
+        topic="policy-rates",
     ),
     # At least "mo": "--m:" stays ambiguous (--min or --max).
     Option(
         "mortgages", Kind.FLAG, ("mortgages",), "rates", "--mortgages / --no-mortgages",
         "mortgage rates, dashed in the colour of\nthe yield of their term: U.S. survey\n"
         "averages; Canadian posted rates; UK\nquoted rates; German averages of new\nloans",
-        names=("mortgages",), shortest=2, label="Mortgage rates",
+        names=("mortgages",), shortest=2, label="Mortgage rates", topic="mortgages",
     ),
     Option(
         "mortgage-terms", Kind.VALUE, ("mortgage_terms",), "rates", "--mortgages:LIST / --mo:LIST",
@@ -906,6 +907,7 @@ OPTIONS: tuple[Option, ...] = (
         f"default {','.join(DEFAULT_MORTGAGE_TERMS)} (the UK's and Germany's: all\ntheir terms); turns --mortgages on",
         names=("mortgages",), shortest=2, parse=parse_mortgage_terms, turns_on="mortgages",
         label="Mortgage terms", format=format_terms, editor="choices", choices=_MORTGAGE_CHOICES,
+        topic="mortgages",
     ),
     # Batch 9.4 (Terry, 2026-10-08, decision 20): a Canadian "prime" mortgage
     # is more often prime plus a margin, so a margin for the prime term, shown
@@ -919,7 +921,7 @@ OPTIONS: tuple[Option, ...] = (
         "the prime rate plus MARGIN points\n(negative allowed; default 0), as in\n\"Prime Rate + 0.50\"; turns --mortgages\n"
         "and the prime term on, unless a list\nof terms is given",
         names=("prime",), shortest=2, parse=parse_prime_margin, turns_on="mortgages",
-        label="Prime margin (points)", format=partial(format_margin, field="prime_margin"),
+        label="Prime margin (points)", format=partial(format_margin, field="prime_margin"), topic="mortgages",
     ),
     # Batch 9.5 (Terry, 2026-10-13, decision 26): the UK tracker, Bank Rate
     # plus a margin, by default 1.75 points (config.DEFAULT_TRACKER_MARGIN).
@@ -932,13 +934,13 @@ OPTIONS: tuple[Option, ...] = (
         "the UK's tracker mortgage: Bank Rate\nplus MARGIN points (negative allowed;\n"
         f"default {DEFAULT_TRACKER_MARGIN:g}), from 1997; turns --mortgages on",
         names=("tracker",), shortest=2, parse=parse_tracker_margin, turns_on="mortgages",
-        label="Tracker margin (points)", format=partial(format_margin, field="tracker_margin"),
+        label="Tracker margin (points)", format=partial(format_margin, field="tracker_margin"), topic="mortgages",
     ),
     # At least "sp": "--s:" stays the start date.
     Option(
         "spreads", Kind.FLAG, ("spreads",), "rates", "--spreads / --no-spreads",
         "yield spreads in percentage points, drawn\nthick, their inverted stretches shaded",
-        names=("spreads",), shortest=2, label="Yield spreads", panel="rates",
+        names=("spreads",), shortest=2, label="Yield spreads", panel="rates", topic="spreads",
     ),
     Option(
         "spread-pairs", Kind.VALUE, ("spread_pairs",), "rates", "--spreads:LIST / --sp:LIST",
@@ -946,6 +948,7 @@ OPTIONS: tuple[Option, ...] = (
         f"{format_spreads((DEFAULT_SPREADS,), PlotConfig())};\nthe UK's: 10y-5y,20y-10y; Germany's:\n10y-2y,30y-10y); turns --spreads on",
         names=("spreads",), shortest=2, parse=parse_spreads, turns_on="spreads",
         label="Spreads", format=format_spreads, editor="choices", choices=_SPREAD_CHOICES, panel="rates",
+        topic="spreads",
     ),
     # Measure of the right-axis curves: argparse store_true flags, like the
     # countries.
@@ -1044,6 +1047,7 @@ OPTIONS: tuple[Option, ...] = (
         "on by default: U.S. Treasury daily yields\nand debt, and the day's intraday yield\n"
         "quotes (CNBC), past the regular sources",
         names=("current",), shortest=3, label="Intraday quotes on end date", panel="labels",
+        topic="latest-values",
     ),
     # The automatic refresh (batch 11.3, ratesplot.refresh; Terry, 2026-10-08
     # and 2026-10-12), off by default. At least "au": no other name begins so.

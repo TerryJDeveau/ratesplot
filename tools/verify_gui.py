@@ -2065,9 +2065,11 @@ def check_batch291(check: Check) -> None:
 
 def check_batch292(check: Check) -> None:
     """Batch 29.2: the sources' pages named by their controls; a topic's link to another opens that topic's window."""
-    with window(f"-c {END}") as w:
+    with window(f"--na:ca,gb {END}") as w:
         app, root = w.app, w.root
-        for key in ("gdp", "debt", "interest", "per-capita", "cdn:debt-parts"):
+        rates = ("yield", "policy", "mortgages", "spreads", "current", "cdn:yields", "cdn:policy-terms", "cdn:mortgage-terms",
+                 "cdn:prime-margin", "cdn:spread-pairs", "uk:tracker-margin")  # 29.2b
+        for key in ("gdp", "debt", "interest", "per-capita", "cdn:debt-parts", *rates):
             app.info_marks[key].event_generate("<Button-1>")
             root.update()
             buttons = {widget.cget("text") for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton"}
@@ -2091,6 +2093,13 @@ def check_batch292(check: Check) -> None:
         levels = app.topic_windows.get("levels")
         check("a click on “By level”: the levels' topic in its own window", levels is not None and levels.title() == "By level of government",
               levels.title() if levels is not None else None)
+        app._show_topic("yields")
+        root.update()
+        text = next(widget for widget in all_widgets(app.topic_windows["yields"]) if widget.winfo_class() == "Text")
+        links = {text.get(*text.tag_ranges(tag)[:2]) for tag in text.tag_names() if tag.startswith("link-")}
+        check("the yields' page: its title, its links to the spreads' and the latest values' pages and to the sources",
+              app.topic_windows["yields"].title() == "Bond yields" and {"Yield spreads", "the latest values", "DGS10"} <= links,
+              (app.topic_windows["yields"].title(), sorted(links)[:6]))
 
 
 # The window's buttons and boxes, by Tk's class names, ttk's and Tk's own.
