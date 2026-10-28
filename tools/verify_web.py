@@ -507,6 +507,18 @@ def check_calendars(check: Check) -> None:
         cal.date_input(key="calendar:start").value is None and not cal.exception,
         cal.date_input(key="calendar:start").value,
     )
+    # After today (2026-10-28, batch 32): an End later than today shows a change already announced for a day in it.
+    later = datetime.date.today() + datetime.timedelta(days=3)
+    cal = new_page("-c --e:2026-09-01")  # a fresh page: the Start 1599 above, refused, holds back every change
+    cal.text_input(key="value:end").input(f"{later:%Y-%m-%d}")
+    cal.run()
+    check("an End after today: the calendar opens at it, and reaches 2100-12-31",
+          cal.date_input(key="calendar:end").value == later and web._CALENDAR_LAST == datetime.date(2100, 12, 31),
+          (cal.date_input(key="calendar:end").value, web._CALENDAR_LAST))
+    cal.date_input(key="calendar:end").set_value(later + datetime.timedelta(days=1))
+    cal.run()
+    check("a day after today picked in the calendar: written in the field",
+          f"--end:{later + datetime.timedelta(days=1):%Y-%m-%d}" in address(cal) and not cal.exception, address(cal))
 
 
 def check_size_boxes(check: Check) -> None:

@@ -96,7 +96,7 @@ Zoom and dates
 
 Dates
     Beside each date field a 📅 button opens Streamlit's calendar (between
-    1600 and today) and a "Blank (default)" button, as the window's does:
+    1600 and 2100) and a "Blank (default)" button, as the window's does:
     picking a day writes ``YYYY-MM-DD`` in the field, and typing ``YYYY`` or
     ``YYYY-MM`` still works (``_date_control``).
 
@@ -344,6 +344,11 @@ _AUTO_TICKER = "auto_ticker"  # the automatic refresh's Ticker for this visitor 
 _AUTO_LAID_OUT = "auto_laid_out"  # True while its fragment runs as part of the whole page's run
 # The calendar's first day: the earliest date a chart shows (config.EARLIEST_DATE, batch 28.3).
 _CALENDAR_FIRST = EARLIEST_DATE.date()
+# Its last day: as far as the window's calendar reaches (its years to 2100).
+# Today until 2026-10-28, when Terry found it would not pick the End he
+# could type: a chart whose End is later than today shows a change of policy
+# rate already announced for a day in it (batch 32, decision 83).
+_CALENDAR_LAST = datetime.date(2100, 12, 31)
 # A date field with its calendar button: room for a whole YYYY-MM-DD.
 _DATE_ROW_PX = 230
 # The blocks whose check boxes share rows (Terry, 2026-10-08: the nations,
@@ -1523,11 +1528,7 @@ def _field_date(option: Option) -> datetime.date | None:
         date = parse_date_spec(text, kind=option.name).date() if text else None
     except ValueError:
         return None
-    return date if date is not None and _CALENDAR_FIRST <= date <= _today() else None
-
-
-def _today() -> datetime.date:
-    return pd.Timestamp.today().date()
+    return date if date is not None and _CALENDAR_FIRST <= date <= _CALENDAR_LAST else None
 
 
 def _date_picked(name: str) -> None:
@@ -1566,7 +1567,7 @@ def _date_control(where, option: Option) -> None:
             option.label,
             key=_CALENDAR + option.name,
             min_value=_CALENDAR_FIRST,
-            max_value=_today(),
+            max_value=_CALENDAR_LAST,
             format="YYYY-MM-DD",
             on_change=_date_picked,
             args=(option.name,),
