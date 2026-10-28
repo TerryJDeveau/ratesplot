@@ -1876,6 +1876,72 @@ def check_remember(check: Check) -> None:
         shutil.rmtree(folder_root, ignore_errors=True)
 
 
+def check_batch281(check: Check) -> None:
+    """Batch 28.1: greyed where they would do nothing: Min and Max, the yield terms, the quotes, the projections, Blank, All, Reset."""
+    with window(f"-c --no-yield {END}") as w:
+        app = w.app
+        terms = app.choice_editors["cdn:yields"].widgets
+        check("yields off: Canada's yield terms greyed", terms and not any(enabled(widget) for widget in terms))
+        check("nothing on the yield axis: Min and Max greyed, Top active",
+              not enabled(app.value_entries["cdn:min"]) and not enabled(app.value_entries["cdn:max"])
+              and enabled(app.value_entries["cdn:top"]))
+        w.tick("policy", True)
+        w.settle()
+        check("the policy rate on: Min and Max active, the yield terms still greyed",
+              enabled(app.value_entries["cdn:min"]) and enabled(app.value_entries["cdn:max"])
+              and not any(enabled(widget) for widget in terms))
+        check("drawn as the command line draws it", w.written_draws_the_same(), w.command_tokens())
+
+    with window("-c --e:2025-01-01") as w:
+        app = w.app
+        check("Canada alone, End too early for quotes: the quotes and the projections greyed",
+              not enabled(app.flag_boxes["current"]) and not enabled(app.flag_boxes["projections"]))
+        check("greyed, their ticks kept", app.flag_vars["current"].get() and app.flag_vars["projections"].get())
+        w.tick("us", True)
+        w.settle()
+        check("the U.S. ticked: the quotes active (the Treasury's daily values), the projections still greyed",
+              enabled(app.flag_boxes["current"]) and not enabled(app.flag_boxes["projections"]))
+
+        def blank_button(text: str):
+            variable = tk.StringVar(master=w.root, value=text)
+            picker = gui.DatePicker(app.value_entries["start"], variable, "start", lambda _day: None)
+            found = next(widget for widget in all_widgets(picker.top)
+                         if widget.winfo_class() == "TButton" and str(widget.cget("text")) == "Blank (default)")
+            state = enabled(found)
+            picker.top.grab_release()
+            picker.top.destroy()
+            return state
+
+        check("the calendar's Blank: greyed for a blank field, active for a date", not blank_button("") and blank_button("2001"))
+
+    with window(f"--na:ca,us {END}") as w:
+        app = w.app
+        w.typed("us:max", "abc")
+        app._limit_settled("us:max")
+        w.settle()
+        check("a Max its box refuses: its All greyed", not enabled(app.all_boxes["us:max"]), app.status.get())
+        w.typed("us:max", "8")
+        app._limit_settled("us:max")
+        w.settle()
+        check("a Max it takes: its All active", enabled(app.all_boxes["us:max"]), app.status.get())
+        check("not at the defaults: Reset active", enabled(app.reset_button))
+        app._reset()
+        w.settle()
+        check("at the defaults after Reset: Reset greyed", not enabled(app.reset_button), app.status.get())
+        check("End blank: the quotes and the projections active",
+              enabled(app.flag_boxes["current"]) and enabled(app.flag_boxes["projections"]))
+        app.zoom.set("actual")
+        w.pump()
+        check("Actual size: Reset active", enabled(app.reset_button))
+        app.zoom.set("fit")
+        app.size_editors["dimensions"].keep_ratio.set(False)
+        w.pump()
+        check("Fit to window, the size lock unticked: Reset active", enabled(app.reset_button))
+        app.size_editors["dimensions"].keep_ratio.set(True)
+        w.pump()
+        check("the lock ticked again: Reset greyed", not enabled(app.reset_button))
+
+
 # The groups in the order they run; --group picks some by these names.
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
@@ -1901,6 +1967,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "not_drawn": check_not_drawn,
     "settings_files": check_settings_files,
     "remember": check_remember,
+    "batch281": check_batch281,
 }
 
 
