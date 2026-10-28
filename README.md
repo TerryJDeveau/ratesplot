@@ -34,10 +34,12 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
 - **The web page** (`ratesplot/web.py`): open <https://ratesplot.streamlit.app> and choose
   the charts in the panel on the left. Drag a box on a chart to zoom to it, or turn the mouse
   wheel over it to zoom the dates about the pointer; buttons move the dates and undo a zoom;
-  each date has a calendar; the size keeps its shape when you change one side. The page's
+  each date has a calendar; the size keeps its shape when you change one side. Unzoom goes
+  back to the charts before the first zoom or move since the last Reset. The page's
   address holds the chart's settings, so a chart can be bookmarked or
-  sent. The page remembers your last chart for your next visit, in a cookie in your browser,
-  while "Remember my settings" is ticked; a link with a chart in it opens on that chart.
+  sent; under the charts its link is in a box with a copy button (the default charts' link
+  ends `?chart=`). The page remembers your last chart for your next visit, in a cookie in your
+  browser, while "Remember my settings" is ticked; a link with a chart in it opens on that chart.
   To run it on your own machine: `streamlit run streamlit_app.py`.
 - **The desktop window** (`ratesplot/gui.py`): `python ratesplot.py`. It adds a
   right-drag pan, and remembers your last settings: each command window
