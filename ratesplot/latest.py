@@ -100,10 +100,6 @@ _NEXT_SESSION_HOUR = 17
 # Debt to the Penny must agree this closely (fraction) with FRED's value for
 # the same quarter end, or the two are not the same measure and are not joined.
 _DEBT_JOIN_TOLERANCE = 0.001
-# The feed's quotes are at most this old: a Friday's last quotes on the Tuesday
-# after a long weekend. A window ending earlier than that cannot use them, so
-# they are not fetched for it.
-_QUOTE_MAX_AGE_DAYS = 4
 
 
 # Where ``project_to_now`` records, in the macro frame's ``attrs``, the date each
@@ -131,9 +127,8 @@ _MARKET_DEBT_MAX_GAP_DAYS = 7
 
 
 def _quotes_can_reach(config: PlotConfig) -> bool:
-    """True when the window ends late enough for the day's quotes to fall in it."""
-    today = pd.Timestamp.now(tz=MARKET_TIMEZONE).tz_localize(None).normalize()
-    return config.end >= today - pd.Timedelta(days=_QUOTE_MAX_AGE_DAYS)
+    """True when the window ends late enough for the day's quotes to fall in it (``config.QUOTE_MAX_AGE_DAYS``)."""
+    return config.quotes_can_reach
 
 
 def observed_through(dates: pd.Index | pd.Series) -> pd.Timestamp | None:

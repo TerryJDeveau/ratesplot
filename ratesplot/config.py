@@ -401,6 +401,12 @@ QUOTE_SYMBOLS = {
         "10-Year": "DE10Y-DE", "20-Year": "DE20Y-DE", "30-Year": "DE30Y-DE",
     },
 }
+# The feed's quotes are at most this old: a Friday's last quotes on the Tuesday
+# after a long weekend. A window ending earlier than that cannot use them, so
+# they are not fetched for it, and nothing is projected to today in it
+# (``PlotConfig.quotes_can_reach``). Moved here from ``latest`` in batch 28.1:
+# the window and the page grey what it leaves with nothing to do.
+QUOTE_MAX_AGE_DAYS = 4
 # The automatic refresh (--auto-refresh:MIN, batch 11.3; ratesplot.refresh):
 # every 5 minutes when no value is given, and never more often, on the web
 # page or anywhere else (Terry, 2026-10-08 and 2026-10-12, decision 23); at
@@ -1451,6 +1457,12 @@ class PlotConfig:
         """
         symbols = QUOTE_SYMBOLS.get(key, {})
         return tuple(column for column in self.for_nation(key).fetched_yield_columns if column in symbols)
+
+    @property
+    def quotes_can_reach(self) -> bool:
+        """True when the window ends late enough for the day's quotes to fall in it (``QUOTE_MAX_AGE_DAYS``), and so for a projection to today."""
+        today = pd.Timestamp.now(tz=MARKET_TIMEZONE).tz_localize(None).normalize()
+        return self.end >= today - pd.Timedelta(days=QUOTE_MAX_AGE_DAYS)
 
     @property
     def refresh_brings_nothing(self) -> str | None:
