@@ -1465,6 +1465,21 @@ class PlotConfig:
         return self.end >= today - pd.Timedelta(days=QUOTE_MAX_AGE_DAYS)
 
     @property
+    def current_brings_nothing(self) -> str | None:
+        """Return why --cur can add nothing to these charts, or None when it may (batch 28.1).
+
+        It adds the day's quotes to each nation's yields, in a window they can
+        reach (``quotes_can_reach``); and to the U.S. chart the Treasury's
+        daily yields and debt after FRED's last values, at any End later than
+        those, which only a drawing can tell. So it is never idle while the
+        U.S. chart is shown. Measured 2026-10-28: with End 2026-09-01 the U.S.
+        chart differs with and without it, Canada's and the UK's do not.
+        """
+        if self.quotes_can_reach or self.show_us:
+            return None
+        return f"the End date, {self.end:%Y-%m-%d}, is too early for the day's quotes, and no U.S. chart is shown"
+
+    @property
     def refresh_brings_nothing(self) -> str | None:
         """Return why an automatic refresh can bring nothing new to these charts, or None when it can (batch 11.3).
 

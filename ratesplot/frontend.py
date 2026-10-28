@@ -82,6 +82,7 @@ from .options import (
     idle_margins,
     idle_options,
     is_percent_bound,
+    latest_idle,
     margin_options,
     list_switch,
     nation_choice,
@@ -591,31 +592,50 @@ def idle_controls(flags: Mapping[str, bool]) -> frozenset[str]:
     """Return the options greyed out for these choices, by name.
 
     Those that change nothing on any chart (``options.idle_options``), and
-    GDP under -r, where it is the divisor and is not drawn. A blank flag is
-    its default (every curve on).
+    GDP under -r, where it is the divisor and is not drawn. Since batch
+    28.1, from the plan's measurements of the page (2026-10-25): the yield
+    terms while the yields are off, as the spread, policy and mortgage boxes
+    are while their switch is; and Min and Max while nothing is drawn on
+    the yield axis, neither yields nor spreads, policy or mortgage rates
+    (``PlotConfig.has_left_axis_series``), which then takes the right
+    axis's range. A blank flag is its default (every curve on, the rates
+    off).
     """
     idle = set(idle_options(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True)))
     if flags.get("relative", False) and "relative" not in idle:
         idle.add("gdp")
+    if not flags.get("yield", True):
+        idle.add("yields")
+        if not any(flags.get(name, False) for name in _LEFT_AXIS_RATES):
+            idle |= {"min", "max"}
     return frozenset(idle)
 
 
-def idle_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
-    """Return the options greyed out for these choices: ``idle_controls``, and the automatic refresh's where it can bring nothing new (batch 11.3).
+# The switches of the curves of ``ratesplot.rates``, drawn on the yield axis
+# with the yields (``PlotConfig.has_left_axis_series``).
+_LEFT_AXIS_RATES = ("policy", "mortgages", "spreads")
 
-    That one turns on the fields too (the End date, a nation's own yields),
-    so it is judged on the texts a drawing takes (``options.auto_refresh_idle``).
+
+def idle_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
+    """Return the options greyed out for these choices: ``idle_controls``, and the latest values' where they can bring nothing new.
+
+    The automatic refresh's (batch 11.3), the intraday quotes and the
+    projections to today (batch 28.1, by the End date) turn on the fields
+    too, so they are judged on the texts a drawing takes
+    (``options.latest_idle``).
     """
-    idle = idle_controls(flags)
-    if auto_refresh_idle(_texts_in_effect(payloads, flags), flags):
-        idle |= AUTO_REFRESH_OPTIONS
-    return idle
+    return idle_controls(flags) | latest_idle(_texts_in_effect(payloads, flags), flags)
 
 
 # Every option ``idle_controls`` and ``idle_choices`` can grey out: those idle
-# with no right-axis curve chosen, and GDP (under -r); the automatic refresh's;
-# and a nation's aggregate debts, by its key (``idle_nation_keys``).
-GREYABLE_OPTIONS = idle_options(False, False, False) | {"gdp", "aggregate"} | AUTO_REFRESH_OPTIONS
+# with no right-axis curve chosen, and GDP (under -r); the yield terms, Min
+# and Max (batch 28.1); the latest values' (``options.latest_idle``); and a
+# nation's aggregate debts, by its key (``idle_nation_keys``).
+GREYABLE_OPTIONS = (
+    idle_options(False, False, False)
+    | {"gdp", "aggregate", "yields", "min", "max", "current"}
+    | AUTO_REFRESH_OPTIONS
+)
 
 
 def idle_nation_keys(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:

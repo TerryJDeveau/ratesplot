@@ -2406,11 +2406,16 @@ class RatesPlotApp:
 
         Called before each drawing is asked for, since the End date's text
         is one of the things it turns on, which ``_update_dependent_controls``
-        is not called for. A change of the box or the minutes draws nothing
-        (``PlotConfig.same_chart``), so the timer starts afresh here.
+        is not called for. So are the intraday quotes and the projections to
+        today (batch 28.1, ``options.latest_idle``), greyed here too. A change
+        of the box or the minutes draws nothing (``PlotConfig.same_chart``),
+        so the timer starts afresh here.
         """
         payloads, flags = self._snapshot()
-        idle = "auto-refresh" in idle_choices(payloads, flags)
+        greyed = idle_choices(payloads, flags)
+        for name in ("current", "projections"):
+            self.flag_boxes[name].state(["disabled"] if name in greyed else ["!disabled"])
+        idle = "auto-refresh" in greyed
         self.flag_boxes["auto-refresh"].state(["disabled"] if idle else ["!disabled"])
         state = ["disabled"] if idle or not flags.get("auto-refresh") else ["!disabled"]
         for widgets in (self.value_entries, self.value_labels):

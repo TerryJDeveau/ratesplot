@@ -1514,12 +1514,34 @@ def auto_refresh_idle(texts: Mapping[str, str], flags: Mapping[str, bool]) -> bo
     never depends on them. False where the choices draw nothing (a field in
     the wrong, marked as such): the box stays as it is.
     """
+    return AUTO_REFRESH_OPTIONS <= latest_idle(texts, flags)
+
+
+def latest_idle(texts: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
+    """Return the latest values' controls that can change nothing on the charts these choices draw, judged on the texts too.
+
+    The automatic refresh's (``AUTO_REFRESH_OPTIONS``, batch 11.3:
+    ``PlotConfig.refresh_brings_nothing``); and since batch 28.1 the
+    intraday quotes (``PlotConfig.current_brings_nothing``) and the
+    projections to today, which only a window the day's quotes can reach
+    takes (``PlotConfig.quotes_can_reach``; Terry, plan 28.1: greyed "while
+    End is before today, when there is no quote and no projection").
+    ``texts`` as for ``auto_refresh_idle``; none where the choices draw
+    nothing.
+    """
     own = {key: text.strip() for key, text in texts.items() if key not in AUTO_REFRESH_OPTIONS and text.strip()}
     try:
         config = config_from_choices(own, flags)
     except ValueError:
-        return False
-    return config.refresh_brings_nothing is not None
+        return frozenset()
+    idle: set[str] = set()
+    if config.refresh_brings_nothing is not None:
+        idle |= AUTO_REFRESH_OPTIONS
+    if config.current_brings_nothing is not None:
+        idle.add("current")
+    if not config.quotes_can_reach:
+        idle.add("projections")
+    return frozenset(idle)
 
 
 def choices_from_config(config: PlotConfig) -> tuple[dict[str, str], dict[str, bool]]:

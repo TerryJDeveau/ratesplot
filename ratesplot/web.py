@@ -1547,8 +1547,9 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     """A list option as tick boxes (``Option.choices``): a row of boxes per row offered, with its caption.
 
     One that belongs to a flag (mortgage terms, spreads) is greyed while
-    the flag is off, as its field was, and the UK's aggregate debts while
-    none is drawn (``frontend.idle_nation_keys``). A nation's own list has its label
+    the flag is off, as its field was, the yield terms while the yields are
+    off (``frontend.idle_controls``, batch 28.1), and the UK's aggregate
+    debts while none is drawn (``frontend.idle_nation_keys``). A nation's own list has its label
     always, and only the boxes its chart can draw (``frontend.choice_rows``).
     The boxes of a row flow, wrapping when the sidebar is narrow, and the
     help is on the list's label alone: a column per box, each with its "?",
@@ -1558,7 +1559,7 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     """
     key = nation_choice(nation, option) if nation else option.name
     disabled = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
-    disabled = disabled or key in idle_nation_keys(*_snapshot())
+    disabled = disabled or option.name in _idle() or key in idle_nation_keys(*_snapshot())
     if option.turns_on is None or nation is not None:
         where.markdown(f"**{option.label}**", help=_help(option))
     others = st.session_state.get(_CHOICE_OTHERS + key, [])
