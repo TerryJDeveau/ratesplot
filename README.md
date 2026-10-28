@@ -154,7 +154,8 @@ More link that opens the longer text alone in a new tab (`?help=percent-of-gdp`)
 are in `docs/help/`, one file per topic: % of GDP, and the sources' pages for debt, GDP, interest,
 the levels of government, per capita, bond yields, policy rates, mortgage rates, yield spreads and
 the latest values, which say where each nation's figures come from, how they are joined and how
-soon they are published, with a link to each source. A topic's link to
+soon they are published, with a link to each source; and a page for each nation, opened from its
+tick box, which says what its chart holds and links to those pages. A topic's link to
 another opens that topic: in the window in its own window, on the page in a new tab.
 
 Right of each country's axis limit is its unit (% for Max and Min, the country's currency for Top
