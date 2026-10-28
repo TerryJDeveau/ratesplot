@@ -1971,6 +1971,23 @@ def check_batch282(check: Check) -> None:
               len(trimmed) == 50 and frontend.unzoom_target(trimmed) == 1 and trimmed[1][0][0] == ("0",), trimmed[:2])
 
 
+def check_batch283(check: Check) -> None:
+    """Batch 28.3: dates from 1600-01-01, the earliest a chart shows; one before it refused; the calendar's years from 1600."""
+    with window(f"-c -s:1600 {END}") as w:
+        app = w.app
+        check("Start 1600: drawn", app.status.get().startswith("Drawn"), app.status.get())
+        check("drawn as the command line draws it", w.written_draws_the_same(), w.command_tokens())
+        w.typed("start", "1599-12")
+        w.settle()
+        check("Start 1599-12: not drawn, the status naming the earliest date",
+              app.status.get().startswith("Not drawn") and "before 1600-01-01" in app.status.get(), app.status.get())
+        picker = gui.DatePicker(app.value_entries["start"], tk.StringVar(master=w.root, value="1600"), "start", lambda _day: None)
+        spin = next(widget for widget in all_widgets(picker.top) if widget.winfo_class() == "TSpinbox")
+        check("the calendar's years from 1600", int(float(str(spin.cget("from")))) == 1600, spin.cget("from"))
+        picker.top.grab_release()
+        picker.top.destroy()
+
+
 # The groups in the order they run; --group picks some by these names.
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
@@ -1998,6 +2015,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "remember": check_remember,
     "batch281": check_batch281,
     "batch282": check_batch282,
+    "batch283": check_batch283,
 }
 
 

@@ -493,11 +493,11 @@ def check_calendars(check: Check) -> None:
     cal.button(key="blank:start").click()
     cal.run()
     check("Blank empties the field", cal.text_input(key="value:start").value == "" and "--start" not in address(cal), address(cal))
-    # Before the calendar's first day (config.EARLIEST_DATA_START, 1680 since batch 3).
-    cal.text_input(key="value:start").input("1679")
+    # Before the calendar's first day (config.EARLIEST_DATE, 1600 since batch 28.3; 1680 before).
+    cal.text_input(key="value:start").input("1599")
     cal.run()
     check(
-        "a date outside the calendar leaves it empty, no error",
+        "a date before the calendar's first day leaves it empty, no error",
         cal.date_input(key="calendar:start").value is None and not cal.exception,
         cal.date_input(key="calendar:start").value,
     )
@@ -1617,12 +1617,34 @@ def check_batch28s2(check: Check) -> None:
           and web.chart_link("http://localhost:8501", ()) == "http://localhost:8501/?chart=")
 
 
+def check_batch283(check: Check) -> None:
+    """Batch 28.3: dates from 1600-01-01, the earliest a chart shows; one before it refused in its field."""
+    at = new_page("-c -s:1600 --e:2019")
+    check("Start 1600: drawn, from 1600", not at.exception and charts_shown(at) == 1 and not at.error
+          and "--start:1600" in address(at), address(at))
+    check("at 1600, Earlier greyed", not enabled(at)["◀ Earlier"], enabled(at))
+    check("the calendar's first day 1600-01-01", web._CALENDAR_FIRST == datetime.date(1600, 1, 1), web._CALENDAR_FIRST)
+    at.text_input(key="value:start").input("1599-12")
+    at.run()
+    errors = [e.value for e in at.error]
+    check("Start 1599-12: not drawn, its field red, the line naming the earliest date",
+          any("Start: start date '1599-12' is before 1600-01-01, the earliest a chart shows" in e for e in errors)
+          and at.text_input(key="value:start").label.startswith(":red["), errors)
+    at = new_page("-c -s:1700 --e:2019")
+    button(at, "Zoom out").click()
+    at.run()
+    # Twice 319 years is more than the 426 from 1600 to today: the whole of it, and nothing further out.
+    check("Zoom out from 1700: from 1600 to today, Earlier and Zoom out greyed", not at.exception
+          and address(at) == "--C --start:1600-01-01" and not enabled(at)["◀ Earlier"] and not enabled(at)["Zoom out"],
+          (address(at), enabled(at)))
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
-    check_batch281, check_batch28s2,
+    check_batch281, check_batch28s2, check_batch283,
 )
 
 
