@@ -67,6 +67,7 @@ from ratesplot.config import (  # noqa: E402
     DEFAULT_TRACKER_MARGIN,
     GDP_COLUMN,
     MARKET_TIMEZONE,
+    QUOTE_SYMBOLS,
     UK_DEBT_COLUMN,
     UK_INTEREST_COLUMN,
     UK_NET_DEBT_COLUMN,
@@ -139,7 +140,7 @@ def _fred(series_id: str, *, quarterly: bool) -> Callable[[PlotConfig], tuple[pd
 # 3-year), and Canada's (batch 9.3), of which CNBC quotes all but the 7-year.
 EXTRA_US_COLUMNS = tuple(column for column in us_data.US_YIELD_SERIES if column not in YIELD_COLUMNS)
 EXTRA_CDN_COLUMNS = tuple(column for column in cdn_data.CDN_YIELD_COLUMNS if column not in YIELD_COLUMNS)
-EXTRA_CDN_QUOTED = tuple(column for column in EXTRA_CDN_COLUMNS if column in latest._QUOTE_SYMBOLS["cdn"])
+EXTRA_CDN_QUOTED = tuple(column for column in EXTRA_CDN_COLUMNS if column in QUOTE_SYMBOLS["cdn"])
 
 
 def _all_yields(frame: pd.DataFrame, columns: tuple[str, ...] = YIELD_COLUMNS) -> pd.DataFrame:
