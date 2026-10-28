@@ -2241,6 +2241,13 @@ def check_batch31(check: Check) -> None:
             finally:
                 picker.top.destroy()
 
+    with window(f"-c -s:2001 {END}", size=placed("1728x640")) as w:
+        canvas = next(slave for slave in w.app._scroll.master.grid_slaves() if isinstance(slave, tk.Canvas))
+        panel = canvas.nametowidget(canvas.itemcget(canvas.find_all()[0], "window"))
+        region = int(str(canvas.cget("scrollregion")).split()[3])
+        check("a short window: the column's scroll region reaches its controls' foot (a block grown after the first fit)",
+              region == panel.winfo_reqheight() > canvas.winfo_height(), (region, panel.winfo_reqheight(), canvas.winfo_height()))
+
     with window(f"-c --no-hover {END}") as w:
         box = w.app.flag_boxes["gdp"]
         box.event_generate("<Enter>")

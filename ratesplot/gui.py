@@ -1102,6 +1102,15 @@ class RatesPlotApp:
         self._build_option_controls(panel)
         self._build_actions(top, panel, pinned)
         self._build_log(panel)
+        # The controls' frame is given its height by the column's fit, so a
+        # block that grows after it (laid out in columns once its width is
+        # known) changes no size of the frame's and leaves the scroll region
+        # short: the column's foot out of reach in a short window (found
+        # 2026-10-28, after 31.2's bar above the controls took away the
+        # resize that used to refresh it). A block's own size changes when
+        # it grows or is squeezed, so each block refreshes the fit.
+        for block in panel.winfo_children():
+            block.bind("<Configure>", lambda _event: self._fit_column(), add="+")
 
         charts = ttk.Frame(self.paned, padding=(2, 8, 8, 8))
         charts.rowconfigure(0, weight=1)
@@ -1208,6 +1217,7 @@ class RatesPlotApp:
         panel.bind("<Configure>", fit)
         self.root.bind_all("<MouseWheel>", wheel, add="+")
         self._scroll = scroll
+        self._fit_column = fit
         return outer, top, panel, pinned
 
     def _build_option_controls(self, panel: ttk.Frame) -> None:
