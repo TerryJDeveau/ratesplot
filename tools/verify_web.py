@@ -83,7 +83,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 import ratesplot  # noqa: E402
 from ratesplot import cli, frontend, hover, http, web  # noqa: E402
 from ratesplot.cli import sort_tokens  # noqa: E402
-from ratesplot.config import NATIONS  # noqa: E402
+from ratesplot.config import NATIONS, PlotConfig  # noqa: E402
 from ratesplot.frontend import move_dates_updates, starting_choices, version_text  # noqa: E402
 from ratesplot.options import command_line_tokens, config_from_choices, drawn_config  # noqa: E402
 
@@ -1639,12 +1639,47 @@ def check_batch283(check: Check) -> None:
           (address(at), enabled(at)))
 
 
+def check_batch284(check: Check) -> None:
+    """Batch 28.4: on a narrow screen the page draws 800x800 with larger text; the link and the command line unchanged."""
+
+    def png_size(page: AppTest) -> tuple[int, int]:
+        png = chart_elements(page)[0].proto.bytes
+        return int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")
+
+    at = new_page("-c --e:2026-09-01")
+    check("no word from the page's script: the full-size chart", png_size(at) == (2048, 1536), png_size(at))
+    at.session_state[web._NARROW] = True  # what the width's script says on a phone (AppTest runs no script)
+    at.run()
+    drawn = at.session_state[web._DRAWING].drawn
+    captions = [caption.value for caption in at.caption if caption.value.startswith("Drawn")]
+    check("narrow: 800x800, the font floor 0.8, the line under the chart saying so",
+          png_size(at) == (800, 800) and drawn.font_floor == 0.8 and drawn.font_scale == 0.8
+          and any("for a narrow screen: 800 x 800 px and larger text" in c for c in captions), (png_size(at), captions))
+    check("narrow: the address, the link and the command line as before", address(at) == "--C --end:2026-09-01"
+          and "?chart=--C+--end%3A2026-09-01" in [code.value for code in at.code]
+          and "python ratesplot.py --C --end:2026-09-01" in [code.value for code in at.code], address(at))
+    at.text_input(key="size:width").input("1200")
+    at.run()
+    drawn = at.session_state[web._DRAWING].drawn
+    check("narrow, a size given: that size, the floor kept",
+          (drawn.width_px, drawn.height_px, drawn.font_floor) == (1200, 900, 0.8) and "1200x900" in address(at),
+          (drawn.width_px, drawn.height_px, address(at)))
+    at.session_state[web._NARROW] = False
+    at.run()
+    check("wide again: the size given, the floor 0.5", at.session_state[web._DRAWING].drawn.font_floor == 0.5, address(at))
+    config = PlotConfig()
+    check("for_screen: unchanged when wide; the phone's canvas only at the default size",
+          web.for_screen(config, False) == config
+          and (web.for_screen(config, True).width_px, web.for_screen(config, True).height_px) == (800, 800)
+          and web.for_screen(replace(config, width_px=1600, height_px=1200), True).width_px == 1600)
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
-    check_batch281, check_batch28s2, check_batch283,
+    check_batch281, check_batch28s2, check_batch283, check_batch284,
 )
 
 

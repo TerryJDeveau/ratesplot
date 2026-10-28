@@ -40,6 +40,8 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   sent; under the charts its link is in a box with a copy button (the default charts' link
   ends `?chart=`). The page remembers your last chart for your next visit, in a cookie in your
   browser, while "Remember my settings" is ticked; a link with a chart in it opens on that chart.
+  On a narrow screen (under 700 px, a phone) the page draws the chart 800 x 800 px with larger
+  text, unless another size is given; its link and command line still draw the full-size chart.
   To run it on your own machine: `streamlit run streamlit_app.py`.
 - **The desktop window** (`ratesplot/gui.py`): `python ratesplot.py`. It adds a
   right-drag pan, and remembers your last settings: each command window
