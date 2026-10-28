@@ -380,6 +380,9 @@ def _curve(line: Line2D, name: str, how: _Mark, height: float) -> Curve | None:
         until = None
         if steps and stop < len(x) and np.isfinite(x[stop]):
             until = (float(x[stop]), int(math.floor(days[stop])))
+        elif steps and index[-1] < stop - 1:
+            # The run ends on its last value repeated (a rate held to the chart's end): the step is drawn to there.
+            until = (float(x[stop - 1]), int(math.floor(days[stop - 1])))
         indexes = np.array([texts.setdefault(how.value_format(float(value)), len(texts)) for value in values[keep]], dtype=np.int32)
         runs.append(Run(x[keep], y[keep], np.floor(days[keep]).astype(np.int64), indexes, until))
     if not runs:
