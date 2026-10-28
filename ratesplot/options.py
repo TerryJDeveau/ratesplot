@@ -807,15 +807,15 @@ OPTIONS: tuple[Option, ...] = (
     # in ``config_from_choices``.
     Option(
         "gdp", Kind.TOGGLE, ("include_gdp",), "curves", "--GDP / --no-GDP", "TTM nominal GDP",
-        names=("gdp",), label="TTM nominal GDP",
+        names=("gdp",), label="TTM nominal GDP", topic="gdp",
     ),
     Option(
         "debt", Kind.TOGGLE, ("include_debt",), "curves", "--debt / --no-debt", "aggregate public debt",
-        names=("debt",), label="Aggregate public debt",
+        names=("debt",), label="Aggregate public debt", topic="debt",
     ),
     Option(
         "interest", Kind.TOGGLE, ("include_interest",), "curves", "--interest / --no-interest", "TTM interest outlays",
-        names=("interest",), label="TTM interest outlays",
+        names=("interest",), label="TTM interest outlays", topic="interest",
     ),
     # Curve sub-options: debt and interest by level of government ("--d:" is
     # debt; the size needs at least "dim"). They set one field; see
@@ -829,7 +829,7 @@ OPTIONS: tuple[Option, ...] = (
         "debt and interest by level instead of\nin total: f federal, n non-federal,\n"
         "p or s provincial/state, m municipal;\nthe UK's f central, m (or n) local",
         names=("debt",), parse=partial(parse_components, kind="debt"),
-        label="By level", format=format_components, editor="levels",
+        label="By level", format=format_components, editor="levels", topic="levels",
     ),
     Option(
         "interest-parts", Kind.VALUE, ("components",), "curves", "--interest:LETTERS / --i:LETTERS",
@@ -847,7 +847,7 @@ OPTIONS: tuple[Option, ...] = (
         "the aggregate debt drawn: gross (general\ngovernment, the default), net (the UK's\n"
         "public sector net debt, ex banks), or\nboth; only the UK has net debt (the\nothers draw their gross debt)",
         names=("aggregate",), shortest=3, parse=parse_debt_aggregates, label="Aggregate debts", format=format_terms,
-        editor="choices", choices=_AGGREGATE_CHOICES,
+        editor="choices", choices=_AGGREGATE_CHOICES, topic="debt",
     ),
     Option(
         "yield", Kind.TOGGLE, ("include_yield",), "curves", "--yield / --no-yield", "bond yields",
@@ -959,6 +959,7 @@ OPTIONS: tuple[Option, ...] = (
         "per-capita", Kind.SWITCH, ("per_capita",), "units", "--P / -p / --per-capita",
         "GDP, debt and interest per person (log\ndollar axis); not with -r",
         names=("per-capita",), flag="--P", flag_help="GDP, debt and interest per person", label="Per capita",
+        topic="per-capita",
     ),
     # Value labels at the line ends: a switch like the measures, but in a
     # group of its own, since it combines with either. The tick's wording is

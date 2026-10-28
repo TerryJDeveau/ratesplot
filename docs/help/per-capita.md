@@ -1,0 +1,23 @@
+# Per capita (-p)
+
+GDP, debt and interest drawn per person: each divided by the nation's population on the same date, in its own currency. The right axis reads "Nominal Units per Capita (USD – Log Scale)", in each nation's currency, and each line's name ends "per Capita".
+
+## How the division is made
+
+Each figure is divided when it is observed, by the population on that date, and held until the next figure, so the lines keep their steps: a debt reported once a year stays level until the next year's figure, instead of drifting down through the year as the population grows. The population between two estimates is drawn on a straight line on a log scale (steady growth from one to the next); after the last estimate it is held; before the first there is none, and nothing is drawn.
+
+Per capita can't be combined with [As % of GDP](?help=percent-of-gdp): a curve is either an amount per person or a share of GDP, and in the window and on the page ticking one unticks the other. Without [GDP](?help=gdp), [debt](?help=debt) or [interest](?help=interest) ticked it has no effect, and its box is greyed.
+
+## Where each population comes from
+
+- **Canada, 1867 to 1945.** The estimated population on 1 June of each year, Statistics Canada's historical table [17-10-0063](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1710006301), archived.
+- **Canada, 1946 on.** Statistics Canada's quarterly population estimates, table [17-10-0009](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1710000901), on the first day of each quarter; the release of 2026-09-23 brought 1 July 2026. The two differ by about 0.2 % where both exist, mostly the month between their dates, so they are laid end to end without scaling.
+- **The United States, 1947 on.** The Bureau of Economic Analysis' population, the one it divides by for its own figures per person: the resident population plus the armed forces overseas, quarterly from 1947, in thousands ([B230RC0Q173SBEA on FRED](https://fred.stlouisfed.org/series/B230RC0Q173SBEA)). FRED had the second quarter of 2026 on 2026-07-30; the next release is on 2026-10-29. U.S. GDP and interest begin in 1947 and debt in 1966, so nothing earlier is needed.
+- **The United Kingdom, 1707 to 1954.** The Bank of England's dataset "A millennium of macroeconomic data", version 3.1 ([research datasets](https://www.bankofengland.co.uk/statistics/research-datasets)), at 30 June of each year: Great Britain to 1800, with all of Ireland from 1801 to 1921, and with Northern Ireland alone from 1922. The fall in 1922 is Irish independence.
+- **The United Kingdom, 1955 on.** The UK resident population, the mid-year estimates interpolated to quarters, [EBAQ at the ONS](https://www.ons.gov.uk/economy/grossdomesticproductgdp/timeseries/ebaq/ukea), in thousands, each quarter dated by its middle. The release of 2026-09-30 brought the second quarter of 2026; the next is on 2026-12-22. It agrees with the Bank's figure where they meet (50.95 million in mid-1955).
+- **Germany, 1960 to 1990.** The population on 1 January of each year, Eurostat's dataset [demo_pjan](https://ec.europa.eu/eurostat/databrowser/view/demo_pjan/default/table?lang=en): West Germany until 1990, all of Germany from 1991, a step of 17 million at unification. Germany's GDP, debt and interest begin in 1991, so the step falls before any German curve.
+- **Germany, 1991 on.** The total population in the national accounts' sense, Eurostat's dataset [namq_10_pe](https://ec.europa.eu/eurostat/databrowser/view/namq_10_pe/default/table?lang=en), quarterly, in thousands, each quarter dated by its middle; the second quarter of 2026 is the latest.
+
+## How the program keeps these figures
+
+Each source's figures are kept in the program as the source published them. A job on GitHub asks every live source each day and adds the new figures; a revision of older ones waits for review before it is taken. When a chart is drawn, the program asks the source for its figures from 24 months before the last one it holds, since revisions reach that far back, and draws the older ones from what it holds. If the source doesn't answer, the chart is drawn from what the program holds, with a warning naming the source and its last date. The sources that have stopped (Statistics Canada's old tables, Historical Statistics of Canada, the Bank of England's dataset) are kept as they were last published.

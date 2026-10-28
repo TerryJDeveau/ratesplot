@@ -2044,6 +2044,36 @@ def check_batch291(check: Check) -> None:
         app._close_info()
 
 
+def check_batch292(check: Check) -> None:
+    """Batch 29.2: the sources' pages named by their controls; a topic's link to another opens that topic's window."""
+    with window(f"-c {END}") as w:
+        app, root = w.app, w.root
+        for key in ("gdp", "debt", "interest", "per-capita", "cdn:debt-parts"):
+            app.info_marks[key].event_generate("<Button-1>")
+            root.update()
+            buttons = {widget.cget("text") for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton"}
+            check(f"{key}: its panel has More", buttons == {"More", "Close"}, sorted(buttons))
+            app._close_info()
+        app._show_topic("debt")
+        root.update()
+        text = next(widget for widget in all_widgets(app.topic_windows["debt"]) if widget.winfo_class() == "Text")
+        links = {text.get(*text.tag_ranges(tag)[:2]): tag for tag in text.tag_names() if tag.startswith("link-")}
+        check("the debt page's links: to other topics and to the sources", {"By level", "Per capita", "As % of GDP"} <= set(links)
+              and "36-10-0467" in links, sorted(links)[:6])
+        # A click on the link: the pointer moved over it first, so that Tk's
+        # "current" mark, which a tag's binding follows, is on it.
+        start = text.tag_ranges(links["By level"])[0]
+        text.see(start)
+        root.update()
+        x, y, _width, height = text.bbox(start)
+        text.event_generate("<Motion>", x=x + 2, y=y + height // 2)
+        text.event_generate("<Button-1>", x=x + 2, y=y + height // 2)
+        root.update()
+        levels = app.topic_windows.get("levels")
+        check("a click on “By level”: the levels' topic in its own window", levels is not None and levels.title() == "By level of government",
+              levels.title() if levels is not None else None)
+
+
 # The groups in the order they run; --group picks some by these names.
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
@@ -2073,6 +2103,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch282": check_batch282,
     "batch283": check_batch283,
     "batch291": check_batch291,
+    "batch292": check_batch292,
 }
 
 

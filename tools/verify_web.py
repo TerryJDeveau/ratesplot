@@ -1681,8 +1681,10 @@ def check_batch291(check: Check) -> None:
     check("% of GDP greyed, its tip saying why, then More to its topic", not at.exception and box.disabled
           and "Greyed because it acts on debt and interest, and neither is ticked." in box.help
           and box.help.endswith("[More](?help=percent-of-gdp)"), box.help)
-    per = at.checkbox(key="flag:per-capita")
-    check("Per capita greyed: why, and no More (it names no topic)", "Greyed because" in per.help and "[More]" not in per.help, per.help)
+    # Per capita named no topic until batch 29.2; Regression segments still names none.
+    segments = at.checkbox(key="flag:regression")
+    check("Regression segments greyed: why, and no More (it names no topic)",
+          "Greyed because" in segments.help and "[More]" not in segments.help, segments.help)
     check("a box not greyed: no reason", "Greyed because" not in at.checkbox(key="flag:cdn").help)
     margin = at.text_input(key="value:cdn:prime-margin")
     check("a nation's field greyed: why", margin.disabled and "Greyed because “Mortgage rates” is unticked." in margin.help, margin.help)
@@ -1705,12 +1707,28 @@ def check_batch291(check: Check) -> None:
           and [error.value for error in view.error] == ["There is no help page named “../README”."], [e.value for e in view.error])
 
 
+def check_batch292(check: Check) -> None:
+    """Batch 29.2: the curves' and per capita's tips end with More to their topics; a topic's link to another is the page's own address."""
+    at = new_page("-c --e:2026-09-01")
+    for name in ("gdp", "debt", "interest", "per-capita"):
+        box = at.checkbox(key=f"flag:{name}")
+        check(f"{name}: its tip ends with More to its topic", not at.exception and box.help.endswith(f"[More](?help={name})"), box.help[-50:])
+    view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+    view.query_params["help"] = "debt"
+    view.run()
+    shown = "\n".join(block.value for block in view.markdown)
+    check("?help=debt: the topic alone, a section per nation", not view.exception and not view.checkbox
+          and all(f"## {nation}" in shown for nation in ("Canada", "The United States", "The United Kingdom", "Germany")), shown[:60])
+    check("its links to other topics written as the page's own address, followed in the help view",
+          "[By level](?help=levels)" in shown and "[As % of GDP](?help=percent-of-gdp)" in shown)
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
-    check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291,
+    check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292,
 )
 
 
