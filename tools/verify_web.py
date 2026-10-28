@@ -81,7 +81,7 @@ from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage  
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 import ratesplot  # noqa: E402
-from ratesplot import cli, frontend, hover, http, web  # noqa: E402
+from ratesplot import cli, frontend, hover, http, plotting, web  # noqa: E402
 from ratesplot.cli import sort_tokens  # noqa: E402
 from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS, PlotConfig  # noqa: E402
 from ratesplot.frontend import move_dates_updates, starting_choices, version_text  # noqa: E402
@@ -1812,12 +1812,34 @@ def check_batch31(check: Check) -> None:
     check("laid out with no chart drawn too", sidebar_keeper(bad) is not None, sidebar_keeper(bad))
 
 
+def check_batch324(check: Check) -> None:
+    """Batch 32.4: a blank End reaches the last day a policy target drawn holds; the field shows it in grey, the address writes none."""
+    later = pd.Timestamp.today().normalize() + pd.Timedelta(days=2)
+    real = plotting.policy_target_last
+    try:
+        plotting.policy_target_last = lambda _key: later  # a change announced to take effect in two days
+        at = new_page("-c --policy -s:2026-06-01")
+        drawn = at.session_state[web._DRAWING].drawn
+        end = at.text_input(key="value:end")
+        check("a blank End, Canada's target drawn: the chart ends on the target's last day, two days ahead",
+              not at.exception and drawn.end == later, drawn.end)
+        check("… the End field blank, its grey value that day; the address without an End",
+              end.value == "" and end.proto.placeholder == f"{later:%Y-%m-%d}" and "--end" not in address(at),
+              (end.proto.placeholder, address(at)))
+        at = new_page("-c -s:2026-06-01")
+        check("no policy rate drawn: the blank End is today",
+              at.session_state[web._DRAWING].drawn.end == pd.Timestamp.today().normalize(), at.session_state[web._DRAWING].drawn.end)
+    finally:
+        plotting.policy_target_last = real
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch31,
+    check_batch324,
 )
 
 

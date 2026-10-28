@@ -1455,6 +1455,7 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
       (``check_macro_bound_units``, once the flags are known).
     """
     values = dataclasses.asdict(PlotConfig())
+    values["end_blank"] = "end" not in payloads  # today, or later (plotting.resolve_end, batch 32.4)
     for option in options_of(Kind.VALUE):
         if option.name in payloads and option.removes:
             values[option.fields[0]] = _removed(option, payloads[option.name], values[option.fields[0]])

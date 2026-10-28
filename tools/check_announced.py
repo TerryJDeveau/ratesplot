@@ -33,6 +33,7 @@ Exit code 1 if any check fails.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,7 +47,7 @@ import pandas as pd  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
-from ratesplot import announced, export, hover, plotting, rates  # noqa: E402
+from ratesplot import announced, cli, export, hover, plotting, rates  # noqa: E402
 from ratesplot.config import POLICY_RATE_STYLE, PlotConfig  # noqa: E402
 
 FIXTURES = ROOT / "tools" / "announced_fixtures"
@@ -277,6 +278,46 @@ def check_with_announced() -> None:
         announced.canadian_get = real
 
 
+def check_blank_end() -> None:
+    """A blank End (batch 32.4): today, or the last day a policy target drawn holds."""
+    today = DAY("2026-10-28")  # the day the feed was saved: the change takes effect the day after
+
+    def parsed(*tokens: str) -> PlotConfig:
+        config = cli.parse_args(["--no-gui", *tokens])
+        return replace(config, end=today) if config.end_blank else config
+
+    real_get, real_targets = announced.canadian_get, dict(rates._POLICY_TARGETS)
+    try:
+        feed = announced.canadian_get = _Feed()
+        rates._POLICY_TARGETS.update(cdn=target_curve, us=target_curve)
+        check("no End given: end_blank; one given: not", parsed("-c").end_blank and not parsed("-c", "--e:2026-10-01").end_blank)
+        check("a PlotConfig built directly keeps its End", not PlotConfig().end_blank)
+        resolved = plotting.resolve_end(parsed("-c", "--policy"))
+        check("blank, Canada's target drawn: the End is the announced day, 2026-10-29",
+              resolved.end == DAY("2026-10-29") and feed.asked == [announced.BOC_PRESS_RELEASES_FEED], (resolved.end, feed.asked))
+        feed.asked.clear()
+        given = parsed("-c", "--policy", "--e:2026-10-28")
+        check("an End given: kept, nothing asked", plotting.resolve_end(given).end == DAY("2026-10-28") and not feed.asked,
+              feed.asked)
+        check("no policy rate drawn: today, nothing asked",
+              plotting.resolve_end(parsed("-c")).end == today and not feed.asked, feed.asked)
+        check("Canada's market rate alone, not its target: today, nothing asked",
+              plotting.resolve_end(parsed("-c", "--policy:market")).end == today and not feed.asked, feed.asked)
+        check("the U.S. alone: its target holds nothing after today, and Canada's feed is not asked",
+              plotting.resolve_end(parsed("-u", "--policy")).end == today and not feed.asked, feed.asked)
+        both = plotting.resolve_end(parsed("-c", "-u", "--policy"))
+        check("Canada and the U.S. shown: one End for both, 2026-10-29", both.end == DAY("2026-10-29")
+              and both.for_nation("us").end == both.for_nation("cdn").end == DAY("2026-10-29"), both.end)
+        check("resolve_start finds the End first, a Start given", plotting.resolve_start(
+              parsed("-c", "--policy", "-s:2026-06-01")).end == DAY("2026-10-29"))
+        announced.canadian_get = _Feed(fail=True)
+        check("the feed failing: today", plotting.resolve_end(parsed("-c", "--policy")).end == today)
+    finally:
+        announced.canadian_get = real_get
+        rates._POLICY_TARGETS.clear()
+        rates._POLICY_TARGETS.update(real_targets)
+
+
 def check_drawing() -> None:
     """The drawing: its pieces, the read-out and Export chart."""
     real = announced.canadian_get
@@ -325,7 +366,7 @@ def check_drawing() -> None:
 
 
 def main() -> int:
-    for group in (check_saved_feeds, check_wordings, check_joined, check_with_announced, check_drawing):
+    for group in (check_saved_feeds, check_wordings, check_joined, check_with_announced, check_blank_end, check_drawing):
         print(f"-- {group.__doc__.splitlines()[0]}")
         try:
             group()

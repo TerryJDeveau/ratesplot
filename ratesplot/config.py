@@ -1343,6 +1343,12 @@ class PlotConfig:
     # prepared; nothing downstream of it sees None.
     start: pd.Timestamp | None = None
     end: pd.Timestamp = field(default_factory=_today)
+    # True when no End was given (--end; the window's or the page's field
+    # blank), as options.config_from_choices sets it: the End is today until
+    # plotting.resolve_end makes it the latest day a series drawn holds, if
+    # later (batch 32.4). False for a PlotConfig built directly, whose end is
+    # taken as given.
+    end_blank: bool = False
     width_px: int = DEFAULT_CANVAS_PX[0]
     height_px: int = DEFAULT_CANVAS_PX[1]
     # The least font scale (``font_scale``): MIN_FONT_SCALE but on the web

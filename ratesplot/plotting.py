@@ -101,7 +101,16 @@ from .latest import (
 )
 from .legend import finish_legend_and_title
 from .measures import express
-from .rates import RateCurve, held_steps, in_window, legend_label, rate_curves, warn_none_drawn
+from .rates import (
+    RateCurve,
+    draws_policy_target,
+    held_steps,
+    in_window,
+    legend_label,
+    policy_target_last,
+    rate_curves,
+    warn_none_drawn,
+)
 from .refresh import Ended as RefreshEnded
 from .refresh import Ticker, forget_old_downloads
 from .refresh import attach as attach_refresh
@@ -987,8 +996,46 @@ def curve_first_dates(
     return firsts
 
 
+def end_to_resolve(config: PlotConfig) -> bool:
+    """Whether ``config``'s End is blank and could be later than today (``resolve_end``): a chart shown draws its policy target."""
+    return config.end_blank and any(
+        getattr(config, country.show_field) and draws_policy_target(config.for_nation(country.key)) for country in COUNTRIES
+    )
+
+
+def resolve_end(config: PlotConfig) -> PlotConfig:
+    """Return ``config`` with its blank End found (batch 32.4); as it is when --end was given.
+
+    Decision 84 (Terry, 2026-10-28): a blank End is "the greater of the
+    latest held date and today's date", the latest held for a series "currently
+    on the display (not some other nation, either)", and one End for every
+    chart shown: "if one of the ticked nations has to go later than today for a
+    blank end date, it would be simpler for everyone if they all did so". Of
+    the series drawn only a policy target can hold a value after today: a
+    change its bank has announced (batch 32.1, 32.2) or a bank's own series
+    dated ahead; the others end by today. So each chart shown that draws its
+    target has it read with its announcements (``rates.policy_target_last``),
+    side by side and silently, as the automatic start's trial pass is: the
+    drawing reads the same and says what it reads. A target that cannot be
+    read is left out here; its chart says why.
+    """
+    if not end_to_resolve(config):
+        return config
+    targets = [
+        country.key for country in COUNTRIES
+        if getattr(config, country.show_field) and draws_policy_target(config.for_nation(country.key))
+    ]
+    with this_thread_output_to(None):
+        lasts = in_parallel([partial(policy_target_last, key) for key in targets])
+    latest = max((last for last in lasts if isinstance(last, pd.Timestamp)), default=None)
+    if latest is None or latest <= config.end:
+        return config
+    print(f"End {latest:%Y-%m-%d}, the last day a policy target drawn holds (a change announced); a blank End is today or later.")
+    return replace(config, end=latest)
+
+
 def resolve_start(config: PlotConfig) -> PlotConfig:
-    """Return ``config`` with its automatic start found; as it is when --start was given.
+    """Return ``config`` with its blank End (``resolve_end``) and its automatic start found; as it is when both were given.
 
     Terry, 2026-09-29: without -s the start is "the oldest date that fully
     populates the curves that were specified", with no curve missing at the
@@ -1026,7 +1073,10 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
     hosts. Each host still gets one request at a time. With the start given
     there is no trial pass, and the downloads are made side by side all the
     same (``_download_side_by_side``).
+
+    The End is found first, since the automatic start depends on it.
     """
+    config = resolve_end(config)
     if config.start is not None:
         _download_side_by_side(config)
         return config

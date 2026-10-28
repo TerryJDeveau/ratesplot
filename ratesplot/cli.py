@@ -39,7 +39,7 @@ from .options import (
 )
 from .http import drawing_downloads, enable_download_cache, enable_last_good_copies, not_drawn_line
 from .http import not_drawn as why_not_drawn
-from .plotting import COUNTRIES, build_figure, resolve_start, run_cdn, run_de, run_uk, run_us
+from .plotting import COUNTRIES, build_figure, end_to_resolve, resolve_end, resolve_start, run_cdn, run_de, run_uk, run_us
 from .refresh import Ticker, forget_old_downloads
 
 
@@ -315,12 +315,14 @@ def save_charts(config: PlotConfig, files: export.SavedFiles | None = None) -> l
 
 
 def _read_again(payloads: dict[str, str], flags: dict[str, bool], start: pd.Timestamp | None) -> PlotConfig:
-    """The command line's choices read again for an automatic refresh (batch 11.3): a blank End is today's date.
+    """The command line's choices read again for an automatic refresh (batch 11.3): a blank End is today's date, or later (batch 32.4).
 
     The start found at the first drawing is kept: the automatic start's
-    trial pass would ask every source again, for the same date.
+    trial pass would ask every source again, for the same date. A blank End
+    is found again (``plotting.resolve_end``), so a change announced since
+    the last refresh carries the charts to its day.
     """
-    return replace(config_from_choices(payloads, flags), start=start)
+    return resolve_end(replace(config_from_choices(payloads, flags), start=start))
 
 
 def keep_saving(again: Callable[[], PlotConfig], files: export.SavedFiles, not_drawn: list[str]) -> list[str]:
@@ -397,10 +399,10 @@ def main(argv: list[str] | None = None) -> None:
     # One drawing for the message log: a line for each real download, the
     # trial pass's included (http.drawing_downloads).
     with drawing_downloads():
-        if config.start is None:
-            # The start is found from the data (plotting.resolve_start), which are
-            # then prepared again from it: keep each download for this run, so no
-            # source is fetched twice.
+        if config.start is None or end_to_resolve(config):
+            # The start, or a blank End (batch 32.4), is found from the data
+            # (plotting.resolve_start), which are then prepared again from it:
+            # keep each download for this run, so no source is fetched twice.
             enable_download_cache()
             config = resolve_start(config)
         if refreshing:

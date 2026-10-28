@@ -868,6 +868,29 @@ def with_announced(country: str, curve: RateCurve | None, end: pd.Timestamp) -> 
 _POLICY_TARGETS = {"us": us_policy_target, "cdn": cdn_policy_target, "uk": uk_policy_target, "de": de_policy_target}
 _POLICY_MARKETS = {"us": us_policy_market, "cdn": cdn_policy_market, "uk": uk_policy_market, "de": de_policy_market}
 
+# How far ahead a blank End looks for a policy target's value (batch 32.4):
+# a change takes effect on the day of its announcement (the Bank of
+# England's) or the day after (the Bank of Canada's), so a year holds every
+# change announced, and none is announced that far ahead.
+_TARGET_LOOK_AHEAD = pd.Timedelta(days=366)
+
+
+def draws_policy_target(config: PlotConfig) -> bool:
+    """Whether a nation's chart (``config``, its ``PlotConfig.for_nation``) draws its policy target (``rate_curves``)."""
+    return config.policy_rates and "target" in config.policy_terms
+
+
+def policy_target_last(country: str) -> pd.Timestamp | None:
+    """Return the last day nation ``country``'s policy target holds a value, the changes its bank has announced with it (batch 32.4).
+
+    The day a blank End reaches (``plotting.resolve_end``): later than today
+    only for a change announced to take effect after it (``with_announced``),
+    or a bank's own series dated ahead. None where the target has no values.
+    """
+    today = pd.Timestamp.today().normalize()
+    curve = with_announced(country, _POLICY_TARGETS[country](), today + _TARGET_LOOK_AHEAD)
+    return None if curve is None or curve.values.empty else curve.values.index[-1]
+
 
 def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[RateCurve]:
     """Return one country's chosen curves for the yield axis ("cdn", "us", "uk" or "de"), in drawing order.
