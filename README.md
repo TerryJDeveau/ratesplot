@@ -49,7 +49,10 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   its own, so several windows can be open at once; a window whose monitor has gone comes back
   at its size on another. Untick "Remember my settings" (on the page too) to draw other charts
   without replacing the settings kept; it is ticked again at every start. Under its command line
-  is the same chart's address on the web page, each with its own Copy. The handle between the controls and the charts sets the controls'
+  is the same chart's address on the web page, each with its own Copy, and Go opens it in the
+  browser. As it opens, the window gives the keyboard back to the window it was started from; a
+  click or a turn of the wheel over it takes it (Ctrl+S, with or without Shift or Caps Lock, and F5
+  then work). More's windows open over the window, on its monitor. The handle between the controls and the charts sets the controls'
   width, remembered with the settings, and each row of controls takes as many as fit it. "Save log file" saves the
   message log as text (on the page, a button under the log). Its dialog and Export chart's open in
   the folder last saved to, remembered with the settings, and the first time in Documents; never in

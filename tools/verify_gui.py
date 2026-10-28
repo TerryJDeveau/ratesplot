@@ -2241,6 +2241,70 @@ def check_batch31(check: Check) -> None:
             finally:
                 picker.top.destroy()
 
+    with window(f"-c {END}") as w:
+        app, root = w.app, w.root
+        # 31.8: Go beside the address's Copy; Ctrl+S however the S comes.
+        opened: list[str] = []
+        browser_open = gui.webbrowser.open
+        gui.webbrowser.open = lambda url, *args, **kwargs: opened.append(url) or True
+        try:
+            app.go_button.invoke()
+        finally:
+            gui.webbrowser.open = browser_open
+        check("31.8: Go, right of the address's Copy, opens the address in the browser, with a tip",
+              opened == [app.web_address.get()] and int(app.go_button.grid_info()["row"]) == 1
+              and int(app.go_button.grid_info()["column"]) == 3 and app.go_button in gui._Tooltip.tips, opened)
+        # Tk matches a key's case, and Windows gives a capital S with Shift or Caps Lock (measured 2026-10-28). Tk
+        # drops made-up key events for a window without the keyboard, which a harness's window has not: the
+        # bindings themselves are checked.
+        small, capital = root.bind("<Control-s>"), root.bind("<Control-S>")
+        check("Ctrl+S bound with a small s and with a capital (Shift, Caps Lock)", bool(small) and bool(capital), (small, capital))
+
+        # 31.9: the keyboard given back at the start (real: run_gui; here its rules), and taken by a turn of the wheel.
+        check("31.9: nothing given back to no window, or to this one", not gui._hand_keyboard_back(root, 0)
+              and not gui._hand_keyboard_back(root, gui._frame_of(root)))
+        forced: list[str] = []
+        foreground = gui._foreground_window
+        root.focus_force = lambda: forced.append("forced")  # the person's keyboard left where it is
+        try:
+            gui._foreground_window = lambda: 12345  # another program's window has the keyboard
+            wheel_over(w, app.canvases["cdn"], -1)
+            check("a window the harness built takes nothing from a turn (run_gui alone turns it on)", forced == [], forced)
+            app.wheel_takes_keyboard = True
+            wheel_over(w, app.log, -1)
+            check("turned on, as run_gui does: a turn over the window takes the keyboard", forced == ["forced"], forced)
+            gui._foreground_window = lambda: gui._frame_of(root)
+            wheel_over(w, app.log, -1)
+            check("... and nothing more while it has it", forced == ["forced"], forced)
+        finally:
+            gui._foreground_window = foreground
+            del root.focus_force
+            app.wheel_takes_keyboard = False
+            wheel_stopped(w)
+
+        # 31.10: More's window over the window, on its monitor.
+        areas = [(0, 0, 3840, 2100), (948, -3840, 3108, -60)]  # Buddug's primary and Terry's monitor 2
+        root.geometry("1728x972+988+-3800")
+        root.update()
+        x, y = map(int, re.fullmatch(r"680x600\+(-?\d+)\+(-?\d+)", gui._over_window(root, 680, 600, areas)).groups())
+        check("31.10: More's window over the window's middle, on the window's monitor", 948 <= x and x + 700 <= 3108
+              and -3840 <= y and y + 650 <= -60 and abs(x - (988 + 1728 // 2 - 350)) < 30, (x, y))
+        root.geometry("1728x972+2400+-3800")  # partly off the monitor's right edge: kept inside it
+        root.update()
+        x, _y = map(int, re.fullmatch(r"680x600\+(-?\d+)\+(-?\d+)", gui._over_window(root, 680, 600, areas)).groups())
+        check("kept whole inside that monitor", x + 680 + 2 * 9 <= 3108 + 1, x)
+        root.geometry(SIZE)
+        root.update()
+        app._show_topic("debt")
+        root.update()
+        topic = app.topic_windows["debt"]
+        outer = gui._outer_rect(topic.winfo_width(), topic.winfo_height(), topic.winfo_x(), topic.winfo_y(), gui._window_frame())
+        real = gui._monitor_work_areas()
+        mine = gui._monitor_of(gui._outer_rect(*map(int, gui._GEOMETRY_PATTERN.match(root.geometry()).groups()),
+                                                gui._window_frame()), real) if real else None
+        check("More's window opened on the window's monitor", mine is None or gui._monitor_of(outer, real) == mine, (outer, mine))
+        topic.destroy()
+
     with window(f"-c -s:2001 {END}", size=placed("1728x640")) as w:
         canvas = next(slave for slave in w.app._scroll.master.grid_slaves() if isinstance(slave, tk.Canvas))
         panel = canvas.nametowidget(canvas.itemcget(canvas.find_all()[0], "window"))

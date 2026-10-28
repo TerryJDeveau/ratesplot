@@ -300,6 +300,13 @@ _FIT_TIP = "Each chart scaled to fill its tab, keeping its shape."
 _ACTUAL_TIP = "Each chart pixel for pixel, as the file it is saved as, with scroll bars."
 _COPY_COMMAND_TIP = "Copy the command line, to draw the same chart from a command prompt."
 _COPY_ADDRESS_TIP = "Copy the web page's address for this chart, to open it in a browser or send it to someone."
+_GO_TIP = "Open this chart on the web page, in your browser."
+# More's window: its inside size (batch 29.1), placed over the window (31.10).
+_TOPIC_SIZE_PX = (680, 600)
+# How long after the window is first laid out the keyboard is given back
+# (batch 31.9, ``_hand_keyboard_back``): Windows makes it the active
+# window as it is shown, which has happened by then.
+_HAND_BACK_MS = 250
 _SAVE_LOG_TIP = "Save the whole message log as a text file."
 
 
@@ -1051,6 +1058,11 @@ class RatesPlotApp:
         # A click anywhere settles a limit box blanked by typing (decision 47):
         # a click on a widget that takes no focus leaves the box no FocusOut.
         self.root.bind_all("<ButtonPress>", self._clicked_anywhere, add="+")
+        # A turn of the wheel over a window of this program gives it the
+        # keyboard, as a click does (batch 31.9); run_gui turns it on, so a
+        # window a test drives with made-up turns takes nothing.
+        self.wheel_takes_keyboard = False
+        self.root.bind_all("<MouseWheel>", self._wheel_takes_keyboard, add="+")
         self._set_column_width(state.get("column_width"))
         # The tips that repeat an ⓘ follow the "Hover read-out" box (batch
         # 31.7), however it is set: a click, the command line, Back, Reset.
@@ -1138,13 +1150,22 @@ class RatesPlotApp:
             button = ttk.Button(bar, text="Copy", command=copy)
             button.grid(row=row, column=2, pady=(0 if row == 0 else 2, 0))
             _Tooltip(button, tip)
+        # Beside the address's Copy, Go: the chart opened on the web page in
+        # the browser (batch 31.8; Terry, 2026-10-28).
+        self.go_button = ttk.Button(bar, text="Go", width=4, command=self._open_web_address)
+        self.go_button.grid(row=1, column=3, padx=(2, 0), pady=(2, 0))
+        _Tooltip(self.go_button, _GO_TIP)
         self.status_label = ttk.Label(bar, textvariable=self.status, anchor="w")
         self.status_label.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         # Red only while it names a chart not drawn (batch 19.4, ``_render_finished``): any new text is the usual colour.
         self.status.trace_add("write", lambda *_args: self.status_label.configure(foreground=""))
 
         self.root.bind("<F5>", lambda _event: self._refresh())
-        self.root.bind("<Control-s>", lambda _event: self._export_chart())
+        # Ctrl+S however the letter comes: Tk matches a key's case, and
+        # Windows gives a capital S with Shift or Caps Lock, which <Control-s>
+        # alone let through (measured 2026-10-28, batch 31.8).
+        for sequence in ("<Control-s>", "<Control-S>"):
+            self.root.bind(sequence, lambda _event: self._export_chart())
         self.root.bind("<Alt-Left>", lambda _event: self._back())
 
     def _build_control_column(self, master: tk.Widget) -> tuple[ttk.Frame, ttk.Frame, ttk.Frame, ttk.Frame]:
@@ -1802,7 +1823,7 @@ class RatesPlotApp:
         window = tk.Toplevel(self.root)
         heading = next((block for block in blocks if block.kind == "heading"), None)
         window.title(" ".join(span.text for span in heading.spans) if heading else topic)
-        window.geometry("680x600")
+        window.geometry(_over_window(self.root, *_TOPIC_SIZE_PX))  # on the window's own monitor (batch 31.10)
         text = tk.Text(window, wrap="word", padx=14, pady=10, borderwidth=0, cursor="arrow")
         bar = ttk.Scrollbar(window, command=text.yview)
         text.configure(yscrollcommand=bar.set)
@@ -1975,6 +1996,25 @@ class RatesPlotApp:
         if key in self._blanked:
             self._blanked.discard(key)
             self._update_limit_extras()
+
+    def _wheel_takes_keyboard(self, event: tk.Event) -> None:
+        """A turn of the wheel over one of this program's windows while another program has the keyboard: it takes it.
+
+        Batch 31.9: Windows sends a turn to the window under the pointer
+        without making it the active one (when "Scroll inactive windows" is
+        on, as by default), so after the window has given the keyboard back
+        at its start (``_hand_keyboard_back``) a turn would leave Ctrl+S and
+        F5 going elsewhere; a click gives it the keyboard by itself.
+        """
+        if not self.wheel_takes_keyboard:
+            return
+        try:
+            top = event.widget.winfo_toplevel()
+        except (AttributeError, KeyError, tk.TclError):  # Tk's own pop-ups have no tkinter widget
+            return
+        foreground = _foreground_window()
+        if foreground and foreground != _frame_of(top):
+            top.focus_force()
 
     def _clicked_anywhere(self, event: tk.Event) -> None:
         """A click settles every limit box blanked by typing but the one clicked (Terry: "a click anywhere else")."""
@@ -2783,6 +2823,13 @@ class RatesPlotApp:
         self.root.clipboard_append(self.web_address.get())
         self.status.set("Web page address copied.")
 
+    def _open_web_address(self) -> None:
+        """Go: this chart on the web page, in the default browser (batch 31.8)."""
+        if webbrowser.open(self.web_address.get()):
+            self.status.set("The chart opened on the web page in your browser.")
+        else:
+            self.status.set("No browser could be opened: copy the web page's address instead.")
+
     def _window_configured(self, event: tk.Event) -> None:
         """Keep the window's size and place while it is neither maximized nor minimized, and whether it is maximized.
 
@@ -2948,6 +2995,30 @@ def _monitor_of(rect: Rect, areas: list[Rect]) -> Rect:
     return max(areas, key=lambda area: (_overlap(rect, area), -_gap(rect, area)))
 
 
+def _over_window(root: tk.Misc, width: int, height: int, areas: list[Rect] | None = None) -> str:
+    """A geometry for a new window of this inside size over the middle of ``root``, on the monitor ``root`` is on.
+
+    Batch 31.10 (Terry, 2026-10-28: More's window should "pop up on the
+    same monitor where the GUI window is located"). Given a size and no
+    place, Windows put it on the primary monitor, wherever the window was.
+    Kept whole inside that monitor's work area (``areas``: every monitor's,
+    ``_monitor_work_areas`` by default); with none known, simply centred.
+    """
+    match = _GEOMETRY_PATTERN.match(root.geometry())
+    if not match:
+        return f"{width}x{height}"
+    frame = _window_frame()
+    outer = _outer_rect(*map(int, match.groups()), frame)
+    x = (outer[0] + outer[2]) // 2 - (width + frame[0] + frame[2]) // 2
+    y = (outer[1] + outer[3]) // 2 - (height + frame[1] + frame[3]) // 2
+    areas = _monitor_work_areas() if areas is None else areas
+    if areas:
+        left, top, right, bottom = _monitor_of(outer, areas)
+        x = max(left, min(x, right - (width + frame[0] + frame[2])))
+        y = max(top, min(y, bottom - (height + frame[1] + frame[3])))
+    return f"{width}x{height}+{x}+{y}"
+
+
 def _moved_onto_a_monitor(width: int, height: int, x: int, y: int, areas: list[Rect], own: Rect | None, frame: Rect) -> str:
     """Return a geometry for a window no monitor shows the title bar of, its size kept where it can be.
 
@@ -3051,6 +3122,7 @@ def run_gui(
     choices, notes = starting_choices(config, cli_payloads or {}, cli_flags or {}, state, remembered_in)
     if note:
         notes.insert(0, note)
+    previous = _foreground_window()  # the window with the keyboard before this one opens: usually the command window
     root = tk.Tk()
     root.title(WINDOW_TITLE)
     geometry = _initial_geometry(root, state)
@@ -3058,5 +3130,50 @@ def run_gui(
     if state.get("maximized") is True:
         # Maximized on the monitor its remembered size and place are on.
         root.state("zoomed")
-    RatesPlotApp(root, choices, notes, state, normal_geometry=geometry)
+    app = RatesPlotApp(root, choices, notes, state, normal_geometry=geometry)
+    app.wheel_takes_keyboard = True
+    # Once it is shown (the first idle maps it), the keyboard goes back (batch 31.9).
+    root.after_idle(lambda: root.after(_HAND_BACK_MS, lambda: _hand_keyboard_back(root, previous)))
     root.mainloop()
+
+
+def _foreground_window() -> int:
+    """The window that has the keyboard now (Windows' foreground window); 0 off Windows or if none."""
+    if sys.platform != "win32":
+        return 0
+    import ctypes
+
+    return int(ctypes.windll.user32.GetForegroundWindow() or 0)
+
+
+def _frame_of(window: tk.Misc) -> int:
+    """The Windows handle of a toplevel's frame, the window ``GetForegroundWindow`` names."""
+    return int(window.wm_frame(), 16)
+
+
+def _hand_keyboard_back(root: tk.Misc, previous: int) -> bool:
+    """Give the keyboard back to ``previous``, the window that had it before this one opened; True if it was given.
+
+    Batch 31.9 (Terry, 2026-10-28: "when the window first opens, that it
+    not have keyboard focus at all, until a pointer click of any type, or a
+    wheel action, occurs with the pointer inside the window"). Started from
+    a command window, Windows makes the new window the one with the
+    keyboard, so what is typed next lands in it. Tk cannot show a window
+    without its taking the keyboard, so it is given back once shown: done
+    only while this window has it, for a ``previous`` that still exists and
+    is not this one, and allowed then by Windows, since the process with
+    the keyboard may hand it on. A click inside takes it again, as any
+    click on a window without it does; a turn of the wheel, which Windows
+    sends to the window under the pointer without the keyboard, takes it
+    too (``RatesPlotApp._wheel_takes_keyboard``). Ctrl+S and F5 work from
+    then on.
+    """
+    if sys.platform != "win32" or not previous:
+        return False
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    ours = _frame_of(root)
+    if previous == ours or not user32.IsWindow(previous) or user32.GetForegroundWindow() != ours:
+        return False
+    return bool(user32.SetForegroundWindow(previous))
