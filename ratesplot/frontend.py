@@ -454,15 +454,17 @@ def reset_choices(flags: Mapping[str, bool]) -> Choices:
 def reset_changes_nothing(choices: Choices) -> bool:
     """True when Reset would leave every one of these choices as it is (``reset_choices``): the window and the page grey it then (batch 28.1).
 
-    Text by text, a blank and a missing field alike; a greyed field's text
-    counts, since Reset clears it too. The preview's settings, which Reset
-    also sets, are each front end's to add.
+    Text by text, the controls ``choices`` holds: ``reset_choices`` names
+    every nation's every field, and a front end has only those each nation
+    has (the window no aggregate debts but the UK's). A greyed field's
+    text counts, since Reset clears it too. The preview's settings, which
+    Reset also sets, are each front end's to add.
     """
     payloads, flags = choices
     reset_payloads, reset_flags = reset_choices(flags)
-    if any(payloads.get(key, "").strip() != reset_payloads.get(key, "").strip() for key in {*payloads, *reset_payloads}):
+    if any(text.strip() != reset_payloads.get(key, "").strip() for key, text in payloads.items()):
         return False
-    return all(bool(flags.get(name, False)) == value for name, value in reset_flags.items())
+    return all(bool(value) == reset_flags.get(name, False) for name, value in flags.items() if name in reset_flags)
 
 
 def current_tab(shown: Sequence[str], current: str | None, ticked: str | None = None) -> str | None:
