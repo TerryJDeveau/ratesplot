@@ -37,7 +37,7 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   each date has a calendar; the size keeps its shape when you change one side. Unzoom goes
   back to the charts before the first zoom or move since the last Reset. The page's
   address holds the chart's settings, so a chart can be bookmarked or
-  sent; under the charts its link is in a box with a copy button (the default charts' link
+  sent; under the command line its link is in a box with a copy button (the default charts' link
   ends `?chart=`). The page remembers your last chart for your next visit, in a cookie in your
   browser, while "Remember my settings" is ticked, and the panel's width once you drag it; a link
   with a chart in it opens on that chart.
@@ -48,7 +48,8 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   right-drag pan, and remembers your last settings: each command window
   its own, so several windows can be open at once; a window whose monitor has gone comes back
   at its size on another. Untick "Remember my settings" (on the page too) to draw other charts
-  without replacing the settings kept; it is ticked again at every start. The handle between the controls and the charts sets the controls'
+  without replacing the settings kept; it is ticked again at every start. Under its command line
+  is the same chart's address on the web page, each with its own Copy. The handle between the controls and the charts sets the controls'
   width, remembered with the settings, and each row of controls takes as many as fit it. "Save log file" saves the
   message log as text (on the page, a button under the log). Its dialog and Export chart's open in
   the folder last saved to, remembered with the settings, and the first time in Documents; never in

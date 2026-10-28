@@ -32,7 +32,10 @@ The chart's address
     (``options.command_line_tokens``). Opening such a link draws that chart;
     after each drawing the address is updated, so a chart can be bookmarked
     or sent to someone. An address the program cannot read is reported, and
-    the settings remembered, or the defaults, are drawn instead.
+    the settings remembered, or the defaults, are drawn instead. Under the
+    command line the chart's link is shown with a copy button, labelled
+    "Web page:" as in the window, which shows it on the page's own address
+    (batch 31.3, ``frontend.chart_link``).
 
 Remembered settings
     As the window remembers its settings, the page keeps the last chart's
@@ -129,7 +132,6 @@ import functools
 import json
 import math
 import os
-import re
 import struct
 import threading
 import time
@@ -164,6 +166,7 @@ from .config import (  # noqa: E402
 from .console import this_thread_output_to  # noqa: E402
 from .export import EXPORT_CHOICES, IMAGE_FORMATS, MIME_TYPES  # noqa: E402
 from .frontend import (  # noqa: E402
+    ADDRESS_KEY,
     BACK_HELP,
     BLANK_DATE_WORDS,
     EXPORT_HELP,
@@ -187,6 +190,7 @@ from .frontend import (  # noqa: E402
     all_tick_reason,
     bound_keys,
     bounds_in_other_units,
+    chart_link,
     choice_refusal,
     choice_rows,
     choice_values,
@@ -253,8 +257,6 @@ PAGE_SUMMARY = (
     "each change redraws them."
 )
 _SCRIPT_NAME = "ratesplot.py"
-# The query parameter that holds the chart's command line.
-ADDRESS_KEY = "chart"
 # The settings remembered between visits (batch 24.6): the chart's command
 # line, as the address holds it, in a cookie of this name, kept a year. The
 # page's own script writes it (``_MEMORY_JS``) and reads it back
@@ -1962,23 +1964,6 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
     )
 
 
-def chart_link(base: str | None, tokens: tuple[str, ...]) -> str:
-    """Return the chart's own link, to share it (batch 28.5): the page's address with the chart's command line.
-
-    ``base`` is the address the page is visited at (``st.context.url``,
-    without its query). On Community Cloud the app runs in a frame whose
-    address ends ``/~/+/`` (measured 2026-10-28), which is cut, so the link
-    is the one the address bar shows. The defaults' link ends ``?chart=``:
-    a bare address would draw what the visitor's browser remembers
-    (``_starting_choices``). With no ``base`` (AppTest) the link is its
-    query alone.
-    """
-    root = re.sub(r"/~/\+/?$", "/", base or "")
-    if root and not urllib.parse.urlsplit(root).path:
-        root += "/"  # "http://localhost:8501", as Streamlit gives it, read as the address bar shows it
-    return f"{root}?{urllib.parse.urlencode({ADDRESS_KEY: ' '.join(tokens)})}"
-
-
 def _set_address(tokens: tuple[str, ...]) -> None:
     """Write the chart's command line into the page's address (nothing at all for the defaults)."""
     text = " ".join(tokens)
@@ -2111,22 +2096,25 @@ def _show(drawing: Drawing, config: PlotConfig | None = None) -> None:
                     on_wheel_change=functools.partial(_wheel_turned, key),
                 )
                 _export_row(drawing, key)
-        # The chart's link in a box with Streamlit's copy button (batch 28.5):
-        # the address bar is out of reach on a phone, and bare after a Reset.
         narrow = drawing.drawn is not None and drawing.drawn.font_floor > PlotConfig().font_floor
         st.caption(
             f"Drawn at {drawing.finished:%Y-%m-%d %H:%M %Z} in {drawing.seconds:.1f} s"
             + (
                 f", for a narrow screen: {drawing.drawn.width_px} x {drawing.drawn.height_px} px and larger text, as"
-                " the download gives it; the link and the command line draw the full-size chart"
+                " Export chart gives it; the command line and the web page's link below draw the full-size chart"
                 if narrow else ""
             )
-            + ". This chart's link, to share it:"
+            + "."
         )
-        st.code(chart_link(st.context.url, drawing.tokens), language=None, wrap_lines=True)
         _auto_refresh(config)
-    st.markdown("**The same chart from the command line**")
+    # The command line, and under it the chart's link, each in a box with
+    # Streamlit's copy button, labelled as the window labels its two lines
+    # (batch 31.3; the link under the Drawn line since batch 28.5: the
+    # address bar is out of reach on a phone, and bare after a Reset).
+    st.markdown("**Command line:**")
     st.code(" ".join(["python", _SCRIPT_NAME, *drawing.tokens]), language=None, wrap_lines=True)
+    st.markdown("**Web page:**")
+    st.code(chart_link(st.context.url, drawing.tokens), language=None, wrap_lines=True)
     with st.expander("Message log"):
         log = drawing.log.rstrip() or "(nothing printed)"
         st.code(log, language=None, wrap_lines=True)

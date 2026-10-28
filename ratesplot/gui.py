@@ -135,7 +135,7 @@ from PIL import Image, ImageTk
 from matplotlib.figure import Figure
 
 from . import export, hover, http
-from .config import DOWNLOAD_MAX_AGE_SECONDS, EARLIEST_DATE, NATIONS, Nation, PlotConfig
+from .config import DOWNLOAD_MAX_AGE_SECONDS, EARLIEST_DATE, NATIONS, WEB_PAGE_ADDRESS, Nation, PlotConfig
 from .console import this_thread_output_to
 from .export import EXPORT_CHOICES, IMAGE_FORMATS
 from .frontend import (
@@ -165,6 +165,7 @@ from .frontend import (
     all_tick_reason,
     bound_keys,
     bounds_in_other_units,
+    chart_link,
     choice_refusal,
     choice_rows,
     choice_values,
@@ -298,6 +299,7 @@ _REMEMBER_TIP = f"{REMEMBER_HELP} The window's size and place and the save folde
 _FIT_TIP = "Each chart scaled to fill its tab, keeping its shape."
 _ACTUAL_TIP = "Each chart pixel for pixel, as the file it is saved as, with scroll bars."
 _COPY_COMMAND_TIP = "Copy the command line, to draw the same chart from a command prompt."
+_COPY_ADDRESS_TIP = "Copy the web page's address for this chart, to open it in a browser or send it to someone."
 _SAVE_LOG_TIP = "Save the whole message log as a text file."
 
 
@@ -1021,6 +1023,7 @@ class RatesPlotApp:
 
         self.zoom = tk.StringVar(value=state.get("zoom") if state.get("zoom") in ("fit", "actual") else _DEFAULT_PREVIEW)
         self.command = tk.StringVar()
+        self.web_address = tk.StringVar()  # the same chart on the web page (batch 31.3)
         self.status = tk.StringVar(value="Starting …")
 
         self._build_layout()
@@ -1087,13 +1090,21 @@ class RatesPlotApp:
         bar = ttk.Frame(self.root, padding=(8, 0, 8, 6))
         bar.grid(row=1, column=0, sticky="ew")
         bar.columnconfigure(1, weight=1)
-        ttk.Label(bar, text="Command line:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(bar, textvariable=self.command, state="readonly").grid(row=0, column=1, sticky="ew", padx=4)
-        copy = ttk.Button(bar, text="Copy", command=self._copy_command)
-        copy.grid(row=0, column=2)
-        _Tooltip(copy, _COPY_COMMAND_TIP)
+        # The command line, and under it the same chart's address on the web
+        # page, each with its own Copy (batch 31.3; Terry, 2026-10-28: "another
+        # line under it that shows the equivalent URL to launch the web
+        # version, with another "Copy" button").
+        for row, (label, variable, copy, tip) in enumerate((
+            ("Command line:", self.command, self._copy_command, _COPY_COMMAND_TIP),
+            ("Web page:", self.web_address, self._copy_web_address, _COPY_ADDRESS_TIP),
+        )):
+            ttk.Label(bar, text=label).grid(row=row, column=0, sticky="w")
+            ttk.Entry(bar, textvariable=variable, state="readonly").grid(row=row, column=1, sticky="ew", padx=4, pady=(0 if row == 0 else 2, 0))
+            button = ttk.Button(bar, text="Copy", command=copy)
+            button.grid(row=row, column=2, pady=(0 if row == 0 else 2, 0))
+            _Tooltip(button, tip)
         self.status_label = ttk.Label(bar, textvariable=self.status, anchor="w")
-        self.status_label.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.status_label.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         # Red only while it names a chart not drawn (batch 19.4, ``_render_finished``): any new text is the usual colour.
         self.status.trace_add("write", lambda *_args: self.status_label.configure(foreground=""))
 
@@ -1979,8 +1990,10 @@ class RatesPlotApp:
         self._text_after_id = self.root.after(_TEXT_REDRAW_DELAY_MS, self.request_redraw)
 
     def _update_command_line(self) -> None:
+        """Write the controls' command line, and the same chart's address on the web page (batch 31.3)."""
         tokens = command_line_tokens(*self._snapshot())
         self.command.set(subprocess.list2cmdline(["python", _SCRIPT_NAME, *tokens]))
+        self.web_address.set(chart_link(WEB_PAGE_ADDRESS, tokens))
 
     def _mark_invalid_fields(self, payloads: dict[str, str], flags: dict[str, bool]) -> list[str]:
         """Colour the label and the text of every field in the wrong (``frontend.field_problems``); return the messages.
@@ -2728,6 +2741,11 @@ class RatesPlotApp:
         self.root.clipboard_clear()
         self.root.clipboard_append(self.command.get())
         self.status.set("Command line copied.")
+
+    def _copy_web_address(self) -> None:
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self.web_address.get())
+        self.status.set("Web page address copied.")
 
     def _window_configured(self, event: tk.Event) -> None:
         """Keep the window's size and place while it is neither maximized nor minimized, and whether it is maximized.

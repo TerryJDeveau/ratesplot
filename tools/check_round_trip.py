@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that the window's and the page's command line draws what the command line it came from draws; offline, in seconds.
+"""Check that the window's and the page's command line, and the web address the window writes, draw what the line they came from draws; offline, in seconds.
 
 The window and the web page read a command line into their controls
 (``frontend.starting_choices``) and write their controls back as a command
@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import itertools
 import sys
+import urllib.parse
 from dataclasses import replace
 from pathlib import Path
 
@@ -36,9 +37,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from ratesplot.cli import sort_tokens  # noqa: E402
-from ratesplot.config import NATIONS  # noqa: E402
+from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS  # noqa: E402
 from ratesplot.frontend import (  # noqa: E402
-    NATION_OPTIONS, choice_values, choices_text, level_letters, level_text, starting_choices,
+    ADDRESS_KEY, NATION_OPTIONS, chart_link, choice_values, choices_text, drawn_payloads, level_letters, level_text,
+    starting_choices,
 )
 from ratesplot.options import command_line_tokens, config_from_choices, drawn_config, nation_choice  # noqa: E402
 
@@ -92,7 +94,11 @@ def round_trip(line: list[str]) -> tuple[list[str], list[str]] | None:
 
     Written twice: from the fields as the window keeps them, and from the
     fields as the page rebuilds each list from its ticked boxes
-    (``through_boxes``); both must draw what the line drew. The written line
+    (``through_boxes``); both must draw what the line drew. Each is also
+    written as the chart's web address, as the window writes it under its
+    command line (batch 31.3, ``frontend.chart_link`` on
+    ``config.WEB_PAGE_ADDRESS``), and read back as the page reads its
+    address (``page_reads``), which must draw the same. The written line
     returned is the page's where they differ.
     """
     payloads, flags, unmatched, misspelled = sort_tokens(line)
@@ -110,13 +116,33 @@ def round_trip(line: list[str]) -> tuple[list[str], list[str]] | None:
             again = config_from_choices(*sort_tokens(written)[:2])
         except ValueError as exc:
             return written, [f"refused: {exc}"]
-        differ += [
-            nation.key for nation in NATIONS
-            if (getattr(config, nation.show_field) != getattr(again, nation.show_field)
-                or (getattr(config, nation.show_field) and _drawn(config, nation.key) != _drawn(again, nation.key)))
-            and nation.key not in differ
-        ]
+        linked, problems = page_reads(chart_link(WEB_PAGE_ADDRESS, written))
+        if linked is None:
+            return written, [f"its web address refused: {'; '.join(problems)}"]
+        for read in (again, linked):
+            differ += [
+                nation.key for nation in NATIONS
+                if (getattr(config, nation.show_field) != getattr(read, nation.show_field)
+                    or (getattr(config, nation.show_field) and _drawn(config, nation.key) != _drawn(read, nation.key)))
+                and nation.key not in differ
+            ]
     return written, differ
+
+
+def page_reads(link: str):
+    """The PlotConfig the page draws for ``link``: its ``?chart=`` read as Streamlit gives the page its query, then as the page reads it.
+
+    ``web._choices_from_line`` gives the controls, from which the page draws
+    with its greyed fields set aside (``frontend.drawn_payloads``), as
+    ``web._config_for`` does. (None, problems) where the page refuses it.
+    """
+    from ratesplot import web  # here: it brings Streamlit, which the rest of this check does without
+
+    text = urllib.parse.parse_qs(urllib.parse.urlsplit(link).query, keep_blank_values=True)[ADDRESS_KEY][0]
+    choices, problems = web._choices_from_line(text)
+    if choices is None:
+        return None, problems
+    return config_from_choices(drawn_payloads(*choices), choices[1]), []
 
 
 def through_boxes(payloads: dict[str, str]) -> dict[str, str]:

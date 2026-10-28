@@ -43,6 +43,7 @@ import os
 import re
 import sys
 import time
+import urllib.parse
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -1069,6 +1070,26 @@ def option_help_lines(option: Option) -> tuple[str, str, str]:
 # at its address with ``?help=TOPIC`` (``HELP_KEY``).
 HELP_DIR = Path(__file__).resolve().parent.parent / "docs" / "help"
 HELP_KEY = "help"
+# The page's query parameter that holds the chart's command line.
+ADDRESS_KEY = "chart"
+
+
+def chart_link(base: str | None, tokens: Sequence[str]) -> str:
+    """Return the chart's own link, to share it (batch 28.5): the page's address with the chart's command line.
+
+    ``base`` is the address the page is visited at (``st.context.url``,
+    without its query), or in the window ``config.WEB_PAGE_ADDRESS``
+    (batch 31.3: the same chart on the page). On Community Cloud the app
+    runs in a frame whose address ends ``/~/+/`` (measured 2026-10-28),
+    which is cut, so the link is the one the address bar shows. The
+    defaults' link ends ``?chart=``: a bare address would draw what the
+    visitor's browser remembers (``web._starting_choices``). With no
+    ``base`` (AppTest) the link is its query alone.
+    """
+    root = re.sub(r"/~/\+/?$", "/", base or "")
+    if root and not urllib.parse.urlsplit(root).path:
+        root += "/"  # "http://localhost:8501", as Streamlit gives it, read as the address bar shows it
+    return f"{root}?{urllib.parse.urlencode({ADDRESS_KEY: ' '.join(tokens)})}"
 
 
 def help_address(topic: str) -> str:

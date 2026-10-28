@@ -83,7 +83,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 import ratesplot  # noqa: E402
 from ratesplot import cli, frontend, hover, http, web  # noqa: E402
 from ratesplot.cli import sort_tokens  # noqa: E402
-from ratesplot.config import NATIONS, PlotConfig  # noqa: E402
+from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS, PlotConfig  # noqa: E402
 from ratesplot.frontend import move_dates_updates, starting_choices, version_text  # noqa: E402
 from ratesplot.options import command_line_tokens, config_from_choices, drawn_config  # noqa: E402
 
@@ -1610,17 +1610,23 @@ def check_batch28s2(check: Check) -> None:
 
     page = new_page("-c -s:2001 --e:2019")
     link = "?" + urllib.parse.urlencode({"chart": address(page)})
-    check("the chart's link under the Drawn line, in a box with a copy button (AppTest gives no address: its query alone)",
-          link in [code.value for code in page.code]
-          and any("This chart's link, to share it:" in caption.value for caption in page.caption), link)
+    codes = [code.value for code in page.code]
+    command = next((index for index, value in enumerate(codes) if value.startswith("python ratesplot.py ")), None)
+    labels = [block.value for block in page.markdown]
+    check("the chart's link in a box with a copy button, under the command line since 31.3, both labelled as in the window"
+          " (AppTest gives no address: its query alone)",
+          link in codes and command is not None and codes.index(link) == command + 1
+          and "**Command line:**" in labels and "**Web page:**" in labels
+          and not any("link, to share it" in caption.value for caption in page.caption), (link, codes))
     defaults = new_page("", heard=urllib.parse.quote("-u -s:2010 --e:2026-09-01"))
     check("?chart= with nothing after it: the defaults, not the settings remembered, and its link ?chart=",
           not defaults.exception and address(defaults) == "" and charts_shown(defaults) == 2 and "?chart=" in [c.value for c in defaults.code],
           (address(defaults), charts_shown(defaults)))
-    check("chart_link: the cloud frame's /~/+/ cut; a slash after a bare host",
+    check("chart_link: the cloud frame's /~/+/ cut; a slash after a bare host; the window's address the page's own",
           web.chart_link("https://ratesplot.streamlit.app/~/+/", ("--C", "--end:2025-01-01"))
           == "https://ratesplot.streamlit.app/?chart=--C+--end%3A2025-01-01"
-          and web.chart_link("http://localhost:8501", ()) == "http://localhost:8501/?chart=")
+          and web.chart_link("http://localhost:8501", ()) == "http://localhost:8501/?chart="
+          and web.chart_link(WEB_PAGE_ADDRESS, ("--C",)) == "https://ratesplot.streamlit.app/?chart=--C")
 
 
 def check_batch283(check: Check) -> None:

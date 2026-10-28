@@ -115,6 +115,10 @@ MIN_FONT_SCALE = 0.5
 PHONE_WIDTH_PX = 700
 PHONE_CANVAS_PX = (800, 800)
 PHONE_FONT_SCALE = 0.8
+# The web page's address on Streamlit Community Cloud (``web-deploy`` in the
+# skill): the window writes the chart's address on it under its command line
+# (batch 31.3, ``frontend.chart_link``), so the same chart opens on the page.
+WEB_PAGE_ADDRESS = "https://ratesplot.streamlit.app/"
 
 # Regression segments (--reg, ratesplot.regression): how far a piece's line
 # may lie from any observation it covers, as a percentage of the right axis's

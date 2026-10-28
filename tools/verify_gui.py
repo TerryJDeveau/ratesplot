@@ -99,7 +99,7 @@ from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
 import ratesplot  # noqa: E402
 from ratesplot import cli, export, frontend, gui, hover, http, options  # noqa: E402
 from ratesplot.axes import format_yield  # noqa: E402
-from ratesplot.config import NATIONS  # noqa: E402
+from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 
@@ -2167,6 +2167,25 @@ def check_batch31(check: Check) -> None:
         app.paned.sash_place(0, narrowest, 0)
         w.pump(30)
         right = app.column.winfo_rootx() + app.column.winfo_width()
+        # 31.3: under the command line, the same chart on the web page, with its own Copy.
+        labels = {str(widget.cget("text")): widget for widget in all_widgets(root) if widget.winfo_class() == "TLabel"}
+        line, web = labels.get("Command line:"), labels.get("Web page:")
+        check("31.3: “Web page:” on the row under “Command line:”", line is not None and web is not None and web.master is line.master
+              and int(web.grid_info()["row"]) == int(line.grid_info()["row"]) + 1)
+        check("its address: the page's, with the chart's command line", app.web_address.get()
+              == frontend.chart_link(WEB_PAGE_ADDRESS, w.command_tokens()) == "https://ratesplot.streamlit.app/?chart=--C+--end%3A2026-09-01",
+              app.web_address.get())
+        w.typed("start", "2010")
+        w.settle()
+        check("it follows the controls, as the command line does", app.web_address.get()
+              == frontend.chart_link(WEB_PAGE_ADDRESS, w.command_tokens()) and "start%3A2010" in app.web_address.get(), app.web_address.get())
+        copied: list[str] = []
+        root.clipboard_clear, root.clipboard_append = copied.clear, copied.append  # the person's own clipboard left alone
+        copy = next(widget for widget in all_widgets(web.master) if widget.winfo_class() == "TButton"
+                    and int(widget.grid_info()["row"]) == int(web.grid_info()["row"]))
+        copy.invoke()
+        check("its Copy copies the address", copied == [app.web_address.get()] and app.status.get() == "Web page address copied.",
+              (copied, app.status.get()))
         buttons = [refresh, reset, *app._bar_buttons]
         check(f"at the narrowest width ({narrowest} px): all four buttons whole and inside the column",
               app._current_column_width() == narrowest
