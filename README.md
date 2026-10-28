@@ -144,7 +144,10 @@ the control does, its command-line spelling, why it is greyed if it is ("Greyed 
 yields” is unticked."), and, where there is more to say, More, which opens a window of its own
 with the whole of it. On the page the ⓘ is Streamlit's tip, which says the same and ends with a
 More link that opens the longer text alone in a new tab (`?help=percent-of-gdp`). The longer texts
-are in `docs/help/`, one file per topic; so far there is one, on % of GDP.
+are in `docs/help/`, one file per topic: % of GDP, and the sources' pages for debt, GDP, interest,
+the levels of government and per capita, which say where each nation's figures come from, how
+they are joined and how soon they are published, with a link to each source. A topic's link to
+another opens that topic: in the window in its own window, on the page in a new tab.
 
 Right of each country's axis limit is its unit (% for Max and Min, the country's currency for Top
 and Bottom, none for a percentage of GDP) and an "All" box. Ticked, the limit goes into every
