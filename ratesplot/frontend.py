@@ -1271,8 +1271,8 @@ _STARTED_COMMIT = _started_commit(PROGRAM_FOLDER)
 
 
 def version_text() -> str:
-    """The version as the window and the page show it (batch 11.7): "v6.5 · 8c3e41b", the commit left off where there is no checkout."""
-    return f"v{__version__} · {_STARTED_COMMIT}" if _STARTED_COMMIT else f"v{__version__}"
+    """The version as the window and the page show it (batch 11.7): "v6.5, build: 8c3e41b" (Terry, 2026-10-28), the commit left off where there is no checkout."""
+    return f"v{__version__}, build: {_STARTED_COMMIT}" if _STARTED_COMMIT else f"v{__version__}"
 # Windows' known folder for Documents (FOLDERID_Documents), which a user may have moved.
 _DOCUMENTS_GUID = (0xFDD39AD0, 0x238F, 0x46AF, (0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))
 

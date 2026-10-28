@@ -63,7 +63,7 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
 All three draw the same charts from the same code (`plotting.build_figure`).
 
 The version is shown small at the top left of the window's controls and of the page's sidebar,
-with the commit the program was started from (`v6.5 · 8c3e41b`); `--version` prints it. It is
+with the commit the program was started from (`v6.5, build: 8c3e41b`); `--version` prints it. It is
 major.minor: the major goes up when a batch of the plan adds a new type of series, the minor at
 each push of a build (`ratesplot.__version__`).
 
