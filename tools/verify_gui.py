@@ -1687,8 +1687,8 @@ def check_wheel(check: Check) -> None:
               (w.text("start"), w.text("end"), expected, len(app.history) - history))
         wheel_over(w, canvas, -40, event_x, event_y)
         wheel_stopped(w)
-        check("forty notches out at once: the dates from the first data (1680) to today",
-              (w.text("start"), w.text("end")) == ("1680-01-01", ""), (w.text("start"), w.text("end")))
+        check("forty notches out at once: the dates from the earliest date (1600 since batch 28.3) to today",
+              (w.text("start"), w.text("end")) == ("1600-01-01", ""), (w.text("start"), w.text("end")))
 
         # At actual size the picture is larger than its tab: its scroll bars scroll it, and nothing is zoomed.
         app.zoom.set("actual")

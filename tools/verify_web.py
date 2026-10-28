@@ -1439,7 +1439,7 @@ def check_batch247(check: Check) -> None:
     check("a place past the picture's edge: kept to it",
           web._wheel_zoom(drawing, "cdn", {"notches": 1, "x": 7}) == web._wheel_zoom(drawing, "cdn", {"notches": 1, "x": 1.0}))
     flung = web._wheel_zoom(drawing, "cdn", {"notches": -1e9, "x": 0.5})
-    check("a fling of a billion notches out: the first data (1680) to today", flung == {"start": "1680-01-01", "end": ""}, flung)
+    check("a fling of a billion notches out: the earliest date (1600 since batch 28.3) to today", flung == {"start": "1600-01-01", "end": ""}, flung)
     nothing = [None, {}, {"notches": 2}, {"notches": "two", "x": 0.3}, {"notches": [2], "x": 0.3},
                {"notches": float("nan"), "x": 0.3}, {"notches": float("inf"), "x": 0.3}, {"notches": 0, "x": 0.5}, "2"]
     results = [web._wheel_zoom(drawing, "cdn", wheel) for wheel in nothing]
