@@ -1669,8 +1669,32 @@ def _controls() -> None:
                 _choices_control(bar, option)
             elif option.editor == "size":
                 _size_control(bar, option)
+    # Only a ticked nation's section, as the window shows a tab only for a
+    # ticked nation (batch 28.1). Terry, 2026-10-26: "remove the national
+    # sub-panel from the interface completely, if the box isn't ticked, as
+    # eventually there will be many national tick-boxes, and it is annoying
+    # to have to scroll through them all looking for the one you want". An
+    # unticked nation keeps its values for when it is ticked again.
+    flags = _snapshot()[1]
+    boxes = {key: name for name, key in nation_boxes().items()}
     for nation in NATIONS:
-        _nation_controls(bar, nation)
+        if flags.get(boxes[nation.key], False):
+            _nation_controls(bar, nation)
+        else:
+            _keep_section(nation)
+
+
+def _keep_section(nation: Nation) -> None:
+    """Keep the values of ``nation``'s section through a run that does not lay it out (batch 28.1).
+
+    Streamlit forgets a widget's value at the end of a run that does not lay
+    the widget out; a value assigned to its own key first is kept (its
+    documented way). Its terms' boxes, its levels, its limits, their "All"
+    boxes and its margins: every key of the section, by its prefix.
+    """
+    prefixes = tuple(prefix + nation.key + ":" for prefix in (_VALUE, _CHOICE, _LEVEL, _ALL))
+    for key in [key for key in st.session_state if key.startswith(prefixes)]:
+        st.session_state[key] = st.session_state[key]
 
 
 def _nation_controls(bar, nation: Nation) -> None:

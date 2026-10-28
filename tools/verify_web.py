@@ -342,8 +342,10 @@ def check_address_and_rules(check: Check) -> None:
         and float(limits["bottom"].rstrip("%")) < float(limits["top"].rstrip("%")),
         limits,
     )
-    placeholder = at.text_input(key="value:us:max").placeholder
-    check("a chart not drawn: no value of its own", placeholder == "automatic", placeholder)
+    # An unticked nation's section is not laid out (batch 28.1); before, its
+    # fields showed "automatic", having no chart of their own.
+    shown = {widget.key for widget in at.text_input}
+    check("an unticked nation's section not shown", "value:us:max" not in shown and "value:cdn:max" in shown)
 
     # One measure at a time; changing it clears Top and Bottom.
     at.text_input(key="value:cdn:top").input("200%")
@@ -799,10 +801,11 @@ def check_wrong_fields(check: Check) -> None:
     page.run()
     check("Start typed after End: Start red, End not", red(page, "value:start") and not red(page, "value:end"), errors(page))
     page.text_input(key="value:start").input("")
-    page.text_input(key="value:us:top").input("-5")  # the U.S. chart is not shown: its field is still judged
+    # Canada's: the U.S. chart is not shown, and since batch 28.1 nor is its section.
+    page.text_input(key="value:cdn:top").input("-5")
     page.run()
-    check("a Top at or below zero: red by itself", red(page, "value:us:top") and any("United States, Top" in e for e in errors(page)), errors(page))
-    page.text_input(key="value:us:top").input("")
+    check("a Top at or below zero: red by itself", red(page, "value:cdn:top") and any("Canada, Top" in e for e in errors(page)), errors(page))
+    page.text_input(key="value:cdn:top").input("")
     page.checkbox(key="size:lock").uncheck()
     page.run()
     page.text_input(key="size:width").input("600")
@@ -966,7 +969,8 @@ def check_batch95(check: Check) -> None:
 
 def check_batch91(check: Check) -> None:
     """Batch 9.1: each nation's policy terms, target and market, as boxes; the target ticked; greyed while the policy rate is off."""
-    at = new_page("--e:2026-09-01")
+    # Every nation ticked, so every nation's section is laid out (batch 28.1).
+    at = new_page("--na:ca,us,gb,de --e:2026-09-01")
     check("no exception", not at.exception, at.exception)
     boxes = {box.key for box in at.checkbox if box.key and ":policy-terms:" in box.key}
     wanted = {f"choice:{key}:policy-terms:{term}" for key in NATION_KEYS for term in ("target", "market")}
@@ -996,8 +1000,8 @@ def check_batch91(check: Check) -> None:
     check("Canada's last policy box cannot be unticked",
           at.checkbox(key="choice:cdn:policy-terms:target").value
           and any("untick “Policy rate”" in str(item.value) for item in list(at.info) + list(at.warning)), address(at))
-    check("no exception, one drawing per chart", not at.exception and charts_shown(at) == 2, at.exception)
-    page = new_page("--po:market --e:2026-09-01")
+    check("no exception, one drawing per chart", not at.exception and charts_shown(at) == 4, at.exception)
+    page = new_page("--po:market --na:ca,us,gb,de --e:2026-09-01")
     markets = {f"choice:{key}:policy-terms:market" for key in NATION_KEYS}
     check("--po:market: the market ticked in every section, the target not",
           {key for key in wanted if page.checkbox(key=key).value} == markets and flags(page)["policy"],
@@ -1143,15 +1147,20 @@ def check_batch18(check: Check) -> None:
         found = (re.fullmatch(r'<div style="padding-bottom: [^"]*">(.*)</div>', m.value) for m in page.markdown)
         return [match.group(1) for match in found if match]
 
+    # Only the ticked nations' sections are laid out (batch 28.1): Canada's and the U.S.'.
     shown = units(at)
     check("the units: % beside Max and Min, each nation's currency beside Top and Bottom",
-          shown == ["%", "C$", "%", "C$", "%", "$", "%", "$", "%", "£", "%", "£", "%", "€", "%", "€"], shown)
+          shown == ["%", "C$", "%", "C$", "%", "$", "%", "$"], shown)
     alls = [box.key for box in at.checkbox if box.key and box.key.startswith("all:")]
-    check("an All box beside each of the 16 limits", len(alls) == 16, alls)
+    check("an All box beside each of the 8 limits shown", len(alls) == 8, alls)
     check("every All box greyed while its field is blank", all(at.checkbox(key=key).disabled for key in alls))
 
     def values(name: str) -> list[str]:
-        return [at.text_input(key=f"value:{key}:{name}").value for key in NATION_KEYS]
+        # The UK's and Germany's fields are not laid out, but keep their values (``web._keep_section``).
+        return [at.session_state[f"value:{key}:{name}"] for key in NATION_KEYS]
+
+    def ticked(name: str) -> list[bool]:
+        return [bool(at.session_state[f"all:{key}:{name}"]) for key in NATION_KEYS]
 
     at.text_input(key="value:us:max").input("8")
     at.run()
@@ -1160,7 +1169,7 @@ def check_batch18(check: Check) -> None:
     at.checkbox(key="all:us:max").check()
     at.run()
     check("All ticked: every nation's Max 8, every Max's All ticked",
-          values("max") == ["8"] * 4 and all(at.checkbox(key=f"all:{key}:max").value for key in NATION_KEYS), values("max"))
+          values("max") == ["8"] * 4 and all(ticked("max")), values("max"))
     check("All ticked: written once, --max:8", "--max:8" in address(at) and "--us:max" not in address(at), address(at))
     at.text_input(key="value:cdn:max").input("7")
     at.run()
@@ -1168,7 +1177,7 @@ def check_batch18(check: Check) -> None:
     at.text_input(key="value:cdn:max").input("")
     at.run()
     check("a field blanked: its All unticked in every section, the others' values kept",
-          not any(at.checkbox(key=f"all:{key}:max").value for key in NATION_KEYS) and values("max") == ["", "7", "7", "7"],
+          not any(ticked("max")) and values("max") == ["", "7", "7", "7"],
           values("max"))
     check("a field blanked: its own All greyed, the others' active",
           at.checkbox(key="all:cdn:max").disabled and not at.checkbox(key="all:us:max").disabled)
@@ -1186,7 +1195,7 @@ def check_batch18(check: Check) -> None:
     at.run()
     at.text_input(key="value:us:top").input("150%")
     at.run()
-    check("-r: Top's and Bottom's unit blank, Max's and Min's %", units(at) == ["%", "&nbsp;"] * 8, units(at))
+    check("-r: Top's and Bottom's unit blank, Max's and Min's %", units(at) == ["%", "&nbsp;"] * 4, units(at))
     at.checkbox(key="all:us:top").check()
     at.run()
     check("-r: All on Top copies 150% to every nation", values("top") == ["150%"] * 4 and "--top:150%" in address(at), values("top"))
@@ -1196,7 +1205,10 @@ def check_batch18(check: Check) -> None:
           values("top"))
     at.checkbox(key="flag:cdn").uncheck()
     at.run()
-    check("one nation: every All greyed", all(at.checkbox(key=key).disabled for key in alls))
+    # Canada's section gone with its box (batch 28.1): the U.S.' All boxes alone are left.
+    check("one nation: every All greyed",
+          all(at.checkbox(key=key).disabled for key in alls if key.startswith("all:us:"))
+          and not any(box.key.startswith("all:cdn:") for box in at.checkbox if box.key))
     check("no exception", not at.exception, at.exception)
     page = new_page("--na:ca,us --max:8 --e:2026-09-01 -s:2015")
     check("from an address with --max:8: Max's All ticked", page.checkbox(key="all:cdn:max").value, address(page))
