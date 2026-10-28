@@ -165,7 +165,8 @@ def parse_yield_bound(spec: str, *, kind: str) -> float:
     try:
         parsed = float(value)
     except ValueError:
-        raise ValueError(f"invalid {kind} yield bound {spec!r}: must be a decimal number") from None
+        # Batch 28.1: "5%" was refused as not a number without saying why.
+        raise ValueError(f"invalid {kind} yield bound {spec!r}: must be a decimal number, in percent without the % sign") from None
     if not -100 < parsed < 100:
         raise ValueError(f"{kind} yield bound must be above -100 and below 100, got {parsed}")
     return parsed
