@@ -54,8 +54,9 @@ import pandas as pd  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
-from ratesplot import announced, cli, export, hover, plotting, rates  # noqa: E402
+from ratesplot import announced, cli, endlabels, export, hover, plotting, rates  # noqa: E402
 from ratesplot.config import POLICY_RATE_STYLE, PlotConfig  # noqa: E402
+from ratesplot.axes import format_yield  # noqa: E402
 
 FIXTURES = ROOT / "tools" / "announced_fixtures"
 RESULTS: list[bool] = []
@@ -531,6 +532,34 @@ def check_drawing() -> None:
     # A row for each day a piece has a point: the series' last, the change, the end.
     check("Export chart: 2.25% to 2026-10-27, 2.50% from 2026-10-29 to the end", list(by_day.items())[1:] == [
         (DAY("2026-10-27"), 2.25), (joint, 2.5), (config.end, 2.5)], by_day)
+
+    # The end label (-l) on a chart ending the day the change takes effect
+    # (Terry, 2026-10-29: it stood at the riser's foot and read 2.25): both
+    # pieces end that day, and the label is the announced piece's.
+    try:
+        announced.canadian_get = _Feed()
+        curve = rates.with_announced("cdn", target_curve(), joint)
+    finally:
+        announced.canadian_get = real
+    config = PlotConfig(start=DAY("2026-10-01"), end=joint, end_labels=True)
+    figure = Figure(figsize=(8, 4), dpi=100)
+    FigureCanvasAgg(figure)
+    ax = figure.add_subplot()
+    ax.set_xlim(mdates.date2num(config.start), mdates.date2num(config.end))
+    ax.set_ylim(2.0, 2.75)
+    drawn = plotting.add_rate_lines(ax, [curve], config)
+    lines = ax.get_lines()
+    check("ending the day it takes effect: both pieces end on it, the announced piece its riser alone",
+          len(lines) == 2 and list(lines[0].get_xdata())[-1] == joint and list(lines[1].get_xdata()) == [joint, joint]
+          and list(lines[1].get_ydata()) == [2.25, 2.5], [(list(line.get_xdata()), list(line.get_ydata())) for line in lines])
+    first = drawn[0][0]
+    check("the legend's line gives its last piece for the end label", plotting.last_piece(first) is lines[1])
+    endlabels.add_end_labels(ax, [(plotting.last_piece(first), format_yield)], config)
+    figure.canvas.draw()
+    texts = [(text.get_text(), round(float(ax.transData.inverted().transform(text.get_window_extent().get_points().mean(axis=0))[1]), 3))
+             for text in ax.texts]
+    check("its end label reads 2.50%, at the riser's top", [text for text, _y in texts] == ["2.50%"]
+          and all(abs(y - 2.5) < 0.03 for _text, y in texts), texts)
 
 
 def main() -> int:

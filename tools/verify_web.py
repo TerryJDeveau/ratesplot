@@ -147,6 +147,8 @@ CHART_CASES = (
     "uk_net_only", "nat_levels",
     # Batch 18.3: Top and Bottom in U.S. dollars on all four charts.
     "nat_fx",
+    # Batch 30: the master currency, on all four charts, and with levels and end labels.
+    "master_usd", "master_gbp_lv",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -1953,13 +1955,77 @@ def check_batch34(check: Check) -> None:
           "as you leave" in frontend.REMEMBER_HELP and "as you leave the page" in web._REMEMBER_LINE)
 
 
+def check_batch30(check: Check) -> None:
+    """Batch 30: the master currency's box in each nation's section, one ticked at most, greyed by its rules; the charts converted."""
+
+    def ticks(page: AppTest) -> dict[str, tuple[bool, bool]]:
+        """Each master box shown, by nation key: (ticked, greyed)."""
+        return {box.key.split(":")[1]: (box.value, box.disabled) for box in page.checkbox if box.key and box.key.startswith("master:")}
+
+    def master_of(page: AppTest) -> str | None:
+        return config_from_choices(*sort_tokens(address(page).split())[:2]).master_currency
+
+    at = new_page("-s:2001 --e:2019")
+    labels = sorted(box.label for box in at.checkbox if box.key and box.key.startswith("master:"))
+    check("a box in each nation's section shown, its own currency's code, none ticked, none greyed", not at.exception
+          and labels == ["Use CAD as the master currency", "Use USD as the master currency"]
+          and ticks(at) == {"cdn": (False, False), "us": (False, False)}, (labels, ticks(at)))
+    at.checkbox(key="master:us:").check().run()
+    check("the U.S.' ticked: --master:USD, Canada's left unticked", not at.exception and master_of(at) == "USD"
+          and "--master:USD" in address(at) and ticks(at) == {"cdn": (False, False), "us": (True, False)}, (address(at), ticks(at)))
+    drawing = at.session_state["drawing"]
+    data = web.export.chart_data(drawing.figures["cdn"], drawing.drawn.for_nation("cdn"), "cdn")
+    us_data = web.export.chart_data(drawing.figures["us"], drawing.drawn.for_nation("us"), "us")
+    check("the Canadian chart in US$: its axis, its exported data's unit; the U.S. chart's as before",
+          "USD at" in drawing.figures["cdn"].axes[1].get_ylabel() and "US$" in data.units and "C$" not in data.units
+          and drawing.figures["us"].axes[1].get_ylabel() == "Nominal Units (USD – Log Scale)" and "US$" in us_data.units,
+          (drawing.figures["cdn"].axes[1].get_ylabel(), data.units))
+    geometry = drawing.geometry["cdn"]
+    _left, top, _right, bottom = geometry.box
+    zoomed = frontend.zoom_updates(geometry, drawing.drawn.for_nation("cdn"), geometry.box[0], top + 50, geometry.box[2], bottom - 50)
+    check("a zoom on it gives Top and Bottom in U.S. dollars, with the code", geometry.right_currency == "USD"
+          and zoomed["top"].startswith("USD") and zoomed["bottom"].startswith("USD"), zoomed)
+    at.checkbox(key="master:cdn:").check().run()
+    check("Canada's ticked: --master:CAD, the U.S.' unticked", master_of(at) == "CAD"
+          and ticks(at) == {"cdn": (True, False), "us": (False, False)}, (address(at), ticks(at)))
+    at.checkbox(key="master:cdn:").uncheck().run()
+    check("unticked: no master, none ticked", master_of(at) is None and "--master" not in address(at)
+          and ticks(at) == {"cdn": (False, False), "us": (False, False)}, (address(at), ticks(at)))
+
+    at = new_page("--master:usd -r -s:2001 --e:2019")
+    box = at.checkbox(key="master:us:")
+    check("under % of GDP: greyed, keeping its tick, left off the address, its reason in its tip", not at.exception
+          and (box.value, box.disabled) == (True, True) and "--master" not in address(at)
+          and "Greyed because % of GDP is in effect, and a share of GDP is in no currency." in box.help, (address(at), box.help[-160:]))
+    check("its tip ends with More to its topic", box.help.endswith("[More](?help=master-currency)"), box.help[-50:])
+    at.checkbox(key="flag:relative").uncheck().run()
+    check("-r unticked: no longer greyed, the master back in the address", master_of(at) == "USD"
+          and ticks(at)["us"] == (True, False), (address(at), ticks(at)))
+    at = new_page("-c --master:usd -s:2001 --e:2019")
+    check("one nation: Canada's box greyed, the master (the U.S.', unticked) kept for when it is drawn",
+          ticks(at) == {"cdn": (False, True)} and "--master" not in address(at)
+          and at.session_state["value:master"].upper() == "USD", (address(at), ticks(at)))
+    at.checkbox(key="flag:us").check().run()
+    check("the U.S. ticked again: its box ticked, the master in effect", master_of(at) == "USD"
+          and ticks(at) == {"cdn": (False, False), "us": (True, False)}, (address(at), ticks(at)))
+    button(at, "Reset").click().run()
+    check("Reset: no master", not at.exception and master_of(at) is None and not any(t for t, _g in ticks(at).values()), ticks(at))
+
+    view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+    view.query_params["help"] = "master-currency"
+    view.run()
+    shown = "\n".join(block.value for block in view.markdown)
+    check("?help=master-currency: its title and its links", not view.exception and "# The master currency" in shown.splitlines()
+          and all(f"(?help={link})" in shown for link in ("percent-of-gdp", "limits", "end-labels", "hover", "regression")), shown[:60])
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
-    check_batch31, check_batch324, check_batch34,
+    check_batch31, check_batch324, check_batch34, check_batch30,
 )
 
 

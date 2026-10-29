@@ -2021,7 +2021,8 @@ def check_batch291(check: Check) -> None:
 
     with window(f"-c -u --no-debt --no-GDP --no-interest {END}") as w:
         app, root = w.app, w.root
-        controls = set(app.flag_boxes) | set(app.payload_vars)
+        # The master currency's text (batch 30) has no field: its controls are its box in each nation's panel.
+        controls = set(app.flag_boxes) | set(app.payload_vars) - {"master"} | {f"{key}:master" for key in app.master_boxes}
         missing = sorted(controls - set(app.info_marks))
         check(f"an ⓘ beside each of the {len(controls)} controls", not missing, missing)
         check("% of GDP greyed, its ⓘ not (never greyed)",
@@ -2489,6 +2490,81 @@ def check_batch33(check: Check) -> None:
         shutil.rmtree(folder, ignore_errors=True)
 
 
+def check_batch30(check: Check) -> None:
+    """Batch 30: the master currency's box in each nation's panel, one ticked at most, greyed by its rules; the charts converted."""
+    # An ⓘ's panel kept on the ⓘ's monitor (gui._beside): a primary 1920x1080 and one above it at negative y, as Buddug's.
+    frame = gui._window_frame()
+    areas = [(0, 0, 1920, 1040), (988, -3840, 3548, -2440)]
+    check("an ⓘ's panel above the primary: right of the ⓘ, its top level with it, not on the primary's top edge",
+          gui._beside((1500, -3000, 1514, -2986), 300, 120, areas, (1920, 1080)) == "+1520+-3000")
+    check("... at its monitor's right and bottom edges, moved in", gui._beside((3500, -2460, 3514, -2446), 300, 120, areas, (1920, 1080))
+          == f"+{3548 - 300 - frame[0] - frame[2]}+{-2440 - 120 - frame[1] - frame[3]}")
+    check("... with no monitors known, inside the primary screen as before",
+          gui._beside((1500, -3000, 1514, -2986), 300, 120, [], (1920, 1080)) == "+1520+0")
+    with window(f"--na:ca,us -s:2010 {END}") as w:
+        app, root = w.app, w.root
+
+        def ticks() -> dict[str, tuple[bool, bool]]:
+            return {key: (app.master_vars[key].get(), not enabled(box)) for key, box in app.master_boxes.items()}
+
+        def tick(key: str, on: bool) -> None:
+            app.master_vars[key].set(on)
+            app._master_ticked(next(nation for nation in NATIONS if nation.key == key))
+            w.settle()
+
+        labels = {key: str(box.cget("text")) for key, box in app.master_boxes.items()}
+        check("a box in each nation's panel, its own currency's code", labels == {
+            "cdn": "Use CAD as the master currency", "us": "Use USD as the master currency",
+            "uk": "Use GBP as the master currency", "de": "Use EUR as the master currency"}, labels)
+        check("none ticked, none greyed with two nations", all(t == (False, False) for t in ticks().values()), ticks())
+        tick("us", True)
+        check("the U.S.' ticked: --master:USD, the others unticked", "--master:USD" in w.command_tokens()
+              and ticks() == {"cdn": (False, False), "us": (True, False), "uk": (False, False), "de": (False, False)}, ticks())
+        figure = app.figures["cdn"][0]
+        check("the Canadian chart drawn in U.S. dollars, the rate on its axis", "USD at" in figure.axes[1].get_ylabel()
+              and any(label.get_text().startswith("US$") for label in figure.axes[1].get_yticklabels()), figure.axes[1].get_ylabel())
+        check("its charts the written line's", w.written_draws_the_same(("cdn", "us")))
+        tick("cdn", True)
+        check("Canada's ticked: --master:CAD, the U.S.' unticked", "--master:CAD" in w.command_tokens()
+              and ticks()["us"] == (False, False) and ticks()["cdn"] == (True, False), ticks())
+        w.tick("relative", True)
+        w.settle()
+        check("under % of GDP: every box greyed, Canada's still ticked, left off the command line",
+              all(greyed for _ticked, greyed in ticks().values()) and ticks()["cdn"] == (True, True)
+              and not any(t.startswith("--master") for t in w.command_tokens()), (ticks(), w.command_tokens()))
+        app.info_marks["cdn:master"].event_generate("<Button-1>")
+        root.update()
+        key, tip, reason = app.info_shown
+        check("its ⓘ: the tip, why it is greyed, and More", key == "cdn:master" and "Master currency:" in tip
+              and reason == "Greyed because % of GDP is in effect, and a share of GDP is in no currency.", app.info_shown)
+        # Found 2026-10-29 by Terry: on a monitor above the primary the panel came up on the primary's top edge.
+        areas = gui._monitor_work_areas()
+        panel = app.info_panel
+        panel_rect = (panel.winfo_rootx(), panel.winfo_rooty(), panel.winfo_rootx() + panel.winfo_width(), panel.winfo_rooty() + panel.winfo_height())
+        root_rect = (root.winfo_rootx(), root.winfo_rooty(), root.winfo_rootx() + root.winfo_width(), root.winfo_rooty() + root.winfo_height())
+        check("the ⓘ's panel on the window's own monitor", not areas or gui._monitor_of(panel_rect, areas) == gui._monitor_of(root_rect, areas),
+              (panel_rect, root_rect))
+        more = next(widget for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton" and widget.cget("text") == "More")
+        more.invoke()
+        root.update()
+        check("More opens the master currency's page", "master-currency" in app.topic_windows
+              and app.topic_windows["master-currency"].title() == "The master currency", sorted(app.topic_windows))
+        w.tick("relative", False)
+        w.settle()
+        check("-r unticked: the master back, --master:CAD", "--master:CAD" in w.command_tokens() and ticks()["cdn"] == (True, False))
+        w.tick("cdn", False)
+        w.settle()
+        check("Canada unticked: one nation, the boxes greyed, Canada's tick kept, nothing written",
+              all(greyed for _ticked, greyed in ticks().values()) and ticks()["cdn"][0]
+              and not any(t.startswith("--master") for t in w.command_tokens()), (ticks(), w.command_tokens()))
+        w.tick("cdn", True)
+        w.settle()
+        app._reset()
+        w.settle()
+        check("Reset: no master, none ticked", not any(ticked for ticked, _greyed in ticks().values())
+              and not any(t.startswith("--master") for t in w.command_tokens()), ticks())
+
+
 # The groups in the order they run; --group picks some by these names.
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
@@ -2522,6 +2598,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch293": check_batch293,
     "batch31": check_batch31,
     "batch33": check_batch33,
+    "batch30": check_batch30,
 }
 
 

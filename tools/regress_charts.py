@@ -266,6 +266,19 @@ CASES: dict[str, list[str]] = {
     "fx_1912": ["--na:ca,gb", "--top:USD15b", "--bottom:USD50m", "-s:1867", "--e:1912"],
     "fx_1947": ["--na:ca,gb", "--top:EUR20b", "--bottom:USD100m", "-s:1926", "--e:1947"],
     "fx_1960_all": ["--na:ca,us,gb,de", "--top:EUR2t", "--bottom:EUR2b", "-s:1956", "--e:1960"],
+    # Batch 30: the master currency, each as master; per capita with --reg;
+    # levels with the end labels; one limit pinned on a converted chart, its
+    # other end the default converted; a chart before its currency's first
+    # rate against the master (the pound against the Canadian dollar before
+    # 1858), left in its own with a warning; and two where it changes
+    # nothing (-r, one nation), drawn as without it.
+    "master_usd": ["--na:ca,us,gb,de", "--master:usd", "-s:2010"],
+    "master_cad_p": ["--na:ca,us,gb", "--master:cad", "-p", "--reg", "-s:1990"],
+    "master_gbp_lv": ["--na:ca,gb", "--master:gbp", "--debt:fm", "-l", "-s:1995"],
+    "master_eur_top": ["--na:us,de", "--master:eur", "--us:top:40t", "-s:2005"],
+    "master_1850": ["--na:ca,gb", "--master:cad", "-s:1800", "--e:1850"],
+    "master_r": ["--na:ca,us", "--master:usd", "-r", "-s:2000"],
+    "master_one": ["-c", "--master:usd", "-s:2000"],
     # Batch 24.1: crowded small charts where no legend shape fits without
     # covering a line (the only two of the measured cases, 2026-10-27), so
     # the legend takes the fallback: the least busy stretch it can cover.

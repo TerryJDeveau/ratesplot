@@ -36,7 +36,10 @@ Each line is reported with the sources that explain it and the dates each
 covers, so every join and stand-in is in the open, and with its carried
 points (how many, the longest). The right-axis curves are derived (four-
 quarter sums, splices, projections to the chart's end): they are listed with
-their dates, not compared.
+their dates, not compared; but on a chart in the master currency (batch
+30), each is compared point by point with the same chart drawn without it,
+times the rate of its End date worked out here on its own (``fx.rate``):
+every amount its own currency's times that one rate.
 
 Usage (from the project root)::
 
@@ -62,7 +65,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -78,7 +81,9 @@ from regress_charts import PINNED_END, install_disk_cache  # noqa: E402
 from ratesplot import cdn_data, cli, de_data, http, rates, uk_data, us_data  # noqa: E402
 from ratesplot.cdn_hist_yields import build_cdn_hist_yields  # noqa: E402
 from ratesplot.de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES  # noqa: E402
+from ratesplot.config import nation_by_key  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
+from ratesplot.fx import rate  # noqa: E402
 from ratesplot.joins import embedded_frame  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 from ratesplot.uk_archive_data import EMBEDDED_UK_BANK_RATE_HISTORY, EMBEDDED_UK_MORTGAGE_HISTORY  # noqa: E402
@@ -131,6 +136,13 @@ CASES: dict[str, list[str]] = {
     "de_policy": ["--na:de", "-s:1985", "--e:2004", "--policy", "--no-yield"],
     "de_1998": ["--na:de", "-s:1998", "--e:2010", "--po:target,market", "--mo:1-5,5-10,over10"],
     "de_2015": ["--na:de", "-s:2015", "--y:1,2,5,7,10,20,30", "--po:target,market", "--mo:1-5,5-10,over10", "--sp"],
+    # Batch 30: the master currency, its charts' right axes against the same
+    # charts without it: U.S. dollars on all four, the yields unchanged; per
+    # capita in Canadian dollars; euros in 1970, at the older rates through
+    # the pound (M14 over M15) for the Canadian dollar and the mark.
+    "master_usd": ["--na:ca,us,gb,de", "-s:2010", "--master:usd", "--po"],
+    "master_cad_p": ["--na:ca,us,gb", "-s:1990", "-p", "--master:cad"],
+    "master_eur_1970": ["--na:ca,de", "-s:1955", "--e:1970", "--master:eur"],
 }
 
 
@@ -477,8 +489,10 @@ def check_case(name: str, tokens: list[str]) -> bool:
                 print(f"         ... {len(result.failures) - 5:,} more")
             passed &= not result.failures
         for line in drawn_curves(figure.axes[1]) if len(figure.axes) > 1 else []:
-            if not line.values.empty:
+            if not line.values.empty and config.master_currency is None:
                 print(f"  {key:4} {line.label[:44]:44} right axis, derived (not compared): {span(list(line.values.index))}")
+        if config.master_currency is not None:
+            passed &= check_master(key, figure, config)
     # The drawing's warnings, each with the bulleted lines under it (the curves
     # it names), once: the curves were prepared twice, for the chart and above.
     blocks: list[list[str]] = []
@@ -491,6 +505,39 @@ def check_case(name: str, tokens: list[str]) -> bool:
             blocks.append([])  # the block ended
     for block in dict.fromkeys(tuple(block) for block in blocks if block):
         print("\n".join(f"  | {text}" for text in block))
+    return passed
+
+
+def check_master(key: str, figure, config) -> bool:
+    """A chart in the master currency (batch 30): each right-axis curve the same chart's without it, times its End's rate; True if every point is.
+
+    The yield axis is checked above as on any chart. The rate is worked out
+    here from ``fx.rate`` (the nation's currency to the master's on the End
+    date), 1 on the master's own chart and where the master changes nothing.
+    """
+    nation = nation_by_key(key)
+    target = config.master_for(key)
+    with this_thread_output_to(None):
+        plain = build_figure(next(country for country in COUNTRIES if country.key == key), replace(config, master_currency=None))
+        found = rate(nation.currency, target, config.end) if target else None
+    factor = found.value if found is not None else 1.0
+    passed = True
+    plain_curves = {line.label: line.values for line in drawn_curves(plain.axes[1])}
+    for line in drawn_curves(figure.axes[1]):
+        if line.values.empty:
+            continue
+        before = plain_curves.get(line.label)
+        if before is None or not before.index.equals(line.values.index):
+            print(f"  {key:4} {line.label[:44]:44} FAIL  not drawn on the same dates without the master currency")
+            passed = False
+            continue
+        worst = float(((line.values / (before * factor)) - 1.0).abs().max())
+        ok = worst <= TOLERANCE
+        passed &= ok
+        print(
+            f"  {key:4} {line.label[:44]:44} {'OK' if ok else 'FAIL':5} {len(line.values):,} points, each its own currency's "
+            f"x {factor:.5g} {target or nation.currency} per {nation.currency} (largest departure {worst:.1e})"
+        )
     return passed
 
 

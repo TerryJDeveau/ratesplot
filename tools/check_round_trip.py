@@ -86,6 +86,10 @@ VALUES = (
     "-p --top:GBP100k", "--uk:top:C$3t --ger:bottom:£40b",
     # The automatic refresh (batch 11.3): on, with its minutes, and greyed (its minutes then left off).
     "--au", "--au:10", "--au:10 --no-cur", "--au:10 -e:2026-09-01", "--au:15 --no-y --sp", "--au:20 --cdn:y:none",
+    # The master currency (batch 30): each, a mark typed; with -r, -p and limits; with no amount drawn; its
+    # nation not drawn (then left off the written line, as with one nation).
+    "--master:usd", "--master:CAD", "--master:£", "--master:eur", "--master:usd -r", "--master:cad -p --top:USD100k",
+    "--master:gbp --us:top:40t --bottom:CAD1t", "--master:usd --no-gdp --no-debt --no-interest", "--master:eur --cdn:d:fp",
 )
 
 

@@ -254,6 +254,13 @@ CASES: list[list[str]] = [
     ["--au", "--no-cur"], ["--au", "--no-yields"], ["--au", "--no-yields", "--sp"], ["--au", "-e:2020-01-01"],
     # Batch 11.7: --version, at least "ver" (in the option table, so argparse never takes "--v" for it).
     ["--version"], ["--ver"], ["--VERSION"], ["--vers"], ["--v"], ["--ve"], ["--version:1"], ["--version", "-c"],
+    # Batch 30 (decisions 77 and 78): --master:CODE, at least "mas" ("--ma" is --max); a code or a mark, in either
+    # case; a bare "$", another currency, none, or no value refused; no nation's own (--us:master); the last given
+    # wins; taken with -r and with one nation, where it changes nothing (the record shows the field kept).
+    ["--master:USD"], ["--mas:usd"], ["--mast:Cad"], ["--MASTER:gbp"], ["--master:EUR"], ["--master:US$"], ["--master:C$"],
+    ["--master:£"], ["--master:€"], ["--ma:usd"], ["--ma:8"], ["--master:$"], ["--master:JPY"], ["--master:"], ["--master"],
+    ["--master:usd20t"], ["--us:master:usd"], ["--master:usd", "--master:cad"], ["--master:usd", "-r"], ["--master:usd", "-u"],
+    ["--na:ca,us,gb,de", "--master:gbp", "--top:20t"], ["master:usd"],
 ]
 
 

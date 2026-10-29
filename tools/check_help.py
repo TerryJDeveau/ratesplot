@@ -46,8 +46,10 @@ from ratesplot.frontend import (  # noqa: E402
     ALL_TICKS,
     GREYABLE_OPTIONS,
     HELP_DIR,
+    MASTER,
     all_tick_offered,
     all_tick_reason,
+    drawn_payloads,
     greyed_line,
     greyed_reason,
     greyed_reasons,
@@ -58,9 +60,13 @@ from ratesplot.frontend import (  # noqa: E402
     help_topics,
     idle_choices,
     idle_nation_keys,
+    master_label,
+    master_text,
+    master_ticked,
+    nation_boxes,
     option_of,
 )
-from ratesplot.options import OPTIONS, Kind, by_name, choices_from_config, nation_choice  # noqa: E402
+from ratesplot.options import OPTIONS, Kind, by_name, choices_from_config, command_line_tokens, nation_choice  # noqa: E402
 
 results: list[bool] = []
 
@@ -176,11 +182,54 @@ def check_all_ticks() -> None:
         check(f"{label}: {expected or 'offered'}", reason == expected and all_tick_offered(payloads, flags, key) == (not expected), reason)
 
 
+def check_master() -> None:
+    """The master currency's boxes (batch 30.2): greyed by the plan's three rules, written out again here, each with its reason."""
+    print("-- the master currency's boxes")
+    base_payloads, base_flags = choices_from_config(PlotConfig())
+    boxes = nation_boxes()
+    combinations = disagreements = greyed_seen = 0
+    first_disagreement = None
+    for ticked in itertools.product((False, True), repeat=len(boxes)):
+        if not any(ticked):
+            continue  # the window keeps one nation ticked
+        for debt, gdp, interest, relative in itertools.product((False, True), repeat=4):
+            flags = {**base_flags, **dict(zip(boxes, ticked)), "debt": debt, "gdp": gdp, "interest": interest, "relative": relative}
+            # Plan 30.2: "Greyed while fewer than two nations are ticked, while -r has effect, and while no chart draws an amount".
+            greyed = sum(ticked) < 2 or (relative and (debt or interest)) or not (debt or gdp or interest)
+            reason = greyed_reason(MASTER, base_payloads, flags)
+            combinations += 1
+            greyed_seen += greyed
+            if greyed != (MASTER in idle_choices(base_payloads, flags)) or greyed != bool(reason):
+                disagreements += 1
+                first_disagreement = first_disagreement or (ticked, debt, gdp, interest, relative, reason)
+    check(f"{combinations} combinations of nations and curves ({greyed_seen} greyed): greyed by the plan's rules, a reason exactly there",
+          disagreements == 0, first_disagreement)
+    two = {**base_flags, "cdn": True, "us": True}
+    for label, flags, expected in (
+        ("one nation", {**base_flags, "cdn": True, "us": False}, "only one nation's chart is drawn"),
+        ("% of GDP", {**two, "relative": True}, "% of GDP is in effect, and a share of GDP is in no currency"),
+        ("no amount", {**two, "debt": False, "gdp": False, "interest": False}, "no chart draws debt, GDP or interest, the amounts it converts"),
+    ):
+        check(f"{label}: {expected}", greyed_reason(MASTER, base_payloads, flags) == expected, greyed_reason(MASTER, base_payloads, flags))
+    nations = {nation.key: nation for nation in NATIONS}
+    usd = {**base_payloads, MASTER: "USD"}
+    check("USD ticks the U.S. box alone", [key for key, nation in nations.items() if master_ticked(usd, nation)] == ["us"])
+    check("a mark ticks it too (US$)", master_ticked({MASTER: "us$"}, nations["us"]))
+    check("ticking Canada's makes CAD the master, unticking it none", (master_text(nations["cdn"], True), master_text(nations["cdn"], False)) == ("CAD", ""))
+    check("its caption names the nation's currency", master_label(nations["uk"]) == "Use GBP as the master currency")
+    check("written while it has effect", command_line_tokens(usd, two) == ["--master:USD"], command_line_tokens(usd, two))
+    euro = {**base_payloads, MASTER: "EUR"}
+    check("left out while its nation is unticked (EUR, Germany unticked)",
+          command_line_tokens(euro, two) == [] and MASTER not in drawn_payloads(euro, two), command_line_tokens(euro, two))
+    check("left out while greyed, its text kept", command_line_tokens(usd, {**two, "us": False}) == ["--C"] and usd[MASTER] == "USD")
+
+
 def main() -> int:
     check_texts()
     check_topics()
     check_reasons()
     check_all_ticks()
+    check_master()
     failed = results.count(False)
     print(f"\n{len(results) - failed} of {len(results)} checks passed")
     return 1 if failed else 0
