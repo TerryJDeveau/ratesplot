@@ -418,6 +418,7 @@ def add_rate_lines(
             # A spread runs on to the day's quotes, as the yields it is taken from do.
             mark_reading(drawn_line, part_reading, quoted=curve.spread)
             first = first or drawn_line
+            setattr(first, _LAST_PIECE_ATTR, drawn_line)  # where its end label starts (``last_piece``)
             if curve.spread:
                 as_steps = part_style.get("drawstyle") == "steps-post"
                 ax.fill_between(
@@ -483,6 +484,24 @@ def _add_band(ax: Axes, curve: RateCurve, lower: pd.Series, config: PlotConfig, 
 # A rate curve drawn with its band (``_add_band``): its first line carries
 # this attribute, and its legend entry is a ``_BandKey``.
 _BAND_ATTR = "_ratesplot_band"
+# A rate curve drawn in pieces (``add_rate_lines``): its first line, the
+# legend's, carries its last piece, where its end label (-l) starts.
+_LAST_PIECE_ATTR = "_ratesplot_last_piece"
+
+
+def last_piece(line: Line2D) -> Line2D:
+    """The last piece of the rate curve whose legend line is ``line`` (``add_rate_lines``): ``line`` itself if it is drawn whole.
+
+    The end label (-l) reads the curve's end from it (``endlabels``, which
+    takes in the curve's other pieces after it). Found 2026-10-29 by Terry:
+    on Canada's chart ending the day its new target took effect, the
+    announced piece's riser and the published piece's last point were on
+    the same date, the published piece won the tie, and the label at the
+    riser's foot read 2.25 where the line rose to 2.50. A tie is not given
+    to the later piece in general: a band's upper limits are hidden pieces
+    in the same colour, which end on the same date as its lower.
+    """
+    return getattr(line, _LAST_PIECE_ATTR, line)
 
 
 class _BandKey(Line2D):
@@ -661,7 +680,7 @@ def draw_country(
     end_labels: list[tuple[Line2D, ValueFormatter]] = []
     if config.end_labels:
         end_labels = [(line, format_yield) for line in yield_lines] + [
-            (line, _end_label_format(curve, config)) for line, curve in rate_lines
+            (last_piece(line), _end_label_format(curve, config)) for line, curve in rate_lines
         ] + [
             (line, (lambda value, fmt=macro_format: PROJECTION_LABEL_PREFIX + fmt(value)) if column in projected else macro_format)
             for line, column in zip(macro_lines, macro_columns_drawn)
