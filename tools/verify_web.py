@@ -1833,13 +1833,31 @@ def check_batch324(check: Check) -> None:
         plotting.policy_target_last = real
 
 
+def check_batch34(check: Check) -> None:
+    """Batch 34: Go beside the chart's link, opening it in a new tab (34.1)."""
+
+    def goes(page: AppTest) -> list[tuple[str, str, str]]:
+        return [(go.proto.label, go.proto.url, go.proto.help) for go in page.get("link_button")]
+
+    at = new_page("-c -s:2001 --e:2019")
+    link = "?" + urllib.parse.urlencode({"chart": address(at)})
+    check("34.1: one Go, opening the link in the box beside it (AppTest gives no address: its query alone), with its tip",
+          not at.exception and goes(at) == [("Go", link, web._GO_HELP)] and link in [code.value for code in at.code], goes(at))
+    at.checkbox(key="flag:per-capita").check().run()
+    check("a new drawing: Go opens its link", goes(at) == [("Go", "?" + urllib.parse.urlencode({"chart": address(at)}), web._GO_HELP)]
+          and "--per-capita" in address(at), goes(at))
+    defaults = new_page("")
+    check("the defaults: Go opens ?chart=, not the bare address that draws what the browser remembers",
+          [url for _, url, _ in goes(defaults)] == ["?chart="], goes(defaults))
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch31,
-    check_batch324,
+    check_batch324, check_batch34,
 )
 
 

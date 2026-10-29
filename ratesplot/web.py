@@ -35,7 +35,8 @@ The chart's address
     the settings remembered, or the defaults, are drawn instead. Under the
     command line the chart's link is shown with a copy button, labelled
     "Web page:" as in the window, which shows it on the page's own address
-    (batch 31.3, ``frontend.chart_link``).
+    (batch 31.3, ``frontend.chart_link``); beside it Go opens it in a new
+    tab, a copy of the charts that goes on by itself (batch 34.1).
 
 Remembered settings
     As the window remembers its settings, the page keeps the last chart's
@@ -257,6 +258,9 @@ PAGE_SUMMARY = (
     "each change redraws them."
 )
 _SCRIPT_NAME = "ratesplot.py"
+# Go's tip (batch 34.1): the window's Go opens the page in the browser
+# (``gui._GO_TIP``); the page's opens a second tab of itself.
+_GO_HELP = "Open this chart in a new tab, a copy that goes on by itself; this tab is left as it is."
 # The settings remembered between visits (batch 24.6): the chart's command
 # line, as the address holds it, in a cookie of this name, kept a year. The
 # page's own script writes it (``_MEMORY_JS``) and reads it back
@@ -2115,7 +2119,14 @@ def _show(drawing: Drawing, config: PlotConfig | None = None) -> None:
     st.markdown("**Command line:**")
     st.code(" ".join(["python", _SCRIPT_NAME, *drawing.tokens]), language=None, wrap_lines=True)
     st.markdown("**Web page:**")
-    st.code(chart_link(st.context.url, drawing.tokens), language=None, wrap_lines=True)
+    link = chart_link(st.context.url, drawing.tokens)
+    # Go beside the link (batch 34.1), as the window's beside its Copy (31.8):
+    # the link opened in a new tab, which draws the same charts and goes on by
+    # itself, this tab left as it is (Terry: like Chrome's "Duplicate", a live
+    # copy to come back to). Beside the box on a phone too: the box wraps.
+    row = st.container(horizontal=True, wrap=False, vertical_alignment="center")
+    row.code(link, language=None, wrap_lines=True)
+    row.link_button("Go", link, help=_GO_HELP, key="go")
     with st.expander("Message log"):
         log = drawing.log.rstrip() or "(nothing printed)"
         st.code(log, language=None, wrap_lines=True)
