@@ -169,7 +169,7 @@ the latest values, which say where each nation's figures come from, how they are
 soon they are published, with a link to each source; a page for each nation, opened from its
 tick box, which says what its chart holds and links to those pages; and a page for each of the
 other controls: Start and End, the axis limits (with the exchange rates a limit in another
-currency is converted at), regression segments, the projections to today, automatic refresh, the
+currency is converted at), the master currency, regression segments, the projections to today, automatic refresh, the
 hover read-out, the latest value at each line's end, and the chart's size and layout (the title,
 the axes, the legend). A topic's link to another opens that topic: in the window in its own
 window, on the page in a new tab.
@@ -196,6 +196,17 @@ through the pound; the mark from June 1948, at its official parities to 1962, th
 through the pound. A limit whose currency has no rate yet at its chart's end date is left to the
 axis, with a warning.
 
+A master currency (`--master:USD`, at least `--mas`; in the window and on the page "Use USD as the
+master currency" in each country's panel, one ticked at most) draws every chart's amounts in that
+currency while a chart in it is drawn with another: each other chart converts its debt, GDP and
+interest at the same rates, one rate for the whole chart, that of its end date, so its curves keep
+their shape and place and only the axis, its label (which gives the rate), the end labels, the
+hover read-out and Export chart's data change. A chart in U.S. dollars that are not its own writes
+them US$. Top and Bottom keep the currency they are set in and are converted for drawing; a zoom on
+a converted chart writes its limits with the master's code. The box is greyed with one country
+ticked, under % of GDP and with no amount drawn; a chart before its currency's first rate against
+the master stays in its own, with a warning.
+
 ## Setting up
 
 Python 3.12 or later, then:
@@ -218,6 +229,7 @@ python -m pip install -r requirements.txt
 | `--prime:0.5`, `--cdn:prime:-0.25` | the prime rate drawn plus a margin in points (negative allowed), as a variable mortgage priced from it; shown in the legend ("Prime Rate + 0.50") |
 | `--tracker:2`, `--uk:tracker:1.25` | the UK's tracker mortgage (the term `tracker`, among the UK's mortgage terms by default): Bank Rate plus a margin in points, 1.75 unless given, from 1997, when the Bank of England first quoted a tracker rate; shown in the legend ("Tracker Mortgage (Bank Rate + 1.75)") |
 | `--top:20t`, `--bottom:USD500b` | the right axis's limits (k, m, b, t; billions unsuffixed), in each chart's own currency or in the one named, converted at the rate of the chart's end date; with `-r` a percentage of GDP (`--top:150%`) |
+| `--master:USD` | every chart's amounts in that currency (`CAD`, `USD`, `GBP`, `EUR`, or `C$`, `US$`, `£`, `€`), converted at the rate of each chart's end date, while a chart in it is drawn with another; not under `-r` (at least `--mas`, since `--ma` is shared with `--max`) |
 | `--us:max:8`, `--cdn:yields:2,10` | a value for one country's chart only (its code in front: `ca` or `cdn`, `us`, `gb` or `uk`, `ger` or `deu`; Germany's `de` names it only in `--nations`, since `--de` is `--debt`); a country's own list may be `none` (`--cdn:yields:none`); in the window and on the page each country's terms, levels of government and axis limits (and the UK's aggregate debts) have their own panel, as many to a row as fit |
 | `-l` | each line's last value at its end (to three decimals where the third is not 0, as quotes and gilt yields are; a spread to a tenth of a point) |
 | `--reg`, `--reg:1` | each right-axis curve fitted by straight pieces, labelled with its growth in %/yr; each piece within 0.3 % of the axis height of the curve (or the percentage given), loosened where monthly figures would otherwise cut a curve into pieces of a few months (the message log says where) |
