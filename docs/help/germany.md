@@ -19,7 +19,7 @@ At the start it draws GDP, debt and interest on the right axis, and the 2-, 5-, 
 
 ## Its own controls
 
-Under Germany's chart in the window, and under "Germany only" on the page, are the controls that set its chart alone: the yield terms, spreads, policy rates and mortgage terms it draws (only those it has are offered), its levels of government, and the limits of its axes: Min and Max on the left, Top and Bottom on the right, in € unless another currency is named by its code (USD20t). On the command line each is written after Germany's prefix, `--ger:` or `--deu:`, as in `--ger:max:8` or `--ger:yields:2y,10y`; never `--de:`, which the command line reads as `--debt:`.
+Under Germany's chart in the window, and under "Germany only" on the page, are the controls that set its chart alone: the yield terms, spreads, policy rates and mortgage terms it draws (only those it has are offered), its levels of government, and the [limits of its axes](?help=limits): Min and Max on the left, Top and Bottom on the right, in € unless another currency is named by its code (USD20t). On the command line each is written after Germany's prefix, `--ger:` or `--deu:`, as in `--ger:max:8` or `--ger:yields:2y,10y`; never `--de:`, which the command line reads as `--debt:`.
 
 ## The other nations
 

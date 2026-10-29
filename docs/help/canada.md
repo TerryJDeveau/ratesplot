@@ -19,7 +19,7 @@ At the start it draws GDP, aggregate public debt and interest on the right axis,
 
 ## Its own controls
 
-Under Canada's chart in the window, and under "Canada only" on the page, are the controls that set its chart alone: the yield terms, spreads, policy rates and mortgage terms it draws (only those it has are offered), the prime rate's margin, its levels of government, and the limits of its axes: Min and Max on the left, Top and Bottom on the right, in C$ unless another currency is named by its code (USD20t). On the command line each is written after Canada's prefix, `--cdn:` or `--ca:`, as in `--cdn:max:8` or `--cdn:yields:2y,10y`.
+Under Canada's chart in the window, and under "Canada only" on the page, are the controls that set its chart alone: the yield terms, spreads, policy rates and mortgage terms it draws (only those it has are offered), the prime rate's margin, its levels of government, and the [limits of its axes](?help=limits): Min and Max on the left, Top and Bottom on the right, in C$ unless another currency is named by its code (USD20t). On the command line each is written after Canada's prefix, `--cdn:` or `--ca:`, as in `--cdn:max:8` or `--cdn:yields:2y,10y`.
 
 ## The other nations
 

@@ -2,7 +2,7 @@
 
 "Intraday quotes on end date", on by default, carries each chart past the end of its regular sources, to the moment, from faster ones. The regular sources publish with a lag: FRED has the Treasury's yields a business day or more after the Treasury, the other nations' official yields come after the day (Germany's during it), and the U.S. federal debt in FRED is quarterly and a quarter or more behind.
 
-It adds nothing to GDP, interest, population or the other nations' debts, which have no faster free source. Carrying those curves on to today is the work of Projections to today, a box of its own.
+It adds nothing to GDP, interest, population or the other nations' debts, which have no faster free source. Carrying those curves on to today is the work of [Projections to today](?help=projections), a box of its own.
 
 ## The United States
 
@@ -20,7 +20,7 @@ The quotes reach the [yields](?help=yields) and so the [spreads](?help=spreads) 
 
 ## When it adds nothing
 
-The quotes are asked for only when the End date is no more than four days before today; the Treasury's daily figures whenever the U.S. chart's End is later than FRED's last figures. So the box is greyed when the End is too early for the day's quotes and no U.S. chart is shown. Automatic refresh draws the chart again after a set number of minutes, with the quotes of that moment; it is greyed while this box is unticked.
+The quotes are asked for only when the End date is no more than four days before today; the Treasury's daily figures whenever the U.S. chart's End is later than FRED's last figures. So the box is greyed when the End is too early for the day's quotes and no U.S. chart is shown. [Automatic refresh](?help=auto-refresh) draws the chart again after a set number of minutes, with the quotes of that moment; it is greyed while this box is unticked.
 
 ## How the program asks for these figures
 

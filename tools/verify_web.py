@@ -81,7 +81,7 @@ from streamlit.runtime.memory_media_file_storage import MemoryMediaFileStorage  
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 import ratesplot  # noqa: E402
-from ratesplot import cli, frontend, hover, http, plotting, web  # noqa: E402
+from ratesplot import cli, frontend, hover, http, options, plotting, web  # noqa: E402
 from ratesplot.cli import sort_tokens  # noqa: E402
 from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS, PlotConfig  # noqa: E402
 from ratesplot.frontend import move_dates_updates, starting_choices, version_text  # noqa: E402
@@ -213,6 +213,23 @@ def check_charts(cases: tuple[str, ...], outdir: Path, verbose: bool = False) ->
 # ---------------------------------------------------------------------------
 # Part 2: the page's behaviour, through Streamlit's AppTest
 # ---------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def topic_taken_away(name: str):
+    """Option ``name`` with no topic for the while: a control with nothing more to say, now that every control names one (batch 29.3).
+
+    ``Option`` is frozen, so its field is set past the dataclass's guard and
+    put back after. The page's script reads the same ``options`` module, so
+    a page run inside the block lays the control out with no More.
+    """
+    option = options.by_name(name)
+    topic = option.topic
+    object.__setattr__(option, "topic", "")
+    try:
+        yield
+    finally:
+        object.__setattr__(option, "topic", topic)
 
 
 def new_page(chart: str | None = None, heard: str | None = "") -> AppTest:
@@ -1712,9 +1729,12 @@ def check_batch291(check: Check) -> None:
     check("% of GDP greyed, its tip saying why, then More to its topic", not at.exception and box.disabled
           and "Greyed because it acts on debt and interest, and neither is ticked." in box.help
           and box.help.endswith("[More](?help=percent-of-gdp)"), box.help)
-    # Per capita named no topic until batch 29.2; Regression segments still names none.
-    segments = at.checkbox(key="flag:regression")
-    check("Regression segments greyed: why, and no More (it names no topic)",
+    # Every control names a topic since batch 29.3: Regression segments' is
+    # taken away for the while, so a control with nothing more to say is
+    # still seen to have no More.
+    with topic_taken_away("regression"):
+        segments = new_page("-c --no-debt --no-GDP --no-interest --e:2026-09-01").checkbox(key="flag:regression")
+    check("Regression segments greyed, with no topic: why, and no More",
           "Greyed because" in segments.help and "[More]" not in segments.help, segments.help)
     check("a box not greyed: no reason", "Greyed because" not in at.checkbox(key="flag:cdn").help)
     margin = at.text_input(key="value:cdn:prime-margin")
@@ -1793,6 +1813,42 @@ def check_batch292(check: Check) -> None:
         check(f"?help={topic}: its title, its links to the curves' pages and to the other nations'", not view.exception
               and f"# {title}" in shown.splitlines() and all(f"(?help={curve})" in shown for curve in ("gdp", "debt", "yields", "mortgages"))
               and all(f"(?help={other})" in shown for other in others), shown[:60])
+
+
+def check_batch293(check: Check) -> None:
+    """Batch 29.3: the other controls' tips end with More to their topics; the eight pages, their titles and links."""
+    at = new_page("-c --e:2026-09-01")
+    tips = {
+        "flag:label": "end-labels", "flag:regression": "regression", "value:regression-tolerance": "regression",
+        "size:width": "layout", "size:height": "layout", "value:start": "dates", "value:end": "dates",
+        "value:cdn:min": "limits", "value:cdn:max": "limits", "value:cdn:top": "limits", "value:cdn:bottom": "limits",
+        "flag:auto-refresh": "auto-refresh", "value:auto-refresh-minutes": "auto-refresh", "flag:projections": "projections",
+        "flag:hover": "hover",
+    }
+    for key, topic in tips.items():
+        widget = at.checkbox(key=key) if key.startswith("flag:") else at.text_input(key=key)
+        check(f"{key}: its tip ends with More to its topic", not at.exception and widget.help.endswith(f"[More](?help={topic})"),
+              widget.help[-50:])
+    pages = (
+        ("dates", "Start and End (-s, -e)", ("policy-rates", "projections", "latest-values", "limits")),
+        ("limits", "Axis limits: Min, Max, Top and Bottom", ("per-capita", "percent-of-gdp", "canada", "germany")),
+        ("regression", "Regression segments (--reg)", ("projections", "percent-of-gdp", "limits")),
+        ("projections", "Projections to today", ("end-labels", "hover", "per-capita", "latest-values")),
+        ("auto-refresh", "Automatic refresh (--au)", ("latest-values",)),
+        ("hover", "Hover read-out", ("projections", "latest-values", "end-labels")),
+        ("end-labels", "Latest value for each line (-l)", ("projections", "limits", "layout")),
+        ("layout", "Size and layout of the chart", ("dates", "limits", "end-labels", "regression")),
+        # The earlier pages, linking to the new ones.
+        ("latest-values", "Latest values", ("projections", "auto-refresh")),
+        ("percent-of-gdp", "As % of GDP (-r)", ("regression", "limits")),
+    )
+    for topic, title, links in pages:
+        view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+        view.query_params["help"] = topic
+        view.run()
+        shown = "\n".join(block.value for block in view.markdown)
+        check(f"?help={topic}: its title and its links to {', '.join(links)}", not view.exception
+              and f"# {title}" in shown.splitlines() and all(f"(?help={link})" in shown for link in links), shown[:60])
 
 
 def check_batch31(check: Check) -> None:
@@ -1890,8 +1946,8 @@ PAGE_CHECKS = (
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
-    check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch31,
-    check_batch324, check_batch34,
+    check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
+    check_batch31, check_batch324, check_batch34,
 )
 
 

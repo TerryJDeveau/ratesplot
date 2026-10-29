@@ -2042,9 +2042,12 @@ def check_batch291(check: Check) -> None:
         check("More shut the panel", app.info_panel is None)
         app._show_topic("percent-of-gdp")
         check("a second More: the same window", app.topic_windows["percent-of-gdp"] is topic)
-        # The canvas's size: the nations name topics since batch 29.2c.
-        app.info_marks["dimensions"].event_generate("<Button-1>")
-        root.update()
+        # Every control names a topic since batch 29.3: the canvas's size has
+        # its taken away for the while, so a control with nothing more to say
+        # is still seen to have no More.
+        with topic_taken_away("dimensions"):
+            app.info_marks["dimensions"].event_generate("<Button-1>")
+            root.update()
         check("a control not greyed and with no topic: no reason, Close alone",
               app.info_shown[2] == "" and set(panel_buttons(app)) == {"Close"}, (app.info_shown[2], sorted(panel_buttons(app))))
         app.info_marks["cdn:prime-margin"].event_generate("<Button-1>")
@@ -2127,6 +2130,53 @@ def check_batch292(check: Check) -> None:
         germany = app.topic_windows.get("germany")
         check("a click on “Germany”: Germany's page in its own window", germany is not None and germany.title() == "Germany",
               germany.title() if germany is not None else None)
+
+
+@contextlib.contextmanager
+def topic_taken_away(name: str):
+    """Option ``name`` with no topic for the while: a control with nothing more to say, now that every control names one (batch 29.3).
+
+    ``Option`` is frozen, so its field is set past the dataclass's guard and
+    put back after; the window reads it when an ⓘ is clicked.
+    """
+    option = options.by_name(name)
+    topic = option.topic
+    object.__setattr__(option, "topic", "")
+    try:
+        yield
+    finally:
+        object.__setattr__(option, "topic", topic)
+
+
+def check_batch293(check: Check) -> None:
+    """Batch 29.3: every ⓘ's panel has More; the other controls' pages, their titles and links."""
+    with window(f"--na:ca,gb {END}") as w:
+        app, root = w.app, w.root
+        without = []
+        for key, mark in app.info_marks.items():
+            mark.event_generate("<Button-1>")
+            root.update()
+            buttons = {widget.cget("text") for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton"}
+            if buttons != {"More", "Close"}:
+                without.append(key)
+            app._close_info()
+        check(f"each of the {len(app.info_marks)} ⓘ: its panel has More", not without, without)
+        for key, topic in (("label", "end-labels"), ("regression-tolerance", "regression"), ("dimensions", "layout"), ("start", "dates"),
+                           ("uk:top", "limits"), ("auto-refresh-minutes", "auto-refresh"), ("projections", "projections"), ("hover", "hover")):
+            app.info_marks[key].event_generate("<Button-1>")
+            root.update()
+            more = next(widget for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton" and widget.cget("text") == "More")
+            more.invoke()
+            root.update()
+            check(f"{key}: More opens the topic {topic}", topic in app.topic_windows and app.info_panel is None, sorted(app.topic_windows))
+        app._show_topic("limits")
+        root.update()
+        text = next(widget for widget in all_widgets(app.topic_windows["limits"]) if widget.winfo_class() == "Text")
+        links = {text.get(*text.tag_ranges(tag)[:2]) for tag in text.tag_names() if tag.startswith("link-")}
+        check("the limits' page: its title, its links to the measures', the nations' and the exchange rates' pages",
+              app.topic_windows["limits"].title() == "Axis limits: Min, Max, Top and Bottom"
+              and {"Per capita", "As % of GDP", "Canada", "Germany", "Canadian dollars", "research datasets"} <= links,
+              (app.topic_windows["limits"].title(), sorted(links)))
 
 
 # The window's buttons and boxes, by Tk's class names, ttk's and Tk's own.
@@ -2469,6 +2519,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch283": check_batch283,
     "batch291": check_batch291,
     "batch292": check_batch292,
+    "batch293": check_batch293,
     "batch31": check_batch31,
     "batch33": check_batch33,
 }

@@ -973,7 +973,7 @@ OPTIONS: tuple[Option, ...] = (
         "label", Kind.SWITCH, ("end_labels",), "labels", "--L / -l / --label",
         "each line's last value at its end, in\nthe line's colour; the date axis is\nwidened to make room",
         names=("label", "labels"), flag="--L", flag_help="label each line's end with its last value",
-        label="Show latest value for each line",
+        label="Show latest value for each line", topic="end-labels",
     ),
     # Regression segments on the right-axis curves (ratesplot.regression), in
     # the same group, so the window keeps one panel for both. At least "reg",
@@ -983,7 +983,7 @@ OPTIONS: tuple[Option, ...] = (
         "each right-axis curve fitted by the fewest\nstraight pieces on its log axis, each\n"
         "labelled with its growth in %/yr:\ncompounded on a piece of a year or more,\n"
         "the log slope on a shorter one",
-        names=("regression",), shortest=3, label="Regression segments", panel="regression",
+        names=("regression",), shortest=3, label="Regression segments", panel="regression", topic="regression",
     ),
     # Its tolerance. Giving it turns --reg on, as --debt:LETTERS names the
     # debt curve (``config_from_choices``); in the window the field is greyed
@@ -994,7 +994,7 @@ OPTIONS: tuple[Option, ...] = (
         f"(default {DEFAULT_REGRESSION_TOLERANCE_PCT:g}; never less than {MIN_REGRESSION_TOLERANCE_PCT:g} % of the\n"
         "value); turns --reg on",
         names=("regression",), shortest=3, parse=parse_regression_tolerance, turns_on="regression",
-        label="tolerance, % of axis", format=format_regression_tolerance, panel="regression",
+        label="tolerance, % of axis", format=format_regression_tolerance, panel="regression", topic="regression",
     ),
     # Values. Table order is parse order, so it decides which error is reported
     # first when several values are bad; each ``check`` runs once both of its
@@ -1002,18 +1002,18 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "dimensions", Kind.VALUE, ("width_px", "height_px"), "canvas", "--dimensions:WxH / --dim:W / --dim:xH",
         f"(minimum {MIN_CANVAS_PX} px each way)", names=("dimensions",), shortest=3, parse=parse_dimensions_spec,
-        label="Size", format=format_dimensions, editor="size",
+        label="Size", format=format_dimensions, editor="size", topic="layout",
     ),
     Option(
         "start", Kind.VALUE, ("start",), "dates", "--start:DATE / --s:DATE",
         _START_HELP,
         names=("start",), parse=partial(parse_date_spec, kind="start"), label="Start", format=format_date,
-        editor="date",
+        editor="date", topic="dates",
     ),
     Option(
         "end", Kind.VALUE, ("end",), "dates", "--end:DATE / --e:DATE", "last date (default today)",
         names=("end",), parse=partial(parse_date_spec, kind="end"), check=check_date_range,
-        label="End", format=format_date, editor="date",
+        label="End", format=format_date, editor="date", topic="dates",
     ),
     # "--m:" could be either, so it is refused as ambiguous. The labels have
     # no "%" since batch 18.1: the window and the page show it right of the
@@ -1021,11 +1021,12 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "min", Kind.VALUE, ("yield_ymin",), "yield", "--min:VAL / --mn:VAL", "lower bound",
         names=("minimum", "mn"), parse=partial(parse_yield_bound, kind="min"), label="Min", format=format_yield_bound,
+        topic="limits",
     ),
     Option(
         "max", Kind.VALUE, ("yield_ymax",), "yield", "--max:VAL / --mx:VAL", "upper bound",
         names=("maximum", "mx"), parse=partial(parse_yield_bound, kind="max"), check=check_yield_bounds,
-        label="Max", format=format_yield_bound,
+        label="Max", format=format_yield_bound, topic="limits",
     ),
     # Batch 18.3 (decision 41): an amount may name its currency, converted
     # at the rate of the chart's end date when each chart is drawn.
@@ -1034,11 +1035,12 @@ OPTIONS: tuple[Option, ...] = (
         "upper bound; in another currency with\nits code first (USD20t; CAD, GBP, EUR, or\nUS$ C$ £ €), converted at the rate of\n"
         "the chart's end date",
         names=("top",), parse=partial(parse_macro_bound, kind="top"), label="Top", format=format_macro_bound,
+        topic="limits",
     ),
     Option(
         "bottom", Kind.VALUE, ("macro_bottom", "macro_bottom_currency"), "dollar", "--bottom:VAL / --b:VAL", "lower bound, likewise",
         names=("bottom",), parse=partial(parse_macro_bound, kind="bottom"), check=check_macro_bounds,
-        label="Bottom", format=format_macro_bound,
+        label="Bottom", format=format_macro_bound, topic="limits",
     ),
     # The latest values (ratesplot.latest), on by default. At least "cur", so
     # it is never Canada ("-c", "--ca", "--cdn"). The tick's wording is
@@ -1060,14 +1062,14 @@ OPTIONS: tuple[Option, ...] = (
         "auto-refresh", Kind.FLAG, ("auto_refresh",), "latest", "--au / --auto-refresh / --no-au",
         f"off by default: every {DEFAULT_AUTO_REFRESH_MINUTES} minutes what\n"
         "Refresh does; outside market hours only\nwhen a quote has changed. With --save the\nfiles are written again until Ctrl-C",
-        names=("auto-refresh",), shortest=2, label="Automatic refresh", panel="labels",
+        names=("auto-refresh",), shortest=2, label="Automatic refresh", panel="labels", topic="auto-refresh",
     ),
     Option(
         "auto-refresh-minutes", Kind.VALUE, ("auto_refresh_minutes",), "latest", "--au:MIN / --auto-refresh:MIN",
         f"the minutes between refreshes (default {DEFAULT_AUTO_REFRESH_MINUTES},\n"
         f"at least {MIN_AUTO_REFRESH_MINUTES}); turns --au on",
         names=("auto-refresh",), shortest=2, parse=parse_auto_refresh_minutes, turns_on="auto-refresh",
-        label="interval, minutes", format=format_auto_refresh_minutes, panel="labels",
+        label="interval, minutes", format=format_auto_refresh_minutes, panel="labels", topic="auto-refresh",
     ),
     # The projection to today (ratesplot.latest.project_to_now), on by
     # default, a switch of its own since batch 11 (Terry, 2026-10-26, decision
@@ -1077,7 +1079,7 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "projections", Kind.FLAG, ("projections",), "latest", "--pro / --projections / --no-pro",
         "on by default: each right-axis curve\ncarried from its last value to today at\nits past year's pace, drawn faint",
-        names=("projections",), shortest=3, label="Projections to today", panel="labels",
+        names=("projections",), shortest=3, label="Projections to today", panel="labels", topic="projections",
     ),
     # The hover read-out (batch 11.2, ratesplot.hover), on by default with a
     # box and a switch of its own (Terry, 2026-10-26, decision 68: "a tick-box
@@ -1092,7 +1094,7 @@ OPTIONS: tuple[Option, ...] = (
         "hover", Kind.FLAG, ("hover",), "interface", "--ho / --hover / --no-ho",
         "on by default: the pointer resting on a\nline shows its name, date and value;\n"
         "in the window, unticked also hides the\ntips over controls with an (i) beside\nthem (a click on the (i) shows it)",
-        names=("hover",), shortest=2, label="Hover read-out", panel="labels",
+        names=("hover",), shortest=2, label="Hover read-out", panel="labels", topic="hover",
     ),
     # Interface. Spelled in full (Terry, 2026-09-24): "--g" is the GDP curve,
     # and "--gu" nothing.

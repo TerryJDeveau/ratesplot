@@ -16,9 +16,9 @@ Where GDP is missing the ratio is missing too. Canada's federal debt runs from 1
 
 ## The axis
 
-The right axis reads "Percent of TTM GDP (Log Scale)". On a log axis a ratio growing at a steady rate is a straight line, and with **Regression segments** ticked each segment's label gives the ratio's own growth, in % a year.
+The right axis reads "Percent of TTM GDP (Log Scale)". On a log axis a ratio growing at a steady rate is a straight line, and with [Regression segments](?help=regression) ticked each segment's label gives the ratio's own growth, in % a year.
 
-Top and Bottom are percentages under -r (`--top:150%`); an amount in a currency is refused there, and the boxes are cleared when the measure changes. **All** beside them copies a percentage as it is.
+[Top and Bottom](?help=limits) are percentages under -r (`--top:150%`); an amount in a currency is refused there, and the boxes are cleared when the measure changes. **All** beside them copies a percentage as it is.
 
 ## On the command line
 

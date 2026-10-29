@@ -19,7 +19,7 @@ At the start it draws GDP, gross debt and interest on the right axis, and the 5-
 
 ## Its own controls
 
-Under the UK's chart in the window, and under "United Kingdom only" on the page, are the controls that set its chart alone: the yield terms, spreads, policy rates and mortgage terms it draws (only those it has are offered), the tracker's margin, gross or net debt or both under Aggregate debts, its levels of government, and the limits of its axes: Min and Max on the left, Top and Bottom on the right, in £ unless another currency is named by its code (USD20t). On the command line each is written after the UK's prefix, `--uk:` or `--gb:`, as in `--uk:max:8` or `--uk:aggregate:gross,net`.
+Under the UK's chart in the window, and under "United Kingdom only" on the page, are the controls that set its chart alone: the yield terms, spreads, policy rates and mortgage terms it draws (only those it has are offered), the tracker's margin, gross or net debt or both under Aggregate debts, its levels of government, and the [limits of its axes](?help=limits): Min and Max on the left, Top and Bottom on the right, in £ unless another currency is named by its code (USD20t). On the command line each is written after the UK's prefix, `--uk:` or `--gb:`, as in `--uk:max:8` or `--uk:aggregate:gross,net`.
 
 ## The other nations
 
