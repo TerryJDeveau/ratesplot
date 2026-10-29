@@ -390,6 +390,9 @@ def main(argv: list[str] | None = None) -> None:
     refreshing = config.auto_refresh and config.refresh_brings_nothing is None
     if config.auto_refresh and not refreshing:
         print(f"Automatic refresh: nothing new can come, since {config.refresh_brings_nothing}; the charts are drawn once.")
+    # The master currency (batch 30) said once where it changes no chart.
+    if config.master_currency is not None and config.master_brings_nothing is not None:
+        print(f"--master:{config.master_currency} changes nothing, since {config.master_brings_nothing}.")
     if refreshing:
         # Each download kept, so that a refresh asks again only for the
         # quotes and what is over an hour old, as the window's Refresh does.

@@ -65,6 +65,7 @@ from .config import (
     Nation,
     PlotConfig,
 )
+from .export import marked_amounts_currency
 from .options import (
     AUTO_REFRESH_OPTIONS,
     GROUPS,
@@ -86,11 +87,13 @@ from .options import (
     is_percent_bound,
     latest_idle_reasons,
     margin_options,
+    master_idle_reason,
     list_switch,
     nation_choice,
     nation_view,
     options_in,
     options_of,
+    parse_master_currency,
     per_nation,
     switch_of,
     unticked,
@@ -647,6 +650,43 @@ def settled_all_ticks(payloads: Mapping[str, str], flags: Mapping[str, bool], bl
 
 
 # ---------------------------------------------------------------------------
+# The master currency's box in each nation's panel (batch 30.2)
+# ---------------------------------------------------------------------------
+
+# The option's name: one text ("USD", or blank for none) that every nation's
+# box shows, ticked in the panel of each nation of that currency (plan 30's
+# note: with the euro area, France's, Italy's and Germany's boxes all name
+# EUR, so one ticked shows all three ticked). Back, Reset, the remembered
+# settings and the written command line keep it as they keep any text.
+MASTER = "master"
+
+
+def master_label(nation: Nation) -> str:
+    """The box's caption in ``nation``'s panel (plan 30.2): "Use CAD as the master currency", its own currency's code."""
+    return f"Use {nation.currency} as the master currency"
+
+
+def master_ticked(payloads: Mapping[str, str], nation: Nation) -> bool:
+    """Whether ``nation``'s box is ticked: the master currency's text names its currency."""
+    text = payloads.get(MASTER, "").strip()
+    try:
+        return bool(text) and parse_master_currency(text) == nation.currency
+    except ValueError:
+        return False
+
+
+def master_text(nation: Nation, ticked: bool) -> str:
+    """The master currency's text once ``nation``'s box is ticked (its currency's code) or unticked (blank).
+
+    Ticking one unticks the others, since every box shows the one text
+    (Terry, 2026-10-28: "If selected in one nation, it is then automatically
+    unselected in the other nations"). A box greyed keeps its tick, as a
+    greyed field keeps its text; a nation unticked keeps its box's tick.
+    """
+    return nation.currency if ticked else ""
+
+
+# ---------------------------------------------------------------------------
 # Levels, help text, and the drawn chart as a file
 # ---------------------------------------------------------------------------
 
@@ -676,6 +716,11 @@ def idle_control_reasons(flags: Mapping[str, bool]) -> dict[str, str]:
     reasons = idle_option_reasons(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True))
     if flags.get("relative", False) and "relative" not in reasons:
         reasons["gdp"] = "under % of GDP, GDP is the divisor and is not drawn"
+    # The master currency's boxes (batch 30.2): fewer than two nations, % of
+    # GDP in effect, no amount drawn (``options.master_idle_reason``).
+    master = master_idle_reason("", flags)
+    if master is not None:
+        reasons[MASTER] = master
     if not flags.get("yield", True):
         reasons["yields"] = unticked("yield")
         if not any(flags.get(name, False) for name in _LEFT_AXIS_RATES):
@@ -710,7 +755,7 @@ def idle_choice_reasons(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
 # nation's aggregate debts, by its key (``idle_nation_keys``).
 GREYABLE_OPTIONS = (
     frozenset(idle_option_reasons(False, False, False))
-    | {"gdp", "aggregate", "yields", "min", "max", "current"}
+    | {"gdp", "aggregate", "yields", "min", "max", "current", "master"}
     | AUTO_REFRESH_OPTIONS
 )
 
@@ -816,6 +861,9 @@ def _texts_in_effect(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> 
         off = option.turns_on in flags and not flags[option.turns_on]
         if text.strip() and not off and option.name not in idle and key not in idle_keys:
             drawn[key] = text.strip()
+    # A master currency whose nation is unticked changes nothing (batch 30.2).
+    if MASTER in drawn and master_idle_reason(drawn[MASTER], flags) is not None:
+        del drawn[MASTER]
     return drawn
 
 
@@ -1388,6 +1436,8 @@ class ChartGeometry:
     the yield axis and its twin carrying the macro series (dollars, or % of GDP).
     ``window`` is the requested Start and End, also as date numbers: the axis
     is wider (a small pad each side, and with -l room for the value labels).
+    ``right_currency`` is the code of the currency the right axis's amounts
+    are in when not its nation's own (the master's, batch 30), else "".
     """
 
     box: tuple[float, float, float, float]
@@ -1397,6 +1447,7 @@ class ChartGeometry:
     right_ylim: tuple[float, float]
     left_log: bool
     right_log: bool
+    right_currency: str = ""
 
     @classmethod
     def from_figure(cls, figure: Figure, config: PlotConfig) -> ChartGeometry | None:
@@ -1414,6 +1465,7 @@ class ChartGeometry:
             right_ylim=tuple(right.get_ylim()),
             left_log=left.get_yscale() == "log",
             right_log=right.get_yscale() == "log",
+            right_currency=marked_amounts_currency(figure) or "",
         )
 
     def date_at(self, x: float) -> pd.Timestamp:
@@ -1486,6 +1538,9 @@ def axis_updates(geometry: ChartGeometry, config: PlotConfig | None, top_y: floa
     """Return field texts pinning the drawn y axes to image rows ``top_y``..``bottom_y``.
 
     ``config`` is the one the chart was drawn for (None: nothing drawn, no texts).
+    Top and Bottom of a chart drawn in the master currency are written in
+    it, with its code ("USD2.2t"; plan 30, decision 78): so they mean the
+    same with the master off, each chart converting them at its End's rate.
     """
     updates: dict[str, str] = {}
     if config is None:
@@ -1500,7 +1555,8 @@ def axis_updates(geometry: ChartGeometry, config: PlotConfig | None, top_y: floa
         low, high = geometry.value_at(bottom_y, "right"), geometry.value_at(top_y, "right")
         if 0 < low < high:
             bound_text = _format_relative if config.relative else _format_dollars
-            updates.update({"bottom": bound_text(low), "top": bound_text(high)})
+            mark = "" if config.relative else geometry.right_currency
+            updates.update({"bottom": mark + bound_text(low), "top": mark + bound_text(high)})
     return updates
 
 

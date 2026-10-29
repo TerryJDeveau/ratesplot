@@ -429,6 +429,22 @@ def _currency_mark(spec: str) -> tuple[str | None, str]:
     return None, spec
 
 
+def parse_master_currency(spec: str) -> str:
+    """Parse ``--master:CODE`` (batch 30): a currency's ISO code or its mark (``CURRENCY_MARKS``: CAD, USD, GBP, EUR; C$, US$, £, €), in either case; return its code."""
+    value = spec.strip()
+    currency, rest = _currency_mark(value)
+    if currency is not None and not rest:
+        return currency
+    if value.startswith("$"):
+        raise ValueError(f"--master:{value}: say whose dollars, USD or CAD")
+    raise ValueError(f"--master:{value} names no currency: use CAD, USD, GBP or EUR (or C$, US$, £, €)")
+
+
+def format_master_currency(values: tuple, _config: PlotConfig) -> str:
+    """Format the master currency as its code, which ``parse_master_currency`` takes; blank for none."""
+    return values[0] or ""
+
+
 def parse_macro_bound(spec: str, *, kind: str) -> tuple[float, str | None]:
     """Parse a right-axis bound: an amount, or with a ``%`` sign a percentage (for ``-r``); return it and its currency.
 
@@ -965,6 +981,20 @@ OPTIONS: tuple[Option, ...] = (
         "GDP, debt and interest per person (log\ndollar axis); not with -r",
         names=("per-capita",), flag="--P", flag_help="GDP, debt and interest per person", label="Per capita",
         topic="per-capita",
+    ),
+    # The master currency (batch 30, decisions 77 and 78): one value for
+    # every chart, shown as a tick box in each nation's panel ("Use CAD as
+    # the master currency", ``editor`` "master"), not in the column
+    # (``panel`` "nation", which no block of the column has). At least
+    # "mas": "--ma" is shared with --max; --currency would have made --cur
+    # ambiguous with --current.
+    Option(
+        "master", Kind.VALUE, ("master_currency",), "units", "--master:CODE / --mas:CODE",
+        "every chart's amounts in this currency\n(CAD, USD, GBP, EUR, or C$ US$ £ €),\n"
+        "converted at the rate of its End date,\nwhile a chart in it is drawn with another;\n"
+        "Top and Bottom keep their own; not with -r",
+        names=("master",), shortest=3, parse=parse_master_currency, label="Master currency",
+        format=format_master_currency, editor="master", panel="nation", topic="master-currency",
     ),
     # Value labels at the line ends: a switch like the measures, but in a
     # group of its own, since it combines with either. The tick's wording is
@@ -1555,6 +1585,26 @@ def idle_option_reasons(debt: bool, gdp: bool, interest: bool) -> dict[str, str]
     return reasons
 
 
+def master_idle_reason(text: str, flags: Mapping[str, bool]) -> str | None:
+    """Return why the master currency ``text`` names (blank: none chosen) changes no chart under these flags, or None when it may (batch 30).
+
+    ``PlotConfig.master_brings_nothing``, on the charts the flags draw.
+    Blank, the box's own rules (fewer than two nations, % of GDP in effect,
+    no amount drawn), for which the window and the page grey every
+    nation's box; with a currency, also a master whose nation is unticked
+    (plan 30.2: "its currency is not applied while it is not drawn"), for
+    which the written command line leaves it out. None where the flags
+    describe no chart (-r with -p) or the text names no currency: the
+    field is then as it is.
+    """
+    try:
+        currency = parse_master_currency(text) if text.strip() else None
+        config = config_from_choices({}, flags)
+    except ValueError:
+        return None
+    return dataclasses.replace(config, master_currency=currency).master_brings_nothing
+
+
 def unticked(name: str) -> str:
     """Why a control is idle while the box of option ``name`` is unticked: "“Mortgage rates” is unticked" (batch 29.1)."""
     return f"“{by_name(name).label}” is unticked"
@@ -1710,6 +1760,9 @@ def drawn_config(config: PlotConfig, key: str) -> PlotConfig:
     # Nor the aggregate debts without debt, or with levels (``idle_aggregates``).
     if not own.include_debt or viewed["components"]:
         viewed["debt_aggregates"] = field_default("debt_aggregates")
+    # The master currency as far as it converts this chart (batch 30): none
+    # on the master's own, under -r, with one nation (``PlotConfig.master_for``).
+    viewed["master_currency"] = own.master_for(key)
     return dataclasses.replace(own, nation_settings=(), **viewed)
 
 
@@ -1829,6 +1882,10 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # (batch 11.3); its box is written, as every greyed tick is.
     if payloads.get("auto-refresh-minutes", "").strip() and auto_refresh_idle(payloads, flags):
         del payloads["auto-refresh-minutes"]
+    # The master currency where it changes no chart (batch 30): greyed, or
+    # its nation unticked.
+    if payloads.get("master", "").strip() and master_idle_reason(payloads["master"], flags) is not None:
+        del payloads["master"]
 
     # The nations' switches, unless the ones chosen are those drawn by default.
     countries = [option for option in options_in("country") if option.in_gui]

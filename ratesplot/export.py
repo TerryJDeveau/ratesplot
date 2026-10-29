@@ -53,7 +53,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.text import Text
 
-from .config import PlotConfig, nation_by_key
+from .config import MASTER_SYMBOLS, PlotConfig, nation_by_key
 
 # The file's extension -> matplotlib's format name.
 IMAGE_FORMATS = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".pdf": "pdf", ".svg": "svg"}
@@ -86,14 +86,17 @@ MIME_TYPES = {
 JPEG_QUALITY = 95
 
 # The marks plotting puts on what it draws: on each piece of a curve, its
-# column's (name, axis); on the figure, its subtitle's Text.
+# column's (name, axis); on the figure, its subtitle's Text, and the currency
+# its amounts are in when it is converted to the master's (batch 30).
 _SERIES_ATTR = "_ratesplot_export_series"
 _SUBTITLE_ATTR = "_ratesplot_export_subtitle"
+_CURRENCY_ATTR = "_ratesplot_amounts_currency"
 YIELD_AXIS = "yield"
 MACRO_AXIS = "macro"
-# Each nation's currency as a column's unit names it (the axis's own symbol
-# is "$" for the U.S., which alone in a file says too little).
-_CURRENCY_UNITS = {"USD": "US$", "CAD": "C$", "GBP": "£", "EUR": "€"}
+# Each currency as a column's unit names it (the axis's own symbol is "$"
+# for the U.S., which alone in a file says too little): the symbols a chart
+# in the master currency writes (config.MASTER_SYMBOLS, the same four).
+_CURRENCY_UNITS = MASTER_SYMBOLS
 
 
 def mark_series(line: Line2D, name: str, axis: str) -> Line2D:
@@ -110,6 +113,21 @@ def series_of(line: Line2D) -> tuple[str, str] | None:
 def mark_subtitle(figure: Figure, text: Text) -> None:
     """Record ``text`` as ``figure``'s subtitle, the second row of its exported data."""
     setattr(figure, _SUBTITLE_ATTR, text)
+
+
+def mark_amounts_currency(figure: Figure, currency: str | None) -> None:
+    """Record the currency ``figure``'s amounts are drawn in when not its nation's own (the master's, batch 30); None for its own."""
+    setattr(figure, _CURRENCY_ATTR, currency)
+
+
+def marked_amounts_currency(figure: Figure) -> str | None:
+    """The currency ``mark_amounts_currency`` recorded for ``figure``: the master's on a chart converted to it, else None."""
+    return getattr(figure, _CURRENCY_ATTR, None)
+
+
+def amounts_currency(figure: Figure, nation_key: str) -> str:
+    """The currency ``figure``'s amounts are drawn in: the master's where ``mark_amounts_currency`` said so, else nation ``nation_key``'s own."""
+    return marked_amounts_currency(figure) or nation_by_key(nation_key).currency
 
 
 def format_of(path: str) -> str | None:
@@ -197,10 +215,12 @@ def _values_on(pieces: list[_Piece], days: np.ndarray) -> np.ndarray:
     return out
 
 
-def _macro_unit(config: PlotConfig, nation_key: str) -> str:
+def _macro_unit(figure: Figure, config: PlotConfig, nation_key: str) -> str:
+    """The right axis's unit in a data file: "% of TTM GDP", or its amounts' currency (the master's on a chart converted to it), per person under -p."""
     if config.relative:
         return "% of TTM GDP"
-    currency = _CURRENCY_UNITS.get(nation_by_key(nation_key).currency, nation_by_key(nation_key).currency)
+    code = amounts_currency(figure, nation_key)
+    currency = _CURRENCY_UNITS.get(code, code)
     return f"{currency} per person" if config.per_capita else currency
 
 
@@ -211,7 +231,7 @@ def chart_data(figure: Figure, config: PlotConfig, nation_key: str) -> ChartData
     days = np.unique(np.concatenate([piece.x for pieces in curves.values() for piece in pieces] or [np.empty(0)]))
     days = days[(days >= start) & (days <= end)]
     columns = [_values_on(pieces, days) for pieces in curves.values()]
-    units = tuple("%" if axis == YIELD_AXIS else _macro_unit(config, nation_key) for _name, axis in curves)
+    units = tuple("%" if axis == YIELD_AXIS else _macro_unit(figure, config, nation_key) for _name, axis in curves)
     title = figure._suptitle.get_text() if figure._suptitle is not None else ""
     subtitle_text = getattr(figure, _SUBTITLE_ATTR, None)
     rows = tuple(

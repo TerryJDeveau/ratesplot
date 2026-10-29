@@ -148,6 +148,7 @@ from .frontend import (
     GREYABLE_OPTIONS,
     LIMIT_COLUMNS,
     LIMITS,
+    MASTER,
     NATION_OPTIONS,
     REFRESH_HELP,
     REMEMBER_HELP,
@@ -188,6 +189,9 @@ from .frontend import (
     limit_copies,
     limit_unit,
     load_state,
+    master_label,
+    master_text,
+    master_ticked,
     nation_boxes,
     nation_of,
     option_help_lines,
@@ -984,6 +988,12 @@ class RatesPlotApp:
         self.topic_windows: dict[str, tk.Toplevel] = {}
         for tick in ALL_TICKS:
             self.flag_vars[tick] = tk.BooleanVar(value=False)
+        # The master currency (batch 30.2): its one text, and its box in each
+        # nation's panel, keyed by the nation, ticked where the text names
+        # that nation's currency.
+        self.payload_vars[MASTER] = tk.StringVar()
+        self.master_vars: dict[str, tk.BooleanVar] = {}
+        self.master_boxes: dict[str, ttk.Checkbutton] = {}
         # Limit boxes blanked by typing, not yet by Return or by leaving the
         # box: their "All" waits (decision 47).
         self._blanked: set[str] = set()
@@ -1679,7 +1689,8 @@ class RatesPlotApp:
         They set that chart only;
         the curves' own boxes (yields, spreads, mortgages on or off) stay in
         the column, for both charts (Terry, 2026-10-06: a panel under each
-        tab, ready for more nations).
+        tab, ready for more nations). Last, the master currency's box (batch
+        30.2), which is every chart's.
         """
         frame = ttk.LabelFrame(tab, text=f"{nation.name} only", padding=(8, 2))
         frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0))
@@ -1710,6 +1721,36 @@ class RatesPlotApp:
                 # Top and Bottom wider: an amount may carry its currency's code ("USD1.25t", batch 18.3).
                 self._add_value_control(cell, 0, option, entry_width=9 if axis else 7, pady=1, key=key)
                 self._add_limit_extras(cell, key)
+        master = ttk.Frame(frame)
+        self._add_master_box(master, nation)
+        flow.add(master)
+
+    def _add_master_box(self, cell: ttk.Frame, nation: Nation) -> None:
+        """The master currency's box in ``nation``'s panel (batch 30.2): "Use CAD as the master currency".
+
+        Terry, 2026-10-28: an option in each nation's block "that says “Use
+        XXX as the master currency” (greyed-out when only one nation is
+        selected). If selected in one nation, it is then automatically
+        unselected in the other nations." Every box shows the one text
+        (``frontend.master_ticked``, ``master_text``); greyed too while %
+        of GDP is in effect and while no chart draws an amount
+        (``frontend.idle_controls``), keeping its tick.
+        """
+        option = by_name(MASTER)
+        variable = tk.BooleanVar(value=False)
+        self.master_vars[nation.key] = variable
+        box = ttk.Checkbutton(cell, text=master_label(nation), variable=variable, command=lambda: self._master_ticked(nation))
+        box.grid(row=0, column=0, sticky="w")
+        self.master_boxes[nation.key] = box
+        tip = _tooltip_text(option)
+        _Tooltip(box, tip, info=True)
+        self._info_mark(cell, nation_choice(nation, option), option, tip).grid(row=0, column=1, sticky="w", padx=(1, 0))
+
+    def _master_ticked(self, nation: Nation) -> None:
+        """``nation``'s master currency box ticked or unticked: its currency the master, or none (``frontend.master_text``); the other boxes follow."""
+        self.payload_vars[MASTER].set(master_text(nation, self.master_vars[nation.key].get()))
+        self._update_dependent_controls()
+        self.request_redraw()
 
     def _add_limit_extras(self, cell: ttk.Frame, key: str) -> None:
         """Right of a nation's limit box (``key``, "us:max"): its unit symbol, then its "All" box (batch 18).
@@ -1946,6 +1987,13 @@ class RatesPlotApp:
             if key in self.level_editors:
                 self.level_editors[key].set_state(state)
         self._update_limit_extras()
+        # The master currency's boxes: each ticked where the one text names its
+        # nation's currency, all greyed together (batch 30.2).
+        payloads = self._snapshot()[0]
+        for nation in NATIONS:
+            if nation.key in self.master_vars:
+                self.master_vars[nation.key].set(master_ticked(payloads, nation))
+                self.master_boxes[nation.key].state(["disabled"] if MASTER in idle else ["!disabled"])
         # A greyed field shows no grey value; one no longer greyed shows it again.
         for hint in (*self.hints.values(), *self.size_hints):
             hint.update()

@@ -26,6 +26,8 @@ Every rate goes through the U.S. dollar:
 
 Where there is no rate (the pound before 1791, the Canadian dollar before 1858, the euro before 1948-06-21), or Bottom is no longer below Top once converted, the log warns and the limit is left to the axis.
 
+With a [master currency](?help=master-currency), a chart converted to it draws in the master's currency, and its Top and Bottom are converted to that one: a limit with no code is in the nation's own currency still, at the chart's rate. A box dragged over such a chart writes its limits with the master's code.
+
 ## “All”
 
 Beside each limit, "All" copies its value into every other nation's box, so one limit is set for every chart, and the command line writes it once (`--max:8`). A value typed into any box while it is ticked goes into the others; a blank is never copied. An amount is copied with its currency (20t from the U.S. box as USD20t), so each chart converts it at its own End date; a percentage is copied as it is. "All" is greyed while its box is blank, while fewer than two nations are ticked, and while the box itself is greyed.

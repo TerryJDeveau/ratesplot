@@ -75,14 +75,15 @@ from .config import (
     YIELD_LINE_STYLE,
     YIELD_TERMS,
     CountryMetadata,
+    MasterConversion,
     PlotConfig,
     nation_by_key,
 )
 from .console import this_thread_output_to
 from .endlabels import ValueFormatter
-from .export import MACRO_AXIS, YIELD_AXIS, mark_series
+from .export import MACRO_AXIS, YIELD_AXIS, mark_amounts_currency, mark_series
 from .frames import filter_to_date_range
-from .fx import rate
+from .fx import Rate, rate
 from .hover import attach as attach_hover
 from .hover import detach as detach_hover
 from .hover import mark as mark_reading
@@ -605,6 +606,12 @@ def draw_country(
     """
     quote_time = yields.attrs.get(QUOTE_TIME_ATTR)  # --cur: when the day's quotes were taken, if any
     projected = macro.attrs.get(PROJECTION_ATTR, {})  # --projections: {column: date its data end}
+    # A chart in the master currency (batch 30): its amounts written with the
+    # master's symbol, on the axis, the end labels and the hover read-out;
+    # the figure says which currency, for Export chart and a zoom's limits.
+    if config.master_conversion is not None:
+        metadata = replace(metadata, currency_prefix=config.master_conversion.symbol)
+    mark_amounts_currency(ax_yield.figure, None if config.master_conversion is None else config.master_conversion.currency)
     yield_lines = draw_yield_lines(ax_yield, yields, config)
     # Policy and mortgage rates and spreads (ratesplot.rates): on the yield
     # axis, listed with the yields.
@@ -1149,13 +1156,58 @@ def _download_side_by_side(config: PlotConfig) -> None:
         in_parallel([partial(country.prepare, quiet.for_nation(country.key)) for country in chosen])
 
 
-def limits_in_own_currency(config: PlotConfig, key: str) -> PlotConfig:
-    """Return nation ``key``'s chart config with Top and Bottom in its own currency, converted at the rate of its end date (batch 18.3).
+def chart_config(config: PlotConfig, key: str) -> PlotConfig:
+    """Return the config nation ``key``'s chart is drawn with: its own choices over the shared ones (``for_nation``), in the currency it is drawn in.
+
+    The master currency's rate asked for once (``in_master_currency``),
+    then Top and Bottom in the chart's currency (``limits_in_chart_currency``).
+    Every drawing of a chart takes it: the window's, the page's, ``--save``'s
+    and the plain windows' (``build_figure``, the ``run_*``, a refresh). The
+    automatic start's trial pass and the downloads made side by side take
+    the shared config, which converts nothing: a conversion moves no date.
+    """
+    return limits_in_chart_currency(in_master_currency(config.for_nation(key), key), key)
+
+
+def in_master_currency(config: PlotConfig, key: str) -> PlotConfig:
+    """Return nation ``key``'s chart config with its conversion to the master currency (``PlotConfig.master_conversion``; batch 30), if it is converted.
+
+    Plan 30.1: each chart but the master's own, "at the rate of the End
+    date, the latest on or before it (fx.rate, as 18.3)"; the message log
+    gives the rate as 18.3 gives a limit's. Where no rate is known by the
+    End (the pound before 1791, the Canadian dollar before 1858, the euro
+    before 1948-06-21) the chart stays in its own currency, with a warning.
+    ``config`` is the nation's own (``for_nation``).
+    """
+    master = config.master_for(key)
+    if master is None:
+        return replace(config, master_conversion=None) if config.master_conversion is not None else config
+    nation = nation_by_key(key)
+    # A chart that ended long ago asks nothing for the recent part (19.2 (b)).
+    with chart_ending(config.end):
+        found = rate(nation.currency, master, config.end)
+    if found is None:
+        print(
+            f"  Warning: no {nation.currency} to {master} rate on or before {config.end:%Y-%m-%d}; "
+            f"the {nation.adjective} chart is drawn in {nation.currency}, not the master currency."
+        )
+        return replace(config, master_conversion=None)
+    conversion = MasterConversion(master, nation.currency, found.value, found.dated, found.source)
+    print(f"  The {nation.adjective} chart in {master}, the master currency: {found.value:.5g} {master} per {nation.currency} on {found.dated:%Y-%m-%d} ({found.source}).")
+    return replace(config, master_conversion=conversion)
+
+
+def limits_in_chart_currency(config: PlotConfig, key: str) -> PlotConfig:
+    """Return nation ``key``'s chart config with Top and Bottom in the currency its amounts are drawn in, converted at the rate of its end date (batch 18.3).
 
     Decision 41 (Terry, 2026-10-20): a limit "written once with its
     currency and converted at each drawing", at the rate of the chart's end
     date, the latest on or before it (``fx.rate``); so a chart with a pinned
     end draws the same every time, and one ending today follows the rate.
+    The chart's currency is its own, or the master's on a chart converted
+    (batch 30, ``in_master_currency``): a limit with no currency is then in
+    the nation's own, converted at the chart's rate, which is not asked for
+    again (decision 78: Top and Bottom keep the currency they are set in).
     Only a limit in another currency asks for a rate; the line saying so
     names the rate and its date. Where no rate is known by the end date, the
     limit is left to the axis, with a warning; so are both when Bottom is not
@@ -1163,35 +1215,41 @@ def limits_in_own_currency(config: PlotConfig, key: str) -> PlotConfig:
     the same currency). ``config`` is the nation's own (``for_nation``).
     """
     nation = nation_by_key(key)
+    master = config.master_conversion
+    target = nation.currency if master is None else master.currency
+    symbol = nation.currency_symbol if master is None else master.symbol
     limits = {"Top": ("macro_top", "macro_top_currency"), "Bottom": ("macro_bottom", "macro_bottom_currency")}
     changes: dict[str, object] = {}
     for name, (field, currency_field) in limits.items():
         value, currency = getattr(config, field), getattr(config, currency_field)
-        if currency is None:
+        if currency is None and master is None:
             continue
         changes[currency_field] = None
-        if value is None or currency == nation.currency:
+        if value is None or config.relative or (currency or nation.currency) == target:
             continue
         # As a field writes it ("USD20t"); the result as the axis does ("C$27.8T").
-        given = f"{name} {currency}{format_currency(value, '').lower()}"
-        # A chart that ended long ago asks nothing for the recent part (19.2 (b)).
-        with chart_ending(config.end):
-            found = rate(currency, nation.currency, config.end)
+        given = f"{name} {currency or nation.currency}{format_currency(value, '').lower()}"
+        if currency is None:
+            found = Rate(master.rate, master.dated, master.source)
+        else:
+            # A chart that ended long ago asks nothing for the recent part (19.2 (b)).
+            with chart_ending(config.end):
+                found = rate(currency, target, config.end)
         if found is None:
-            print(f"  Warning: no {currency} to {nation.currency} rate on or before {config.end:%Y-%m-%d}; {given} is left to the axis.")
+            print(f"  Warning: no {currency} to {target} rate on or before {config.end:%Y-%m-%d}; {given} is left to the axis.")
             changes[field] = None
             continue
         changes[field] = value * found.value
         print(
-            f"  {given} is {format_currency(changes[field], nation.currency_symbol)} on the {nation.adjective} chart: "
-            f"{found.value:.5g} {nation.currency} per {currency} on {found.dated:%Y-%m-%d} ({found.source})."
+            f"  {given} is {format_currency(changes[field], symbol)} on the {nation.adjective} chart: "
+            f"{found.value:.5g} {target} per {currency or nation.currency} on {found.dated:%Y-%m-%d} ({found.source})."
         )
     if not changes:
         return config
     converted = replace(config, **changes)
     top, bottom = converted.macro_top, converted.macro_bottom
     if top is not None and bottom is not None and bottom >= top:
-        print(f"  Warning: Bottom is not below Top on the {nation.adjective} chart once both are in {nation.currency}; both are left to the axis.")
+        print(f"  Warning: Bottom is not below Top on the {nation.adjective} chart once both are in {target}; both are left to the axis.")
         converted = replace(converted, macro_top=None, macro_bottom=None)
     return converted
 
@@ -1206,8 +1264,8 @@ def build_figure(country: Country, config: PlotConfig) -> Figure:
     An automatic start must be found first (``resolve_start``), once for all
     the charts drawn together.
     """
-    # Its own choices over the shared ones, a limit in another currency in its own.
-    config = limits_in_own_currency(config.for_nation(country.key), country.key)
+    # Its own choices over the shared ones, in the currency it is drawn in.
+    config = chart_config(config, country.key)
     figure = Figure(figsize=config.figsize_inches, dpi=CANVAS_DPI)
     FigureCanvasAgg(figure)
     ax_yield = figure.subplots()
@@ -1240,7 +1298,7 @@ def _refresher(
             return None
         dropped = forget_old_downloads()
         print(f"--- automatic refresh: the latest quotes, and {dropped} download(s) over an hour old fetched again")
-        own = limits_in_own_currency(config.for_nation(key), key)
+        own = chart_config(config, key)
         return (*prepare(own), own)
 
     return refreshed
@@ -1248,7 +1306,7 @@ def _refresher(
 
 def run_cdn(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) -> None:
     """Fetch all selected Canadian inputs and show the Canadian chart in a matplotlib window; ``again``: refreshed (``_refresher``)."""
-    config = limits_in_own_currency(config.for_nation(CDN.key), CDN.key)
+    config = chart_config(config, CDN.key)
     yields, macro, rates = prepare_cdn(config)
     plot_country(yields, macro, rates, config, CDN, add_canadian_yield_lines, _refresher(CDN.key, prepare_cdn, again))
     print("CDN chart finished.\n")
@@ -1256,7 +1314,7 @@ def run_cdn(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) -
 
 def run_us(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) -> None:
     """Fetch all selected U.S. inputs and show the U.S. chart in a matplotlib window; ``again``: refreshed (``_refresher``)."""
-    config = limits_in_own_currency(config.for_nation(US.key), US.key)
+    config = chart_config(config, US.key)
     yields, macro, rates = prepare_us(config)
     plot_country(yields, macro, rates, config, US, add_us_yield_lines, _refresher(US.key, prepare_us, again))
     print("US chart finished.\n")
@@ -1264,7 +1322,7 @@ def run_us(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) ->
 
 def run_uk(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) -> None:
     """Fetch all selected UK inputs and show the UK's chart in a matplotlib window; ``again``: refreshed (``_refresher``)."""
-    config = limits_in_own_currency(config.for_nation(UK.key), UK.key)
+    config = chart_config(config, UK.key)
     yields, macro, rates = prepare_uk(config)
     plot_country(yields, macro, rates, config, UK, add_uk_yield_lines, _refresher(UK.key, prepare_uk, again))
     print("UK chart finished.\n")
@@ -1272,7 +1330,7 @@ def run_uk(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) ->
 
 def run_de(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) -> None:
     """Fetch all selected German inputs and show Germany's chart in a matplotlib window; ``again``: refreshed (``_refresher``)."""
-    config = limits_in_own_currency(config.for_nation(DE.key), DE.key)
+    config = chart_config(config, DE.key)
     yields, macro, rates = prepare_de(config)
     plot_country(yields, macro, rates, config, DE, add_de_yield_lines, _refresher(DE.key, prepare_de, again))
     print("German chart finished.\n")

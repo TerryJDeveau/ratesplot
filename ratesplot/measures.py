@@ -1,4 +1,4 @@
-"""How the right-axis (macro) curves are measured: in dollars, as a percentage of GDP (-r), or per person (-p).
+"""How the right-axis (macro) curves are measured: in dollars, as a percentage of GDP (-r), or per person (-p); and in which currency (--master).
 
 The data layers always produce dollar amounts, with each series forward-filled
 onto the chart's dates. ``express`` converts that prepared frame (a ``DATE``
@@ -19,15 +19,38 @@ from .config import COMPONENT_LETTERS, DATE_COLUMN, CountryMetadata, PlotConfig,
 def express(
     macro: pd.DataFrame, config: PlotConfig, metadata: CountryMetadata, population: pd.Series | None = None
 ) -> pd.DataFrame:
-    """Return ``macro`` in the measure ``config`` asks for (unchanged for plain dollars).
+    """Return ``macro`` in the measure ``config`` asks for (unchanged for plain dollars), in the master currency if its chart is converted.
 
-    ``population`` (date-indexed, persons) is needed only for -p.
+    ``population`` (date-indexed, persons) is needed only for -p. The
+    conversion comes after the measure (plan 30.1), so per capita it
+    divides amounts already in the master currency by people.
     """
     if config.relative:
         return as_percent_of_gdp(macro, metadata)
-    if config.per_capita:
-        return per_person(macro, metadata, population)
-    return macro
+    measured = per_person(macro, metadata, population) if config.per_capita else macro
+    return in_master_currency(measured, config, metadata)
+
+
+def in_master_currency(macro: pd.DataFrame, config: PlotConfig, metadata: CountryMetadata) -> pd.DataFrame:
+    """Return ``macro``'s amounts in the master currency at its chart's rate (--master, batch 30), or ``macro`` as it is.
+
+    ``config.master_conversion`` is set on a chart converted
+    (``plotting.chart_config``), never under -r. One rate for the whole
+    chart, as Terry asked ("converted at the rate applicable for the
+    “End” date"), multiplies every amount by the same number: on the log
+    axis each curve moves by the same distance, so its shape and its --reg
+    slopes stay as they were, and the curves of several nations read in one
+    unit while each keeps its own growth.
+    """
+    master = config.master_conversion
+    columns = _debt_and_interest_columns(macro, metadata)
+    if metadata.gdp_column in macro.columns:
+        columns.append(metadata.gdp_column)
+    if master is None or config.relative or macro.empty or not columns:
+        return macro
+    result = macro.copy()
+    result[columns] = result[columns] * master.rate
+    return result
 
 
 def _debt_and_interest_columns(macro: pd.DataFrame, metadata: CountryMetadata) -> list[str]:

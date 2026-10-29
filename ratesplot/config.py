@@ -642,6 +642,45 @@ SPREAD_AXIS_LABEL = "Yield and Spread (%)"
 # boxes (batch 18.1, Terry 2026-10-14: "a $ (or other national currency
 # symbol) drawn to the right of the Top/Bot value boxes").
 CURRENCY_SYMBOLS = {"CAD": "C$", "USD": "$", "GBP": "£", "EUR": "€"}
+# The symbol a chart converted to another nation's currency writes its
+# amounts with (--master, batch 30): unmistakable there, "US$" on the
+# Canadian chart, where "$" alone would read as Canadian dollars; the U.S.
+# chart keeps its "$" (plan 30.1's note).
+MASTER_SYMBOLS = {**CURRENCY_SYMBOLS, "USD": "US$"}
+# The right axis's label for amounts, in a currency's code: each nation's
+# own (``CountryMetadata.currency_label``, ``per_capita_label``), or on a
+# chart converted to the master currency the master's, with its rate
+# (``CountryMetadata.macro_axis_label``).
+AMOUNTS_AXIS_LABEL = "Nominal Units ({} – Log Scale)"
+PER_CAPITA_AXIS_LABEL = "Nominal Units per Capita ({} – Log Scale)"
+
+
+@dataclass(frozen=True)
+class MasterConversion:
+    """One chart's amounts in the master currency (--master, batch 30): the currency, and the rate they were converted at.
+
+    ``rate`` is units of ``currency`` per unit of the nation's own
+    (``own``), the latest on or before the chart's End (``fx.rate``);
+    ``dated`` is its date (a cross rate's older one) and ``source`` the
+    series it is from. Set by ``plotting.chart_config`` on that chart's
+    config alone (``PlotConfig.master_conversion``).
+    """
+
+    currency: str
+    own: str
+    rate: float
+    dated: pd.Timestamp
+    source: str
+
+    @property
+    def symbol(self) -> str:
+        """The symbol the chart writes its amounts with ("US$")."""
+        return MASTER_SYMBOLS[self.currency]
+
+    @property
+    def described(self) -> str:
+        """The rate as the axis label and the message log give it: "USD at 0.72134 per CAD, 2026-10-16"."""
+        return f"{self.currency} at {self.rate:.5g} per {self.own}, {self.dated:%Y-%m-%d}"
 
 
 @dataclass(frozen=True)
@@ -1032,9 +1071,16 @@ class CountryMetadata:
         return dict(self.level_names)[letter]
 
     def macro_axis_label(self, config: PlotConfig) -> str:
-        """Return the right (macro) axis label for the measure ``config`` asks for."""
+        """Return the right (macro) axis label for the measure ``config`` asks for.
+
+        A chart in the master currency (--master, batch 30) names it and its
+        rate: "Nominal Units (USD at 0.72134 per CAD, 2026-10-16 – Log Scale)".
+        """
         if config.relative:
             return RELATIVE_AXIS_LABEL
+        master = config.master_conversion
+        if master is not None:
+            return (PER_CAPITA_AXIS_LABEL if config.per_capita else AMOUNTS_AXIS_LABEL).format(master.described)
         return self.per_capita_label if config.per_capita else self.currency_label
 
     def macro_specs(self, config: PlotConfig, *, aggregate_debt: bool = True) -> tuple[tuple[str, bool, str, str], ...]:
@@ -1219,8 +1265,8 @@ CDN = CountryMetadata(
     key="cdn",
     country_name="Canada",
     currency_prefix=CURRENCY_SYMBOLS["CAD"],
-    currency_label="Nominal Units (CAD – Log Scale)",
-    per_capita_label="Nominal Units per Capita (CAD – Log Scale)",
+    currency_label=AMOUNTS_AXIS_LABEL.format("CAD"),
+    per_capita_label=PER_CAPITA_AXIS_LABEL.format("CAD"),
     # The titles name the nation by its adjective, the legend by CDN (batch 22).
     yield_title="Canadian Benchmark Yields",
     title_nation="Canadian",
@@ -1241,8 +1287,8 @@ US = CountryMetadata(
     key="us",
     country_name="United States",
     currency_prefix=CURRENCY_SYMBOLS["USD"],
-    currency_label="Nominal Units (USD – Log Scale)",
-    per_capita_label="Nominal Units per Capita (USD – Log Scale)",
+    currency_label=AMOUNTS_AXIS_LABEL.format("USD"),
+    per_capita_label=PER_CAPITA_AXIS_LABEL.format("USD"),
     yield_title="U.S. Treasury Yields",
     # "U.S." in the yields' phrase, which always comes first; "US" in the rest.
     title_nation="US",
@@ -1263,8 +1309,8 @@ UK = CountryMetadata(
     key="uk",
     country_name="United Kingdom",
     currency_prefix=CURRENCY_SYMBOLS["GBP"],
-    currency_label="Nominal Units (GBP – Log Scale)",
-    per_capita_label="Nominal Units per Capita (GBP – Log Scale)",
+    currency_label=AMOUNTS_AXIS_LABEL.format("GBP"),
+    per_capita_label=PER_CAPITA_AXIS_LABEL.format("GBP"),
     # The Bank of England's fitted par yields (monthly averages of gilt
     # redemption yields before them): the title says which kind they are.
     yield_title="UK Gilt Yields (fitted par)",
@@ -1301,8 +1347,8 @@ DE = CountryMetadata(
     key="de",
     country_name="Germany",
     currency_prefix=CURRENCY_SYMBOLS["EUR"],
-    currency_label="Nominal Units (EUR – Log Scale)",
-    per_capita_label="Nominal Units per Capita (EUR – Log Scale)",
+    currency_label=AMOUNTS_AXIS_LABEL.format("EUR"),
+    per_capita_label=PER_CAPITA_AXIS_LABEL.format("EUR"),
     # The Bundesbank's Svensson term structure: zero-coupon yields fitted to
     # the Federal securities' prices; the title says which kind they are.
     yield_title="German Federal Yields (Svensson fitted)",
@@ -1363,6 +1409,18 @@ class PlotConfig:
     # chart's own at the rate of its end date when it is drawn (plotting).
     macro_bottom_currency: str | None = None
     macro_top_currency: str | None = None
+    # --master:CODE (batch 30, decisions 77 and 78): every chart's amounts in
+    # this currency (an ISO code of CURRENCY_SYMBOLS), converted at the rate
+    # of its End date, while a chart in that currency is drawn with another
+    # (``master_for``); None, each chart in its own currency. It changes only
+    # the units a chart is drawn and read out in: Top and Bottom keep the
+    # currency they are set in, converted for drawing as every amount is.
+    master_currency: str | None = None
+    # One chart's conversion to the master currency, set on that chart's
+    # config alone by plotting.chart_config, which asks for the rate once;
+    # never by an option. None on the choices' config, and on a chart drawn
+    # in its own currency.
+    master_conversion: MasterConversion | None = None
     include_yield: bool = True
     # --policy: each country's policy rate on the yield axis (ratesplot.rates);
     # additive, not under the curve rule.
@@ -1482,6 +1540,43 @@ class PlotConfig:
             return False
         neither = {"hover": True, "auto_refresh": False, "auto_refresh_minutes": None}
         return replace(self, **neither) == replace(other, **neither)
+
+    @property
+    def master_brings_nothing(self) -> str | None:
+        """Return why --master can change no chart, or None when it may (batch 30): a clause to follow "Greyed because".
+
+        Plan 30.1 and 30.2: it takes effect while a nation of the master's
+        currency is drawn with at least one other, and the box is greyed
+        "while fewer than two nations are ticked, while -r has effect, and
+        while no chart draws an amount". Judged without a master chosen (the
+        window's and the page's boxes, ``frontend.idle_control_reasons``) the
+        first three alone; with one, also a master no chart drawn is in (its
+        nation unticked: "its currency is not applied while it is not
+        drawn").
+        """
+        shown = [nation for nation in NATIONS if getattr(self, nation.show_field)]
+        if len(shown) < 2:
+            return "only one nation's chart is drawn"
+        if self.relative:
+            return "% of GDP is in effect, and a share of GDP is in no currency"
+        if not self.has_macro_series:
+            return "no chart draws debt, GDP or interest, the amounts it converts"
+        if self.master_currency is not None and not any(nation.currency == self.master_currency for nation in shown):
+            return f"no chart in {self.master_currency} is drawn"
+        return None
+
+    def master_for(self, key: str) -> str | None:
+        """Return the master currency nation ``key``'s chart is converted to, or None while it is drawn in its own (batch 30).
+
+        Each chart but those in the master's own currency, while the master
+        has effect (``master_brings_nothing``); so under -r, or on charts
+        drawing no amount, no rate is asked for (Terry, 2026-10-21: no
+        request a drawing does not need).
+        """
+        nation = nation_by_key(key)
+        if self.master_currency is None or nation is None or nation.currency == self.master_currency:
+            return None
+        return None if self.master_brings_nothing is not None else self.master_currency
 
     @property
     def refresh_minutes(self) -> int:
@@ -1617,7 +1712,17 @@ class PlotConfig:
 
     @property
     def default_macro_ylim(self) -> tuple[float, float]:
-        """Return the right axis's fallback limits, in the units of its measure."""
+        """Return the right axis's fallback limits, in the units of its measure.
+
+        On a chart in the master currency (batch 30) the amounts' defaults
+        are the nation's own converted, so that its lines stay where they
+        are when the master changes, only the ticks, labels and read-outs
+        changing (plan 30.1): one of Top and Bottom pinned leaves the other
+        end at this default (``axes.set_macro_ylim``).
+        """
         if self.relative:
             return DEFAULT_RELATIVE_YLIM
-        return DEFAULT_PER_CAPITA_YLIM if self.per_capita else DEFAULT_MACRO_YLIM
+        low, high = DEFAULT_PER_CAPITA_YLIM if self.per_capita else DEFAULT_MACRO_YLIM
+        if self.master_conversion is not None:
+            return low * self.master_conversion.rate, high * self.master_conversion.rate
+        return low, high

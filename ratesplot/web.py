@@ -178,6 +178,7 @@ from .frontend import (  # noqa: E402
     EXPORT_LABEL,
     LIMIT_COLUMNS,
     LIMITS,
+    MASTER,
     NATION_OPTIONS,
     REFRESH_HELP,
     REMEMBER_HELP,
@@ -216,6 +217,9 @@ from .frontend import (  # noqa: E402
     limit_copies,
     limit_unit,
     move_dates_updates,
+    master_label,
+    master_text,
+    master_ticked,
     nation_boxes,
     option_help_lines,
     option_of,
@@ -327,6 +331,7 @@ _LEVEL = "level:"    # + nation key + ":" + letter: one of a nation's "By level"
 _CHOICE = "choice:"  # + choice key + ":" + value: one tick box of a list option (Option.choices)
 _CHOICE_OTHERS = "choice_others:"  # + choice key: the values given that no offered box has
 _ALL = "all:"        # + a nation's limit key ("us:max"): its "All" box, one tick for every nation's (batch 18.2)
+_MASTER = "master:"  # + a nation's key + ":": its master currency box, ticked where the one text names its currency (batch 30.2)
 _READY = "ready"     # the controls have been set from the address, the settings remembered or the defaults
 _ADDRESS_PROBLEMS = "address_problems"
 _REMEMBERED_PROBLEMS = "remembered_problems"  # the settings remembered could not be read (batch 24.6)
@@ -1216,6 +1221,7 @@ def _load_choices(choices: Choices) -> None:
     for option in _gui_options(kind_is_value=False):
         st.session_state[_FLAG + option.name] = bool(flags.get(option.name, False))
     _set_all_ticks({name: bool(flags.get(all_tick(name), False)) for name in LIMITS})
+    _settle_master_boxes()
 
 
 def _limit_keys(name: str) -> list[str]:
@@ -1296,7 +1302,7 @@ def _country_changed(name: str) -> None:
 
 def _measure_changed(name: str) -> None:
     """One measure at a time; Top and Bottom are in the measure's units, so they are cleared."""
-    units = [option.name for option in options_in("units") if option.in_gui]
+    units = [option.name for option in options_in("units") if option.in_gui and option.kind is not Kind.VALUE]
     if st.session_state[_FLAG + name]:
         for other in units:
             if other != name:
@@ -1844,6 +1850,7 @@ def _controls() -> None:
     bar.caption(_REMEMBER_LINE)
     st.session_state[_HINTS] = _field_hints()
     _settle_all_ticks()  # before the "All" boxes are laid out, which fixes their state for this run
+    _settle_master_boxes()  # likewise the master currency's (batch 30.2)
     st.session_state[_IDLE] = idle_choices(*_snapshot())
     every = _snapshot()
     st.session_state[_REASONS] = greyed_reasons([*every[0], *every[1]], *every)
@@ -1915,7 +1922,7 @@ def _keep_section(nation: Nation) -> None:
     documented way). Its terms' boxes, its levels, its limits, their "All"
     boxes and its margins: every key of the section, by its prefix.
     """
-    prefixes = tuple(prefix + nation.key + ":" for prefix in (_VALUE, _CHOICE, _LEVEL, _ALL))
+    prefixes = tuple(prefix + nation.key + ":" for prefix in (_VALUE, _CHOICE, _LEVEL, _ALL, _MASTER))
     for key in [key for key in st.session_state if key.startswith(prefixes)]:
         st.session_state[key] = st.session_state[key]
 
@@ -1940,6 +1947,42 @@ def _nation_controls(bar, nation: Nation) -> None:
     for row in zip(*LIMIT_COLUMNS):  # (max, top), then (min, bottom)
         for column, name in zip(bar.columns(2), row):
             _limit_control(column, nation, by_name(name))
+    _master_control(bar, nation)
+
+
+def _master_box(nation: Nation) -> str:
+    """The session key of ``nation``'s master currency box."""
+    return _MASTER + nation.key + ":"
+
+
+def _settle_master_boxes() -> None:
+    """Tick each nation's master currency box where the one text names its currency (``frontend.master_ticked``), before the boxes are laid out."""
+    payloads = _snapshot()[0]
+    for nation in NATIONS:
+        st.session_state[_master_box(nation)] = master_ticked(payloads, nation)
+
+
+def _master_changed(nation: Nation) -> None:
+    """``nation``'s master currency box ticked or unticked: its currency the master, or none; the other boxes follow at the next run (``_settle_master_boxes``)."""
+    st.session_state[_VALUE + MASTER] = master_text(nation, bool(st.session_state.get(_master_box(nation), False)))
+
+
+def _master_control(where, nation: Nation) -> None:
+    """The master currency's box in ``nation``'s section, as in the window (batch 30.2): "Use CAD as the master currency".
+
+    Every box shows the one text, so ticking one unticks the others
+    (``frontend.master_text``); greyed while fewer than two nations are
+    ticked, while % of GDP is in effect and while no chart draws an amount
+    (``frontend.idle_controls``), keeping its tick.
+    """
+    where.checkbox(
+        master_label(nation),
+        key=_master_box(nation),
+        on_change=_master_changed,
+        args=(nation,),
+        help=_help(by_name(MASTER)),
+        disabled=MASTER in _idle(),
+    )
 
 
 def _limit_control(where, nation: Nation, option: Option) -> None:
