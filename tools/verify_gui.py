@@ -2154,8 +2154,9 @@ def check_batch31(check: Check) -> None:
             w.pump(20)
             moved = app._current_column_width()
             app._remember()
-            check("unticked, the handle moved: the width kept as it was, the window's place still kept as it is",
-                  moved == first + 120 and kept().get("column_width") == first and kept().get("geometry") == app._normal_geometry,
+            check("unticked, the handle moved: the width read at the start saved (none here, 34.2), the window's place still "
+                  "kept as it is",
+                  moved == first + 120 and kept().get("column_width") is None and kept().get("geometry") == app._normal_geometry,
                   (first, moved, kept().get("column_width")))
             app.remember.set(True)
             app._remember()
@@ -2163,8 +2164,10 @@ def check_batch31(check: Check) -> None:
             app.remember.set(False)
             app.paned.sash_place(0, first, 0)
             w.pump(20)
-        check("closed while unticked: the width kept before", kept().get("column_width") == moved, kept().get("column_width"))
-        state = kept()
+        check("closed while unticked: the width read at the start saved, not the one saved while ticked",
+              kept().get("column_width") is None, kept().get("column_width"))
+        state = {**kept(), "column_width": moved}  # a width remembered from an earlier session
+        frontend.save_state(state)
         root = new_root(SIZE)
         try:
             choices = frontend.starting_choices(cli.parse_args(["--no-gui", "-c", END]), {}, {}, state)[0]
@@ -2173,7 +2176,13 @@ def check_batch31(check: Check) -> None:
             started.settle()
             check("the next start: the column at the width kept", started.app._current_column_width() == moved,
                   started.app._current_column_width())
+            started.app.remember.set(False)
+            started.app.paned.sash_place(0, first, 0)
+            started.pump(20)
+            narrowed = started.app._current_column_width()
             started.close()
+            check("unticked, the handle moved, then closed: the width read at the start stays kept",
+                  narrowed == first and kept().get("column_width") == moved, (narrowed, kept().get("column_width")))
         except Exception:
             root.destroy()
             raise
