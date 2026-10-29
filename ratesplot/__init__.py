@@ -98,4 +98,4 @@ window is opened, so --no-gui and the web page never load tkinter.
 # build, in a commit of its own made before the push (the daily data job's commits leave it). It counts from 0 at
 # the first work on batch 11: its four pushes of 2026-10-27 made 6.4. Shown with the commit the program was
 # started from (frontend.version_text).
-__version__ = "6.26"
+__version__ = "6.27"
