@@ -48,9 +48,12 @@ Remembered settings
     it says. The page's own script writes the cookie, and reads it back at
     the start of a visit with no chart in its address, before anything is
     drawn (``_read_remembered``): Streamlit Community Cloud gives the app no
-    cookies. Unticked, the cookie is left as it is, neither written nor
-    cleared. Reset gives the defaults, which the next drawing keeps (the
-    cookie removed) while the box is ticked. The sidebar's width, which
+    cookies. The script writes the cookie as the visit ends, by the box as
+    it stands then, the last tab closed with it ticked winning; and when the
+    page is hidden, since a phone's tab closed from the switcher gives no
+    other sign, putting back what was there if the box is unticked by the
+    time the tab is left (batch 34.2, ``_MEMORY_JS``). Reset gives the
+    defaults, whose line removes the cookie then. The sidebar's width, which
     Streamlit keeps in the browser once it is dragged, is kept only while
     the box is ticked, as the window's column's is (batch 31.1,
     ``_keep_sidebar_width``).
@@ -270,11 +273,15 @@ _GO_HELP = "Open this chart in a new tab, a copy that goes on by itself; this ta
 # command line measured, four nations with every value set, was 963
 # characters encoded (2026-10-27), a quarter of a cookie's 4 KB.
 REMEMBER_COOKIE = "ratesplot_settings"
+# Beside it, which tab wrote it last (batch 34.2): a mark the page's script
+# makes up for each visit, so a tab unticked as it is left puts back the
+# settings from before its own write only (``_MEMORY_JS``).
+REMEMBER_BY_COOKIE = "ratesplot_settings_by"
 _REMEMBER_DAYS = 365
 # The one line under the box, saying what is kept (Terry, decision 60).
 _REMEMBER_LINE = (
-    "Kept in this browser: the chart's settings, as in the address, in a cookie for a year; and the sidebar's width once "
-    "it is dragged."
+    "Kept in this browser if this is ticked as you leave the page: the chart's settings, as in the address, in a cookie for "
+    "a year, with a second marking the tab that wrote it; and the sidebar's width once it is dragged."
 )
 # What a blank field means, shown in it until a drawing gives the value in
 # effect (``frontend.field_hints``: Terry, 2026-10-08, a blank field shows its
@@ -842,23 +849,69 @@ def _chart_component():
     return st.components.v2.component("ratesplot_chart", js=_CHART_JS, css=_CHART_CSS)
 
 
-# The settings remembered (batch 24.6): a component with nothing to show,
-# whose script writes the chart's command line into the cookie, encoded
-# (spaces, commas and "%" are not allowed in a cookie as they are), or
-# removes the cookie for the defaults, whose line is empty. It writes only
-# when the cookie differs, since Streamlit lays the page out, and runs the
-# script, on every change of a control.
+# The settings remembered (batch 24.6), written as the visit ends (34.2;
+# Terry, decision 93: the box as the tab is closed or left decides, and the
+# last closed with it ticked wins). A component with nothing to show, laid
+# out on every run, is given the last good drawing's command line (null
+# before one) and the box; its script keeps them in the page's own note
+# (``window``, so a new visit starts with none) and acts when the page is
+# hidden (a switch of tab or app, a phone locked) or left ("pagehide": the
+# tab closed, the page left or reloaded). On a phone "pagehide" does not come
+# when a tab is closed from the switcher (Chrome's and MDN's pages on the
+# page lifecycle; measured on the desktop, Chrome 156: it comes on a tab
+# closed, a reload and a page left, in a frame as on Community Cloud), so
+# being hidden counts too (Terry, 2026-10-28). Ticked: the line written,
+# encoded (spaces, commas and "%" are not allowed in a cookie as they are),
+# or the cookie removed for the defaults, whose line is empty, and the tab
+# named in a second cookie (``REMEMBER_BY_COOKIE``, a mark made up for the
+# visit); the two cookies as they were before are noted, unless this tab
+# wrote them last. Unticked: if this tab wrote them last, both are put back
+# as they were before; another tab's written since are left as they are. So
+# unticking before closing leaves the cookie as it was, and a crash or a
+# discarded tab keeps what was written when the tab was last hidden. The
+# mark is needed because two tabs often hold the same line (Go makes the
+# second, 34.1): without it, a tab unticked would undo the other's write of
+# the same line as if it were its own.
 _MEMORY_JS = """
 export default function (component) {
-  const { name, line, seconds } = component.data;
-  const kept = document.cookie.split("; ").find((pair) => pair.startsWith(name + "="));
-  const value = encodeURIComponent(line);
-  if (line === "") {
-    if (kept !== undefined) document.cookie = name + "=; max-age=0; path=/; SameSite=Lax";
-  } else if (kept !== name + "=" + value) {
-    document.cookie = name + "=" + value + "; max-age=" + seconds + "; path=/; SameSite=Lax"
-      + (location.protocol === "https:" ? "; Secure" : "");
-  }
+  const { name, by, line, remember, seconds } = component.data;
+  const memory = (window.ratesplotMemory ??= {
+    line: null, mark: Math.random().toString(36).slice(2, 12), written: undefined, before: undefined,
+  });
+  if (line !== null) memory.line = line;
+  memory.remember = remember;
+  if (memory.leave !== undefined) return;
+  const read = (cookie) => {
+    const kept = document.cookie.split("; ").find((pair) => pair.startsWith(cookie + "="));
+    return kept === undefined ? null : kept.slice(cookie.length + 1);
+  };
+  const write = (cookie, value) => {
+    document.cookie = value === null
+      ? cookie + "=; max-age=0; path=/; SameSite=Lax"
+      : cookie + "=" + value + "; max-age=" + seconds + "; path=/; SameSite=Lax"
+        + (location.protocol === "https:" ? "; Secure" : "");
+  };
+  memory.leave = () => {
+    try {
+      const now = { value: read(name), by: read(by) };
+      const mine = memory.written !== undefined && now.by === memory.mark && now.value === memory.written;
+      if (memory.remember && memory.line !== null) {
+        const value = memory.line === "" ? null : encodeURIComponent(memory.line);
+        if (!mine) memory.before = now;
+        if (now.value !== value) write(name, value);
+        if (now.by !== memory.mark) write(by, memory.mark);
+        memory.written = value;
+      } else if (mine) {
+        write(name, memory.before.value);
+        write(by, memory.before.by);
+        memory.written = undefined;
+      }
+    } catch (error) {}  // the browser keeps no cookies for this page: nothing to write
+  };
+  addEventListener("pagehide", memory.leave);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") memory.leave();
+  });
 }
 """
 
@@ -1008,10 +1061,15 @@ def _read_remembered() -> None:
     st.caption("Looking for the settings remembered in this browser …")
 
 
-def _remember_settings(line: str) -> None:
-    """Keep ``line``, the chart's command line, in this browser's cookie; "" (the defaults) removes it (batch 24.6)."""
-    remember = st.components.v2.component("ratesplot_memory", js=_MEMORY_JS)
-    remember(key="memory", data={"name": REMEMBER_COOKIE, "line": line, "seconds": _REMEMBER_DAYS * 86400})
+def _remember_settings(line: str | None, remember: bool) -> None:
+    """Lay out the settings' keeper (``_MEMORY_JS``, batches 24.6 and 34.2): ``line``, the last good drawing's command line, kept in this browser's cookie if the box is ticked as the visit ends.
+
+    "" (the defaults) removes the cookie then; None (no good drawing in this
+    run) leaves the script the line it was last given.
+    """
+    keeper = st.components.v2.component("ratesplot_memory", js=_MEMORY_JS)
+    data = {"name": REMEMBER_COOKIE, "by": REMEMBER_BY_COOKIE, "line": line, "remember": remember, "seconds": _REMEMBER_DAYS * 86400}
+    keeper(key="memory", data=data)
 
 
 def _png_size(png: bytes) -> tuple[int, int]:
@@ -2298,11 +2356,12 @@ def main() -> None:
 
     with st.expander("Every option, as the command line spells it"):
         st.code(help_epilog(), language=None)
-    # The last chart drawn, kept while the box is ticked (batch 24.6): its
-    # line is the address's. At the page's foot, not the sidebar's: a
+    # The last good chart drawn, kept if the box is ticked as the visit ends
+    # (batches 24.6 and 34.2): its line is the address's. On every run, so
+    # its script knows the box. At the page's foot, not the sidebar's: a
     # folded sidebar (a phone's, at first) runs no script of its own
     # (measured 2026-10-27, Streamlit 1.64: no cookie written).
-    if state.get(_REMEMBER) and drawing is not None and drawing.error is None:
-        _remember_settings(" ".join(drawing.tokens))
+    remember = bool(state.get(_REMEMBER))
+    _remember_settings(" ".join(drawing.tokens) if drawing is not None and drawing.error is None else None, remember)
     # The sidebar's width, kept only while the box is ticked (batch 31.1): on every run, so its script knows the box.
-    _keep_sidebar_width(bool(state.get(_REMEMBER)))
+    _keep_sidebar_width(remember)

@@ -1465,8 +1465,13 @@ def check_batch247(check: Check) -> None:
 
 
 def check_batch246(check: Check) -> None:
-    """Batch 24.6: the settings remembered in a cookie, behind "Remember my settings"; an address with a chart first."""
+    """Batch 24.6: the settings remembered in a cookie, behind "Remember my settings"; an address with a chart first (written as the visit ends since 34.2)."""
     year = 365 * 86400
+
+    def told(line: str, remember: bool) -> dict:
+        """What the cookie's keeper is given on every run (batch 34.2): the last good line and the box; it writes as the visit ends."""
+        return {"name": web.REMEMBER_COOKIE, "by": web.REMEMBER_BY_COOKIE, "line": line, "remember": remember, "seconds": year}
+
     at = new_page("-c -s:2015 --e:2026-09-01", heard=None)
     check("no exception", not at.exception, at.exception)
     box = at.checkbox(key="remember")
@@ -1475,18 +1480,19 @@ def check_batch246(check: Check) -> None:
     check("one line under it saying what is kept", web._REMEMBER_LINE in [caption.value for caption in at.sidebar.caption])
     check("an address with a chart: drawn at once, the cookie not asked for", charts_shown(at) == 1 and not reader_asked(at))
     kept = memory(at)
-    check("the chart drawn kept: the address's line, for a year",
-          kept == {"name": web.REMEMBER_COOKIE, "line": address(at), "seconds": year} and address(at) == "--C --start:2015 --end:2026-09-01", kept)
+    check("the chart drawn given to the keeper, ticked: the address's line, for a year",
+          kept == told(address(at), True) and address(at) == "--C --start:2015 --end:2026-09-01", kept)
     at.checkbox(key="remember").uncheck().run()
-    check("unticked: nothing written, nothing drawn again", memory(at) is None and charts_shown(at) == 1 and not at.exception)
+    check("unticked: the keeper told so, nothing drawn again", memory(at) == told(address(at), False) and charts_shown(at) == 1
+          and not at.exception, memory(at))
     at.checkbox(key="flag:per-capita").check().run()
-    check("a chart drawn while unticked: nothing written; the address follows it", memory(at) is None and "--per-capita" in address(at),
-          address(at))
+    check("a chart drawn while unticked: given with the box unticked; the address follows it",
+          memory(at) == told(address(at), False) and "--per-capita" in address(at), memory(at))
     at.checkbox(key="remember").check().run()
-    check("ticked again: the chart shown kept", (memory(at) or {}).get("line") == address(at), memory(at))
+    check("ticked again: the chart shown given, ticked", memory(at) == told(address(at), True), memory(at))
     script = web._MEMORY_JS
     check("the writer encodes the line, writes only a change, and removes the cookie for the defaults' empty line",
-          "encodeURIComponent(line)" in script and 'kept !== name + "=" + value' in script and "max-age=0" in script)
+          "encodeURIComponent(memory.line)" in script and "if (now.value !== value) write(name, value)" in script and "max-age=0" in script)
     reader = web._READER_JS
     check("the reader sends the cookie's value once, \"\" for none or where cookies are refused",
           'setTriggerValue("line", value)' in reader and "catch (error)" in reader and reader.count("setTriggerValue(") == 1)
@@ -1523,12 +1529,13 @@ def check_batch246(check: Check) -> None:
     both = urllib.parse.quote("-s:2010 --e:2026-09-01")  # both nations, as the defaults
     reset = new_page(heard=both)
     button(reset, "Reset").click().run()
-    check("Reset while ticked: the defaults kept, their empty line removing the cookie",
-          address(reset) == "" and memory(reset) == {"name": web.REMEMBER_COOKIE, "line": "", "seconds": year}, memory(reset))
+    check("Reset while ticked: the defaults given, their empty line removing the cookie as the visit ends",
+          address(reset) == "" and memory(reset) == told("", True), memory(reset))
     unticked = new_page(heard=both)
     unticked.checkbox(key="remember").uncheck().run()
     button(unticked, "Reset").click().run()
-    check("Reset while unticked: nothing written, so the settings remembered survive it", address(unticked) == "" and memory(unticked) is None)
+    check("Reset while unticked: given with the box unticked, so the settings remembered survive it",
+          address(unticked) == "" and memory(unticked) == told("", False), memory(unticked))
     spoilt = new_page(heard=urllib.parse.quote("--pizza -c"))
     warnings = [w.value for w in spoilt.warning]
     check("settings remembered that cannot be read: reported, and the defaults drawn (whose drawing removes the cookie)",
@@ -1834,7 +1841,7 @@ def check_batch324(check: Check) -> None:
 
 
 def check_batch34(check: Check) -> None:
-    """Batch 34: Go beside the chart's link, opening it in a new tab (34.1)."""
+    """Batch 34: Go beside the chart's link, opening it in a new tab (34.1); the settings remembered as the visit ends (34.2)."""
 
     def goes(page: AppTest) -> list[tuple[str, str, str]]:
         return [(go.proto.label, go.proto.url, go.proto.help) for go in page.get("link_button")]
@@ -1849,6 +1856,33 @@ def check_batch34(check: Check) -> None:
     defaults = new_page("")
     check("the defaults: Go opens ?chart=, not the bare address that draws what the browser remembers",
           [url for _, url, _ in goes(defaults)] == ["?chart="], goes(defaults))
+
+    # 34.2: the settings remembered written as the visit ends (AppTest runs no
+    # script: what the keeper is given, and the script's parts; its behaviour
+    # was checked in Chrome, tab by tab).
+    at = new_page("-c -s:2001 --e:2019")
+    good = address(at)
+    at.text_input(key="value:start").input("nonsense").run()
+    kept = memory(at)
+    check("34.2: a field that stops the drawing: the keeper still given the last good chart's line",
+          not at.exception and at.error and kept is not None and kept["line"] == good and kept["remember"] is True, kept)
+    real = web._draw
+    try:
+        web._draw = lambda config, tokens: replace(real(config, tokens), error="a drawing made to fail")
+        failed = new_page("-u -s:2001 --e:2019")
+    finally:
+        web._draw = real
+    check("… and a visit whose only drawing failed: laid out, given none, so nothing is written",
+          (memory(failed) or {}).get("line", "x") is None and failed.session_state[web._DRAWING].error is not None, memory(failed))
+    script = web._MEMORY_JS
+    check("the script acts when the page is hidden or left, never on a run", 'addEventListener("pagehide", memory.leave)' in script
+          and 'document.visibilityState === "hidden"' in script and script.count("memory.leave()") == 1
+          and "if (memory.leave !== undefined) return;" in script, good)
+    check("it puts back what was there only while its own mark and write are there; the mark a cookie of its own",
+          "now.by === memory.mark && now.value === memory.written" in script and "write(by, memory.before.by)" in script
+          and web.REMEMBER_BY_COOKIE != web.REMEMBER_COOKIE and web.REMEMBER_BY_COOKIE.startswith(web.REMEMBER_COOKIE))
+    check("the box's ⓘ and the line under it say the box as you leave decides",
+          "as you leave" in frontend.REMEMBER_HELP and "as you leave the page" in web._REMEMBER_LINE)
 
 
 PAGE_CHECKS = (

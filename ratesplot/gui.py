@@ -58,9 +58,10 @@ Remembered settings
     measure each as a group, because naming one curve on the command line
     means "only this one". "Remember my settings" under Reset (batch 24.6),
     ticked at every start: unticked, the choices, the preview mode, the tab
-    and the column's width (batch 31.1) remembered are left as they were,
-    for charts that should not replace them; the window's size and place
-    and the save folder are remembered whatever it says.
+    and the column's width (batch 31.1) read at the start are saved, so the
+    box unticked as the window closes leaves what was remembered as it was,
+    whatever was saved while it was ticked (batch 34.2); the window's size
+    and place and the save folder are remembered whatever it says.
 
 Zoom and pan
     The mouse edits the same fields a user would type in, so the fields remain
@@ -1006,10 +1007,10 @@ class RatesPlotApp:
         self._saved_files = export.SavedFiles(say=self._note_saved)
         self._saved_note = ""
         # "Remember my settings" (batch 24.6): ticked at every start, its off
-        # state never saved; and the settings remembered now, which the box
-        # unticked leaves as they are (``_remember``).
+        # state never saved; and the settings read at the start, which the box
+        # unticked puts back (``_remember``, batch 34.2).
         self.remember = tk.BooleanVar(self.root, value=True)
-        self._kept_settings = {key: state[key] for key in _SETTINGS_KEYS if key in state}
+        self._settings_at_start = {key: state[key] for key in _SETTINGS_KEYS if key in state}
         self.images: dict[str, Image.Image] = {}
         self.photos: dict[str, ImageTk.PhotoImage] = {}  # Tk shows an image only while a reference exists
         self.geometry: dict[str, ChartGeometry | None] = {}
@@ -2878,15 +2879,19 @@ class RatesPlotApp:
             self._maximized = True
 
     def _remember(self) -> None:
-        """Save the last drawn choices and the window layout for the next session.
+        """Save the last drawn choices and the window layout for the next session, after each drawing and on closing.
 
-        With "Remember my settings" unticked (batch 24.6), the choices, the
-        preview's settings and the column's width (batch 31.1) saved are
-        those remembered before (``_SETTINGS_KEYS``), and the rest of the
-        layout is saved as it is now.
+        "Remember my settings" (batch 24.6) governs the choices, the preview's
+        settings and the column's width (batch 31.1; ``_SETTINGS_KEYS``):
+        ticked, they are saved as they are now; unticked, those read at the
+        start are saved, so the box unticked as the window closes leaves what
+        was remembered as it was before, whatever was saved meanwhile (batch
+        34.2; Terry, decision 93; each command window has its own file). The
+        rest of the layout is saved as it is now.
         """
         if self.drawn_choices is None:
             return
+        settings = self._settings_at_start
         if self.remember.get():
             payloads, flags = self.drawn_choices
             # The hover read-out's box takes effect with no drawing (batch 11.2),
@@ -2894,7 +2899,7 @@ class RatesPlotApp:
             # as they stand, as the preview's zoom is.
             flags = {**flags, "hover": self.flag_vars["hover"].get(), "auto-refresh": self.flag_vars["auto-refresh"].get()}
             payloads = {**payloads, "auto-refresh-minutes": self.payload_vars["auto-refresh-minutes"].get()}
-            self._kept_settings = {
+            settings = {
                 "payloads": payloads,
                 "flags": flags,
                 "zoom": self.zoom.get(),
@@ -2906,7 +2911,7 @@ class RatesPlotApp:
         error = save_state(
             {
                 "version": STATE_VERSION,
-                **self._kept_settings,
+                **settings,
                 # The size and place before maximizing, and whether it is maximized.
                 "geometry": geometry,
                 "maximized": self._maximized,

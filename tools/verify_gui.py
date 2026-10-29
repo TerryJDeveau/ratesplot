@@ -1814,7 +1814,7 @@ def check_settings_files(check: Check) -> None:
 
 
 def check_remember(check: Check) -> None:
-    """Batch 24.6: "Remember my settings" under Reset, ticked at every start; unticked, the settings kept are left as they were."""
+    """Batch 24.6: "Remember my settings" under Reset, ticked at every start; unticked, the settings read at the start are saved (34.2)."""
     folder_root = tempfile.mkdtemp(prefix="ratesplot_verify_gui_remember_")
     appdata = os.environ["APPDATA"]
     os.environ["APPDATA"] = folder_root
@@ -1850,8 +1850,8 @@ def check_remember(check: Check) -> None:
             app._save_folder = folder_root
             app._remember()
             now = kept()
-            check("unticked, a drawing leaves the choices and the preview kept as they were", settings(now) == settings(first)
-                  and w.text("start") == "2001", brief(now))
+            check("34.2: unticked, the settings read at the start saved (none here), not those saved while ticked",
+                  first.get("payloads") and all(value is None for value in settings(now).values()) and w.text("start") == "2001", brief(now))
             check("the window's size and place and the save folder kept whatever the box says",
                   now.get("geometry") == app._normal_geometry != first.get("geometry") and now.get("save_folder") == folder_root,
                   (first.get("geometry"), now.get("geometry")))
@@ -1866,27 +1866,33 @@ def check_remember(check: Check) -> None:
                   brief(kept()))
             w.typed("start", "2005")
             w.settle()
+            state = kept()
+            check("ticked, a typed start saved", state["payloads"]["start"] == "2005", brief(state))
             app.remember.set(False)
             app._reset()
             w.settle()
-            check("Reset while unticked: the settings kept survive it", kept()["payloads"]["start"] == "2005" and w.text("start") == "",
-                  brief(kept()))
-        check("closed while unticked: still the settings kept before", kept()["payloads"]["start"] == "2005", brief(kept()))
-        state = kept()
+            check("Reset while unticked: the settings read at the start saved, not the defaults",
+                  all(value is None for value in settings(kept()).values()) and w.text("start") == "", brief(kept()))
+        check("closed while unticked: still those read at the start", all(value is None for value in settings(kept()).values()),
+              brief(kept()))
+        frontend.save_state(state)  # settings remembered from an earlier session: start 2005
         root = new_root(SIZE)
         try:
             choices = frontend.starting_choices(cli.parse_args(["--no-gui", "-c", END]), {}, {}, state)[0]
             started = Window.__new__(Window)  # a window given remembered settings, as run_gui gives them
             started.root, started.app = root, gui.RatesPlotApp(root, choices, [], state, normal_geometry=SIZE)
+            started.settle()
             check("the next start: from the settings kept, the box ticked again", started.text("start") == "2005"
                   and started.app.remember.get() is True)
-            started.app.remember.set(False)
-            started.settle()
             started.typed("start", "2010")
             started.settle()
+            check("a drawing while ticked saves it", kept()["payloads"]["start"] == "2010", brief(kept()))
+            started.app.remember.set(False)
+            started.typed("start", "2012")
+            started.settle()
             started.close()
-            check("unticked at once: the settings read at the start are what stays kept", settings(kept()) == settings(state),
-                  brief(kept()))
+            check("unticked, then closed: the settings read at the start are what stays kept, not the ticked drawing's",
+                  settings(kept()) == settings(state), brief(kept()))
         except Exception:
             root.destroy()
             raise

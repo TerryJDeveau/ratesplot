@@ -1321,14 +1321,18 @@ def save_dialog_folder(remembered: str | None) -> str:
 # The "Remember my settings" box, in the window and on the page (batch 24.6;
 # Terry, decisions 60, 69 and 74): for charts that should leave the settings
 # kept alone. Ticked at every start or visit, its off state never saved.
-# Unticked, what is remembered is left as it was, neither written nor
-# cleared; ticked again, the settings shown are kept. Reset gives the
-# defaults, which the next drawing keeps while the box is ticked.
+# Batch 34.2 (Terry, decision 93): the box as the window closes or the page
+# is left decides; the last closed with it ticked wins. The settings shown
+# are written while it is ticked (the window after each drawing, the page
+# when it is hidden or left), so a crash keeps the last written; unticked,
+# those kept before are put back: the window's read at its start (each
+# command window has its own file), the page's from before its tab wrote,
+# unless another tab has written since. Reset gives the defaults, which are
+# kept if the box is ticked as it closes.
 REMEMBER_LABEL = "Remember my settings"
 REMEMBER_HELP = (
-    "Ticked, as at every start, each drawing's settings are kept for next time. Unticked, the settings kept are left as "
-    "they are, neither written nor cleared, so the charts drawn meanwhile do not replace them; ticked again, the settings "
-    "shown are kept."
+    "Ticked as you leave (the window closed, or the page's tab closed or left), the settings shown are kept for next time. "
+    "Unticked then, the settings kept before are left as they were, whatever was drawn meanwhile. Ticked at every start."
 )
 
 # The buttons the window and the page both have, and their tips, from one
