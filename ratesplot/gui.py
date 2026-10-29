@@ -1837,11 +1837,11 @@ class RatesPlotApp:
         ttk.Button(buttons, text="Close", command=self._close_info).pack(side="right", padx=(0, 6) if option.topic else 0)
         panel.bind("<Escape>", lambda _event: self._close_info())
         panel.protocol("WM_DELETE_WINDOW", self._close_info)
-        # Right of the ⓘ, its top level with it, kept on the screen.
+        # Right of the ⓘ, its top level with it, kept on the ⓘ's monitor (``_beside``).
         panel.update_idletasks()
-        x = min(mark.winfo_rootx() + mark.winfo_width() + 6, panel.winfo_screenwidth() - panel.winfo_reqwidth() - 8)
-        y = min(mark.winfo_rooty(), panel.winfo_screenheight() - panel.winfo_reqheight() - 48)
-        panel.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        spot = (mark.winfo_rootx(), mark.winfo_rooty(), mark.winfo_rootx() + mark.winfo_width(), mark.winfo_rooty() + mark.winfo_height())
+        screen = (panel.winfo_screenwidth(), panel.winfo_screenheight())
+        panel.geometry(_beside(spot, panel.winfo_reqwidth(), panel.winfo_reqheight(), _monitor_work_areas(), screen))
         panel.focus_set()
         self.info_panel = panel
         self.info_shown = (key, tip, reason)  # what the panel says, for tools/verify_gui.py
@@ -3100,6 +3100,29 @@ def _over_window(root: tk.Misc, width: int, height: int, areas: list[Rect] | Non
         x = max(left, min(x, right - (width + frame[0] + frame[2])))
         y = max(top, min(y, bottom - (height + frame[1] + frame[3])))
     return f"{width}x{height}+{x}+{y}"
+
+
+def _beside(mark: Rect, width: int, height: int, areas: list[Rect], screen: tuple[int, int]) -> str:
+    """A place (``+X+Y``) for an ⓘ's panel of this inside size: right of the ⓘ (``mark``, its rectangle), its top level with it, kept whole on the ⓘ's monitor.
+
+    Found 2026-10-29 by Terry, with the window's harness on his monitor 2,
+    above the primary: the panel was kept inside the primary screen
+    (``winfo_screenwidth``, and ``max(y, 0)``), so above it, at a negative
+    y, it came up on the primary's top edge. Now inside the work area of
+    the monitor holding the ⓘ (``areas``, ``_monitor_work_areas``), as
+    More's window is (``_over_window``, batch 31.10); with no monitors
+    known (not Windows), inside the primary ``screen`` as before.
+    """
+    x, y = mark[2] + 6, mark[1]
+    if areas:
+        frame = _window_frame()
+        left, top, right, bottom = _monitor_of(mark, areas)
+        x = max(left, min(x, right - (width + frame[0] + frame[2])))
+        y = max(top, min(y, bottom - (height + frame[1] + frame[3])))
+        return f"+{x}+{y}"
+    x = min(x, screen[0] - width - 8)
+    y = min(y, screen[1] - height - 48)
+    return f"+{max(x, 0)}+{max(y, 0)}"
 
 
 def _moved_onto_a_monitor(width: int, height: int, x: int, y: int, areas: list[Rect], own: Rect | None, frame: Rect) -> str:
