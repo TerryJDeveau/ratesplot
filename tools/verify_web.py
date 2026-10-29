@@ -1849,6 +1849,18 @@ def check_batch293(check: Check) -> None:
         shown = "\n".join(block.value for block in view.markdown)
         check(f"?help={topic}: its title and its links to {', '.join(links)}", not view.exception
               and f"# {title}" in shown.splitlines() and all(f"(?help={link})" in shown for link in links), shown[:60])
+    # Two dollar signs in one Markdown block were a formula to Streamlit
+    # (found 2026-10-29): escaped outside code spans, in the tips and the pages.
+    check("a dollar sign escaped outside a code span, left inside one",
+          web.dollars_shown("(C$ for Canada, $ for the U.S.) `US$`") == "(C\\$ for Canada, \\$ for the U.S.) `US$`")
+    top = at.text_input(key="value:cdn:top").help
+    check("Top's tip: its “US$ C$” escaped", "US\\$ C\\$" in top and "US$ C$" not in top, top[:120])
+    for topic, written in (("levels", "about \\$480 million"), ("limits", "(C\\$ for Canada, \\$ for the U.S.")):
+        view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+        view.query_params["help"] = topic
+        view.run()
+        shown = "\n".join(block.value for block in view.markdown)
+        check(f"?help={topic}: its dollar signs escaped", written in shown, shown[:60])
 
 
 def check_batch31(check: Check) -> None:

@@ -136,6 +136,7 @@ import functools
 import json
 import math
 import os
+import re
 import struct
 import threading
 import time
@@ -1466,6 +1467,25 @@ def _unzoom() -> None:
 # ---------------------------------------------------------------------------
 
 
+# A code span in Markdown: its text is shown as it is, a dollar sign too.
+_CODE_SPAN = re.compile(r"(`[^`]*`)")
+
+
+def dollars_shown(markdown: str) -> str:
+    """Return ``markdown`` with each dollar sign outside a code span escaped, so Streamlit shows it as one.
+
+    Streamlit's Markdown takes the text between two dollar signs for a
+    formula (LaTeX): "C$ for Canada, $ for the U.S." showed "for Canada,"
+    in italics, and the levels' page "$480 million ... about $" likewise,
+    the dollar signs gone (found 2026-10-29, batch 29.3). A help text is
+    written once for the window, which renders it with its own subset
+    (``frontend.help_blocks``) and takes "$" as it is, and for the page,
+    so the page escapes it here. Inside a code span a backslash would show,
+    and no formula is read there, so those are left alone.
+    """
+    return "".join(part if _CODE_SPAN.fullmatch(part) else part.replace("$", "\\$") for part in _CODE_SPAN.split(markdown))
+
+
 def _help(option: Option, extra: str = "", key: str | None = None) -> str:
     """The option's help, as the window's ⓘ panel: one paragraph per line (Markdown), then why it is greyed and More.
 
@@ -1474,11 +1494,12 @@ def _help(option: Option, extra: str = "", key: str | None = None) -> str:
     now (``frontend.greyed_reasons``, judged as the controls are laid out),
     and ends with a link to the option's topic where it has one, opened
     alone in a new tab (``_show_help``). ``key`` names a nation's own control
-    ("us:max"), else the option's.
+    ("us:max"), else the option's. Its dollar signs are shown as such
+    (``dollars_shown``): Top's help names "US$ C$".
     """
     reason = st.session_state.get(_REASONS, {}).get(key or option.name, "")
     more = f"[More]({help_address(option.topic)})" if option.topic else ""
-    return "\n\n".join(line for line in (*option_help_lines(option), extra, greyed_line(reason), more) if line)
+    return dollars_shown("\n\n".join(line for line in (*option_help_lines(option), extra, greyed_line(reason), more) if line))
 
 
 def _flag_control(where, option: Option) -> None:
@@ -2263,7 +2284,8 @@ def _show_help(topic: str) -> None:
     does a topic's link to another (batch 29.2), followed as it is: no chart is
     drawn, no control laid out, and the remembered settings are neither read
     nor written, so the visit the link came from is left as it was. The
-    topic's Markdown is shown as it is; a name no option gives is refused
+    topic's Markdown is shown as it is, its dollar signs as such
+    (``dollars_shown``); a name no option gives is refused
     (``frontend.help_text``), so the address cannot reach another file.
     """
     try:
@@ -2271,7 +2293,7 @@ def _show_help(topic: str) -> None:
     except KeyError:
         st.error(f"There is no help page named “{topic}”.")
         return
-    st.markdown(text)
+    st.markdown(dollars_shown(text))
 
 
 def main() -> None:
