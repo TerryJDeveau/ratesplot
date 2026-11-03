@@ -1706,6 +1706,11 @@ class PlotConfig:
         return self.include_debt or self.draws_gdp or self.include_interest
 
     @property
+    def draws_a_curve(self) -> bool:
+        """True when a curve is drawn on either axis: False for a chart titled "no series selected", which neither front end remembers."""
+        return self.has_left_axis_series or self.has_macro_series
+
+    @property
     def has_explicit_macro_limits(self) -> bool:
         """True when the user pinned either end of the right axis."""
         return self.macro_bottom is not None or self.macro_top is not None

@@ -1104,7 +1104,7 @@ def kept_line(drawing: Drawing | None) -> str | None:
     """
     if drawing is None or drawing.error is not None:
         return None
-    if not (drawing.config.has_left_axis_series or drawing.config.has_macro_series):
+    if not drawing.config.draws_a_curve:
         return None
     return " ".join(drawing.tokens)
 

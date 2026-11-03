@@ -1051,6 +1051,10 @@ class RatesPlotApp:
         self._ticked_nation: str | None = None
         self.rendering_choices: Choices | None = None
         self.drawn_choices: Choices | None = None
+        # The choices of the last drawing with a curve, which "Remember my
+        # settings" saves: a chart with no curve is not remembered, as on the
+        # page (``web.kept_line``; Terry, 2026-11-03).
+        self.kept_choices: Choices | None = None
         self._text_after_id: str | None = None
         self._resize_after_ids: dict[str, str] = {}
         # The automatic refresh (batch 11.3): its timer, the minutes it runs
@@ -2327,6 +2331,8 @@ class RatesPlotApp:
             self.shown_config = config
             self.drawn_config = drawn
             self.drawn_choices = self.rendering_choices
+            if config.draws_a_curve:
+                self.kept_choices = self.rendering_choices
             not_drawn = not_drawn or {}
             drawn = [TAB_TITLES.get(c.key, c.key) for c in COUNTRIES if getattr(config, c.show_field) and c.key not in not_drawn]
             if len(drawn) > 1:
@@ -2958,12 +2964,20 @@ class RatesPlotApp:
         was remembered as it was before, whatever was saved meanwhile (batch
         34.2; Terry, decision 93; each command window has its own file). The
         rest of the layout is saved as it is now.
+
+        Ticked, the chart's choices saved are the last drawing's that drew a
+        curve, or those read at the start while none has: a chart with no
+        curve is never remembered, the page's rule (``web.kept_line``; Terry,
+        2026-11-03, overruling the call to leave the window as it was).
         """
         if self.drawn_choices is None:
             return
         settings = self._settings_at_start
         if self.remember.get():
-            payloads, flags = self.drawn_choices
+            if self.kept_choices is not None:
+                payloads, flags = self.kept_choices
+            else:
+                payloads, flags = settings.get("payloads", {}), settings.get("flags", {})
             # The hover read-out's box takes effect with no drawing (batch 11.2),
             # and so does the automatic refresh's (11.3), so they are remembered
             # as they stand, as the preview's zoom is.

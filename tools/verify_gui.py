@@ -1868,6 +1868,28 @@ def check_remember(check: Check) -> None:
             w.settle()
             state = kept()
             check("ticked, a typed start saved", state["payloads"]["start"] == "2005", brief(state))
+            # A chart with no curve is never remembered (Terry, 2026-11-03: the page's rule, web.kept_line).
+            curves = ("gdp", "debt", "interest", "yield")
+            for curve in curves:
+                w.tick(curve, False)
+            w.typed("start", "2007")
+            w.settle()
+            empty = kept()
+            # Each untick draws, so the last drawing with a curve may be one with
+            # some of them off; what must not be kept is the curveless chart's start.
+            check("a chart with no curve (\"no series selected\"): drawn, the last drawing with a curve kept",
+                  app.status.get().startswith("Drawn") and not app.shown_config.draws_a_curve and empty["payloads"]["start"] == "2005"
+                  and any(empty["flags"].get(curve) for curve in curves),
+                  (app.status.get(), brief(empty), {curve: empty["flags"].get(curve) for curve in curves}))
+            w.tick("debt", True)
+            w.settle()
+            again = kept()
+            check("… and a curve ticked again: its drawing kept", again["payloads"]["start"] == "2007" and again["flags"].get("debt") is True
+                  and not again["flags"].get("gdp"), (brief(again), {curve: again["flags"].get(curve) for curve in curves}))
+            for curve in curves:
+                w.tick(curve, bool(state["flags"].get(curve)))
+            w.typed("start", "2005")
+            w.settle()
             app.remember.set(False)
             app._reset()
             w.settle()
@@ -1893,6 +1915,24 @@ def check_remember(check: Check) -> None:
             started.close()
             check("unticked, then closed: the settings read at the start are what stays kept, not the ticked drawing's",
                   settings(kept()) == settings(state), brief(kept()))
+        except Exception:
+            root.destroy()
+            raise
+        root = new_root(SIZE)
+        try:
+            # The command line's curves off, as run_gui passes the options it named.
+            line = ["--no-gui", "-c", "--no-GDP", "--no-debt", "--no-interest", "--no-yield", END]
+            choices = frontend.starting_choices(cli.parse_args(line), {}, {curve: False for curve in curves}, state)[0]
+            started = Window.__new__(Window)
+            started.root, started.app = root, gui.RatesPlotApp(root, choices, [], state, normal_geometry=SIZE)
+            started.settle()
+            nothing = started.app.shown_config is not None and not started.app.shown_config.draws_a_curve
+            started.close()
+            now = kept()
+            check("a window whose every drawing had no curve, closed ticked: the chart's choices read at the start kept",
+                  nothing and now["payloads"]["start"] == state["payloads"]["start"]
+                  and all(now["flags"].get(curve) == state["flags"].get(curve) for curve in curves),
+                  (nothing, brief(now), {curve: (state["flags"].get(curve), now["flags"].get(curve)) for curve in curves}))
         except Exception:
             root.destroy()
             raise
