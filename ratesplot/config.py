@@ -280,6 +280,13 @@ CDN_MORTGAGE_HISTORY_VECTOR = "v733833"
 # only in 1995.
 STATCAN_CDN_CPI_TABLE = "18100004"
 STATCAN_CDN_CPI_VECTOR = "v41690973"
+# The same index seasonally adjusted, monthly from 1992, 2002 = 100 (batch
+# 13.4, the price index on the right axis; measured 2026-11-03: 417 months to
+# 2026-09, none without a value; each year's mean within 0.05 % of the
+# unadjusted index's). Its seasonal factors are revised each year; a revision
+# older than a recent part's 24 months reaches the bake by the daily job.
+STATCAN_CDN_CPI_SA_TABLE = "18100006"
+STATCAN_CDN_CPI_SA_VECTOR = "v41690914"
 
 # Archived (terminated) StatCan tables. They no longer change, so the bake
 # (``tools/bake_archives.py``) downloads them once and writes the required rows
@@ -564,6 +571,25 @@ POLICY_BAND_ALPHA = 0.25
 # across its own month, as an observed value is drawn (decision 44); a little
 # thicker than the yields, so the dots read.
 INFLATION_STYLE = {"color": "#ff1493", "linewidth": 2.0, "linestyle": ":", "drawstyle": "steps-post"}
+# --cpi[:sa] (batch 13.4): the consumer price index on an axis of its
+# own, in the inflation curve's deep pink, solid, so the two read as one
+# measure (a slope of the index is the rise the inflation curve shows), and
+# as thick as the right-axis curves it is listed with. Monthly steps, each
+# month's index across its own month, as an observed value is drawn
+# (decision 44).
+PRICE_INDEX_STYLE = {"color": "#ff1493", "linewidth": 2.5, "drawstyle": "steps-post"}
+# The index drawn (--cpi[:sa]): its legend label, title phrase
+# and axis label, and its unit in Export chart's data, which names each nation's base as its
+# statistics office states it (``PRICE_INDEX_BASES``).
+PRICE_INDEX_LABEL = "Consumer price index"
+PRICE_INDEX_ADJUSTED_LABEL = "Consumer price index, seasonally adjusted"
+PRICE_INDEX_TITLE = "Consumer Price Index"
+PRICE_INDEX_ADJUSTED_TITLE = "Seasonally Adjusted Consumer Price Index"
+PRICE_INDEX_AXIS_LABEL = "Consumer Price Index ({base}, Log Scale)"
+PRICE_INDEX_BASES = {"us": "1982-84 = 100", "cdn": "2002 = 100", "uk": "2015 = 100", "de": "2020 = 100"}
+# The nations whose statistics office publishes a seasonally adjusted index
+# (--cpi:sa): every nation but the UK.
+SEASONALLY_ADJUSTED_NATIONS = ("us", "cdn", "de")
 # --mortgages (ratesplot.rates): the terms, as written on the command line ->
 # the countries that have them and the yield term whose colour they take (None:
 # no yield of that term, so a colour of their own, MORTGAGE_OWN_COLORS). In
@@ -1182,9 +1208,15 @@ class CountryMetadata:
         macro_keys_drawn: Iterable[str],
         config: PlotConfig,
         rate_titles: Iterable[str] = (),
+        index_title: str = "",
         short: bool = False,
     ) -> str:
         """Compose the chart title from the series that were actually drawn.
+
+        ``index_title`` names the consumer price index when it is drawn
+        (batch 13.4), last, after the right axis's curves and outside their
+        -r or -p qualifier, which does not apply to it: "...; Aggregate
+        Public Debt per Capita; Consumer Price Index".
 
         Parts are joined with commas and a final ampersand, e.g.
         ``"U.S. Treasury Yields, Aggregate Public Debt & TTM GDP"``.
@@ -1256,7 +1288,8 @@ class CountryMetadata:
             macro_parts = [macro_titles[key] for key in macro_titles if key in drawn]
         levels_suffix = LEVELS_TITLE_SUFFIX if by_level else ""
         yield_parts = ([self.yield_title] if yields_drawn else []) + list(dict.fromkeys(rate_titles))
-        parts = yield_parts + macro_parts
+        index_parts = [index_title] if index_title else []
+        parts = yield_parts + macro_parts + index_parts
         if not parts:
             return f"{self.country_name}: no series selected"
         nation = "" if parts[0] in naming else f"{self.country_name}: "
@@ -1268,11 +1301,16 @@ class CountryMetadata:
         ]
         if short and self.title_short and not nation:
             parts[0] = _nation_word_replaced(parts[0], self.title_nation, self.title_short)
-        yield_parts, macro_parts = parts[: len(yield_parts)], parts[len(yield_parts) :]
+        yield_parts, macro_parts, index_parts = (
+            parts[: len(yield_parts)], parts[len(yield_parts) : len(parts) - len(index_parts)], parts[len(parts) - len(index_parts) :]
+        )
         title_suffix = _measure_suffixes(config)[1]
         if title_suffix and macro_parts:
             macro_phrase = _join_title_parts(macro_parts) + title_suffix + ("," if levels_suffix else "") + levels_suffix
-            return nation + "; ".join(yield_parts + [macro_phrase])
+            return nation + "; ".join(yield_parts + [macro_phrase] + index_parts)
+        if levels_suffix and index_parts:
+            # "... by Level of Government" qualifies the macro phrase alone.
+            return nation + "; ".join([_join_title_parts(yield_parts + macro_parts) + levels_suffix] + index_parts)
         return nation + _join_title_parts(parts) + levels_suffix
 
 
@@ -1493,6 +1531,13 @@ class PlotConfig:
     include_debt: bool = True
     include_gdp: bool = True
     include_interest: bool = True
+    # --cpi[:sa] (batch 13.4): each nation's consumer price index on an axis
+    # of its own (log, in index points), seasonally adjusted where published
+    # with price_index_adjusted (--cpi:sa, which has no effect without
+    # price_index); additive, as --inflation is. The same under -r, -p and
+    # --constant: the index is never divided.
+    price_index: bool = False
+    price_index_adjusted: bool = False
     show_cdn: bool = True
     show_us: bool = True
     # The UK's chart (batch 3): only when asked for (--uk, --nations:gb).
@@ -1755,9 +1800,14 @@ class PlotConfig:
         return self.include_debt or self.draws_gdp or self.include_interest
 
     @property
+    def draws_price_index(self) -> bool:
+        """True when the consumer price index is drawn (--cpi, batch 13.4): on the right axis when no curve of ``has_macro_series`` is, else on an axis outside it."""
+        return self.price_index
+
+    @property
     def draws_a_curve(self) -> bool:
         """True when a curve is drawn on either axis: False for a chart titled "no series selected", which neither front end remembers."""
-        return self.has_left_axis_series or self.has_macro_series
+        return self.has_left_axis_series or self.has_macro_series or self.draws_price_index
 
     @property
     def has_explicit_macro_limits(self) -> bool:

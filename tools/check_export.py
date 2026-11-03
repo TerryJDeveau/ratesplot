@@ -14,6 +14,8 @@ the page and ``--save`` draw it. For each chart:
 * every date between two points: a curve drawn as steps exports its value in
   force (its last point's), one drawn as a line a value between the two
   points' (the straight line between them, as the axis draws it);
+* the units row: the consumer price index's (batch 13.4) "index, <its
+  base>", on its own axis or the right axis's, and no other curve's;
 * the CSV read back: every value to 15 significant digits, every blank where
   the chart has no line.
 
@@ -55,15 +57,20 @@ import synthetic_sources  # noqa: E402
 from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
 
 from ratesplot import cli, export, http  # noqa: E402
-from ratesplot.config import nation_by_key  # noqa: E402
+from ratesplot.config import PRICE_INDEX_ADJUSTED_LABEL, PRICE_INDEX_BASES, PRICE_INDEX_LABEL, nation_by_key  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 
 # The defaults; Canada from 1867 (its monthly yields, then its daily ones) with
 # --reg; -r with --reg on a log axis; levels under -r; per capita; the UK and
 # Germany with their rates, spreads and mortgages; the four policy rates with
-# the U.S. target range as a band; all four nations.
-DEFAULT_CASES = ("default", "c_reg1867", "u_reg_r", "c_lv_r", "c_p", "uk_rates", "de_rates", "policy_both", "all4", "constant_master")
+# the U.S. target range as a band; all four nations; the amounts in one master
+# currency at constant prices (13.2); the price index on its own axis with
+# --reg, and alone on the right axis (13.4).
+DEFAULT_CASES = (
+    "default", "c_reg1867", "u_reg_r", "c_lv_r", "c_p", "uk_rates", "de_rates", "policy_both", "all4", "constant_master",
+    "cpi", "cpi_long",
+)
 # --save is run from the command line on these: two nations, then four with their own levels.
 SAVE_CASES = ("default", "nat_levels")
 OUT = ROOT / "out" / "check_export"
@@ -131,6 +138,13 @@ def check_chart(check, label: str, figure, config, key: str) -> None:
     check(f"{label}: every point's value exported on its date", not wrong, wrong[:3])
     check(f"{label}: every date between two points: the step's value, or the line's", not between, between[:3])
     rows = list(csv.reader(io.StringIO(export.delimited_bytes(data, ",").decode("utf-8-sig"))))
+    index_unit = f"index, {PRICE_INDEX_BASES[key]}"
+    is_index = [name in (PRICE_INDEX_LABEL, PRICE_INDEX_ADJUSTED_LABEL) for name, _axis in pieces]
+    if any(is_index):
+        units = list(zip(data.names, data.units))
+        check(f"{label}: the price index's unit {index_unit!r} in the units row, and no other curve's",
+              all((unit == index_unit) == index for (_name, unit), index in zip(units, is_index))
+              and rows[3] == ["(YYYY-MM-DD)", *(f"({unit})" for unit in data.units)], units)
     body = rows[4:]
     read_back = all(
         (cell == "") == (value is None) and (cell == "" or _same(float(cell), value))

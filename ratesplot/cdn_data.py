@@ -69,6 +69,8 @@ from .config import (
     POPULATION_COLUMN,
     RECENT_PART_REVISED,
     RECENT_PART_UNREVISED,
+    STATCAN_CDN_CPI_SA_TABLE,
+    STATCAN_CDN_CPI_SA_VECTOR,
     STATCAN_CDN_CPI_TABLE,
     STATCAN_CDN_CPI_VECTOR,
     STATCAN_CDN_DEBT_TABLE,
@@ -340,7 +342,7 @@ class StatcanRead:
 
 
 # What the program reads of each live Statistics Canada table. Measured
-# 2026-10-22, for all 26 vectors (the consumer price index, 2026-11-03): each selection is one vector, one row per
+# 2026-10-22, for all 26 vectors (the consumer price indexes, 2026-11-03): each selection is one vector, one row per
 # period, every period with a value, in the unit and scale given here. They
 # are baked (batch 19.2) under ``ratesplot/data/statcan/``
 # (``tools/bake_archives.py --only statcan``), a file per vector, named by it;
@@ -354,6 +356,7 @@ STATCAN_SERIES_READ = {
     STATCAN_CDN_POPULATION_TABLE: StatcanRead("Persons", 0, {STATCAN_CDN_POPULATION_VECTOR: _canada_rows}),
     CDN_MORTGAGE_HISTORY_TABLE: StatcanRead("Percent", 0, {CDN_MORTGAGE_HISTORY_VECTOR: _canada_rows}),
     STATCAN_CDN_CPI_TABLE: StatcanRead("2002=100", 0, {STATCAN_CDN_CPI_VECTOR: _all_items_rows}),
+    STATCAN_CDN_CPI_SA_TABLE: StatcanRead("2002=100", 0, {STATCAN_CDN_CPI_SA_VECTOR: _all_items_rows}),
 }
 STATCAN_BAKED_SOURCE = "statcan"
 

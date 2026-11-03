@@ -8,7 +8,7 @@ Each piece is a weighted least-squares regression of the logarithm of the curve'
 
 - **The label.** A piece whose first and last observations are a year or more apart gets the compound annual rate: what the curve grew by, on average, in each year of it (`+6.8%/yr`). A shorter piece gets the slope of the logarithm, the continuous rate, since compounding a few months into a year's rate would be extrapolation. One decimal, and a sign.
 - **The points.** The curve's observations within the dates shown, that is, the dates on which its value changes. The [projection to today](?help=projections) is left out, so the last piece ends at the last observation. Each point is weighted by half the gap to each of its neighbours, so a run of daily figures counts for no more in a year than the quarterly figures before it.
-- **Under** [As % of GDP](?help=percent-of-gdp) the label is the ratio's own growth; under [Per capita](?help=per-capita), the growth per person; under [Inflation adjusted](?help=constant-prices), the growth beyond inflation.
+- **Under** [As % of GDP](?help=percent-of-gdp) the label is the ratio's own growth; under [Per capita](?help=per-capita), the growth per person; under [Inflation adjusted](?help=constant-prices), the growth beyond inflation. The [price index](?help=price-index) is fitted on its own axis, by that axis's height: its label is the average inflation over the piece.
 
 ## How close a piece stays
 

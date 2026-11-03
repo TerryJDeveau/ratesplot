@@ -135,7 +135,7 @@ def check_reasons() -> None:
     base_payloads, base_flags = choices_from_config(PlotConfig())
     switches = (
         "debt", "gdp", "interest", "relative", "constant", "yield", "mortgages", "spreads", "policy", "inflation", "regression",
-        "current", "auto-refresh",
+        "current", "auto-refresh", "cpi",
     )
     first_level = {nation.key: nation.level_boxes[0][0] for nation in NATIONS if nation.level_boxes}
     variants = {

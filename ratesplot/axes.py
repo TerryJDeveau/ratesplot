@@ -90,6 +90,20 @@ def format_yield(value: float) -> str:
     return (text[:-1] if text.endswith("0") else text) + "%"
 
 
+def format_index(value: float) -> str:
+    """Format a consumer price index to one decimal, as the statistics offices publish it: ``123.4``, ``1,023.4`` (batch 13.4).
+
+    FRED gives the U.S. index to three decimals; the others are published
+    to one, which is what the end label and the hover read-out write.
+    """
+    return f"{value:,.1f}"
+
+
+def _format_index_tick(value: float, _pos: object = None) -> str:
+    """An index axis's tick label: the value as written, ``100``, ``112.5``, ``1,000`` (batch 13.4)."""
+    return f"{value:,g}"
+
+
 def format_inflation(value: float) -> str:
     """Format a 12-month rise in prices in percent to one decimal, as the statistics offices publish it: ``3.7%``, ``-0.4%``.
 
@@ -286,6 +300,45 @@ def configure_macro_axis(ax: Axes, metadata: CountryMetadata, config: PlotConfig
     ax.tick_params(axis="y", which="both", labelsize=tick_fs)
 
 
+def configure_index_axis(ax: Axes, config: PlotConfig, label: str) -> None:
+    """Configure the log axis of the consumer price index (batch 13.4), labelled ``label``, ticked in index points.
+
+    The macro axis's locator: on a log axis a straight stretch of the index
+    is a steady rate of inflation, and --reg's pieces give it in %/yr.
+    """
+    font_scale = config.font_scale
+    tick_fs = TICK_FS * font_scale
+    ax.set_ylabel(label, fontsize=LABEL_FS * font_scale, labelpad=AXIS_LABEL_PAD_PT * font_scale)
+    ax.set_yscale("log")
+    major = LogNiceLocator(tick_fs)
+    ax.yaxis.set_major_locator(major)
+    ax.yaxis.set_minor_locator(_ComplementLogLocator(major))
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(_format_index_tick))
+    ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+    ax.tick_params(axis="y", which="both", labelsize=tick_fs)
+
+
+def set_index_ylim(ax: Axes) -> None:
+    """Pad the index's range logarithmically, as the macro axis's (batch 13.4); Top and Bottom are the macro axis's alone."""
+    limits = _log_padded_limits(ax)
+    if limits is not None:
+        ax.set_ylim(*limits)
+
+
+def _log_padded_limits(ax: Axes) -> tuple[float, float] | None:
+    """The limits of a log axis drawn from its data: their range widened by ``MACRO_PAD_FRACTION`` of its decades each way (at least ``MACRO_MIN_PAD_DECADES``); None without positive data."""
+    ax.relim()
+    if not ax.has_data():
+        return None
+    data_ymin, data_ymax = ax.dataLim.intervaly
+    if data_ymin <= 0 or data_ymax <= 0 or data_ymin >= data_ymax:
+        # Non-positive values cannot be shown on a log axis.
+        return None
+    log_low, log_high = np.log10(data_ymin), np.log10(data_ymax)
+    pad = max((log_high - log_low) * MACRO_PAD_FRACTION, MACRO_MIN_PAD_DECADES)
+    return 10 ** (log_low - pad), 10 ** (log_high + pad)
+
+
 def set_yield_ylim(ax: Axes, config: PlotConfig) -> None:
     """Apply explicit or data-driven yield limits with readable padding.
 
@@ -325,20 +378,8 @@ def set_macro_ylim(ax: Axes, config: PlotConfig) -> None:
         ax.set_ylim(lower, upper)
         return
 
-    ax.relim()
-    if not ax.has_data():
-        ax.set_ylim(default_low, default_high)
-        return
-
-    data_ymin, data_ymax = ax.dataLim.intervaly
-    if data_ymin <= 0 or data_ymax <= 0 or data_ymin >= data_ymax:
-        # Non-positive values cannot be shown on a log axis.
-        ax.set_ylim(default_low, default_high)
-        return
-
-    log_low, log_high = np.log10(data_ymin), np.log10(data_ymax)
-    pad = max((log_high - log_low) * MACRO_PAD_FRACTION, MACRO_MIN_PAD_DECADES)
-    ax.set_ylim(10 ** (log_low - pad), 10 ** (log_high + pad))
+    limits = _log_padded_limits(ax)
+    ax.set_ylim(*(limits if limits is not None else (default_low, default_high)))
 
 
 # Tick spacing (days) from which ticks are monthly or longer, not daily.
@@ -416,7 +457,7 @@ def _date_locator(*, minticks: int, maxticks: int, thin_month_ends: bool = False
     return _DateLocator(minticks=minticks, maxticks=maxticks, thin_month_ends=thin_month_ends)
 
 
-def scale_line_widths(ax_yield: Axes, ax_macro: Axes, line_scale: float) -> None:
+def scale_line_widths(*axes_and_scale: Axes | float) -> None:
     """Widen the plotted lines, axes frame and tick marks by ``PlotConfig.line_scale``.
 
     The widths in ``config`` (and matplotlib's defaults for frame and ticks)
@@ -424,8 +465,11 @@ def scale_line_widths(ax_yield: Axes, ax_macro: Axes, line_scale: float) -> None
     plotted and before the legend is made, so legend samples copy the scaled
     widths. Dash patterns follow the width automatically (``lines.scale_dashes``).
     Grid lines are scaled where the grid is switched on, in ``apply_axes_formatting``.
+    Called with the chart's axes, then the scale: ``(ax_yield, ax_macro,
+    [ax_index,] line_scale)``.
     """
-    for ax in (ax_yield, ax_macro):
+    *axes, line_scale = axes_and_scale
+    for ax in axes:
         for line in ax.get_lines():
             line.set_linewidth(line.get_linewidth() * line_scale)
         for spine in ax.spines.values():
@@ -441,7 +485,12 @@ def scale_line_widths(ax_yield: Axes, ax_macro: Axes, line_scale: float) -> None
 
 
 def apply_axes_formatting(
-    ax_yield: Axes, ax_macro: Axes, config: PlotConfig, metadata: CountryMetadata, left_label: str | None = None
+    ax_yield: Axes,
+    ax_macro: Axes,
+    config: PlotConfig,
+    metadata: CountryMetadata,
+    left_label: str | None = None,
+    index_axis: tuple[Axes, str] | None = None,
 ) -> None:
     """Configure the shared x-axis and both y-axes after all lines are plotted.
 
@@ -449,9 +498,14 @@ def apply_axes_formatting(
     curves is selected the unused axis mirrors the other so the chart never
     shows a second, meaningless scale. ``left_label`` is the left axis's
     label when it is not ``config.left_axis_label`` (a spread drawn).
+    ``index_axis``: the consumer price index's axis and its label (batch
+    13.4), ``ax_macro`` itself when no curve of the macro axis is chosen
+    (the index is then the right axis's, and mirrored on the left when
+    nothing is on it), else an axis of its own outside it.
     """
     scale = config.font_scale
-    scale_line_widths(ax_yield, ax_macro, config.line_scale)
+    ax_index, index_label = index_axis if index_axis is not None else (None, "")
+    scale_line_widths(ax_yield, ax_macro, *([ax_index] if ax_index not in (None, ax_macro) else []), config.line_scale)
     ax_yield.set_xlabel("Date", fontsize=LABEL_FS * scale)
     ax_yield.tick_params(axis="both", which="major", labelsize=TICK_FS * scale)
     ax_yield.tick_params(axis="both", which="minor", labelsize=(TICK_FS - 4) * scale)
@@ -471,7 +525,18 @@ def apply_axes_formatting(
     ax_yield.grid(True, which="minor", linestyle=":", alpha=0.22, linewidth=grid_width)
 
     label = left_label or config.left_axis_label
-    if config.has_left_axis_series and config.has_macro_series:
+    if ax_index is not None:
+        configure_index_axis(ax_index, config, index_label)
+        set_index_ylim(ax_index)
+    if ax_index is ax_macro and ax_index is not None:
+        # The index the only right-axis curve: drawn as it would be with others.
+        if config.has_left_axis_series:
+            configure_yield_axis(ax_yield, font_scale=scale, label=label)
+            set_yield_ylim(ax_yield, config)
+        else:
+            configure_index_axis(ax_yield, config, index_label)
+            ax_yield.set_ylim(ax_index.get_ylim())
+    elif config.has_left_axis_series and config.has_macro_series:
         configure_yield_axis(ax_yield, font_scale=scale, label=label)
         set_yield_ylim(ax_yield, config)
         configure_macro_axis(ax_macro, metadata, config)

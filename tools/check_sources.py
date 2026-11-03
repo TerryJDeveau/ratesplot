@@ -584,6 +584,13 @@ CHECKS: tuple[Check, ...] = (
     # Batch 13.2: the UK's index itself, D7BT (the others' indexes are the rises' above), through the program's reader.
     Check("ons_cpi_index", "ONS D7BT CPI index, the millennium index before 1988 (--constant)", PRICES,
           lambda _config: (_last(prices.uk_consumer_prices()), "D7BT from 1988-01, the millennium index before")),
+    # Batch 13.4: the seasonally adjusted indexes (the ONS publishes none), through the program's reader.
+    Check("fred_cpi_sa", "FRED CPIAUCSL CPI index, seasonally adjusted (13.4)", PRICES,
+          lambda _config: (_last(prices.consumer_prices("us", adjusted=True)), "from 1947-01")),
+    Check("statcan_cpi_sa", "StatCan 18-10-0006 CPI index, seasonally adjusted (13.4)", PRICES,
+          lambda _config: (_last(prices.consumer_prices("cdn", adjusted=True)), "from 1992-01")),
+    Check("bbk_cpi_sa", "Bundesbank BBDP1 CPI index, calendar and seasonally adjusted (13.4)", PRICES,
+          lambda _config: (_last(prices.consumer_prices("de", adjusted=True)), "from 1991-01")),
     Check("fred_t10y2y", "FRED T10Y2Y against the program's 10y-2y spread (--spreads)", DAILY, _spread_crosscheck("T10Y2Y", ("10y", "2y"))),
     Check("fred_t10y3m", "FRED T10Y3M against the program's 10y-3m spread (--spreads)", DAILY, _spread_crosscheck("T10Y3M", ("10y", "3m"))),
     Check("treasury_yields", "U.S. Treasury daily par yield curve (all eleven terms)", DAILY, _treasury_yields),

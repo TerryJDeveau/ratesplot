@@ -175,6 +175,7 @@ from .frontend import (
     bound_keys,
     bounds_in_other_units,
     chart_link,
+    choice_is_list,
     choice_refusal,
     choice_rows,
     choice_values,
@@ -649,7 +650,7 @@ class _ChoicesEditor:
         if self.syncing:
             return
         ticked = [item for item, variable in self.boxes.items() if variable.get()]
-        if not ticked:
+        if not ticked and choice_is_list(self.option):
             self.boxes[value].set(True)
             self.refuse(choice_refusal(self.option))
             return

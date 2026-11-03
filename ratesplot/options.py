@@ -79,6 +79,7 @@ from .config import (
     PER_NATION_FIELDS,
     POLICY_TERMS,
     QUOTE_MAX_AGE_DAYS,
+    SEASONALLY_ADJUSTED_NATIONS,
     YIELD_TERMS,
     Nation,
     PlotConfig,
@@ -440,6 +441,25 @@ def parse_master_currency(spec: str) -> str:
     raise ValueError(f"--master:{value} names no currency: use CAD, USD, GBP or EUR (or C$, US$, £, €)")
 
 
+# --cpi:sa (batch 13.4): the one value the price index's adjustment takes.
+CPI_ADJUSTED = "sa"
+
+
+def parse_cpi_adjustment(spec: str) -> bool:
+    """Parse ``--cpi:sa``, the price index seasonally adjusted (batch 13.4): True; any other value is refused."""
+    if spec.strip().lower() != CPI_ADJUSTED:
+        raise ValueError(
+            f"--cpi:{spec.strip()}: the only value is {CPI_ADJUSTED}, the index seasonally adjusted; "
+            "--cpi alone draws it not seasonally adjusted"
+        )
+    return True
+
+
+def format_cpi_adjustment(values: tuple, _config: PlotConfig) -> str:
+    """Format the price index's adjustment as ``parse_cpi_adjustment`` takes it: "sa", or blank when not seasonally adjusted."""
+    return CPI_ADJUSTED if values[0] else ""
+
+
 def format_master_currency(values: tuple, _config: PlotConfig) -> str:
     """Format the master currency as its code, which ``parse_master_currency`` takes; blank for none."""
     return values[0] or ""
@@ -782,6 +802,10 @@ GROUPS: dict[str, str] = {
         'Rates on the yield axis (policy, inflation, mortgages, spreads; each only\n'
         'when asked for, hiding nothing; at least "po", "inf", "mo", "sp"):'
     ),
+    "prices": (
+        "The consumer price index on an axis of its own (only when asked for, hiding\n"
+        'nothing; at least "cp"):'
+    ),
     "units": "Measure of debt, GDP, and interest:",
     "labels": "Line labels and regression segments (--reg needs at least \"reg\"):",
     "dates": "Date window (YYYY, YYYY-MM or YYYY-MM-DD; '/' also accepted):",
@@ -846,6 +870,30 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "interest", Kind.TOGGLE, ("include_interest",), "curves", "--interest / --no-interest", "TTM interest outlays",
         names=("interest",), label="TTM interest outlays", topic="interest",
+    ),
+    # Batch 13.4 (Terry asked 2026-10-13 for the consumer price index itself
+    # on the right axis, unadjusted and seasonally adjusted, fitted by --reg):
+    # each nation's index, on the right axis when debt, GDP and interest are
+    # not drawn, else on an axis of its own outside it. A flag, not a curve
+    # under the curve rule: it adds the index and hides nothing, as
+    # --inflation does. At least "cp" ("--c" is Canada). Seasonally adjusted
+    # by --cpi:sa, a value that turns --cpi on, as --reg:TOL turns on --reg;
+    # in the window and on the page a box "Seas. adj." under the index's,
+    # greyed while it is unticked (Terry, 2026-11-03).
+    Option(
+        "cpi", Kind.FLAG, ("price_index",), "prices", "--cpi / --no-cpi",
+        "each country's consumer price index, not\nseasonally adjusted, on a log axis of its\n"
+        "own in index points (outside the right\naxis when debt, GDP or interest is\n"
+        "drawn): the U.S. from 1913, Canada and\nthe UK from 1914, Germany from 1991",
+        names=("cpi",), shortest=2, label="Price index (CPI)", panel="curves", topic="price-index",
+    ),
+    Option(
+        "cpi-adjustment", Kind.VALUE, ("price_index_adjusted",), "prices", "--cpi:sa",
+        "the index seasonally adjusted: the U.S.\nfrom 1947, Canada from 1992, Germany from\n"
+        "1991; the ONS publishes none, so the UK's\nchart draws its index unadjusted; turns\n--cpi on",
+        names=("cpi",), shortest=2, parse=parse_cpi_adjustment, turns_on="cpi", label="Seas. adj.",
+        format=format_cpi_adjustment, editor="choices", choices=((("", ((CPI_ADJUSTED, "Seas. adj."),)),)),
+        panel="curves", topic="price-index",
     ),
     # Curve sub-options: debt and interest by level of government ("--d:" is
     # debt; the size needs at least "dim"). They set one field; see
@@ -1577,19 +1625,29 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # (before 2026-10-13 -r hid it, leaving the right axis empty). The window
     # and the page grey -r out then (``idle_options``), and a greyed control
     # changes nothing.
-    idle = idle_options(values["include_debt"], values["include_gdp"], values["include_interest"])
+    idle = idle_options(
+        values["include_debt"], values["include_gdp"], values["include_interest"],
+        price_index=values["price_index"],
+    )
     if values["relative"] and "relative" in idle:
         values["relative"] = False
     # Constant prices with no right-axis curve change nothing and are greyed
     # (``idle_options``); off, no drawing reads a price index it does not use.
     if values["constant_prices"] and "constant" in idle:
         values["constant_prices"] = False
+    # --cpi:sa without --cpi, or with no nation drawn whose index is adjusted
+    # (the UK alone), changes nothing and is greyed (frontend.idle_control_reasons).
+    if values["price_index_adjusted"] and not (
+        values["price_index"]
+        and any(values[nation.show_field] for nation in NATIONS if nation.key in SEASONALLY_ADJUSTED_NATIONS)
+    ):
+        values["price_index_adjusted"] = False
     check_macro_bound_units(payloads, values)
     values["nation_settings"] = _nation_settings(payloads, values)
     return PlotConfig(**values)
 
 
-def idle_options(debt: bool, gdp: bool, interest: bool) -> frozenset[str]:
+def idle_options(debt: bool, gdp: bool, interest: bool, *, price_index: bool = False) -> frozenset[str]:
     """Return the options that change nothing on any chart while these right-axis curves are chosen.
 
     Terry, 2026-10-08: grey out "Regression segments", "By level", "% of GDP"
@@ -1607,18 +1665,23 @@ def idle_options(debt: bool, gdp: bool, interest: bool) -> frozenset[str]:
 
     Each was checked on 2026-10-13 to draw a byte-identical chart when idle,
     -r excepted: it hid GDP, which ``config_from_choices`` now stops.
+
+    The consumer price index (``price_index``, batch 13.4) is fitted by
+    --reg, so the regression segments are not idle while it is drawn; the
+    measures, the limits and the projections act on the amounts alone.
     """
-    return frozenset(idle_option_reasons(debt, gdp, interest))
+    return frozenset(idle_option_reasons(debt, gdp, interest, price_index=price_index))
 
 
-def idle_option_reasons(debt: bool, gdp: bool, interest: bool) -> dict[str, str]:
+def idle_option_reasons(debt: bool, gdp: bool, interest: bool, *, price_index: bool = False) -> dict[str, str]:
     """Return ``idle_options``' names, each with why it is idle, a clause to follow "Greyed because" (batch 29.1)."""
     reasons: dict[str, str] = {}
     if not (debt or interest):
         reasons |= dict.fromkeys(("relative", "debt-parts", "interest-parts"), "it acts on debt and interest, and neither is ticked")
     if not (debt or gdp or interest):
+        amounts = ("per-capita", "constant", "top", "bottom", "projections")
         reasons |= dict.fromkeys(
-            ("per-capita", "constant", "regression", "regression-tolerance", "top", "bottom", "projections"),
+            amounts if price_index else (*amounts, "regression", "regression-tolerance"),
             "it acts on the right axis's curves, and none of debt, GDP and interest is ticked",
         )
     return reasons
@@ -1642,6 +1705,18 @@ def master_idle_reason(text: str, flags: Mapping[str, bool]) -> str | None:
     except ValueError:
         return None
     return dataclasses.replace(config, master_currency=currency).master_brings_nothing
+
+
+def adjusted_index_drawn(flags: Mapping[str, bool]) -> bool:
+    """True when a nation these flags tick publishes a seasonally adjusted price index (``SEASONALLY_ADJUSTED_NATIONS``, batch 13.4).
+
+    Else --cpi:sa changes no chart (the ONS publishes none: the UK alone):
+    "Seas. adj." is greyed (``frontend.idle_control_reasons``) and left off
+    the written command line (``command_line_tokens``), as
+    ``config_from_choices`` clears it.
+    """
+    ticked = {option.fields[0] for option in options_in("country") if flags.get(option.name)}
+    return any(nation.show_field in ticked for nation in NATIONS if nation.key in SEASONALLY_ADJUSTED_NATIONS)
 
 
 def unticked(name: str) -> str:
@@ -1925,6 +2000,10 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # its nation unticked.
     if payloads.get("master", "").strip() and master_idle_reason(payloads["master"], flags) is not None:
         del payloads["master"]
+    # The price index seasonally adjusted where it changes no chart (batch
+    # 13.4): greyed with the UK the only nation ticked, its tick kept.
+    if payloads.get("cpi-adjustment", "").strip() and not adjusted_index_drawn(flags):
+        del payloads["cpi-adjustment"]
 
     # The nations' switches, unless the ones chosen are those drawn by default.
     countries = [option for option in options_in("country") if option.in_gui]

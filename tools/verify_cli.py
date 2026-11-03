@@ -273,6 +273,13 @@ CASES: list[list[str]] = [
     ["--constant"], ["--con"], ["--cons"], ["--CON"], ["--co"], ["--no-constant"], ["--no-con"], ["--constant:1"],
     ["--us:constant"], ["--con", "-p"], ["--con", "-r"], ["-r", "--con"], ["--con", "--no-gdp", "--no-debt", "--no-interest"],
     ["--con", "--master:usd"], ["--constantx"],
+    # Batch 13.4: --cpi, at least "cp" ("--c" is Canada), a flag; --cpi:sa its one value, which turns it on
+    # (and --no-cpi off); no nation's own; beside the amounts or alone; --reg not idle with the index alone on
+    # the right axis; the same under -r and -p.
+    ["--cpi"], ["--cp"], ["--CPI"], ["--no-cpi"], ["--cpi:1"], ["--us:cpi"], ["--cpix"],
+    ["--cpi:sa"], ["--cp:sa"], ["--cpi:SA"], ["--cpi:nsa"], ["--cpi:"], ["--us:cpi:sa"], ["--no-cpi:sa"],
+    ["--cpi", "--cpi:sa"], ["--cpi:sa", "--no-cpi"], ["--cpi:sa", "--na:gb"], ["--cpi", "--yield"],
+    ["--cpi", "--reg", "--no-gdp", "--no-debt", "--no-interest"], ["--cpi", "-r"], ["--cpi:sa", "-p", "--con"],
 ]
 
 

@@ -204,6 +204,7 @@ from .frontend import (  # noqa: E402
     bound_keys,
     bounds_in_other_units,
     chart_link,
+    choice_is_list,
     choice_refusal,
     choice_rows,
     choice_values,
@@ -1394,6 +1395,8 @@ def _choice_values_offered(key: str) -> list[str]:
 
 def _choice_changed(key: str, value: str) -> None:
     """Keep at least one box of a list ticked: drawing none is the curve's own box (``choice_refusal``)."""
+    if not choice_is_list(option_of(key)):
+        return  # a single box of a value that is no list ("Seas. adj.", batch 13.4) may be unticked
     if not any(st.session_state.get(_CHOICE + key + ":" + item, False) for item in _choice_values_offered(key)):
         st.session_state[_CHOICE + key + ":" + value] = True
         st.session_state[_NOTICE] = choice_refusal(option_of(key))
@@ -1861,18 +1864,21 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     help is on the list's label alone: a column per box, each with its "?",
     left no room for the text at the sidebar's narrow default width
     (2026-10-13: Canada's yield terms showed only their "?", the spreads
-    "10…").
+    "10…"). One with no label, under its flag ("Seas. adj.", batch 13.4),
+    has it on the last box of its first row, as the window's ⓘ ends that
+    row: else it had none, and no reason while greyed.
     """
     key = nation_choice(nation, option) if nation else option.name
     disabled = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
     disabled = disabled or option.name in _idle() or key in idle_nation_keys(*_snapshot())
-    if option.turns_on is None or nation is not None:
+    labelled = option.turns_on is None or nation is not None
+    if labelled:
         where.markdown(f"**{option.label}**", help=_help(option, key=key))
     others = st.session_state.get(_CHOICE_OTHERS + key, [])
     rows = [row for row in choice_rows(option, "", nation)]
     if others:
         rows.append(("other", [(value, value.replace("-", "–")) for value in others]))
-    for caption, boxes in rows:
+    for number, (caption, boxes) in enumerate(rows):
         if caption:
             where.caption(caption)
         # A nation's box of a term drawn plus a margin has the margin's field
@@ -1880,7 +1886,7 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
         margins = margin_options() if nation is not None and option.fields == ("mortgage_terms",) else {}
         margin = next((margins[value] for value, _text in boxes if value in margins), None)
         row = where.container(horizontal=True, wrap=True, vertical_alignment="bottom" if margin else "top")
-        for value, text in boxes:
+        for position, (value, text) in enumerate(boxes):
             row.checkbox(
                 text,
                 value=bool(_now(_CHOICE + key + ":" + value)),
@@ -1888,6 +1894,7 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
                 disabled=disabled,
                 on_change=_choice_changed,
                 args=(key, value),
+                help=_help(option, key=key) if not labelled and number == 0 and position == len(boxes) - 1 else None,
             )
         if margin:
             _value_control(row, margin, key=nation_choice(nation, margin), label="margin (pts)", width=_MARGIN_FIELD_PX)

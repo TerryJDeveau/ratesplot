@@ -112,6 +112,8 @@ from .config import (
     MILLION,
     ONS_TIMESERIES_URL,
     POPULATION_COLUMN,
+    STATCAN_CDN_CPI_SA_TABLE,
+    STATCAN_CDN_CPI_SA_VECTOR,
     STATCAN_CDN_CPI_TABLE,
     STATCAN_CDN_CPI_VECTOR,
     STATCAN_CDN_DEBT_TABLE,
@@ -132,6 +134,7 @@ from .config import (
 from .de_data import (
     BUNDESBANK_BAKED_SOURCE,
     BUNDESBANK_TERM_STRUCTURE_FLOW,
+    DE_CPI_SA_SERIES,
     DE_CPI_SERIES,
     DE_YIELD_SERIES,
     ECB_ANNUAL_DEBT,
@@ -188,6 +191,7 @@ from .us_data import (
     US_GDP_SERIES_ID,
     US_INTEREST_SERIES_ID,
     US_LOCAL_INTEREST_SERIES_ID,
+    US_CPI_SA_SERIES_ID,
     US_CPI_SERIES_ID,
     US_POPULATION_SERIES_ID,
     US_STATE_INTEREST_SERIES_ID,
@@ -2001,6 +2005,7 @@ _FRED_SERIES_TITLES = {
     "GDP": "Gross Domestic Product; quarterly",
     "B230RC0Q173SBEA": "Population; quarterly",
     "CPIAUCNS": "Consumer Price Index for All Urban Consumers: All Items in U.S. City Average; monthly, not seasonally adjusted",
+    "CPIAUCSL": "Consumer Price Index for All Urban Consumers: All Items in U.S. City Average; monthly, seasonally adjusted",
     "FEDFUNDS": "Federal Funds Effective Rate; monthly",
     "DFEDTAR": "Federal Funds Target Rate (DISCONTINUED); daily, 7-day",
     "DFEDTARL": "Federal Funds Target Range - Lower Limit; daily, 7-day",
@@ -2023,7 +2028,7 @@ def fred_baked_codes() -> list[str]:
     return sorted({
         *US_YIELD_SERIES.values(), US_DEBT_SERIES_ID, US_STATE_LOCAL_DEBT_SERIES_ID, US_INTEREST_SERIES_ID,
         US_FEDERAL_INTEREST_SERIES_ID, US_STATE_LOCAL_INTEREST_SERIES_ID, US_STATE_INTEREST_SERIES_ID,
-        US_LOCAL_INTEREST_SERIES_ID, US_GDP_SERIES_ID, US_POPULATION_SERIES_ID, US_CPI_SERIES_ID,
+        US_LOCAL_INTEREST_SERIES_ID, US_GDP_SERIES_ID, US_POPULATION_SERIES_ID, US_CPI_SERIES_ID, US_CPI_SA_SERIES_ID,
         US_MONTHLY_EFFECTIVE_SERIES, US_TARGET_SERIES, *US_TARGET_RANGE_SERIES, US_MARKET_SERIES, *US_MORTGAGE_SERIES.values(),
         FRED_CDN_GDP_SERIES, *FX_SERIES,
     })
@@ -2309,18 +2314,20 @@ _BBK_SERIES_TITLES = {
     _bbk_code("30-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 30.0 years / monthly data{_END_OF_MONTH}",
     _bbk_code("30-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 30.0 years / daily data{_DAILY}",
     ".".join(DE_CPI_SERIES): "Consumer price index / Germany / Unadjusted figure Overall index; 2020 = 100; monthly",
+    ".".join(DE_CPI_SA_SERIES): "Consumer price index / Germany / Calendar and seasonally adjusted / Overall index; 2020 = 100; monthly",
 }
 # The unit of each Bundesbank series baked not in percent, in words (the
-# consumer price index, batch 13.1).
-_BBK_UNIT_WORDS = {".".join(DE_CPI_SERIES): "index points, 2020 = 100"}
+# consumer price indexes, batches 13.1 and 13.4).
+_BBK_UNIT_WORDS = {".".join(series): "index points, 2020 = 100" for series in (DE_CPI_SERIES, DE_CPI_SA_SERIES)}
 
 
 def bbk_baked_series() -> dict[str, tuple[str, str]]:
-    """Every Bundesbank series the program reads, by its file's name (``FLOW.KEY``): its flow and key. Each term's end-of-month and daily term structure, and the consumer price index (``de_data``)."""
+    """Every Bundesbank series the program reads, by its file's name (``FLOW.KEY``): its flow and key. Each term's end-of-month and daily term structure, and the consumer price indexes, unadjusted and seasonally adjusted (``de_data``)."""
     return dict(sorted([
         *((_bbk_code(column, frequency), (BUNDESBANK_TERM_STRUCTURE_FLOW, term_structure_key(column, frequency)))
           for column in DE_YIELD_SERIES for frequency in TERM_STRUCTURE_FREQUENCIES),
         (".".join(DE_CPI_SERIES), DE_CPI_SERIES),
+        (".".join(DE_CPI_SA_SERIES), DE_CPI_SA_SERIES),
     ]))
 
 
@@ -2370,6 +2377,7 @@ _STATCAN_TABLE_TITLES = {
     STATCAN_CDN_POPULATION_TABLE: "Population estimates, quarterly",
     CDN_MORTGAGE_HISTORY_TABLE: "Canada Mortgage and Housing Corporation, conventional mortgage lending rate, 5-year term; monthly",
     STATCAN_CDN_CPI_TABLE: "Consumer Price Index, monthly, not seasonally adjusted",
+    STATCAN_CDN_CPI_SA_TABLE: "Consumer Price Index, monthly, seasonally adjusted",
 }
 # Each vector read: Statistics Canada's own series title (WDS
 # getSeriesInfoFromVector, read 2026-10-22); the GFS table's are
@@ -2381,6 +2389,7 @@ _STATCAN_SERIES_TITLES = {
     STATCAN_CDN_POPULATION_VECTOR: "Canada",
     CDN_MORTGAGE_HISTORY_VECTOR: "Canada",
     STATCAN_CDN_CPI_VECTOR: "Canada;All-items",
+    STATCAN_CDN_CPI_SA_VECTOR: "Canada;All-items",
     **{vector: f"Canada;{sector};{item}" for (sector, item), vector in GFS_VECTORS.items()},
 }
 # A table's unit and scale (cdn_data.StatcanRead), in words.
@@ -2391,7 +2400,7 @@ _STATCAN_UNIT_WORDS = {
 
 
 def statcan_baked_series() -> dict[str, str]:
-    """Every Statistics Canada vector the program reads (``cdn_data.STATCAN_SERIES_READ``), by its file's name (the vector): its table. Debt, GDP, interest, the levels, the population and the consumer price index (``cdn_data``); the CMHC mortgage rate (``rates``)."""
+    """Every Statistics Canada vector the program reads (``cdn_data.STATCAN_SERIES_READ``), by its file's name (the vector): its table. Debt, GDP, interest, the levels, the population and the consumer price indexes (``cdn_data``); the CMHC mortgage rate (``rates``)."""
     return dict(sorted((vector, table) for table, read in STATCAN_SERIES_READ.items() for vector in read.vectors))
 
 

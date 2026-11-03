@@ -53,7 +53,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.text import Text
 
-from .config import MASTER_SYMBOLS, PlotConfig, nation_by_key
+from .config import MASTER_SYMBOLS, PRICE_INDEX_BASES, PlotConfig, nation_by_key
 
 # The file's extension -> matplotlib's format name.
 IMAGE_FORMATS = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".pdf": "pdf", ".svg": "svg"}
@@ -94,6 +94,9 @@ _CURRENCY_ATTR = "_ratesplot_amounts_currency"
 _PRICE_BASE_ATTR = "_ratesplot_price_base"
 YIELD_AXIS = "yield"
 MACRO_AXIS = "macro"
+# The consumer price index's (batch 13.4), whichever axis it is drawn on: its
+# unit is the index's, "index, 2002 = 100", never the amounts'.
+INDEX_AXIS = "index"
 # Each currency as a column's unit names it (the axis's own symbol is "$"
 # for the U.S., which alone in a file says too little): the symbols a chart
 # in the master currency writes (config.MASTER_SYMBOLS, the same four).
@@ -101,7 +104,7 @@ _CURRENCY_UNITS = MASTER_SYMBOLS
 
 
 def mark_series(line: Line2D, name: str, axis: str) -> Line2D:
-    """Record that ``line`` is (a piece of) the curve exported as ``name``, on ``axis`` (``YIELD_AXIS``, ``MACRO_AXIS``)."""
+    """Record that ``line`` is (a piece of) the curve exported as ``name``, on ``axis`` (``YIELD_AXIS``, ``MACRO_AXIS``, ``INDEX_AXIS``)."""
     setattr(line, _SERIES_ATTR, (name, axis))
     return line
 
@@ -237,6 +240,15 @@ def _macro_unit(figure: Figure, config: PlotConfig, nation_key: str) -> str:
     return unit if month is None else f"{unit} at {month:%Y-%m} prices"
 
 
+def _unit(axis: str, figure: Figure, config: PlotConfig, nation_key: str) -> str:
+    """The unit of a curve drawn on ``axis``: "%" on the yield axis, the index's base for the price index, else the amounts' (``_macro_unit``)."""
+    if axis == YIELD_AXIS:
+        return "%"
+    if axis == INDEX_AXIS:
+        return f"index, {PRICE_INDEX_BASES[nation_key]}"
+    return _macro_unit(figure, config, nation_key)
+
+
 def chart_data(figure: Figure, config: PlotConfig, nation_key: str) -> ChartData:
     """Return the data ``figure`` shows (see the module docstring); ``config`` is the nation's own (``for_nation``)."""
     curves = _pieces(figure)
@@ -244,7 +256,7 @@ def chart_data(figure: Figure, config: PlotConfig, nation_key: str) -> ChartData
     days = np.unique(np.concatenate([piece.x for pieces in curves.values() for piece in pieces] or [np.empty(0)]))
     days = days[(days >= start) & (days <= end)]
     columns = [_values_on(pieces, days) for pieces in curves.values()]
-    units = tuple("%" if axis == YIELD_AXIS else _macro_unit(figure, config, nation_key) for _name, axis in curves)
+    units = tuple(_unit(axis, figure, config, nation_key) for _name, axis in curves)
     title = figure._suptitle.get_text() if figure._suptitle is not None else ""
     subtitle_text = getattr(figure, _SUBTITLE_ATTR, None)
     rows = tuple(

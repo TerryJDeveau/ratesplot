@@ -3,7 +3,8 @@
 Terry asked on 2026-10-12 for inflation by country; the plan's batch 13 has
 four uses sharing these sources, built in stages: 13.1, the inflation curve
 on the yield axis, first (2026-11-03); 13.2, the amounts at constant prices,
-second (``consumer_prices``). The sources, measured 2026-11-03, each the
+second (``consumer_prices``); 13.4, the index itself on the right axis,
+unadjusted or seasonally adjusted. The sources, measured 2026-11-03, each the
 all-items index, not seasonally adjusted, monthly:
 
 * the U.S.: FRED CPIAUCNS, the CPI for all urban consumers, from 1913-01
@@ -22,6 +23,12 @@ all-items index, not seasonally adjusted, monthly:
   (they differ by 0.04 % at 1988-01, by at most 0.17 points in the 351
   months both have).
 
+The seasonally adjusted indexes (13.4), on the same bases: FRED CPIAUCSL from
+1947-01, Statistics Canada's 18-10-0006 (v41690914) from 1992-01 and the
+Bundesbank's calendar and seasonally adjusted index from 1991-01; the ONS
+publishes none. Each is revised as its seasonal factors are, so each is read
+as a revised series.
+
 A rise is each month's index over the same month's a year before, less one,
 in percent, found by date: a month without an index (the U.S.' 2025-10) has
 no rise, and neither has the month a year after it. The statistics offices
@@ -37,11 +44,18 @@ from __future__ import annotations
 import pandas as pd
 
 from .cdn_data import statcan_table
-from .config import DATE_COLUMN, STATCAN_CDN_CPI_TABLE, STATCAN_CDN_CPI_VECTOR
+from .config import (
+    DATE_COLUMN,
+    SEASONALLY_ADJUSTED_NATIONS,
+    STATCAN_CDN_CPI_SA_TABLE,
+    STATCAN_CDN_CPI_SA_VECTOR,
+    STATCAN_CDN_CPI_TABLE,
+    STATCAN_CDN_CPI_VECTOR,
+)
 from .de_data import fetch_de_consumer_prices
 from .uk_archive_data import EMBEDDED_UK_CPI_HISTORY
 from .uk_data import UK_CPI_SERIES, UK_INFLATION_SERIES, ons_series
-from .us_data import US_CPI_SERIES_ID, fred_series
+from .us_data import US_CPI_SA_SERIES_ID, US_CPI_SERIES_ID, fred_series
 
 
 def _by_month(values: pd.Series) -> pd.Series:
@@ -65,15 +79,17 @@ def twelve_month_rise(index: pd.Series) -> pd.Series:
     return rise.dropna()
 
 
-def us_consumer_prices() -> pd.Series:
-    """The U.S. CPI for all urban consumers (1982-84 = 100), monthly from 1913-01: FRED's baked history and recent part."""
-    frame = fred_series(US_CPI_SERIES_ID, revised=False)
-    return frame.set_index(DATE_COLUMN)[US_CPI_SERIES_ID]
+def us_consumer_prices(*, adjusted: bool = False) -> pd.Series:
+    """The U.S. CPI for all urban consumers (1982-84 = 100), monthly from 1913-01, or seasonally adjusted from 1947-01: FRED's baked history and recent part."""
+    series_id = US_CPI_SA_SERIES_ID if adjusted else US_CPI_SERIES_ID
+    frame = fred_series(series_id, revised=adjusted)
+    return frame.set_index(DATE_COLUMN)[series_id]
 
 
-def cdn_consumer_prices() -> pd.Series:
-    """Canada's consumer price index (2002 = 100), monthly from 1914-01: Statistics Canada's baked history and recent part."""
-    return statcan_table(STATCAN_CDN_CPI_TABLE)[STATCAN_CDN_CPI_VECTOR].rename(STATCAN_CDN_CPI_VECTOR)
+def cdn_consumer_prices(*, adjusted: bool = False) -> pd.Series:
+    """Canada's consumer price index (2002 = 100), monthly from 1914-01, or seasonally adjusted from 1992-01: Statistics Canada's baked history and recent part."""
+    table, vector = (STATCAN_CDN_CPI_SA_TABLE, STATCAN_CDN_CPI_SA_VECTOR) if adjusted else (STATCAN_CDN_CPI_TABLE, STATCAN_CDN_CPI_VECTOR)
+    return statcan_table(table)[vector].rename(vector)
 
 
 def uk_consumer_prices() -> pd.Series:
@@ -93,15 +109,21 @@ def _millennium_index() -> pd.Series:
     return _by_month(pd.Series([value for _date, value in rows], index=pd.DatetimeIndex([date for date, _value in rows])))
 
 
-def consumer_prices(country: str) -> pd.Series:
+def consumer_prices(country: str, *, adjusted: bool = False) -> pd.Series:
     """Return one country's consumer price index ("cdn", "us", "uk" or "de"), each month dated by its first day; raises if its source has nothing.
 
     Each in its own base year: --constant divides by it and multiplies by
     its value in one month (``measures.in_constant_prices``), so the base
-    year cancels.
+    year cancels. ``adjusted``: the seasonally adjusted index (13.4), for a
+    nation of ``SEASONALLY_ADJUSTED_NATIONS`` only (a ValueError for the UK).
     """
-    reader = {"us": us_consumer_prices, "cdn": cdn_consumer_prices, "uk": uk_consumer_prices, "de": fetch_de_consumer_prices}
-    return _by_month(reader[country]())
+    if not adjusted:
+        reader = {"us": us_consumer_prices, "cdn": cdn_consumer_prices, "uk": uk_consumer_prices, "de": fetch_de_consumer_prices}
+        return _by_month(reader[country]())
+    if country not in SEASONALLY_ADJUSTED_NATIONS:
+        raise ValueError(f"{country}: no seasonally adjusted consumer price index is published")
+    reader = {"us": us_consumer_prices, "cdn": cdn_consumer_prices, "de": fetch_de_consumer_prices}
+    return _by_month(reader[country](adjusted=True))
 
 
 def uk_inflation() -> pd.Series:
