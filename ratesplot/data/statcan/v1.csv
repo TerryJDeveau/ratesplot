@@ -1,6 +1,6 @@
 # Statistics Canada, table 17100009 (https://www150.statcan.gc.ca/n1/tbl/csv/17100009-eng.zip), vector v1: Population estimates, quarterly: Canada.
 # Every value the table gives, as ratesplot.cdn_data reads it: dated by each period's first day, as Statistics Canada
-# dates it, in persons, the table's unit (cdn_data converts millions to dollars).
+# dates it, in persons, the table's unit.
 # Written by tools/bake_archives.py --only statcan (ratesplot.bake), read by ratesplot.baked;
 # not edited by hand.
 date,value

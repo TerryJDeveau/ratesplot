@@ -2399,8 +2399,9 @@ def bake_statcan_history(folder: Path | None = None, *, accept_withdrawn: bool =
         return (
             f"Statistics Canada, table {table} ({STATCAN_TABLE_URL.format(table_id=table)}), vector {code}: {title}.\n"
             "Every value the table gives, as ratesplot.cdn_data reads it: dated by each period's first day, as Statistics Canada\n"
-            f"dates it, in {_STATCAN_UNIT_WORDS[(read.unit, read.scale)]}, the table's unit (cdn_data converts millions to dollars).\n"
-            "Written by tools/bake_archives.py --only statcan (ratesplot.bake), read by ratesplot.baked;\n"
+            f"dates it, in {_STATCAN_UNIT_WORDS[(read.unit, read.scale)]}, the table's unit"
+            + (" (cdn_data converts millions to dollars).\n" if read.scale == 6 else ".\n")
+            + "Written by tools/bake_archives.py --only statcan (ratesplot.bake), read by ratesplot.baked;\n"
             "not edited by hand."
         )
 
