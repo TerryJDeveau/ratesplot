@@ -273,6 +273,13 @@ CASES: list[list[str]] = [
     ["--constant"], ["--con"], ["--cons"], ["--CON"], ["--co"], ["--no-constant"], ["--no-con"], ["--constant:1"],
     ["--us:constant"], ["--con", "-p"], ["--con", "-r"], ["-r", "--con"], ["--con", "--no-gdp", "--no-debt", "--no-interest"],
     ["--con", "--master:usd"], ["--constantx"],
+    # Batch 13.4: --cpi, at least "cp" ("--c" is Canada); --sea, at least "sea" ("--sa" is --save, "--se" too
+    # short); flags, so no value and no nation's own; not both; beside the amounts or alone; --reg not idle
+    # with the index alone on the right axis; the same under -r and -p.
+    ["--cpi"], ["--cp"], ["--CPI"], ["--no-cpi"], ["--cpi:1"], ["--us:cpi"], ["--cpix"],
+    ["--sea"], ["--seasonally-adjusted"], ["--seasonal"], ["--se"], ["--sa"], ["--no-sea"], ["--sea:1"],
+    ["--cpi", "--sea"], ["--sea", "--no-cpi"], ["--sea", "--na:gb"], ["--cpi", "--yield"],
+    ["--cpi", "--reg", "--no-gdp", "--no-debt", "--no-interest"], ["--cpi", "-r"], ["--sea", "-p", "--con"],
 ]
 
 

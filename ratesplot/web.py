@@ -255,6 +255,7 @@ from .options import (  # noqa: E402
     command_line_tokens,
     config_from_choices,
     excluded_measures,
+    excluded_price_index,
     field_default,
     help_epilog,
     margin_options,
@@ -1354,6 +1355,13 @@ def _measure_changed(name: str) -> None:
         st.session_state[_VALUE + bound] = ""
 
 
+def _price_index_changed(name: str) -> None:
+    """The price index unadjusted or seasonally adjusted, not both (``excluded_price_index``, batch 13.4)."""
+    if st.session_state[_FLAG + name]:
+        for other in excluded_price_index(name):
+            st.session_state[_FLAG + other] = False
+
+
 def _curve_changed(_name: str) -> None:
     """A curve ticked or unticked can give -r its effect or take it away: clear Top and Bottom in the other unit."""
     for bound in bounds_in_other_units(*_snapshot()):
@@ -1575,7 +1583,7 @@ def _now(key: str, blank: object = False) -> object:
 
 
 def _flag_control(where, option: Option) -> None:
-    callbacks = {"country": _country_changed, "units": _measure_changed, "curves": _curve_changed}
+    callbacks = {"country": _country_changed, "units": _measure_changed, "curves": _curve_changed, "prices": _price_index_changed}
     callback = callbacks.get(option.group)
     where.checkbox(
         option.label,

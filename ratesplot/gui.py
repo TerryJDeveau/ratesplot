@@ -231,6 +231,7 @@ from .options import (
     command_line_tokens,
     config_from_choices,
     excluded_measures,
+    excluded_price_index,
     margin_options,
     nation_choice,
     options_in,
@@ -1951,6 +1952,11 @@ class RatesPlotApp:
                 self._ticked_nation = key
             elif self._ticked_nation == key:
                 self._ticked_nation = None
+        # The price index unadjusted or seasonally adjusted, not both (batch 13.4).
+        if name in self.flag_vars and self.flag_vars[name].get():
+            for other in excluded_price_index(name):
+                if other in self.flag_vars:
+                    self.flag_vars[other].set(False)
         units = [option.name for option in options_in("units") if option.name in self.flag_vars]
         if name in units:
             # % of GDP alone; per capita and constant prices together or

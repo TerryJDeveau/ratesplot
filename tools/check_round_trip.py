@@ -96,6 +96,9 @@ VALUES = (
     # Constant prices (batch 13.2): alone, with -p, with the master currency and a limit, greyed with no
     # right-axis curve, and its "no" form.
     "--constant", "--con -p", "--con --master:usd --top:USD20t", "--con --no-gdp --no-debt --no-interest", "--no-con",
+    # The price index (batch 13.4): unadjusted and adjusted, beside the amounts or alone, with --reg, and the
+    # "no" forms.
+    "--cpi", "--sea", "--cpi --yield --reg", "--sea --no-gdp --no-debt --no-interest -p", "--no-cpi --no-sea",
 )
 
 

@@ -36,7 +36,15 @@ from matplotlib.legend_handler import HandlerBase
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 
-from .axes import apply_axes_formatting, format_currency, format_inflation, format_percent, format_spread, format_yield
+from .axes import (
+    apply_axes_formatting,
+    format_currency,
+    format_index,
+    format_inflation,
+    format_percent,
+    format_spread,
+    format_yield,
+)
 from .baked import chart_ending
 from .cdn_data import (
     align_cdn_macro,
@@ -61,6 +69,13 @@ from .config import (
     MORTGAGE_LEGEND_ORDER,
     NATIONS,
     POLICY_BAND_ALPHA,
+    PRICE_INDEX_ADJUSTED_LABEL,
+    PRICE_INDEX_ADJUSTED_TITLE,
+    PRICE_INDEX_AXIS_LABEL,
+    PRICE_INDEX_BASES,
+    PRICE_INDEX_LABEL,
+    PRICE_INDEX_STYLE,
+    PRICE_INDEX_TITLE,
     PROJECTION_ALPHA,
     PROJECTION_KEY_COLOR,
     PROJECTION_LABEL,
@@ -81,7 +96,7 @@ from .config import (
 )
 from .console import this_thread_output_to
 from .endlabels import ValueFormatter
-from .export import MACRO_AXIS, YIELD_AXIS, mark_amounts_currency, mark_price_base, mark_series
+from .export import INDEX_AXIS, MACRO_AXIS, YIELD_AXIS, mark_amounts_currency, mark_price_base, mark_series
 from .frames import filter_to_date_range
 from .fx import Rate, rate
 from .hover import attach as attach_hover
@@ -102,7 +117,7 @@ from .latest import (
 )
 from .legend import finish_legend_and_title
 from .measures import PRICE_BASE_ATTR, express
-from .prices import consumer_prices
+from .prices import SEASONALLY_ADJUSTED_NATIONS, consumer_prices
 from .rates import (
     INFLATION_KEY,
     RateCurve,
@@ -205,8 +220,12 @@ def add_macro_line(
     style: dict,
     value_format: ValueFormatter,
     projected_from: pd.Timestamp | None = None,
+    axis: str = MACRO_AXIS,
 ) -> Line2D | None:
     """Plot one macro series if it is enabled and has data; return the (legend) line or ``None``.
+
+    ``axis``: the axis Export chart names its unit by, the amounts' unless
+    given (the consumer price index's, ``INDEX_AXIS``, batch 13.4).
 
     With ``projected_from`` (--projections, ``latest.project_to_now``) the rows after
     that date are a projection, not data: they are drawn as a straight,
@@ -221,7 +240,7 @@ def add_macro_line(
     if projected_from is None:
         (line,) = ax.plot(data[DATE_COLUMN], data[column], label=label, **style)
         mark_reading(line, value_format)
-        return mark_series(line, label, MACRO_AXIS)
+        return mark_series(line, label, axis)
 
     observed = data.loc[data[DATE_COLUMN] <= projected_from]
     ahead = data.loc[data[DATE_COLUMN] >= projected_from]
@@ -679,9 +698,35 @@ def draw_country(
             macro_keys_drawn.append(style_key)
             macro_columns_drawn.append(column)
 
+    # The consumer price index (--cpi, --sea; batch 13.4): the right axis's
+    # when no curve of it is chosen, else on an axis of its own outside it;
+    # drawn the same either way, and under every measure (never divided).
+    index_values = macro.attrs.get(PRICE_INDEX_ATTR)
+    index_line: Line2D | None = None
+    index_axis: tuple[Axes, str] | None = None
+    if index_values is not None:
+        index_frame = pd.DataFrame({DATE_COLUMN: index_values.index, PRICE_INDEX_COLUMN: index_values.to_numpy()})
+        ax_index = ax_yield.twinx() if config.has_macro_series else ax_macro
+        index_line = add_macro_line(
+            ax_index,
+            filter_to_date_range(index_frame, DATE_COLUMN, config),
+            enabled=True,
+            column=PRICE_INDEX_COLUMN,
+            label=PRICE_INDEX_ADJUSTED_LABEL if config.price_index_adjusted else PRICE_INDEX_LABEL,
+            style=PRICE_INDEX_STYLE,
+            value_format=format_index,
+            axis=INDEX_AXIS,
+        )
+        if index_line is not None:
+            index_axis = (ax_index, PRICE_INDEX_AXIS_LABEL.format(base=PRICE_INDEX_BASES[metadata.key]))
+        elif ax_index is not ax_macro:
+            ax_index.remove()  # nothing of the index in the window
+
     # The left axis says "Spread" when one is drawn.
     left_label = SPREAD_AXIS_LABEL if any(curve.spread for _line, curve in rate_lines) else None
-    apply_axes_formatting(ax_yield, ax_macro, config, metadata, left_label)
+    apply_axes_formatting(ax_yield, ax_macro, config, metadata, left_label, index_axis)
+    if index_axis is not None and index_axis[0] is not ax_macro:
+        _place_outside(index_axis[0], ax_macro, config)
     warn_macro_limits_coverage(macro_in_range, macro_columns_drawn, config)
     # --reg: each right-axis curve fitted by straight pieces on its log axis,
     # drawn now that the axis limits (which set the tolerance) are known; their
@@ -689,6 +734,9 @@ def draw_country(
     rate_labels: list[RateLabel] = []
     if config.regression:
         rate_labels = add_regression_segments(ax_macro, macro, zip(macro_lines, macro_columns_drawn), projected, config)
+        if index_axis is not None:
+            # On its own axis, whose height gives its tolerance (batch 13.4).
+            rate_labels += add_regression_segments(index_axis[0], index_frame, [(index_line, PRICE_INDEX_COLUMN)], {}, config)
     # -l: every drawn curve gets its last value at its end, written as its
     # axis writes values: yields in percent, right-axis curves as the tick
     # labels there (dollars, or percent of GDP under -r); a projected value
@@ -700,10 +748,10 @@ def draw_country(
         ] + [
             (line, (lambda value, fmt=macro_format: PROJECTION_LABEL_PREFIX + fmt(value)) if column in projected else macro_format)
             for line, column in zip(macro_lines, macro_columns_drawn)
-        ]
+        ] + ([(index_line, format_index)] if index_line is not None else [])
     # One legend entry says what the faint stretches are. Made after the line
     # widths are scaled (apply_axes_formatting), so it matches them.
-    legend_macro = list(macro_lines)
+    legend_macro = list(macro_lines) + ([index_line] if index_line is not None else [])
     if any(column in projected for column in macro_columns_drawn):
         width = max(style["linewidth"] for style in MACRO_PLOT_STYLES.values()) * config.line_scale
         steered = set(macro.attrs.get(STEERED_ATTR, [])) & set(macro_columns_drawn)
@@ -723,6 +771,7 @@ def draw_country(
         macro_keys_drawn=macro_keys_drawn,
         config=config,
         rate_titles=[curve.title for _line, curve in sorted(rate_lines, key=lambda item: not item[1].spread)],
+        index_title="" if index_line is None else PRICE_INDEX_ADJUSTED_TITLE if config.price_index_adjusted else PRICE_INDEX_TITLE,
     )
     title = metadata.title_for(**title_parts)
     short_title = metadata.title_for(**title_parts, short=True)
@@ -734,13 +783,28 @@ def draw_country(
         [yield_axis_legend(yield_lines, rate_lines), legend_macro],
         title,
         config,
-        drawn_date_span((ax_yield, ax_macro)),
+        drawn_date_span((ax_yield, ax_macro) + ((index_axis[0],) if index_axis is not None else ())),
         end_labels,
         quote_time if yield_lines else None,
         rate_labels,
         nation_by_key(metadata.key).market_timezone,
         short_title,
     )
+
+
+def _place_outside(ax_index: Axes, ax_macro: Axes, config: PlotConfig) -> None:
+    """Set the price index's axis outward, past the right axis's tick labels and label (batch 13.4).
+
+    By the width those take as drawn, so the two scales never overlap,
+    whatever the width of the amounts' labels, plus ``INDEX_AXIS_GAP_PT``.
+    The axis's own extent places its label first; a label's extent read
+    alone is where it was before (measured 2026-11-03: over the ticks).
+    """
+    figure = ax_macro.figure
+    renderer = figure.canvas.get_renderer()
+    right = ax_macro.yaxis.get_tightbbox(renderer).x1
+    width_pt = (right - ax_macro.get_window_extent(renderer).x1) * 72.0 / figure.dpi
+    ax_index.spines["right"].set_position(("outward", max(width_pt, 0.0) + INDEX_AXIS_GAP_PT * config.font_scale))
 
 
 def plot_country(
@@ -799,6 +863,35 @@ def _with_chart_end(
     return prepared
 
 
+# The consumer price index drawn (--cpi, --sea; batch 13.4), carried from a
+# nation's preparation to its drawing in the macro frame's attrs, as the
+# projections are: monthly, each month dated by its first day; None when not
+# drawn. Its column in the frame the drawing makes of it.
+PRICE_INDEX_ATTR = "price_index"
+PRICE_INDEX_COLUMN = "Consumer price index"
+# The gap between the right axis's labels and the index's own axis outside
+# them (batch 13.4), in points on the default canvas.
+INDEX_AXIS_GAP_PT = 6.0
+
+
+def _price_index(key: str, config: PlotConfig) -> pd.Series | None:
+    """Nation ``key``'s consumer price index for --cpi or --sea (batch 13.4; ``prices.consumer_prices``), or None without them.
+
+    None too, with a note, for --sea where no seasonally adjusted index is
+    published (the UK: the ONS publishes none). The coverage warning names
+    it where the chart begins before it.
+    """
+    if not config.draws_price_index:
+        return None
+    if config.price_index_adjusted and key not in SEASONALLY_ADJUSTED_NATIONS:
+        print("  Note: the ONS publishes no seasonally adjusted consumer price index, so the UK's chart draws none "
+              "(--cpi draws its unadjusted index).")
+        return None
+    index = consumer_prices(key, adjusted=config.price_index_adjusted)
+    warn_series_coverage(config.start, {"Consumer price index (--cpi)": index.index[0]})
+    return index
+
+
 def _consumer_prices(key: str, config: PlotConfig) -> pd.Series | None:
     """Nation ``key``'s consumer price index for --constant (batch 13.2; ``prices.consumer_prices``), or None without it.
 
@@ -847,6 +940,7 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
     expressed = express(macro, config, CDN, population, _consumer_prices("cdn", config))
     expressed.attrs[PROJECTION_ATTR] = projected
+    expressed.attrs[PRICE_INDEX_ATTR] = _price_index("cdn", config)
     expressed.attrs[STEERED_ATTR] = steered
     return yields, expressed, rates
 
@@ -879,6 +973,7 @@ def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
     expressed = express(macro, config, US, population, _consumer_prices("us", config))
     expressed.attrs[PROJECTION_ATTR] = projected
+    expressed.attrs[PRICE_INDEX_ATTR] = _price_index("us", config)
     return yields, expressed, rates
 
 
@@ -917,6 +1012,7 @@ def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
     expressed = express(macro, config, UK, population, _consumer_prices("uk", config))
     expressed.attrs[PROJECTION_ATTR] = projected
+    expressed.attrs[PRICE_INDEX_ATTR] = _price_index("uk", config)
     return yields, expressed, rates
 
 
@@ -951,6 +1047,7 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
     expressed = express(macro, config, DE, population, _consumer_prices("de", config))
     expressed.attrs[PROJECTION_ATTR] = projected
+    expressed.attrs[PRICE_INDEX_ATTR] = _price_index("de", config)
     return yields, expressed, rates
 
 

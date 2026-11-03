@@ -631,6 +631,18 @@ def check_single_measure(values: Mapping[str, object]) -> None:
         raise ValueError("-r (% of GDP) and --constant cannot be combined: a share of GDP is free of inflation already")
 
 
+def check_single_price_index(values: Mapping[str, object]) -> None:
+    """Reject --cpi with --sea: the index is drawn unadjusted or seasonally adjusted, not both (batch 13.4)."""
+    if values["price_index"] and values["price_index_adjusted"]:
+        raise ValueError("--cpi and --sea cannot be combined: the index is drawn unadjusted or seasonally adjusted; choose one")
+
+
+def excluded_price_index(name: str) -> tuple[str, ...]:
+    """The other of the price index's pair of tick boxes, which ticking ``name`` unticks in the window and on the page (batch 13.4)."""
+    pair = ("cpi", "seasonally-adjusted")
+    return tuple(other for other in pair if other != name) if name in pair else ()
+
+
 def excluded_measures(name: str) -> tuple[str, ...]:
     """The measures (the "units" group's tick boxes) that ticking ``name`` unticks in the window and on the page.
 
@@ -782,6 +794,10 @@ GROUPS: dict[str, str] = {
         'Rates on the yield axis (policy, inflation, mortgages, spreads; each only\n'
         'when asked for, hiding nothing; at least "po", "inf", "mo", "sp"):'
     ),
+    "prices": (
+        "The consumer price index on an axis of its own (only when asked for, hiding\n"
+        'nothing; at least "cp", "sea"):'
+    ),
     "units": "Measure of debt, GDP, and interest:",
     "labels": "Line labels and regression segments (--reg needs at least \"reg\"):",
     "dates": "Date window (YYYY, YYYY-MM or YYYY-MM-DD; '/' also accepted):",
@@ -846,6 +862,28 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "interest", Kind.TOGGLE, ("include_interest",), "curves", "--interest / --no-interest", "TTM interest outlays",
         names=("interest",), label="TTM interest outlays", topic="interest",
+    ),
+    # Batch 13.4 (Terry asked 2026-10-13 for the consumer price index itself
+    # on the right axis, unadjusted and seasonally adjusted, fitted by --reg):
+    # each nation's index, on the right axis when debt, GDP and interest are
+    # not drawn, else on an axis of its own outside it; one or the other
+    # (``check_single_price_index``, ``excluded_price_index``). Flags, not
+    # curves under the curve rule: each adds the index and hides nothing, as
+    # --inflation does. At least "cp" ("--c" is Canada); "sea" ("--sa" is
+    # --save, "--s:" the start).
+    Option(
+        "cpi", Kind.FLAG, ("price_index",), "prices", "--cpi / --no-cpi",
+        "each country's consumer price index, not\nseasonally adjusted, on a log axis of its\n"
+        "own in index points (outside the right\naxis when debt, GDP or interest is\n"
+        "drawn): the U.S. from 1913, Canada and\nthe UK from 1914, Germany from 1991",
+        names=("cpi",), shortest=2, label="Price index (CPI)", panel="curves", topic="price-index",
+    ),
+    Option(
+        "seasonally-adjusted", Kind.FLAG, ("price_index_adjusted",), "prices", "--sea / --no-sea",
+        "the index seasonally adjusted instead: the\nU.S. from 1947, Canada from 1992, Germany\n"
+        "from 1991 (the ONS publishes none for the\nUK); not with --cpi",
+        names=("seasonally-adjusted",), shortest=3, label="Price index, seasonally adjusted", panel="curves",
+        topic="price-index",
     ),
     # Curve sub-options: debt and interest by level of government ("--d:" is
     # debt; the size needs at least "dim"). They set one field; see
@@ -1572,12 +1610,16 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
         values.update({nation.show_field: nation.shown_by_default for nation in NATIONS})
 
     check_single_measure(values)
+    check_single_price_index(values)
     # -r divides debt and interest by GDP. With neither drawn it has nothing
     # to act on, and GDP, if chosen, is drawn in dollars, as without -r
     # (before 2026-10-13 -r hid it, leaving the right axis empty). The window
     # and the page grey -r out then (``idle_options``), and a greyed control
     # changes nothing.
-    idle = idle_options(values["include_debt"], values["include_gdp"], values["include_interest"])
+    idle = idle_options(
+        values["include_debt"], values["include_gdp"], values["include_interest"],
+        price_index=values["price_index"] or values["price_index_adjusted"],
+    )
     if values["relative"] and "relative" in idle:
         values["relative"] = False
     # Constant prices with no right-axis curve change nothing and are greyed
@@ -1589,7 +1631,7 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     return PlotConfig(**values)
 
 
-def idle_options(debt: bool, gdp: bool, interest: bool) -> frozenset[str]:
+def idle_options(debt: bool, gdp: bool, interest: bool, *, price_index: bool = False) -> frozenset[str]:
     """Return the options that change nothing on any chart while these right-axis curves are chosen.
 
     Terry, 2026-10-08: grey out "Regression segments", "By level", "% of GDP"
@@ -1607,18 +1649,23 @@ def idle_options(debt: bool, gdp: bool, interest: bool) -> frozenset[str]:
 
     Each was checked on 2026-10-13 to draw a byte-identical chart when idle,
     -r excepted: it hid GDP, which ``config_from_choices`` now stops.
+
+    The consumer price index (``price_index``, batch 13.4) is fitted by
+    --reg, so the regression segments are not idle while it is drawn; the
+    measures, the limits and the projections act on the amounts alone.
     """
-    return frozenset(idle_option_reasons(debt, gdp, interest))
+    return frozenset(idle_option_reasons(debt, gdp, interest, price_index=price_index))
 
 
-def idle_option_reasons(debt: bool, gdp: bool, interest: bool) -> dict[str, str]:
+def idle_option_reasons(debt: bool, gdp: bool, interest: bool, *, price_index: bool = False) -> dict[str, str]:
     """Return ``idle_options``' names, each with why it is idle, a clause to follow "Greyed because" (batch 29.1)."""
     reasons: dict[str, str] = {}
     if not (debt or interest):
         reasons |= dict.fromkeys(("relative", "debt-parts", "interest-parts"), "it acts on debt and interest, and neither is ticked")
     if not (debt or gdp or interest):
+        amounts = ("per-capita", "constant", "top", "bottom", "projections")
         reasons |= dict.fromkeys(
-            ("per-capita", "constant", "regression", "regression-tolerance", "top", "bottom", "projections"),
+            amounts if price_index else (*amounts, "regression", "regression-tolerance"),
             "it acts on the right axis's curves, and none of debt, GDP and interest is ticked",
         )
     return reasons

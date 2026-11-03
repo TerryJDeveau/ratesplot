@@ -4,7 +4,7 @@ The U.S. chart is drawn while its box is ticked, as it is at the start, beside C
 
 ## What the chart draws
 
-At the start it draws GDP, aggregate public debt and interest on the right axis, and the 3-month, 2-, 5-, 10- and 30-year bond yields on the left; the policy rate, inflation, mortgage rates and yield spreads when they are ticked.
+At the start it draws GDP, aggregate public debt and interest on the right axis, and the 3-month, 2-, 5-, 10- and 30-year bond yields on the left; the policy rate, inflation, mortgage rates, yield spreads and the price index when they are ticked.
 
 - [TTM nominal GDP](?help=gdp), from 1947: the Bureau of Economic Analysis' GDP, read from FRED.
 - [Aggregate public debt](?help=debt), from 1966: the federal government's total public debt, from the Treasury, plus the state and local governments' debt securities and loans, from the Federal Reserve's Financial Accounts. What one government owes another isn't netted out, as it is in the other three nations' totals.
@@ -17,6 +17,7 @@ At the start it draws GDP, aggregate public debt and interest on the right axis,
 - [Mortgage rates](?help=mortgages): Freddie Mac's survey, the 30-year fixed rate from 1971-04-02 and the 15-year from 1991-08-30; and the bank prime loan rate from 1955-08-04, drawn plus a margin with Prime margin. The 30-year is ticked at the start.
 - [Per capita](?help=per-capita): divided by the Bureau of Economic Analysis' population, quarterly from 1947.
 - [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the CPI for all urban consumers from 1913-01.
+- [Price index (CPI)](?help=price-index): the CPI for all urban consumers from 1913-01, 1982–84 = 100, from FRED; seasonally adjusted from 1947-01.
 - [Latest values](?help=latest-values): for the days FRED doesn't have yet, the Treasury's own daily yields, and its daily Debt to the Penny for federal debt; then the day's yields quoted by CNBC's feed, their time given in New York time.
 
 ## Its own controls
