@@ -1,6 +1,6 @@
 # Statistics Canada, table 34100145 (https://www150.statcan.gc.ca/n1/tbl/csv/34100145-eng.zip), vector v733833: Canada Mortgage and Housing Corporation, conventional mortgage lending rate, 5-year term; monthly: Canada.
 # Every value the table gives, as ratesplot.cdn_data reads it: dated by each period's first day, as Statistics Canada
-# dates it, in percent, the table's unit (cdn_data converts millions to dollars).
+# dates it, in percent, the table's unit.
 # Written by tools/bake_archives.py --only statcan (ratesplot.bake), read by ratesplot.baked;
 # not edited by hand.
 date,value

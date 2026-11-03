@@ -112,6 +112,8 @@ from .config import (
     MILLION,
     ONS_TIMESERIES_URL,
     POPULATION_COLUMN,
+    STATCAN_CDN_CPI_TABLE,
+    STATCAN_CDN_CPI_VECTOR,
     STATCAN_CDN_DEBT_TABLE,
     STATCAN_CDN_DEBT_VECTOR,
     STATCAN_CDN_GDP_TABLE,
@@ -130,6 +132,7 @@ from .config import (
 from .de_data import (
     BUNDESBANK_BAKED_SOURCE,
     BUNDESBANK_TERM_STRUCTURE_FLOW,
+    DE_CPI_SERIES,
     DE_YIELD_SERIES,
     ECB_ANNUAL_DEBT,
     ECB_BAKED_SOURCE,
@@ -185,6 +188,7 @@ from .us_data import (
     US_GDP_SERIES_ID,
     US_INTEREST_SERIES_ID,
     US_LOCAL_INTEREST_SERIES_ID,
+    US_CPI_SERIES_ID,
     US_POPULATION_SERIES_ID,
     US_STATE_INTEREST_SERIES_ID,
     US_STATE_LOCAL_DEBT_SERIES_ID,
@@ -1364,6 +1368,17 @@ _UK_MILLENNIUM = {
         "M12", 17, 135, "month", "1939-09-01", 931, (0.0, 25.0),
         "M12 col 17: spliced variable mortgage rate, monthly, percent",
     ),
+    # The consumer price index before the ONS's 12-month rate begins (batch
+    # 13.1, --inflation; Terry chose the spliced index from 1914, 2026-11-03).
+    # Measured that day: every month 1914-07 to 2017-03; equal to column 18,
+    # the ONS's CPI estimates, in every month from 1949-01, its cost-of-living
+    # index before; its 12-month rise within 0.28 of the ONS's D7G7 in each of
+    # the 339 months both have (1989-01 to 2017-03).
+    "cpi": _MillenniumColumn(
+        "M6", 19, 1503, "month", "1914-07-01", 1233, (1.0, 200.0),
+        "M6 col 19: spliced monthly consumer price index, 2015=100 (the ONS's CPI from 1949, "
+        "the cost-of-living index before)",
+    ),
     # The exchange rates ``fx`` reads before FRED's begin (batch 18.4;
     # measured 2026-10-23: M15 every month 1791-01 to 2017-01, within 0.3 % of
     # FRED's DEXUSUK averaged by month over 1971-2017, median 0.002 %; M14's
@@ -1545,6 +1560,7 @@ def bake_uk_archives(source_path: Path | None = None, workbook_path: Path | None
          frame(columns["bank_rate"])),
         ("EMBEDDED_UK_MORTGAGE_HISTORY", f"Dated by the first day of the month.\n{specs['mortgage'].header}",
          frame(columns["mortgage"])),
+        ("EMBEDDED_UK_CPI_HISTORY", f"Dated by the first day of the month.\n{specs['cpi'].header}", frame(columns["cpi"])),
         ("EMBEDDED_UK_USD_PER_GBP_HISTORY", f"Dated by the first day of the month.\n{specs['usd_per_gbp'].header}",
          frame(columns["usd_per_gbp"])),
         ("EMBEDDED_UK_CAD_PER_GBP_HISTORY", f"Dated by the first day of the month averaged.\n{specs['cad_per_gbp'].header}",
@@ -1984,6 +2000,7 @@ _FRED_SERIES_TITLES = {
     "W856RC1A027NBEA": "Local government current expenditures: Interest payments; annual",
     "GDP": "Gross Domestic Product; quarterly",
     "B230RC0Q173SBEA": "Population; quarterly",
+    "CPIAUCNS": "Consumer Price Index for All Urban Consumers: All Items in U.S. City Average; monthly, not seasonally adjusted",
     "FEDFUNDS": "Federal Funds Effective Rate; monthly",
     "DFEDTAR": "Federal Funds Target Rate (DISCONTINUED); daily, 7-day",
     "DFEDTARL": "Federal Funds Target Range - Lower Limit; daily, 7-day",
@@ -2002,11 +2019,11 @@ _FRED_SERIES_TITLES = {
 
 
 def fred_baked_codes() -> list[str]:
-    """Every FRED series the program reads: the yields, debt, interest, GDP and population (``us_data``), the policy, mortgage and prime rates (``rates``), Canada's GDP (``cdn_data``, when Statistics Canada fails), the exchange rates (``fx``, batch 18.3)."""
+    """Every FRED series the program reads: the yields, debt, interest, GDP, population and consumer prices (``us_data``), the policy, mortgage and prime rates (``rates``), Canada's GDP (``cdn_data``, when Statistics Canada fails), the exchange rates (``fx``, batch 18.3)."""
     return sorted({
         *US_YIELD_SERIES.values(), US_DEBT_SERIES_ID, US_STATE_LOCAL_DEBT_SERIES_ID, US_INTEREST_SERIES_ID,
         US_FEDERAL_INTEREST_SERIES_ID, US_STATE_LOCAL_INTEREST_SERIES_ID, US_STATE_INTEREST_SERIES_ID,
-        US_LOCAL_INTEREST_SERIES_ID, US_GDP_SERIES_ID, US_POPULATION_SERIES_ID,
+        US_LOCAL_INTEREST_SERIES_ID, US_GDP_SERIES_ID, US_POPULATION_SERIES_ID, US_CPI_SERIES_ID,
         US_MONTHLY_EFFECTIVE_SERIES, US_TARGET_SERIES, *US_TARGET_RANGE_SERIES, US_MARKET_SERIES, *US_MORTGAGE_SERIES.values(),
         FRED_CDN_GDP_SERIES, *FX_SERIES,
     })
@@ -2211,6 +2228,7 @@ _ONS_SERIES_TITLES = {
     "YBHA": "Gross Domestic Product at market prices: Current price: Seasonally adjusted £m; dataset UKEA; quarterly",
     "EBAQ": "UK resident population: mid-year estimates (Qtly data interpolated); dataset UKEA; quarterly "
             "(dated here by the quarter's last day, as every period is; uk_data dates it by the quarter's middle)",
+    "D7G7": "CPI ANNUAL RATE 00: ALL ITEMS 2015=100; dataset MM23; monthly",
 }
 # The unit of each ONS series as its description gives it (``uk_data.ONS_SERIES``), in words.
 _ONS_UNIT_WORDS = {
@@ -2218,6 +2236,7 @@ _ONS_UNIT_WORDS = {
     "bn": "billions of pounds",
     "": "millions of pounds (its description gives no unit)",
     ",000": "thousands of persons",
+    "%": "percent",
 }
 _ONS_FREQUENCY_WORDS = {"months": "monthly", "quarters": "quarterly"}
 
@@ -2247,7 +2266,8 @@ def bake_ons_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
         return (
             f"Office for National Statistics, time series {code} ({ONS_TIMESERIES_URL.format(path=path)}): {title}.\n"
             f"Every {_ONS_FREQUENCY_WORDS[ONS_SERIES_READ[code]]} value the ONS gives, as ratesplot.uk_data reads it: dated by each period's last day,\n"
-            f"in {_ONS_UNIT_WORDS[unit]}, the series' own unit (uk_data converts it to pounds or persons).\n"
+            f"in {_ONS_UNIT_WORDS[unit]}, the series' own unit"
+            + ("." if unit == "%" else " (uk_data converts it to pounds or persons).") + "\n"
             "Written by tools/bake_archives.py --only ons (ratesplot.bake), read by ratesplot.baked;\n"
             "not edited by hand."
         )
@@ -2284,15 +2304,20 @@ _BBK_SERIES_TITLES = {
     _bbk_code("20-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 20.0 years / daily data{_DAILY}",
     _bbk_code("30-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 30.0 years / monthly data{_END_OF_MONTH}",
     _bbk_code("30-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 30.0 years / daily data{_DAILY}",
+    ".".join(DE_CPI_SERIES): "Consumer price index / Germany / Unadjusted figure Overall index; 2020 = 100; monthly",
 }
+# The unit of each Bundesbank series baked not in percent, in words (the
+# consumer price index, batch 13.1).
+_BBK_UNIT_WORDS = {".".join(DE_CPI_SERIES): "index points, 2020 = 100"}
 
 
 def bbk_baked_series() -> dict[str, tuple[str, str]]:
-    """Every Bundesbank series the program reads, by its file's name (``FLOW.KEY``): its flow and key. Each term's end-of-month and daily term structure (``de_data``)."""
-    return dict(sorted(
-        (_bbk_code(column, frequency), (BUNDESBANK_TERM_STRUCTURE_FLOW, term_structure_key(column, frequency)))
-        for column in DE_YIELD_SERIES for frequency in TERM_STRUCTURE_FREQUENCIES
-    ))
+    """Every Bundesbank series the program reads, by its file's name (``FLOW.KEY``): its flow and key. Each term's end-of-month and daily term structure, and the consumer price index (``de_data``)."""
+    return dict(sorted([
+        *((_bbk_code(column, frequency), (BUNDESBANK_TERM_STRUCTURE_FLOW, term_structure_key(column, frequency)))
+          for column in DE_YIELD_SERIES for frequency in TERM_STRUCTURE_FREQUENCIES),
+        (".".join(DE_CPI_SERIES), DE_CPI_SERIES),
+    ]))
 
 
 def bbk_baked_codes() -> list[str]:
@@ -2321,7 +2346,7 @@ def bake_bbk_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
         flow, key = series[code]
         return (
             f"Deutsche Bundesbank, flow {flow}, series {key}: {title}.\n"
-            "Every value the Bundesbank gives, as ratesplot.de_data reads it: in percent, a month dated by its last day,\n"
+            f"Every value the Bundesbank gives, as ratesplot.de_data reads it: in {_BBK_UNIT_WORDS.get(code, 'percent')}, a month dated by its last day,\n"
             "a date without a value left out.\n"
             "Written by tools/bake_archives.py --only bbk (ratesplot.bake), read by ratesplot.baked;\n"
             "not edited by hand."
@@ -2340,6 +2365,7 @@ _STATCAN_TABLE_TITLES = {
     STATCAN_CDN_INTEREST_TABLE: "Statement of government operations and balance sheet, government finance statistics, quarterly",
     STATCAN_CDN_POPULATION_TABLE: "Population estimates, quarterly",
     CDN_MORTGAGE_HISTORY_TABLE: "Canada Mortgage and Housing Corporation, conventional mortgage lending rate, 5-year term; monthly",
+    STATCAN_CDN_CPI_TABLE: "Consumer Price Index, monthly, not seasonally adjusted",
 }
 # Each vector read: Statistics Canada's own series title (WDS
 # getSeriesInfoFromVector, read 2026-10-22); the GFS table's are
@@ -2350,14 +2376,18 @@ _STATCAN_SERIES_TITLES = {
     STATCAN_CDN_GDP_VECTOR: "Canada;Current prices;Seasonally adjusted at annual rates;Gross domestic product at market prices",
     STATCAN_CDN_POPULATION_VECTOR: "Canada",
     CDN_MORTGAGE_HISTORY_VECTOR: "Canada",
+    STATCAN_CDN_CPI_VECTOR: "Canada;All-items",
     **{vector: f"Canada;{sector};{item}" for (sector, item), vector in GFS_VECTORS.items()},
 }
 # A table's unit and scale (cdn_data.StatcanRead), in words.
-_STATCAN_UNIT_WORDS = {("Dollars", 6): "millions of dollars", ("Persons", 0): "persons", ("Percent", 0): "percent"}
+_STATCAN_UNIT_WORDS = {
+    ("Dollars", 6): "millions of dollars", ("Persons", 0): "persons", ("Percent", 0): "percent",
+    ("2002=100", 0): "index points, 2002 = 100",
+}
 
 
 def statcan_baked_series() -> dict[str, str]:
-    """Every Statistics Canada vector the program reads (``cdn_data.STATCAN_SERIES_READ``), by its file's name (the vector): its table. Debt, GDP, interest, the levels and the population (``cdn_data``); the CMHC mortgage rate (``rates``)."""
+    """Every Statistics Canada vector the program reads (``cdn_data.STATCAN_SERIES_READ``), by its file's name (the vector): its table. Debt, GDP, interest, the levels, the population and the consumer price index (``cdn_data``); the CMHC mortgage rate (``rates``)."""
     return dict(sorted((vector, table) for table, read in STATCAN_SERIES_READ.items() for vector in read.vectors))
 
 
@@ -2399,8 +2429,9 @@ def bake_statcan_history(folder: Path | None = None, *, accept_withdrawn: bool =
         return (
             f"Statistics Canada, table {table} ({STATCAN_TABLE_URL.format(table_id=table)}), vector {code}: {title}.\n"
             "Every value the table gives, as ratesplot.cdn_data reads it: dated by each period's first day, as Statistics Canada\n"
-            f"dates it, in {_STATCAN_UNIT_WORDS[(read.unit, read.scale)]}, the table's unit (cdn_data converts millions to dollars).\n"
-            "Written by tools/bake_archives.py --only statcan (ratesplot.bake), read by ratesplot.baked;\n"
+            f"dates it, in {_STATCAN_UNIT_WORDS[(read.unit, read.scale)]}, the table's unit"
+            + (" (cdn_data converts millions to dollars).\n" if read.scale == 6 else ".\n")
+            + "Written by tools/bake_archives.py --only statcan (ratesplot.bake), read by ratesplot.baked;\n"
             "not edited by hand."
         )
 

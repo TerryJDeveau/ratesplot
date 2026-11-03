@@ -147,7 +147,9 @@ _FX = {
 }
 
 # Every FRED series ``fred`` answers.
-_FRED_IDS = ("FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", *_GROWTH, *_DAILY_START, *_FX)
+_FRED_IDS = (
+    "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", "CPIAUCNS", *_GROWTH, *_DAILY_START, *_FX,
+)
 
 
 def fred(series_id: str) -> pd.DataFrame:
@@ -166,6 +168,10 @@ def fred(series_id: str) -> pd.DataFrame:
         first, last = ("1982-09-27", "2008-12-15") if series_id == "DFEDTAR" else ("2008-12-16", "2026-09-30")
         dates = pd.date_range(first, last, freq="D")
         values = _quarter_points(_anchors(_SHORT, dates)) + (0.25 if series_id == "DFEDTARU" else 0.0)
+    elif series_id == "CPIAUCNS":
+        # The consumer price index (batch 13.1), monthly from 1913, three decimals as FRED gives it.
+        dates = pd.date_range("1913-01-01", "2026-09-01", freq="MS")
+        values = np.round(_growth(dates, 9.8, 337.0, series_id), 3)
     elif series_id in _GROWTH:
         start, freq, first, last = _GROWTH[series_id]
         end = "2026-07-01" if freq == "QS" else "2025-01-01"
@@ -316,7 +322,7 @@ _STATCAN_GFS_VECTORS = {
 }
 _MILLIONS = {"UOM": "Dollars", "SCALAR_FACTOR": "millions", "SCALAR_ID": 6}
 _UNITS = {"SCALAR_FACTOR": "units", "SCALAR_ID": 0}
-_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145")
+_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145", "18100004")
 
 
 def statcan(table_id: str) -> bytes:
@@ -375,6 +381,15 @@ def statcan(table_id: str) -> bytes:
         frame = pd.DataFrame({
             "REF_DATE": [f"{d:%Y-%m}" for d in months], "GEO": "Canada", "DGUID": "2016A000011124",
             "UOM": "Percent", **_UNITS, "VECTOR": "v733833", "VALUE": values,
+        })
+        return _zip(table_id, frame)
+    if table_id == "18100004":
+        # The consumer price index (batch 13.1), monthly from 1914, 2002 = 100, to a tenth.
+        months = pd.date_range("1914-01-01", "2026-09-01", freq="MS")
+        values = _growth(months, 6.0, 170.0, "cdn_cpi")
+        frame = pd.DataFrame({
+            "REF_DATE": [f"{d:%Y-%m}" for d in months], "GEO": "Canada", "Products and product groups": "All-items",
+            "UOM": "2002=100", **_UNITS, "VECTOR": "v41690973", "VALUE": np.round(values, 1),
         })
         return _zip(table_id, frame)
     raise KeyError(f"no synthetic StatCan table {table_id}")
@@ -438,6 +453,8 @@ _ONS_SERIES = {
     "NUGW": ("m", "1946-01-01", "flow", 11, 372, False),
     "YBHA": ("m", "1955-01-01", "flow", 4_645, 787_197, False),
     "EBAQ": (",000", "1955-01-01", "stock", 50_901, 69_628, False),
+    # The CPI's 12-month rate (batch 13.1): a rate in percent, months only (``ons``).
+    "D7G7": ("%", "1989-01-01", "rate", 2.5, 2.5, True),
 }
 
 
@@ -457,6 +474,16 @@ def iadb(params: tuple) -> bytes:
 def ons(cdid: str) -> bytes:
     """An ONS time series's JSON: its description (with the unit) and lists of months, quarters and years."""
     unit, first, kind, low, high, has_months = _ONS_SERIES[cdid]
+    if kind == "rate":
+        # Months only, to a tenth, wandering around ``low``, as D7G7 is given.
+        months = pd.date_range(first, "2026-09-01", freq="MS")
+        rates = np.round(low + _noise("uk" + cdid, len(months), 0.3), 1)
+        return json.dumps({
+            "description": {"title": f"synthetic {cdid}", "unit": unit, "cdid": cdid},
+            "months": [{"date": f"{d.year} {d:%b}".upper(), "value": f"{v:.1f}", "label": ""} for d, v in zip(months, rates)],
+            "quarters": [],
+            "years": [],
+        }).encode()
     quarters = pd.date_range(first, "2026-04-01", freq="QS")
     values = _growth(quarters, low, high, "uk" + cdid)
 
@@ -496,6 +523,13 @@ def bundesbank(url: str) -> bytes:
     program cuts what it asked for.
     """
     key = re.split(r"/rest/(?:download|data)/", url)[1].replace("/", ".", 1)
+    if key.startswith("BBDP1."):
+        # The consumer price index (batch 13.1), monthly from 1991, 2020 = 100, to a tenth.
+        months = pd.date_range("1991-01-31", "2026-10-31", freq="ME")
+        values = _growth(months, 60.5, 126.4, "de_cpi")
+        lines = [f'"",{key},{key}_FLAGS', '"",synthetic consumer price index,', "unit,2020=100,", "unit multiplier,One,"]
+        lines += [f"{day:%Y-%m},{value:.1f}," for day, value in zip(months, values)]
+        return ("\ufeff" + "\n".join(lines)).encode()
     frequency, term = key.split(".")[1], key.split(".")[9]
     years, first_month, first_day = _BUNDESBANK_TERMS[term]
     if frequency == "M":
@@ -755,6 +789,12 @@ def install_synthetic_bake(folder: Path) -> bool:
                 key = de_data.term_structure_key(column, frequency)
                 answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
                 bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer))
+    # The consumer price index (batch 13.1; a tree before it reads no such file).
+    if hasattr(de_data, "DE_CPI_SERIES"):
+        flow, key = de_data.DE_CPI_SERIES
+        answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
+        units = de_data._BUNDESBANK_UNITS[de_data.DE_CPI_SERIES]
+        bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer, units))
     # Statistics Canada's live tables, each vector read, selected by the program's own labels (a tree before
     # 19.2's Statistics Canada stage has no STATCAN_SERIES_READ, and reads no Statistics Canada file).
     cdn_data = importlib.import_module("ratesplot.cdn_data")

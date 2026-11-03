@@ -767,8 +767,8 @@ GROUPS: dict[str, str] = {
         "``--no-`` forms hide curves from the default set of all four):"
     ),
     "rates": (
-        'Rates on the yield axis (policy, mortgages, spreads; each only when asked\n'
-        'for, hiding nothing; at least "po", "mo", "sp"):'
+        'Rates on the yield axis (policy, inflation, mortgages, spreads; each only\n'
+        'when asked for, hiding nothing; at least "po", "inf", "mo", "sp"):'
     ),
     "units": "Measure of debt, GDP, and interest:",
     "labels": "Line labels and regression segments (--reg needs at least \"reg\"):",
@@ -908,6 +908,16 @@ OPTIONS: tuple[Option, ...] = (
         names=("policy-rates",), shortest=2, parse=parse_policy_terms, turns_on="policy",
         label="Policy rates", format=format_terms, editor="choices", choices=_POLICY_CHOICES,
         topic="policy-rates",
+    ),
+    # Batch 13.1 (Terry asked 2026-10-12 for inflation by country): each
+    # nation's 12-month rise in consumer prices (ratesplot.prices), a tick box
+    # beside Policy rate. At least "inf", so "--in" stays the interest curve.
+    Option(
+        "inflation", Kind.FLAG, ("inflation",), "rates", "--inflation / --no-inflation",
+        "each country's 12-month rise in consumer\nprices (the CPI, not seasonally adjusted),\n"
+        "dotted: the U.S. from 1914, Canada from\n1915, the UK from 1915 (the ONS's own\n"
+        "rate from 1989), Germany from 1992",
+        names=("inflation",), shortest=3, label="Inflation", topic="inflation",
     ),
     # At least "mo": "--m:" stays ambiguous (--min or --max).
     Option(

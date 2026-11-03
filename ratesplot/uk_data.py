@@ -125,7 +125,8 @@ _NO_VALUES = pd.Series(dtype=float, index=pd.DatetimeIndex([], name=DATE_COLUMN)
 _DAILY_FILL_LIMIT = 3
 
 # ONS series: CDID -> (the path of its time-series page, the unit its
-# description gives, the multiplier to pounds or persons). MDYT's description
+# description gives, the multiplier to pounds or persons, 1 for a rate in
+# percent). MDYT's description
 # (dataset EDP) has no unit: it is £m, as the EDP tables say, and its 2026 Q2
 # value (£138,883m) is the right size beside BKPX's £3,183,350m.
 ONS_SERIES = {
@@ -138,6 +139,12 @@ ONS_SERIES = {
     "NUGW": ("/economy/governmentpublicsectorandtaxes/publicsectorfinance/timeseries/nugw/pusf", "m", MILLION),
     "YBHA": ("/economy/grossdomesticproductgdp/timeseries/ybha/ukea", "m", MILLION),
     "EBAQ": ("/economy/grossdomesticproductgdp/timeseries/ebaq/ukea", ",000", THOUSAND),
+    # The ONS's own 12-month rate of the CPI, monthly from 1989-01, in percent
+    # (batch 13.1, --inflation): taken as published, not computed from the
+    # index (D7BT, 2015 = 100), since the ONS computes it from the unrounded
+    # index. Measured 2026-11-03: the rise of D7BT's published index, rounded
+    # to a tenth, differs from D7G7 in 190 of 453 months, by up to 0.19.
+    "D7G7": ("/economy/inflationandpriceindices/timeseries/d7g7/mm23", "%", 1.0),
 }
 # The frequency the program reads of each ONS series (``ons_series``): a
 # debt at the end of each month where the ONS has months (BKPX, BKPW and
@@ -157,12 +164,14 @@ ONS_SERIES_READ = {
     "NUGW": "quarters",
     "YBHA": "quarters",
     "EBAQ": "quarters",
+    "D7G7": "months",
 }
 ONS_BAKED_SOURCE = "ons"
 UK_DEBT_SERIES = "BKPX"
 UK_NET_DEBT_SERIES = "HF6W"
 UK_INTEREST_SERIES = "NMYX"
 UK_GDP_SERIES = "YBHA"
+UK_INFLATION_SERIES = "D7G7"
 UK_POPULATION_SERIES = "EBAQ"
 # Levels of government (--debt:LETTERS): central "f", local "m". "n" (every
 # level but the central one) is local government too, drawn as "m" (the UK's

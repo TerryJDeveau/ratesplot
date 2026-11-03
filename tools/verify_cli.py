@@ -264,6 +264,10 @@ CASES: list[list[str]] = [
     # Batch 13.6: the U.S. 3-year, named for the U.S. alone, in a spread of its own, and taken out again;
     # Germany still has none.
     ["--us:yields:2,3,5"], ["--us:sp:5y-3y"], ["-u", "--y:3,10", "--sp:10-3"], ["--us:no-y:3"], ["--ger:y:3", "--na:de"],
+    # Batch 13.1: --inflation, at least "inf" ("--in" and "--i" stay interest); a flag, so no value and no
+    # nation's own; with the yields off it is the yield axis's only curve.
+    ["--inflation"], ["--inf"], ["--infl"], ["--INF"], ["--no-inflation"], ["--no-inf"], ["--in"], ["--inflation:1"],
+    ["--us:inflation"], ["inflation"], ["--inf", "--no-yield"], ["--inf", "--po", "--mo", "--sp"], ["--inflationx"],
 ]
 
 

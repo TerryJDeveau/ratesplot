@@ -274,6 +274,12 @@ STATCAN_CDN_GDP_VECTOR = "v62305783"      # current prices, SAAR, GDP at market 
 # (rates.cdn_mortgage_history), which carries Canada's posted 5-year rate back.
 CDN_MORTGAGE_HISTORY_TABLE = "34100145"
 CDN_MORTGAGE_HISTORY_VECTOR = "v733833"
+# The consumer price index, all items, Canada, monthly from 1914, 2002 = 100,
+# not seasonally adjusted (batch 13.1, --inflation; measured 2026-11-03: 1,353
+# months to 2026-09, none without a value). The Bank of Canada's copy begins
+# only in 1995.
+STATCAN_CDN_CPI_TABLE = "18100004"
+STATCAN_CDN_CPI_VECTOR = "v41690973"
 
 # Archived (terminated) StatCan tables. They no longer change, so the bake
 # (``tools/bake_archives.py``) downloads them once and writes the required rows
@@ -550,6 +556,14 @@ POLICY_MARKET_STYLE = POLICY_RATE_STYLE | {"color": "#9d8c85", "linewidth": 0.8}
 # The U.S. target range (from 2008-12-16) is drawn as a band between its two
 # limits, each a step line in the policy rate's style, shaded between them.
 POLICY_BAND_ALPHA = 0.25
+# --inflation (batch 13.1; Terry asked 2026-10-12, planned 2026-10-14): each
+# nation's 12-month rise in consumer prices, on the yield axis, dotted in a
+# colour of its own (the plan's words): deep pink, which no yield term, policy
+# rate, mortgage or spread has, the default yields being blue, orange, green,
+# red and purple and the policy rate brown. Monthly steps, each month's rise
+# across its own month, as an observed value is drawn (decision 44); a little
+# thicker than the yields, so the dots read.
+INFLATION_STYLE = {"color": "#ff1493", "linewidth": 2.0, "linestyle": ":", "drawstyle": "steps-post"}
 # --mortgages (ratesplot.rates): the terms, as written on the command line ->
 # the countries that have them and the yield term whose colour they take (None:
 # no yield of that term, so a colour of their own, MORTGAGE_OWN_COLORS). In
@@ -1431,6 +1445,9 @@ class PlotConfig:
     # ("target") and the market's overnight rate ("market"). Per nation
     # (--us:policy:market).
     policy_terms: tuple[str, ...] = DEFAULT_POLICY_TERMS
+    # --inflation (batch 13.1): each country's 12-month rise in consumer
+    # prices on the yield axis (ratesplot.rates); additive, as --policy is.
+    inflation: bool = False
     # --mortgages[:LIST]: mortgage rates on the yield axis, the terms of
     # MORTGAGE_TERMS chosen (each drawn on the chart of its country); additive.
     mortgages: bool = False
@@ -1685,7 +1702,7 @@ class PlotConfig:
     @property
     def has_left_axis_series(self) -> bool:
         """True when at least one curve on the left (yield) axis is chosen: the yields, or a curve of ``ratesplot.rates``."""
-        return self.include_yield or self.policy_rates or self.mortgages or self.spreads
+        return self.include_yield or self.policy_rates or self.inflation or self.mortgages or self.spreads
 
     @property
     def left_axis_label(self) -> str:

@@ -36,7 +36,7 @@ from matplotlib.legend_handler import HandlerBase
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 
-from .axes import apply_axes_formatting, format_currency, format_percent, format_spread, format_yield
+from .axes import apply_axes_formatting, format_currency, format_inflation, format_percent, format_spread, format_yield
 from .baked import chart_ending
 from .cdn_data import (
     align_cdn_macro,
@@ -103,6 +103,7 @@ from .latest import (
 from .legend import finish_legend_and_title
 from .measures import express
 from .rates import (
+    INFLATION_KEY,
     RateCurve,
     draws_announced,
     held_steps,
@@ -394,7 +395,7 @@ def add_rate_lines(
         style = curve.style
         if curve.color_of is not None and f"{curve.color_of} Yield" in yield_colours:
             style = style | {"color": yield_colours[f"{curve.color_of} Yield"]}
-        reading = format_spread if curve.spread else format_yield
+        reading = _reading(curve)
         if curve.announced is not None:
             published, announced = _apart_at(values, curve.announced)
             parts = [(published, style, reading), (announced, style, _announced_reading)]
@@ -541,24 +542,30 @@ class _BandKeyHandler(HandlerBase):
 Legend.update_default_handler_map({_BandKey: _BandKeyHandler()})
 
 
+def _reading(curve: RateCurve) -> ValueFormatter:
+    """Return how a rate curve's value is written, in its end label and the read-out: a spread in points, inflation to a tenth (batch 13.1), any other as a yield."""
+    if curve.spread:
+        return format_spread
+    return format_inflation if curve.key == INFLATION_KEY else format_yield
+
+
 def _end_label_format(curve: RateCurve, config: PlotConfig) -> ValueFormatter:
     """Return how a rate curve's end label (-l) writes its last value: a spread in points, a band as its range ("3.75–4.00%").
 
     The label stands at the band's lower limit, the end of its legend line.
     """
-    if curve.spread:
-        return format_spread
-    if curve.upper is not None:
-        upper = held_steps(curve, config, curve.upper).dropna()
-        lower = held_steps(curve, config).dropna()
-        if not upper.empty and abs(upper.iloc[-1] - lower.iloc[-1]) > 1e-9:
-            top = float(upper.iloc[-1])
-            return lambda value: f"{format_yield(value).removesuffix('%')}–{format_yield(top)}"
+    if curve.upper is None or curve.spread:
+        return _reading(curve)
+    upper = held_steps(curve, config, curve.upper).dropna()
+    lower = held_steps(curve, config).dropna()
+    if not upper.empty and abs(upper.iloc[-1] - lower.iloc[-1]) > 1e-9:
+        top = float(upper.iloc[-1])
+        return lambda value: f"{format_yield(value).removesuffix('%')}–{format_yield(top)}"
     return format_yield
 
 
 def yield_axis_legend(yield_lines: list[Line2D], rate_lines: list[tuple[Line2D, RateCurve]]) -> list[Line2D]:
-    """Return the yield axis's legend entries: the yields longest term first, the policy rate, the mortgages, the spreads.
+    """Return the yield axis's legend entries: the yields longest term first, the policy rate, inflation, the mortgages, the spreads.
 
     Batch 17.2 (Terry, 2026-10-15): the longer terms higher in the legend,
     "sorting downward to the shorter terms. Most of the time, this would echo
@@ -578,6 +585,8 @@ def yield_axis_legend(yield_lines: list[Line2D], rate_lines: list[tuple[Line2D, 
             return 1, MORTGAGE_LEGEND_ORDER.index(key.removeprefix("mortgage_"))
         if key.startswith("policy"):
             return 0, int(key == "policy_market")  # the target, then the market rate (batch 9.1)
+        if key == INFLATION_KEY:
+            return 0, 2  # after the policy rates, as its box follows theirs (batch 13.1)
         return 2, 0
 
     return yields + [

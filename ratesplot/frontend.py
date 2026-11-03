@@ -134,7 +134,7 @@ CONTROL_BLOCKS: tuple[tuple[str, str | None, tuple[str, ...]], ...] = (
     ("curves", group_title("curves"), ()),
     ("units", group_title("units"), ()),
     ("regression", None, ()),
-    ("rates", group_title("rates"), ("yield", "spreads", "policy", "mortgages")),
+    ("rates", group_title("rates"), ("yield", "spreads", "policy", "inflation", "mortgages")),
     ("labels", None, ()),
     ("dates", group_title("dates"), ()),
     ("canvas", group_title("canvas"), ()),
@@ -699,8 +699,8 @@ def idle_controls(flags: Mapping[str, bool]) -> frozenset[str]:
     28.1, from the plan's measurements of the page (2026-10-25): the yield
     terms while the yields are off, as the spread, policy and mortgage boxes
     are while their switch is; and Min and Max while nothing is drawn on
-    the yield axis, neither yields nor spreads, policy or mortgage rates
-    (``PlotConfig.has_left_axis_series``), which then takes the right
+    the yield axis, neither yields nor spreads, policy rates, inflation or
+    mortgage rates (``PlotConfig.has_left_axis_series``), which then takes the right
     axis's range. A blank flag is its default (every curve on, the rates
     off).
     """
@@ -724,13 +724,13 @@ def idle_control_reasons(flags: Mapping[str, bool]) -> dict[str, str]:
     if not flags.get("yield", True):
         reasons["yields"] = unticked("yield")
         if not any(flags.get(name, False) for name in _LEFT_AXIS_RATES):
-            reasons |= dict.fromkeys(("min", "max"), "nothing is drawn on the yield axis: no yields, spreads, policy or mortgage rates")
+            reasons |= dict.fromkeys(("min", "max"), "nothing is drawn on the yield axis: no yields, spreads, policy rates, inflation or mortgage rates")
     return reasons
 
 
 # The switches of the curves of ``ratesplot.rates``, drawn on the yield axis
 # with the yields (``PlotConfig.has_left_axis_series``).
-_LEFT_AXIS_RATES = ("policy", "mortgages", "spreads")
+_LEFT_AXIS_RATES = ("policy", "inflation", "mortgages", "spreads")
 
 
 def idle_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
