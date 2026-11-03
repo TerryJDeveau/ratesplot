@@ -86,10 +86,12 @@ QUOTE_TIME_ATTR = "latest_quote_time"
 
 # Chart column -> CNBC symbol, per country: ``config.QUOTE_SYMBOLS`` (here
 # until batch 11.3).
-# Chart column -> column of the Treasury's yield-curve file (the file has all ten).
+# Chart column -> column of the Treasury's yield-curve file (the file has all
+# eleven, and the 1.5-, 2- and 4-month, which the program does not draw;
+# its 2026 columns read 2026-11-03).
 _TREASURY_COLUMNS = {
     "1-Month": "1 Mo", "3-Month": "3 Mo", "6-Month": "6 Mo", "1-Year": "1 Yr", "2-Year": "2 Yr",
-    "5-Year": "5 Yr", "7-Year": "7 Yr", "10-Year": "10 Yr", "20-Year": "20 Yr", "30-Year": "30 Yr",
+    "3-Year": "3 Yr", "5-Year": "5 Yr", "7-Year": "7 Yr", "10-Year": "10 Yr", "20-Year": "20 Yr", "30-Year": "30 Yr",
 }
 # A quoted yield outside this range (percent) is a bad print and is left out.
 _PLAUSIBLE_YIELD = (-5.0, 50.0)

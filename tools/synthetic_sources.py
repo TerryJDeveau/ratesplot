@@ -109,12 +109,12 @@ def _growth(dates: pd.DatetimeIndex, first: float, last: float, name: str) -> np
 
 # FRED's daily series: each yield's term in years, and each series' first day.
 _TENOR_YEARS = {
-    "DGS1MO": 1 / 12, "DGS3MO": 0.25, "DGS6MO": 0.5, "DGS1": 1, "DGS2": 2, "DGS5": 5, "DGS7": 7,
+    "DGS1MO": 1 / 12, "DGS3MO": 0.25, "DGS6MO": 0.5, "DGS1": 1, "DGS2": 2, "DGS3": 3, "DGS5": 5, "DGS7": 7,
     "DGS10": 10, "DGS20": 20, "DGS30": 30,
 }
 _DAILY_START = {
     "DGS1MO": "2001-07-31", "DGS3MO": "1981-09-01", "DGS6MO": "1981-09-01", "DGS1": "1962-01-02",
-    "DGS2": "1976-06-01", "DGS5": "1962-01-02", "DGS7": "1969-07-01", "DGS10": "1962-01-02",
+    "DGS2": "1976-06-01", "DGS3": "1962-01-02", "DGS5": "1962-01-02", "DGS7": "1969-07-01", "DGS10": "1962-01-02",
     "DGS20": "1962-01-02", "DGS30": "1977-02-15", "DFF": "1954-07-01", "T10Y2Y": "1976-06-01",
     "T10Y3M": "1982-01-04", "DPRIME": "1955-08-04",
 }

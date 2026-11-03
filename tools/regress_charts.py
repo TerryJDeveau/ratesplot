@@ -288,6 +288,9 @@ CASES: dict[str, list[str]] = {
     "crowd_c800": [
         "-c", "--yields:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015",
     ],
+    # Batch 13.6: the U.S. 3-year (FRED DGS3) between the 2- and 5-year, with
+    # its end label, and Canada's beside it on the same command line.
+    "us_3y": ["--na:ca,us", "--y:2,3,5", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:2001"],
 }
 
 

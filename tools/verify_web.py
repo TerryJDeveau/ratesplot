@@ -924,7 +924,7 @@ def check_batch15(check: Check) -> None:
 
 
 def check_batch9(check: Check) -> None:
-    """Batch 9.3: Canada's section offers its ten terms (all but the 20-year), the U.S.' all but the 3-year."""
+    """Batch 9.3: Canada's section offers its ten terms (all but the 20-year), the U.S.' all eleven (the 3-year since 13.6)."""
     at = new_page("--e:2026-09-01")
     check("no exception", not at.exception, at.exception)
     keys = {box.key for box in at.checkbox if box.key}
@@ -932,7 +932,8 @@ def check_batch9(check: Check) -> None:
     united = {key for key in keys if key.startswith("choice:us:yields:")}
     wanted = {f"choice:cdn:yields:{term}" for term in ("1m", "3m", "6m", "1y", "2y", "3y", "5y", "7y", "10y", "30y")}
     check("Canada offers 1m 3m 6m 1y 2y 3y 5y 7y 10y 30y, not 20y", canada == wanted, sorted(canada))
-    check("the U.S. offers all but 3y", "choice:us:yields:3y" not in united and len(united) == 10, sorted(united))
+    check("13.6: the U.S. offers all eleven, 3y too", "choice:us:yields:3y" in united and len(united) == 11, sorted(united))
+    check("… its 3y not ticked (not a default term)", not at.checkbox(key="choice:us:yields:3y").value)
     ticked = {key.rsplit(":", 1)[1] for key in canada if at.checkbox(key=key).value}
     check("Canada's default five ticked, the new terms not", ticked == {"3m", "2y", "5y", "10y", "30y"}, sorted(ticked))
     at.checkbox(key="choice:cdn:yields:3y").check()

@@ -42,14 +42,16 @@ from .latest import extend_us_federal_debt, observed_through, project_to_now
 from .us_archive_data import EMBEDDED_US_DEBT_BY_LEVEL
 
 # Chart column -> FRED constant-maturity Treasury yield series, and its first
-# observation (FRED, measured 2026-10-06), in the order of config.YIELD_TERMS.
-# The five default terms always; the others when --yields:LIST names them.
+# observation (FRED, measured 2026-10-06; the 3-year, batch 13.6, 2026-11-03),
+# in the order of config.YIELD_TERMS. The five default terms always; the
+# others when --yields:LIST names them.
 US_YIELD_SERIES = {
     "1-Month": "DGS1MO",
     "3-Month": "DGS3MO",
     "6-Month": "DGS6MO",
     "1-Year": "DGS1",
     "2-Year": "DGS2",
+    "3-Year": "DGS3",
     "5-Year": "DGS5",
     "7-Year": "DGS7",
     "10-Year": "DGS10",
@@ -62,6 +64,7 @@ US_YIELD_EARLIEST = {
     "6-Month": pd.Timestamp("1981-09-01"),
     "1-Year": pd.Timestamp("1962-01-02"),
     "2-Year": pd.Timestamp("1976-06-01"),
+    "3-Year": pd.Timestamp("1962-01-02"),
     "5-Year": pd.Timestamp("1962-01-02"),
     "7-Year": pd.Timestamp("1969-07-01"),
     "10-Year": pd.Timestamp("1962-01-02"),
@@ -162,7 +165,8 @@ def fetch_us_yields(config: PlotConfig) -> pd.DataFrame:
     forward-filled over a few rows (``_US_YIELD_FILL_ROWS``) so holidays in
     one tenor do not create gaps in the others; a longer gap in a source is
     left a gap, drawn as a break in its line. A chosen term the U.S. does not
-    have (the 3-year, batch 9.3) is named, as the other nations' are.
+    have is named, as the other nations' are (the 3-year was one from batch
+    9.3 until 13.6; none since).
     """
     chosen = [column for column in config.fetched_yield_columns if column in US_YIELD_SERIES]
     absent = [column for column in config.yield_columns if column not in US_YIELD_SERIES]

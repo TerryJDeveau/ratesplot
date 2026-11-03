@@ -401,13 +401,14 @@ MARKET_TIMEZONE = "America/Toronto"
 # yields intraday quotes extend (--cur, ratesplot.latest). Only the columns a
 # chart draws are asked for (--yields:LIST); the U.S. terms outside the
 # default five are CNBC's symbols of the same pattern, not yet seen answering
-# from here (the cloud copy has no route to the feed). Moved here from
-# ``latest`` in batch 11.3: the automatic refresh's rule reads it too
-# (``PlotConfig.quoted_columns``).
+# from here (the cloud copy has no route to the feed), but for US3Y, seen
+# answering from Buddug 2026-11-03 (batch 13.6: "U.S. 3 Year Treasury").
+# Moved here from ``latest`` in batch 11.3: the automatic refresh's rule
+# reads it too (``PlotConfig.quoted_columns``).
 QUOTE_SYMBOLS = {
     "us": {
         "1-Month": "US1M", "3-Month": "US3M", "6-Month": "US6M", "1-Year": "US1Y", "2-Year": "US2Y",
-        "5-Year": "US5Y", "7-Year": "US7Y", "10-Year": "US10Y", "20-Year": "US20Y", "30-Year": "US30Y",
+        "3-Year": "US3Y", "5-Year": "US5Y", "7-Year": "US7Y", "10-Year": "US10Y", "20-Year": "US20Y", "30-Year": "US30Y",
     },
     # Canada's (batch 9.3: CA1M, CA6M, CA1Y and CA3Y seen answering
     # 2026-10-20; CA7Y answers empty, so the 7-year ends on its last official day).
@@ -474,7 +475,8 @@ YIELD_COLUMNS = ("3-Month", "2-Year", "5-Year", "10-Year", "30-Year")
 # YIELD_COLUMNS are drawn by default and are the only ones with Canada's
 # history before 2001. Canada has all but the 20-year (batch 9.3: the 1- and
 # 6-month, 1-, 3- and 7-year from 2001; see cdn_data.CDN_YIELD_COLUMNS); the
-# U.S. all but the 3-year (FRED's DGS series; see us_data.US_YIELD_SERIES).
+# U.S. all of them, the 3-year since batch 13.6 (FRED's DGS series; see
+# us_data.US_YIELD_SERIES).
 YIELD_TERMS = {
     "1m": "1-Month",
     "3m": "3-Month",
@@ -809,14 +811,14 @@ class Nation:
 # database's Europe/Berlin).
 NATIONS: tuple[Nation, ...] = (
     # Canada: all terms but the 20-year (the Bank of Canada has none); the
-    # U.S.: all but the 3-year (FRED's DGS3 exists, but was not asked for).
+    # U.S.: all of them (the 3-year, FRED's DGS3, since batch 13.6).
     Nation(
         "cdn", "Canada", ("ca", "cdn"), tuple(term for term in YIELD_TERMS if term != "20y"), "Canadian",
         market_timezone="America/Toronto", currency="CAD", overnight_rate="CORRA",
         level_boxes=(("f", "Federal"), ("p", "Provincial"), ("m", "Municipal"), ("n", "Non-federal")),
     ),
     Nation(
-        "us", "United States", ("us",), tuple(term for term in YIELD_TERMS if term != "3y"), "U.S.",
+        "us", "United States", ("us",), tuple(YIELD_TERMS), "U.S.",
         market_timezone="America/New_York", currency="USD", overnight_rate="fed funds",
         level_boxes=(("f", "Federal"), ("p", "State"), ("m", "Local"), ("n", "State & Local")),
     ),
@@ -1448,8 +1450,8 @@ class PlotConfig:
     spread_pairs: tuple[tuple[str, str], ...] = DEFAULT_SPREADS
     # --yields:LIST / --no-yields:LIST: the yield terms drawn, as keys of
     # YIELD_TERMS in that order. A term a country has no series for is
-    # simply not drawn on its chart, with a note (Canada has no 20-year, the
-    # U.S. no 3-year: Nation.yield_terms).
+    # simply not drawn on its chart, with a note (Canada has no 20-year,
+    # Germany no 1-, 3- or 6-month or 3-year: Nation.yield_terms).
     yield_terms: tuple[str, ...] = DEFAULT_YIELD_TERMS
     include_debt: bool = True
     include_gdp: bool = True

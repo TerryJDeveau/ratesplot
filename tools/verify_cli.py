@@ -261,6 +261,9 @@ CASES: list[list[str]] = [
     ["--master:£"], ["--master:€"], ["--ma:usd"], ["--ma:8"], ["--master:$"], ["--master:JPY"], ["--master:"], ["--master"],
     ["--master:usd20t"], ["--us:master:usd"], ["--master:usd", "--master:cad"], ["--master:usd", "-r"], ["--master:usd", "-u"],
     ["--na:ca,us,gb,de", "--master:gbp", "--top:20t"], ["master:usd"],
+    # Batch 13.6: the U.S. 3-year, named for the U.S. alone, in a spread of its own, and taken out again;
+    # Germany still has none.
+    ["--us:yields:2,3,5"], ["--us:sp:5y-3y"], ["-u", "--y:3,10", "--sp:10-3"], ["--us:no-y:3"], ["--ger:y:3", "--na:de"],
 ]
 
 

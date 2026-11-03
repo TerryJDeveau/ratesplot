@@ -1969,6 +1969,7 @@ _FRED_SERIES_TITLES = {
     "DGS6MO": "Market Yield on U.S. Treasury Securities at 6-Month Constant Maturity, Quoted on an Investment Basis; daily",
     "DGS1": "Market Yield on U.S. Treasury Securities at 1-Year Constant Maturity, Quoted on an Investment Basis; daily",
     "DGS2": "Market Yield on U.S. Treasury Securities at 2-Year Constant Maturity, Quoted on an Investment Basis; daily",
+    "DGS3": "Market Yield on U.S. Treasury Securities at 3-Year Constant Maturity, Quoted on an Investment Basis; daily",
     "DGS5": "Market Yield on U.S. Treasury Securities at 5-Year Constant Maturity, Quoted on an Investment Basis; daily",
     "DGS7": "Market Yield on U.S. Treasury Securities at 7-Year Constant Maturity, Quoted on an Investment Basis; daily",
     "DGS10": "Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis; daily",

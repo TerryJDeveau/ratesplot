@@ -724,8 +724,8 @@ class Option:
 
 # The tick boxes of the list options (Option.choices). Yield terms: the five
 # drawn by default, then the others in term order (each nation's panel offers
-# those it has: Canada all but the 20-year since batch 9.3, the U.S. all but
-# the 3-year). Mortgage terms by country. Spreads: the usual pairs (the defaults first); any other pair
+# those it has: Canada all but the 20-year since batch 9.3, the U.S. all of
+# them since 13.6). Mortgage terms by country. Spreads: the usual pairs (the defaults first); any other pair
 # named on the command line gets a box of its own.
 _YIELD_CHOICES = (
     ("", tuple((term, term) for term in DEFAULT_YIELD_TERMS)),

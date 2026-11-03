@@ -122,6 +122,8 @@ CASES: dict[str, list[str]] = {
     "us_1985": ["-u", "-s:1985", "--e:1995", "--y:3m,6m,1,2,5,7,10,20,30", "--policy", "--mo:30,15"],
     "us_2000": ["-u", "-s:2000", "--e:2008", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--sp:30y-10y,30y-2y"],
     "us_2015": ["-u", "-s:2015", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--po:target,market", "--mo:30,15", "--sp"],
+    # Batch 13.6: the U.S. 3-year (FRED DGS3) and a spread of it.
+    "us_3y": ["-u", "-s:2015", "--y:2,3,5", "--sp:5y-3y"],
     # Batch 9.1: the U.S. target across its three parts, and the market rate.
     "us_policy": ["-u", "-s:1978", "--no-yield", "--po:target,market"],
     # Batch 9.4: the prime rates plus a margin, each nation's own (the U.S.'
