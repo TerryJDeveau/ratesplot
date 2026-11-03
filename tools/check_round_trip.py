@@ -97,9 +97,9 @@ VALUES = (
     # right-axis curve, and its "no" form.
     "--constant", "--con -p", "--con --master:usd --top:USD20t", "--con --no-gdp --no-debt --no-interest", "--no-con",
     # The price index (batch 13.4): unadjusted and adjusted, beside the amounts or alone, with --reg, and the
-    # "no" forms.
+    # "no" forms; adjusted with the UK alone, which publishes none (then left off the written line), and beside it.
     "--cpi", "--cpi:sa", "--cpi --yield --reg", "--cpi:sa --no-gdp --no-debt --no-interest -p", "--no-cpi",
-    "--cpi:sa --no-cpi",
+    "--cpi:sa --no-cpi", "--nations:gb --cpi:sa", "--nations:gb,de --cpi:sa",
 )
 
 

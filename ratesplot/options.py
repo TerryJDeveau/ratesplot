@@ -1707,6 +1707,18 @@ def master_idle_reason(text: str, flags: Mapping[str, bool]) -> str | None:
     return dataclasses.replace(config, master_currency=currency).master_brings_nothing
 
 
+def adjusted_index_drawn(flags: Mapping[str, bool]) -> bool:
+    """True when a nation these flags tick publishes a seasonally adjusted price index (``SEASONALLY_ADJUSTED_NATIONS``, batch 13.4).
+
+    Else --cpi:sa changes no chart (the ONS publishes none: the UK alone):
+    "Seas. adj." is greyed (``frontend.idle_control_reasons``) and left off
+    the written command line (``command_line_tokens``), as
+    ``config_from_choices`` clears it.
+    """
+    ticked = {option.fields[0] for option in options_in("country") if flags.get(option.name)}
+    return any(nation.show_field in ticked for nation in NATIONS if nation.key in SEASONALLY_ADJUSTED_NATIONS)
+
+
 def unticked(name: str) -> str:
     """Why a control is idle while the box of option ``name`` is unticked: "“Mortgage rates” is unticked" (batch 29.1)."""
     return f"“{by_name(name).label}” is unticked"
@@ -1988,6 +2000,10 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # its nation unticked.
     if payloads.get("master", "").strip() and master_idle_reason(payloads["master"], flags) is not None:
         del payloads["master"]
+    # The price index seasonally adjusted where it changes no chart (batch
+    # 13.4): greyed with the UK the only nation ticked, its tick kept.
+    if payloads.get("cpi-adjustment", "").strip() and not adjusted_index_drawn(flags):
+        del payloads["cpi-adjustment"]
 
     # The nations' switches, unless the ones chosen are those drawn by default.
     countries = [option for option in options_in("country") if option.in_gui]

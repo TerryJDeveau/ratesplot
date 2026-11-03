@@ -74,6 +74,7 @@ from .options import (
     Kind,
     NONE_ITEM,
     Option,
+    adjusted_index_drawn,
     auto_refresh_idle,
     by_name,
     choices_from_config,
@@ -718,8 +719,9 @@ def idle_control_reasons(flags: Mapping[str, bool]) -> dict[str, str]:
         price_index=flags.get("cpi", False),
     )
     # The price index seasonally adjusted (batch 13.4): the ONS publishes
-    # none, so with the UK the only nation ticked "Seas. adj." changes nothing.
-    if flags.get("cpi", False) and [key for name, key in nation_boxes().items() if flags.get(name, False)] == ["uk"]:
+    # none, so with the UK the only nation ticked "Seas. adj." changes nothing
+    # (``options.adjusted_index_drawn``, which the written line follows too).
+    if flags.get("cpi", False) and not adjusted_index_drawn(flags):
         reasons["cpi-adjustment"] = "the ONS publishes no seasonally adjusted price index, and the UK is the only nation ticked"
     if flags.get("relative", False) and "relative" not in reasons:
         reasons["gdp"] = "under % of GDP, GDP is the divisor and is not drawn"
