@@ -1972,6 +1972,22 @@ def check_batch34(check: Check) -> None:
           "as you leave" in frontend.REMEMBER_HELP and "as you leave the page" in web._REMEMBER_LINE)
 
 
+def check_line_help(check: Check) -> None:
+    """The two lines under the charts (Terry, 2026-10-29): each label's ⓘ, its text and More to its topic; the topics shown."""
+    at = new_page("-c -s:2001 --e:2019")
+    labels = {block.value: block.proto.help for block in at.markdown}
+    for label, text, topic in ((frontend.COMMAND_LINE_LABEL, frontend.COMMAND_LINE_HELP, frontend.COMMAND_LINE_TOPIC),
+                               (frontend.WEB_PAGE_LABEL, frontend.WEB_PAGE_HELP, frontend.WEB_PAGE_TOPIC)):
+        tip = labels.get(f"**{label}:**", "")
+        check(f"“{label}:” has its ⓘ: its text, then More to its topic", not at.exception and tip.startswith(text)
+              and tip.endswith(f"[More](?help={topic})"), tip)
+        shown = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+        shown.query_params["help"] = topic
+        shown.run()
+        check(f"… and ?help={topic} shows its page", not shown.exception and shown.markdown
+              and shown.markdown[0].value.startswith(f"# {label}"), [block.value[:40] for block in shown.markdown][:1])
+
+
 def check_batch30(check: Check) -> None:
     """Batch 30: the master currency's box in each nation's section, one ticked at most, greyed by its rules; the charts converted."""
 
@@ -2042,7 +2058,7 @@ PAGE_CHECKS = (
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
-    check_batch31, check_batch324, check_batch34, check_batch30,
+    check_batch31, check_batch324, check_batch34, check_batch30, check_line_help,
 )
 
 

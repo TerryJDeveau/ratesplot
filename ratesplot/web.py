@@ -175,6 +175,9 @@ from .frontend import (  # noqa: E402
     ADDRESS_KEY,
     BACK_HELP,
     BLANK_DATE_WORDS,
+    COMMAND_LINE_HELP,
+    COMMAND_LINE_LABEL,
+    COMMAND_LINE_TOPIC,
     EXPORT_HELP,
     EXPORT_LABEL,
     LIMIT_COLUMNS,
@@ -191,6 +194,9 @@ from .frontend import (  # noqa: E402
     WHEEL_DELAY_MS,
     WHEEL_ZOOM_FACTOR,
     WHEEL_ZOOM_WORDS,
+    WEB_PAGE_HELP,
+    WEB_PAGE_LABEL,
+    WEB_PAGE_TOPIC,
     ChartGeometry,
     Choices,
     all_tick,
@@ -1544,6 +1550,11 @@ def _help(option: Option, extra: str = "", key: str | None = None) -> str:
     return dollars_shown("\n\n".join(line for line in (*option_help_lines(option), extra, greyed_line(reason), more) if line))
 
 
+def _line_help(text: str, topic: str) -> str:
+    """The help of a line under the charts (``frontend.COMMAND_LINE_HELP``, ``WEB_PAGE_HELP``), as a control's: its text, then More."""
+    return dollars_shown(f"{text}\n\n[More]({help_address(topic)})")
+
+
 def _flag_control(where, option: Option) -> None:
     callbacks = {"country": _country_changed, "units": _measure_changed, "curves": _curve_changed}
     callback = callbacks.get(option.group)
@@ -2273,10 +2284,11 @@ def _show(drawing: Drawing, config: PlotConfig | None = None) -> None:
     # The command line, and under it the chart's link, each in a box with
     # Streamlit's copy button, labelled as the window labels its two lines
     # (batch 31.3; the link under the Drawn line since batch 28.5: the
-    # address bar is out of reach on a phone, and bare after a Reset).
-    st.markdown("**Command line:**")
+    # address bar is out of reach on a phone, and bare after a Reset). Each
+    # label has its ⓘ, as a control has (Terry, 2026-10-29).
+    st.markdown(f"**{COMMAND_LINE_LABEL}:**", help=_line_help(COMMAND_LINE_HELP, COMMAND_LINE_TOPIC))
     st.code(" ".join(["python", _SCRIPT_NAME, *drawing.tokens]), language=None, wrap_lines=True)
-    st.markdown("**Web page:**")
+    st.markdown(f"**{WEB_PAGE_LABEL}:**", help=_line_help(WEB_PAGE_HELP, WEB_PAGE_TOPIC))
     link = chart_link(st.context.url, drawing.tokens)
     # Go beside the link (batch 34.1), as the window's beside its Copy (31.8):
     # the link opened in a new tab, which draws the same charts and goes on by

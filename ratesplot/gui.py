@@ -143,6 +143,9 @@ from .frontend import (
     ALL_TICKS,
     BACK_HELP,
     BLANK_DATE_WORDS,
+    COMMAND_LINE_HELP,
+    COMMAND_LINE_LABEL,
+    COMMAND_LINE_TOPIC,
     EXPORT_HELP,
     EXPORT_LABEL,
     GREYABLE_OPTIONS,
@@ -157,6 +160,9 @@ from .frontend import (
     STATE_VERSION,
     TAB_TITLES,
     UNZOOM_HELP,
+    WEB_PAGE_HELP,
+    WEB_PAGE_LABEL,
+    WEB_PAGE_TOPIC,
     WHEEL_DELAY_MS,
     WHEEL_ZOOM_FACTOR,
     ChartGeometry,
@@ -1155,13 +1161,21 @@ class RatesPlotApp:
         # The command line, and under it the same chart's address on the web
         # page, each with its own Copy (batch 31.3; Terry, 2026-10-28: "another
         # line under it that shows the equivalent URL to launch the web
-        # version, with another "Copy" button").
-        for row, (label, variable, copy, tip) in enumerate((
-            ("Command line:", self.command, self._copy_command, _COPY_COMMAND_TIP),
-            ("Web page:", self.web_address, self._copy_web_address, _COPY_ADDRESS_TIP),
+        # version, with another "Copy" button"). Each label has its ⓘ, and the
+        # label and the line their tip, as a control has (Terry, 2026-10-29).
+        for row, (label, variable, copy, tip, help_, topic) in enumerate((
+            (COMMAND_LINE_LABEL, self.command, self._copy_command, _COPY_COMMAND_TIP, COMMAND_LINE_HELP, COMMAND_LINE_TOPIC),
+            (WEB_PAGE_LABEL, self.web_address, self._copy_web_address, _COPY_ADDRESS_TIP, WEB_PAGE_HELP, WEB_PAGE_TOPIC),
         )):
-            ttk.Label(bar, text=label).grid(row=row, column=0, sticky="w")
-            ttk.Entry(bar, textvariable=variable, state="readonly").grid(row=row, column=1, sticky="ew", padx=4, pady=(0 if row == 0 else 2, 0))
+            head = ttk.Frame(bar)
+            head.grid(row=row, column=0, sticky="w")
+            name = ttk.Label(head, text=label + ":")
+            name.pack(side="left")
+            self._info_mark(head, topic, None, help_, title=label, topic=topic).pack(side="left", padx=(3, 0))
+            line = ttk.Entry(bar, textvariable=variable, state="readonly")
+            line.grid(row=row, column=1, sticky="ew", padx=4, pady=(0 if row == 0 else 2, 0))
+            for widget in (name, line):
+                _Tooltip(widget, help_, info=True)
             button = ttk.Button(bar, text="Copy", command=copy)
             button.grid(row=row, column=2, pady=(0 if row == 0 else 2, 0))
             _Tooltip(button, tip)
@@ -1783,7 +1797,9 @@ class RatesPlotApp:
 
     # -- help beside each control (batch 29.1) --------------------------------
 
-    def _info_mark(self, parent: tk.Widget, key: str, option: Option, tip: str) -> ttk.Label:
+    def _info_mark(
+        self, parent: tk.Widget, key: str, option: Option | None, tip: str, title: str = "", topic: str | None = None
+    ) -> ttk.Label:
         """An ⓘ in ``parent`` for control ``key`` (an option's name, or a nation's field: "us:max"), placed by the caller.
 
         Terry, 2026-10-27 (decision 76): "a small clickable “i” in a circle
@@ -1791,9 +1807,11 @@ class RatesPlotApp:
         that control is greyed out." A ttk label whose state is never set, so
         ``_update_dependent_controls`` leaves it as it is; a click opens its
         panel (``_show_info``) with ``tip``, the control's own tooltip text.
+        A line under the charts has no option: its ``title`` and ``topic``
+        are given instead (``frontend.LINE_TOPICS``), and it is never greyed.
         """
         mark = ttk.Label(parent, text="ⓘ", style="Info.TLabel", cursor="hand2")
-        mark.bind("<Button-1>", lambda _event: self._show_info(mark, key, option, tip))
+        mark.bind("<Button-1>", lambda _event: self._show_info(mark, key, option, tip, title, topic))
         self.info_marks[key] = mark
         return mark
 
@@ -1807,7 +1825,9 @@ class RatesPlotApp:
                 lines.append(f"“All” beside it is greyed because {reason}.")
         return "\n".join(line for line in lines if line)
 
-    def _show_info(self, mark: ttk.Label, key: str, option: Option, tip: str) -> None:
+    def _show_info(
+        self, mark: ttk.Label, key: str, option: Option | None, tip: str, title: str = "", topic: str | None = None
+    ) -> None:
         """The ⓘ's panel, by it: the control's tip, why it is greyed now if it is, and More where it has a topic.
 
         Terry, 2026-10-27: "When clicked, a short explanation of what the
@@ -1818,23 +1838,25 @@ class RatesPlotApp:
         (``frontend.greyed_reason``), from the rules that grey the control.
         """
         self._close_info()
+        if option is not None:
+            title, topic = option.label or option.name, option.topic
         panel = tk.Toplevel(self.root)
-        panel.title(option.label or option.name)
+        panel.title(title)
         panel.transient(self.root)
         panel.resizable(False, False)
         frame = ttk.Frame(panel, padding=10)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text=tip, justify="left", wraplength=_INFO_WRAP_PX).pack(anchor="w")
-        reason = self._info_reason(key)
+        reason = self._info_reason(key) if option is not None else ""
         if reason:
             ttk.Label(frame, text=reason, justify="left", wraplength=_INFO_WRAP_PX).pack(anchor="w", pady=(8, 0))
         buttons = ttk.Frame(frame)
         buttons.pack(fill="x", pady=(10, 0))
         # Packed from the right: More in the lower right corner, Close left of
         # it. More shuts the panel, whose window would otherwise stay in front.
-        if option.topic:
-            ttk.Button(buttons, text="More", command=lambda: (self._close_info(), self._show_topic(option.topic))).pack(side="right")
-        ttk.Button(buttons, text="Close", command=self._close_info).pack(side="right", padx=(0, 6) if option.topic else 0)
+        if topic:
+            ttk.Button(buttons, text="More", command=lambda: (self._close_info(), self._show_topic(topic))).pack(side="right")
+        ttk.Button(buttons, text="Close", command=self._close_info).pack(side="right", padx=(0, 6) if topic else 0)
         panel.bind("<Escape>", lambda _event: self._close_info())
         panel.protocol("WM_DELETE_WINDOW", self._close_info)
         # Right of the ⓘ, its top level with it, kept on the ⓘ's monitor (``_beside``).

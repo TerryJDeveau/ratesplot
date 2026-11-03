@@ -46,6 +46,7 @@ from ratesplot.frontend import (  # noqa: E402
     ALL_TICKS,
     GREYABLE_OPTIONS,
     HELP_DIR,
+    LINE_TOPICS,
     MASTER,
     all_tick_offered,
     all_tick_reason,
@@ -99,14 +100,17 @@ def check_texts() -> None:
 def check_topics() -> None:
     """Each topic named has its file, each file is named, each reads as the window renders it."""
     print("-- the topics")
-    topics = help_topics()
+    # The options' topics, and the two lines' under the charts (no option names those).
+    topics = {**help_topics(), **{topic: () for topic in LINE_TOPICS}}
     check("at least one topic named", bool(topics), sorted(topics))
+    check("the lines' topics are not also an option's", not set(LINE_TOPICS) & set(help_topics()), sorted(LINE_TOPICS))
     files = {path.stem for path in HELP_DIR.glob("*.md")}
     check("every topic named has its file in docs/help", set(topics) <= files, sorted(set(topics) - files))
-    check("every file in docs/help is named by an option", files <= set(topics), sorted(files - set(topics)))
+    check("every file in docs/help is named by an option or a line", files <= set(topics), sorted(files - set(topics)))
     for topic, named in topics.items():
         blocks = help_blocks(help_text(topic))
-        check(f"{topic} (named by {', '.join(option.name for option in named)}): opens with a heading",
+        named_by = ", ".join(option.name for option in named) or f"the line “{LINE_TOPICS[topic]}”"
+        check(f"{topic} (named by {named_by}): opens with a heading",
               bool(blocks) and blocks[0].kind == "heading" and blocks[0].level == 1, blocks[0] if blocks else None)
         links = [span.url for block in blocks for span in block.spans if span.style == "link"]
         between = [help_link_topic(url) for url in links if help_link_topic(url) is not None]

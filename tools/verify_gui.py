@@ -2163,13 +2163,23 @@ def check_batch293(check: Check) -> None:
             app._close_info()
         check(f"each of the {len(app.info_marks)} ⓘ: its panel has More", not without, without)
         for key, topic in (("label", "end-labels"), ("regression-tolerance", "regression"), ("dimensions", "layout"), ("start", "dates"),
-                           ("uk:top", "limits"), ("auto-refresh-minutes", "auto-refresh"), ("projections", "projections"), ("hover", "hover")):
+                           ("uk:top", "limits"), ("auto-refresh-minutes", "auto-refresh"), ("projections", "projections"), ("hover", "hover"),
+                           # The two lines under the charts (Terry, 2026-10-29): no option, their own topics.
+                           ("command-line", "command-line"), ("web-page", "web-page")):
             app.info_marks[key].event_generate("<Button-1>")
             root.update()
             more = next(widget for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton" and widget.cget("text") == "More")
             more.invoke()
             root.update()
             check(f"{key}: More opens the topic {topic}", topic in app.topic_windows and app.info_panel is None, sorted(app.topic_windows))
+        for key, label, text in (("command-line", frontend.COMMAND_LINE_LABEL, frontend.COMMAND_LINE_HELP),
+                                 ("web-page", frontend.WEB_PAGE_LABEL, frontend.WEB_PAGE_HELP)):
+            app.info_marks[key].event_generate("<Button-1>")
+            root.update()
+            check(f"the line “{label}”: its ⓘ's panel titled by it, its text, no reason; its label and line tipped with it",
+                  app.info_panel is not None and app.info_panel.title() == label and app.info_shown == (key, text, "")
+                  and sum(1 for tip in gui._Tooltip.tips.values() if tip == text) == 2, app.info_shown)
+            app._close_info()
         app._show_topic("limits")
         root.update()
         text = next(widget for widget in all_widgets(app.topic_windows["limits"]) if widget.winfo_class() == "Text")
@@ -2266,8 +2276,10 @@ def check_batch31(check: Check) -> None:
         # 31.3: under the command line, the same chart on the web page, with its own Copy.
         labels = {str(widget.cget("text")): widget for widget in all_widgets(root) if widget.winfo_class() == "TLabel"}
         line, web = labels.get("Command line:"), labels.get("Web page:")
-        check("31.3: “Web page:” on the row under “Command line:”", line is not None and web is not None and web.master is line.master
-              and int(web.grid_info()["row"]) == int(line.grid_info()["row"]) + 1)
+        # Each label in a frame of the bar with its ⓘ (2026-11-03): the frame holds the row.
+        check("31.3: “Web page:” on the row under “Command line:”, each label with its ⓘ beside it", line is not None and web is not None
+              and web.master.master is line.master.master and int(web.master.grid_info()["row"]) == int(line.master.grid_info()["row"]) + 1
+              and app.info_marks["command-line"].master is line.master and app.info_marks["web-page"].master is web.master)
         check("its address: the page's, with the chart's command line", app.web_address.get()
               == frontend.chart_link(WEB_PAGE_ADDRESS, w.command_tokens()) == "https://ratesplot.streamlit.app/?chart=--C+--end%3A2026-09-01",
               app.web_address.get())
@@ -2277,8 +2289,8 @@ def check_batch31(check: Check) -> None:
               == frontend.chart_link(WEB_PAGE_ADDRESS, w.command_tokens()) and "start%3A2010" in app.web_address.get(), app.web_address.get())
         copied: list[str] = []
         root.clipboard_clear, root.clipboard_append = copied.clear, copied.append  # the person's own clipboard left alone
-        copy = next(widget for widget in all_widgets(web.master) if widget.winfo_class() == "TButton"
-                    and int(widget.grid_info()["row"]) == int(web.grid_info()["row"]))
+        copy = next(widget for widget in all_widgets(web.master.master) if widget.winfo_class() == "TButton"
+                    and widget.master is web.master.master and int(widget.grid_info()["row"]) == int(web.master.grid_info()["row"]))
         copy.invoke()
         check("its Copy copies the address", copied == [app.web_address.get()] and app.status.get() == "Web page address copied.",
               (copied, app.status.get()))

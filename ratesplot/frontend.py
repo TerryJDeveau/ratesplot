@@ -1166,8 +1166,8 @@ def help_topics() -> dict[str, tuple[Option, ...]]:
 
 
 def help_text(topic: str) -> str:
-    """Return topic ``topic``'s Markdown; KeyError for a name no option gives (the page's address may hold anything)."""
-    if topic not in help_topics():
+    """Return topic ``topic``'s Markdown; KeyError for a name no option or line gives (the page's address may hold anything)."""
+    if topic not in help_topics() and topic not in LINE_TOPICS:
         raise KeyError(topic)
     return (HELP_DIR / f"{topic}.md").read_text(encoding="utf-8")
 
@@ -1394,6 +1394,24 @@ BACK_HELP = "Undo the last zoom, move of the dates, Unzoom or Reset."
 UNZOOM_HELP = "Back to the charts before the first zoom or move since the last Reset (Back undoes it)."
 EXPORT_LABEL = "Export chart"
 EXPORT_HELP = "The chart as an image, or the data it shows: each line's value on each date in the window."
+# The two lines under the charts (batch 31.3): the chart's command line and
+# its link on the web page. Not options, but each with an ⓘ, its tip and a
+# topic, as a control has (Terry, 2026-10-29: his son did not know what they
+# were for). Their topics are in ``LINE_TOPICS``.
+COMMAND_LINE_LABEL = "Command line"
+COMMAND_LINE_HELP = (
+    "These charts as a command for the program on your own computer: run in its folder, the line draws the same charts. "
+    "Copy it to run it, keep it, or send it to someone who has the program."
+)
+COMMAND_LINE_TOPIC = "command-line"
+WEB_PAGE_LABEL = "Web page"
+WEB_PAGE_HELP = (
+    "These charts on the program's web page: opened in a browser, the link draws the same charts, for anyone. "
+    "Copy it to bookmark it or send it, or open it with Go."
+)
+WEB_PAGE_TOPIC = "web-page"
+# The topics no option names (``help_text``): the two lines', with their labels.
+LINE_TOPICS = {COMMAND_LINE_TOPIC: COMMAND_LINE_LABEL, WEB_PAGE_TOPIC: WEB_PAGE_LABEL}
 # What a blank date field means, in its grey value on the page and in the tip
 # of the calendar's "Blank (default)" in both ("Today when blank.").
 BLANK_DATE_WORDS = {"start": "automatic", "end": "today"}
