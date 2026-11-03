@@ -151,6 +151,8 @@ CHART_CASES = (
     "master_usd", "master_gbp_lv",
     # Batch 13.1: the inflation curve on all four charts, with its end labels.
     "inflation",
+    # Batch 13.2: the amounts at constant prices, per person, on all four.
+    "constant_pc",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -384,6 +386,20 @@ def check_address_and_rules(check: Check) -> None:
     top = at.text_input(key="value:cdn:top").value
     check("Top cleared by the measure change", top == "", top)
     check("address follows", address(at) == "--C --per-capita --regression --end:2026-09-01", address(at))
+    # Batch 13.2: constant prices combine with -p, and -r unticks both.
+    at.checkbox(key="flag:constant").check()
+    at.run()
+    f = flags(at)
+    check("ticking constant prices keeps -p", f["constant"] and f["per-capita"] and not f["relative"], f)
+    check("address has --constant", "--constant" in address(at).split(), address(at))
+    at.checkbox(key="flag:relative").check()
+    at.run()
+    f = flags(at)
+    check("ticking -r unticks -p and constant prices", f["relative"] and not f["per-capita"] and not f["constant"], f)
+    at.checkbox(key="flag:per-capita").check()
+    at.run()
+    f = flags(at)
+    check("ticking -p unticks -r, constant prices left off", f["per-capita"] and not f["relative"] and not f["constant"], f)
 
     # The last country cannot be unticked.
     at.checkbox(key="flag:cdn").uncheck()
@@ -868,8 +884,8 @@ def check_layout(check: Check) -> None:
     check("the titled blocks in order", titles[: len(wanted)] == wanted, titles)
     order = [box.key.split(":", 1)[1] for box in at.checkbox if box.key and box.key.startswith("flag:")]
     wanted = [
-        "relative", "per-capita", "regression", "yield", "spreads", "policy", "inflation", "mortgages", "label", "current",
-        "auto-refresh",
+        "relative", "per-capita", "constant", "regression", "yield", "spreads", "policy", "inflation", "mortgages", "label",
+        "current", "auto-refresh",
         "projections", "hover",
     ]
     keys = [box.key for box in at.checkbox if box.key]
@@ -1777,8 +1793,8 @@ def check_batch292(check: Check) -> None:
     flags = {"gdp": "gdp", "debt": "debt", "interest": "interest", "per-capita": "per-capita",
              # 29.2b, the rates' pages.
              "yield": "yields", "policy": "policy-rates", "mortgages": "mortgages", "spreads": "spreads", "current": "latest-values",
-             # 13.1, inflation.
-             "inflation": "inflation",
+             # 13.1, inflation; 13.2, constant prices.
+             "inflation": "inflation", "constant": "constant-prices",
              # 29.2c, the nations' pages.
              "cdn": "canada", "us": "united-states", "uk": "united-kingdom", "germany": "germany"}
     for name, topic in flags.items():

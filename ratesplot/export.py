@@ -91,6 +91,7 @@ JPEG_QUALITY = 95
 _SERIES_ATTR = "_ratesplot_export_series"
 _SUBTITLE_ATTR = "_ratesplot_export_subtitle"
 _CURRENCY_ATTR = "_ratesplot_amounts_currency"
+_PRICE_BASE_ATTR = "_ratesplot_price_base"
 YIELD_AXIS = "yield"
 MACRO_AXIS = "macro"
 # Each currency as a column's unit names it (the axis's own symbol is "$"
@@ -123,6 +124,16 @@ def mark_amounts_currency(figure: Figure, currency: str | None) -> None:
 def marked_amounts_currency(figure: Figure) -> str | None:
     """The currency ``mark_amounts_currency`` recorded for ``figure``: the master's on a chart converted to it, else None."""
     return getattr(figure, _CURRENCY_ATTR, None)
+
+
+def mark_price_base(figure: Figure, month: pd.Timestamp | None) -> None:
+    """Record the month whose consumer prices ``figure``'s amounts are in (--constant, batch 13.2); None for current prices."""
+    setattr(figure, _PRICE_BASE_ATTR, month)
+
+
+def marked_price_base(figure: Figure) -> pd.Timestamp | None:
+    """The month ``mark_price_base`` recorded for ``figure``, or None: its amounts in current prices."""
+    return getattr(figure, _PRICE_BASE_ATTR, None)
 
 
 def amounts_currency(figure: Figure, nation_key: str) -> str:
@@ -216,12 +227,14 @@ def _values_on(pieces: list[_Piece], days: np.ndarray) -> np.ndarray:
 
 
 def _macro_unit(figure: Figure, config: PlotConfig, nation_key: str) -> str:
-    """The right axis's unit in a data file: "% of TTM GDP", or its amounts' currency (the master's on a chart converted to it), per person under -p."""
+    """The right axis's unit in a data file: "% of TTM GDP", or its amounts' currency (the master's on a chart converted to it), per person under -p, at one month's prices under --constant ("C$ at 2026-09 prices")."""
     if config.relative:
         return "% of TTM GDP"
     code = amounts_currency(figure, nation_key)
     currency = _CURRENCY_UNITS.get(code, code)
-    return f"{currency} per person" if config.per_capita else currency
+    unit = f"{currency} per person" if config.per_capita else currency
+    month = marked_price_base(figure)
+    return unit if month is None else f"{unit} at {month:%Y-%m} prices"
 
 
 def chart_data(figure: Figure, config: PlotConfig, nation_key: str) -> ChartData:

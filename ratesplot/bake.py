@@ -2229,6 +2229,7 @@ _ONS_SERIES_TITLES = {
     "EBAQ": "UK resident population: mid-year estimates (Qtly data interpolated); dataset UKEA; quarterly "
             "(dated here by the quarter's last day, as every period is; uk_data dates it by the quarter's middle)",
     "D7G7": "CPI ANNUAL RATE 00: ALL ITEMS 2015=100; dataset MM23; monthly",
+    "D7BT": "CPI INDEX 00: ALL ITEMS 2015=100; dataset MM23; monthly",
 }
 # The unit of each ONS series as its description gives it (``uk_data.ONS_SERIES``), in words.
 _ONS_UNIT_WORDS = {
@@ -2237,8 +2238,11 @@ _ONS_UNIT_WORDS = {
     "": "millions of pounds (its description gives no unit)",
     ",000": "thousands of persons",
     "%": "percent",
+    "Index, base year = 100": "an index, 2015 = 100",
 }
 _ONS_FREQUENCY_WORDS = {"months": "monthly", "quarters": "quarterly"}
+# The units uk_data reads as they are: a rate in percent, the CPI's index.
+_ONS_UNITS_KEPT = ("%", "Index, base year = 100")
 
 
 def ons_baked_codes() -> list[str]:
@@ -2267,7 +2271,7 @@ def bake_ons_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
             f"Office for National Statistics, time series {code} ({ONS_TIMESERIES_URL.format(path=path)}): {title}.\n"
             f"Every {_ONS_FREQUENCY_WORDS[ONS_SERIES_READ[code]]} value the ONS gives, as ratesplot.uk_data reads it: dated by each period's last day,\n"
             f"in {_ONS_UNIT_WORDS[unit]}, the series' own unit"
-            + ("." if unit == "%" else " (uk_data converts it to pounds or persons).") + "\n"
+            + ("." if unit in _ONS_UNITS_KEPT else " (uk_data converts it to pounds or persons).") + "\n"
             "Written by tools/bake_archives.py --only ons (ratesplot.bake), read by ratesplot.baked;\n"
             "not edited by hand."
         )

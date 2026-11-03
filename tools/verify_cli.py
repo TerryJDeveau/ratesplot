@@ -268,6 +268,11 @@ CASES: list[list[str]] = [
     # nation's own; with the yields off it is the yield axis's only curve.
     ["--inflation"], ["--inf"], ["--infl"], ["--INF"], ["--no-inflation"], ["--no-inf"], ["--in"], ["--inflation:1"],
     ["--us:inflation"], ["inflation"], ["--inf", "--no-yield"], ["--inf", "--po", "--mo", "--sp"], ["--inflationx"],
+    # Batch 13.2: --constant, at least "con" ("--co" and "--c" are not it: "-c" is Canada); a flag, so no value
+    # and no nation's own; with -p; refused with -r; greyed with no right-axis curve.
+    ["--constant"], ["--con"], ["--cons"], ["--CON"], ["--co"], ["--no-constant"], ["--no-con"], ["--constant:1"],
+    ["--us:constant"], ["--con", "-p"], ["--con", "-r"], ["-r", "--con"], ["--con", "--no-gdp", "--no-debt", "--no-interest"],
+    ["--con", "--master:usd"], ["--constantx"],
 ]
 
 

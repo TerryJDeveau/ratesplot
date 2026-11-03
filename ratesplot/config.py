@@ -669,6 +669,11 @@ MASTER_SYMBOLS = {**CURRENCY_SYMBOLS, "USD": "US$"}
 # (``CountryMetadata.macro_axis_label``).
 AMOUNTS_AXIS_LABEL = "Nominal Units ({} – Log Scale)"
 PER_CAPITA_AXIS_LABEL = "Nominal Units per Capita ({} – Log Scale)"
+# The same at constant prices (--constant, batch 13.2): "Real Units at
+# 2026-09 Prices (CAD – Log Scale)", the month of the consumer price index
+# the amounts are expressed in (``PlotConfig.price_base``).
+REAL_AXIS_LABEL = "Real Units at {month} Prices ({currency} – Log Scale)"
+REAL_PER_CAPITA_AXIS_LABEL = "Real Units per Capita at {month} Prices ({currency} – Log Scale)"
 
 
 @dataclass(frozen=True)
@@ -997,12 +1002,17 @@ LEVELS_TITLE_SUFFIX = " by Level of Government"
 
 
 def _measure_suffixes(config: PlotConfig) -> tuple[str, str]:
-    """Return ``(legend_suffix, title_suffix)`` for the measure ``config`` asks for ("" for dollars)."""
+    """Return ``(legend_suffix, title_suffix)`` for the measure ``config`` asks for ("" for dollars).
+
+    At constant prices (batch 13.2) the title ends "at 2026-09 Prices", after
+    "per Capita" when both; the legend's names stay as they are (the axis
+    and the title say it once), but for GDP's "Nominal" (``macro_specs``).
+    """
     if config.relative:
         return RELATIVE_LABEL_SUFFIX, RELATIVE_TITLE_SUFFIX
-    if config.per_capita:
-        return PER_CAPITA_SUFFIX, PER_CAPITA_SUFFIX
-    return "", ""
+    legend_suffix = PER_CAPITA_SUFFIX if config.per_capita else ""
+    prices = "" if config.price_base is None else f" at {config.price_base:%Y-%m} Prices"
+    return legend_suffix, legend_suffix + prices
 
 
 def _with_suffix(label: str, suffix: str) -> str:
@@ -1043,6 +1053,10 @@ class CountryMetadata:
     interest_title: str = "Interest Outlays"
     gdp_column: str = GDP_COLUMN
     gdp_label: str = "TTM Nominal GDP"
+    # GDP's legend label at constant prices (--constant, batch 13.2), where
+    # "Nominal" would be wrong; "Real GDP" is kept for the statistics
+    # offices' own measure (deflated by GDP's prices, not consumers').
+    constant_gdp_label: str = "TTM GDP"
     gdp_title: str = "TTM GDP"
     # Federal debt alone, for the years before the aggregate exists (None: no such curve).
     federal_debt_column: str | None = None
@@ -1095,6 +1109,11 @@ class CountryMetadata:
         if config.relative:
             return RELATIVE_AXIS_LABEL
         master = config.master_conversion
+        if config.price_base is not None:
+            # At constant prices (batch 13.2): "Real Units at 2026-09 Prices (CAD – Log Scale)".
+            currency = nation_by_key(self.key).currency if master is None else master.described
+            label = REAL_PER_CAPITA_AXIS_LABEL if config.per_capita else REAL_AXIS_LABEL
+            return label.format(month=f"{config.price_base:%Y-%m}", currency=currency)
         if master is not None:
             return (PER_CAPITA_AXIS_LABEL if config.per_capita else AMOUNTS_AXIS_LABEL).format(master.described)
         return self.per_capita_label if config.per_capita else self.currency_label
@@ -1118,6 +1137,7 @@ class CountryMetadata:
         national debt to 1975), and the UK's net debt.
         """
         suffix = _measure_suffixes(config)[0]
+        gdp_label = self.gdp_label if config.price_base is None else self.constant_gdp_label
         # The levels it has, a synonym as the level it means (the UK's "n" as
         # "m"); none of them, its aggregate lines (batch 10.5, ``Nation.view``).
         letters = nation_by_key(self.key).view("components", config.components)
@@ -1127,7 +1147,7 @@ class CountryMetadata:
                  self.component_debt_label.format(self.level_name(letter)))
                 for letter in letters
             ]
-            specs.append(("gdp", config.draws_gdp, self.gdp_column, self.gdp_label))
+            specs.append(("gdp", config.draws_gdp, self.gdp_column, gdp_label))
             specs += [
                 (f"interest_{letter}", config.include_interest, component_column("interest", letter),
                  self.component_interest_label.format(self.level_name(letter)))
@@ -1138,7 +1158,7 @@ class CountryMetadata:
         gross = config.include_debt and "gross" in aggregates
         specs = [
             ("debt", gross, self.debt_column, self.debt_label),
-            ("gdp", config.draws_gdp, self.gdp_column, self.gdp_label),
+            ("gdp", config.draws_gdp, self.gdp_column, gdp_label),
             ("interest", config.include_interest, self.interest_column, self.interest_label),
         ]
         if self.net_debt_column is not None:
@@ -1493,6 +1513,16 @@ class PlotConfig:
     # -p: GDP, debt and interest per person, still on a log dollar axis. At
     # most one of relative / per_capita is set (options.config_from_choices).
     per_capita: bool = False
+    # --constant (batch 13.2): GDP, debt and interest at the consumer prices
+    # of one month, the last on or before the End that the nation's index
+    # has (ratesplot.measures, in_constant_prices); with -p or without, never
+    # with -r (a share of GDP is free of inflation already).
+    constant_prices: bool = False
+    # That month, set on a chart's config by plotting.draw_country once its
+    # index is read (prepare_*), never by an option; None on the choices'
+    # config, and on a chart in current prices. It words the axis label and
+    # the title ("at 2026-09 Prices", _measure_suffixes).
+    price_base: pd.Timestamp | None = None
     # -l: print each drawn line's last value at its right-hand end, in the
     # line's colour; the date axis is widened to make room (ratesplot.endlabels).
     end_labels: bool = False

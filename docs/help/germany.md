@@ -16,6 +16,7 @@ At the start it draws GDP, debt and interest on the right axis, and the 2-, 5-, 
 - [Inflation](?help=inflation), from 1992: the 12-month rise of the Federal Statistical Office's consumer price index, from the Bundesbank.
 - [Mortgage rates](?help=mortgages): the ECB's rates on new loans to households in Germany for house purchase, fixed for over 1 to 5, over 5 to 10 and over 10 years, monthly from 2000-01. All three are ticked at the start.
 - [Per capita](?help=per-capita): divided by Eurostat's population, quarterly from 1991.
+- [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the Federal Statistical Office's index from 1991-01.
 - [Latest values](?help=latest-values): the Bundesbank publishes the day's yields during the day, so once they are out the chart ends at them; before then, the day's yields quoted by CNBC's feed, their time given in Frankfurt time.
 
 ## Its own controls

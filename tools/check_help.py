@@ -134,8 +134,8 @@ def check_reasons() -> None:
     print("-- the reasons against the greying")
     base_payloads, base_flags = choices_from_config(PlotConfig())
     switches = (
-        "debt", "gdp", "interest", "relative", "yield", "mortgages", "spreads", "policy", "inflation", "regression", "current",
-        "auto-refresh",
+        "debt", "gdp", "interest", "relative", "constant", "yield", "mortgages", "spreads", "policy", "inflation", "regression",
+        "current", "auto-refresh",
     )
     first_level = {nation.key: nation.level_boxes[0][0] for nation in NATIONS if nation.level_boxes}
     variants = {
@@ -151,7 +151,7 @@ def check_reasons() -> None:
     first_disagreement = None
     for (name, fields), states in itertools.product(variants.items(), itertools.product((False, True), repeat=len(switches))):
         flags = {**base_flags, **dict(zip(switches, states))}
-        if flags["relative"] and flags.get("per-capita"):
+        if flags["relative"] and (flags.get("per-capita") or flags["constant"]):
             continue
         payloads = {**base_payloads, **fields}
         idle, nations = idle_choices(payloads, flags), idle_nation_keys(payloads, flags)

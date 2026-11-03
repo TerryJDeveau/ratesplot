@@ -455,6 +455,8 @@ _ONS_SERIES = {
     "EBAQ": (",000", "1955-01-01", "stock", 50_901, 69_628, False),
     # The CPI's 12-month rate (batch 13.1): a rate in percent, months only (``ons``).
     "D7G7": ("%", "1989-01-01", "rate", 2.5, 2.5, True),
+    # The CPI's index (batch 13.2), 2015 = 100, monthly from 1988 (``ons``).
+    "D7BT": ("Index, base year = 100", "1988-01-01", "stock", 48.4, 144.1, True),
 }
 
 

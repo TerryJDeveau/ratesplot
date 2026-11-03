@@ -1,9 +1,10 @@
-"""Consumer prices (batch 13): each nation's consumer price index, and its 12-month rise for --inflation.
+"""Consumer prices (batch 13): each nation's consumer price index, its 12-month rise for --inflation, and the index itself for --constant.
 
 Terry asked on 2026-10-12 for inflation by country; the plan's batch 13 has
 four uses sharing these sources, built in stages: 13.1, the inflation curve
-on the yield axis, first (2026-11-03). The sources, measured 2026-11-03, each
-the all-items index, not seasonally adjusted, monthly:
+on the yield axis, first (2026-11-03); 13.2, the amounts at constant prices,
+second (``consumer_prices``). The sources, measured 2026-11-03, each the
+all-items index, not seasonally adjusted, monthly:
 
 * the U.S.: FRED CPIAUCNS, the CPI for all urban consumers, from 1913-01
   (1982-84 = 100), with no value for 2025-10 (``us_data.US_CPI_SERIES_ID``);
@@ -15,7 +16,11 @@ the all-items index, not seasonally adjusted, monthly:
 * the UK: the ONS's own 12-month rate, D7G7, from 1989-01, and before it the
   rise of the Bank of England's spliced monthly index in its millennium
   dataset, from 1914-07 (the ONS's CPI estimates from 1949, the cost-of-living
-  index before; Terry chose it over the ONS's estimates alone, 2026-11-03).
+  index before; Terry chose it over the ONS's estimates alone, 2026-11-03);
+  for the index itself (13.2), the ONS's D7BT from 1988-01 (2015 = 100, to
+  a tenth) and the Bank's index before it, also 2015 = 100, laid end to end
+  (they differ by 0.04 % at 1988-01, by at most 0.17 points in the 351
+  months both have).
 
 A rise is each month's index over the same month's a year before, less one,
 in percent, found by date: a month without an index (the U.S.' 2025-10) has
@@ -35,7 +40,7 @@ from .cdn_data import statcan_table
 from .config import DATE_COLUMN, STATCAN_CDN_CPI_TABLE, STATCAN_CDN_CPI_VECTOR
 from .de_data import fetch_de_consumer_prices
 from .uk_archive_data import EMBEDDED_UK_CPI_HISTORY
-from .uk_data import UK_INFLATION_SERIES, ons_series
+from .uk_data import UK_CPI_SERIES, UK_INFLATION_SERIES, ons_series
 from .us_data import US_CPI_SERIES_ID, fred_series
 
 
@@ -71,13 +76,40 @@ def cdn_consumer_prices() -> pd.Series:
     return statcan_table(STATCAN_CDN_CPI_TABLE)[STATCAN_CDN_CPI_VECTOR].rename(STATCAN_CDN_CPI_VECTOR)
 
 
+def uk_consumer_prices() -> pd.Series:
+    """The UK's consumer price index (2015 = 100), monthly from 1914-07: the millennium index, then the ONS's D7BT from its first month (1988-01).
+
+    D7BT is its baked history and its whole answer (``uk_data.ons_series``).
+    Both are 2015 = 100, so they are laid end to end, not scaled.
+    """
+    history = _millennium_index()
+    live = _by_month(ons_series(UK_CPI_SERIES))
+    return pd.concat([history.loc[history.index < live.index[0]], live]).rename(UK_CPI_SERIES)
+
+
+def _millennium_index() -> pd.Series:
+    """The Bank of England's spliced monthly CPI in its millennium dataset (2015 = 100), 1914-07 to 2017-03, each month dated by its first day."""
+    rows = EMBEDDED_UK_CPI_HISTORY
+    return _by_month(pd.Series([value for _date, value in rows], index=pd.DatetimeIndex([date for date, _value in rows])))
+
+
+def consumer_prices(country: str) -> pd.Series:
+    """Return one country's consumer price index ("cdn", "us", "uk" or "de"), each month dated by its first day; raises if its source has nothing.
+
+    Each in its own base year: --constant divides by it and multiplies by
+    its value in one month (``measures.in_constant_prices``), so the base
+    year cancels.
+    """
+    reader = {"us": us_consumer_prices, "cdn": cdn_consumer_prices, "uk": uk_consumer_prices, "de": fetch_de_consumer_prices}
+    return _by_month(reader[country]())
+
+
 def uk_inflation() -> pd.Series:
     """The UK's 12-month rise in consumer prices, in percent: the millennium index's rise from 1915-07, the ONS's own rate from its first month (1989-01).
 
     The ONS's rate is its baked history and its whole answer (``uk_data.ons_series``).
     """
-    rows = EMBEDDED_UK_CPI_HISTORY
-    history = twelve_month_rise(pd.Series([value for _date, value in rows], index=pd.DatetimeIndex([date for date, _value in rows])))
+    history = twelve_month_rise(_millennium_index())
     live = _by_month(ons_series(UK_INFLATION_SERIES))
     return pd.concat([history.loc[history.index < live.index[0]], live]).rename(UK_INFLATION_SERIES)
 

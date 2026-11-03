@@ -83,7 +83,8 @@ config}; plotting -> {axes, legend, endlabels, regression, measures, rates,
 cdn_data, us_data, uk_data, de_data, joins, latest, baked} -> {frames, http} -> config;
 {cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data, us_data, de_data} -> baked -> {http, config};
 rates -> {cdn_data, uk_data, us_data, de_data, baked, announced, prices, http}; announced -> http;
-prices -> {cdn_data, uk_data, us_data, de_data, uk_archive_data} (batch 13.1); cdn_data -> us_data (FRED's
+prices -> {cdn_data, uk_data, us_data, de_data, uk_archive_data} (batch 13.1); plotting -> prices (batch
+13.2, --constant); cdn_data -> us_data (FRED's
 Canadian GDP); plotting -> fx -> {us_data, cdn_archive_data, uk_archive_data};
 plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
@@ -99,4 +100,4 @@ window is opened, so --no-gui and the web page never load tkinter.
 # build, in a commit of its own made before the push (the daily data job's commits leave it). It counts from 0 at
 # the first work on batch 11: its four pushes of 2026-10-27 made 6.4. Shown with the commit the program was
 # started from (frontend.version_text).
-__version__ = "7.1"
+__version__ = "7.2"
