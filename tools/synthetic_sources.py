@@ -148,7 +148,7 @@ _FX = {
 
 # Every FRED series ``fred`` answers.
 _FRED_IDS = (
-    "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", "CPIAUCNS", *_GROWTH, *_DAILY_START, *_FX,
+    "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", "CPIAUCNS", "CPIAUCSL", *_GROWTH, *_DAILY_START, *_FX,
 )
 
 
@@ -172,6 +172,10 @@ def fred(series_id: str) -> pd.DataFrame:
         # The consumer price index (batch 13.1), monthly from 1913, three decimals as FRED gives it.
         dates = pd.date_range("1913-01-01", "2026-09-01", freq="MS")
         values = np.round(_growth(dates, 9.8, 337.0, series_id), 3)
+    elif series_id == "CPIAUCSL":
+        # The same index seasonally adjusted (batch 13.4), monthly from 1947.
+        dates = pd.date_range("1947-01-01", "2026-09-01", freq="MS")
+        values = np.round(_growth(dates, 21.5, 336.3, series_id), 3)
     elif series_id in _GROWTH:
         start, freq, first, last = _GROWTH[series_id]
         end = "2026-07-01" if freq == "QS" else "2025-01-01"
@@ -322,7 +326,7 @@ _STATCAN_GFS_VECTORS = {
 }
 _MILLIONS = {"UOM": "Dollars", "SCALAR_FACTOR": "millions", "SCALAR_ID": 6}
 _UNITS = {"SCALAR_FACTOR": "units", "SCALAR_ID": 0}
-_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145", "18100004")
+_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145", "18100004", "18100006")
 
 
 def statcan(table_id: str) -> bytes:
@@ -390,6 +394,15 @@ def statcan(table_id: str) -> bytes:
         frame = pd.DataFrame({
             "REF_DATE": [f"{d:%Y-%m}" for d in months], "GEO": "Canada", "Products and product groups": "All-items",
             "UOM": "2002=100", **_UNITS, "VECTOR": "v41690973", "VALUE": np.round(values, 1),
+        })
+        return _zip(table_id, frame)
+    if table_id == "18100006":
+        # The same index seasonally adjusted (batch 13.4), monthly from 1992.
+        months = pd.date_range("1992-01-01", "2026-09-01", freq="MS")
+        values = _growth(months, 84.0, 170.0, "cdn_cpi_sa")
+        frame = pd.DataFrame({
+            "REF_DATE": [f"{d:%Y-%m}" for d in months], "GEO": "Canada", "Products and product groups": "All-items",
+            "UOM": "2002=100", **_UNITS, "VECTOR": "v41690914", "VALUE": np.round(values, 1),
         })
         return _zip(table_id, frame)
     raise KeyError(f"no synthetic StatCan table {table_id}")
@@ -526,9 +539,10 @@ def bundesbank(url: str) -> bytes:
     """
     key = re.split(r"/rest/(?:download|data)/", url)[1].replace("/", ".", 1)
     if key.startswith("BBDP1."):
-        # The consumer price index (batch 13.1), monthly from 1991, 2020 = 100, to a tenth.
+        # The consumer price index (batch 13.1), monthly from 1991, 2020 = 100, to a tenth; seasonally
+        # adjusted (batch 13.4) under key M.DE.Y...
         months = pd.date_range("1991-01-31", "2026-10-31", freq="ME")
-        values = _growth(months, 60.5, 126.4, "de_cpi")
+        values = _growth(months, 60.5, 126.4, "de_cpi_sa" if ".M.DE.Y." in key else "de_cpi")
         lines = [f'"",{key},{key}_FLAGS', '"",synthetic consumer price index,', "unit,2020=100,", "unit multiplier,One,"]
         lines += [f"{day:%Y-%m},{value:.1f}," for day, value in zip(months, values)]
         return ("\ufeff" + "\n".join(lines)).encode()
@@ -791,12 +805,14 @@ def install_synthetic_bake(folder: Path) -> bool:
                 key = de_data.term_structure_key(column, frequency)
                 answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
                 bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer))
-    # The consumer price index (batch 13.1; a tree before it reads no such file).
-    if hasattr(de_data, "DE_CPI_SERIES"):
-        flow, key = de_data.DE_CPI_SERIES
-        answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
-        units = de_data._BUNDESBANK_UNITS[de_data.DE_CPI_SERIES]
-        bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer, units))
+    # The consumer price indexes (batch 13.1, the seasonally adjusted one 13.4; a tree before either reads no
+    # such file).
+    for name in ("DE_CPI_SERIES", "DE_CPI_SA_SERIES"):
+        if hasattr(de_data, name):
+            flow, key = getattr(de_data, name)
+            answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
+            units = de_data._BUNDESBANK_UNITS[(flow, key)]
+            bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer, units))
     # Statistics Canada's live tables, each vector read, selected by the program's own labels (a tree before
     # 19.2's Statistics Canada stage has no STATCAN_SERIES_READ, and reads no Statistics Canada file).
     cdn_data = importlib.import_module("ratesplot.cdn_data")

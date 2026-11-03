@@ -113,6 +113,12 @@ US_POPULATION_SERIES_ID = "B230RC0Q173SBEA"  # population (mid-period), thousand
 # Measured 2026-11-03: 1,365 rows to 2026-09, one without a value, 2025-10
 # (the BLS collected no October prices during the federal shutdown).
 US_CPI_SERIES_ID = "CPIAUCNS"
+# The same index seasonally adjusted, monthly from 1947-01, on the same base
+# (batch 13.4, the price index on the right axis). Measured 2026-11-03: 956
+# rows to 2026-09, one without a value, 2025-10, as the unadjusted index; each
+# year's mean within 0.08 % of the unadjusted index's. Revised: the BLS
+# recomputes five years of seasonal factors with each January's figures.
+US_CPI_SA_SERIES_ID = "CPIAUCSL"
 
 # FRED's series are baked (batch 19.2) under ``ratesplot/data/fred/``
 # (``tools/bake_archives.py --only fred``): the U.S. series here and in

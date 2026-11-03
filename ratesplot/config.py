@@ -280,6 +280,13 @@ CDN_MORTGAGE_HISTORY_VECTOR = "v733833"
 # only in 1995.
 STATCAN_CDN_CPI_TABLE = "18100004"
 STATCAN_CDN_CPI_VECTOR = "v41690973"
+# The same index seasonally adjusted, monthly from 1992, 2002 = 100 (batch
+# 13.4, the price index on the right axis; measured 2026-11-03: 417 months to
+# 2026-09, none without a value; each year's mean within 0.05 % of the
+# unadjusted index's). Its seasonal factors are revised each year; a revision
+# older than a recent part's 24 months reaches the bake by the daily job.
+STATCAN_CDN_CPI_SA_TABLE = "18100006"
+STATCAN_CDN_CPI_SA_VECTOR = "v41690914"
 
 # Archived (terminated) StatCan tables. They no longer change, so the bake
 # (``tools/bake_archives.py``) downloads them once and writes the required rows

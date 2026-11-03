@@ -141,14 +141,19 @@ _DAILY_FILL_LIMIT = 3
 _BUNDESBANK_PERCENT = ("percent", "prozent", "% p.a.")
 # The consumer price index, all items, Germany, monthly from 1991-01, 2020 =
 # 100, not seasonally adjusted (batch 13.1, --inflation; measured 2026-11-03:
-# 430 months to 2026-10, each with a value; the seasonally adjusted index, key
-# M.DE.Y..., for 13.4). A new base year comes as a new key (I20 for 2020 =
-# 100), this one then stopping. Baked under ``ratesplot/data/bbk/`` with the
-# term structure.
+# 430 months to 2026-10, each with a value). A new base year comes as a new
+# key (I20 for 2020 = 100), this one then stopping. Baked under
+# ``ratesplot/data/bbk/`` with the term structure.
 DE_CPI_SERIES = ("BBDP1", "M.DE.N.VPI.C.A00000.I20.A")
+# The same index seasonally adjusted (key M.DE.Y...), on the same base (batch
+# 13.4, the price index on the right axis; measured 2026-11-03: 1991-01 to
+# 2026-10, 430 months, each with a value; each year's mean within 0.09 % of
+# the unadjusted index's). Revised as its seasonal factors are re-estimated,
+# so its recent part is a revised series' (``fetch_de_consumer_prices``).
+DE_CPI_SA_SERIES = ("BBDP1", "M.DE.Y.VPI.C.A00000.I20.A")
 # The unit of each Bundesbank series not in percent, as its CSV gives it
 # (``parse_bundesbank_csv``), by flow and key.
-_BUNDESBANK_UNITS = {DE_CPI_SERIES: ("2020=100",)}
+_BUNDESBANK_UNITS = {DE_CPI_SERIES: ("2020=100",), DE_CPI_SA_SERIES: ("2020=100",)}
 _BUNDESBANK_DATE = re.compile(r"^\d{4}-\d{2}(-\d{2})?$")
 _BUNDESBANK_MISSING = (".", "-", "")
 
@@ -315,13 +320,14 @@ def bundesbank_download(flow: str, key: str, start: pd.Timestamp | None = None) 
     return values
 
 
-def bundesbank_series(flow: str, key: str) -> pd.Series:
+def bundesbank_series(flow: str, key: str, *, revised: bool = False) -> pd.Series:
     """Return one series of the Bundesbank's database (``parse_bundesbank_csv``): its baked history, then its recent part from the Bundesbank.
 
     Batch 19.2 (``ratesplot.baked``): the history is in
     ``ratesplot/data/bbk/``, and only the last two months are asked for
-    (market yields, not revised), from the period holding that date on; a
-    series not baked is asked for whole. If the Bundesbank fails,
+    (market yields, not revised), or the last 24 if the series is revised
+    (``revised``: a seasonally adjusted index, batch 13.4), from the period
+    holding that date on; a series not baked is asked for whole. If the Bundesbank fails,
     the baked history alone, to its last value, with a warning; but a bot
     check is raised (``BotCheck``), for the caller to name once. Measured
     2026-10-22: the bake joined to its recent part is the Bundesbank's whole
@@ -332,7 +338,7 @@ def bundesbank_series(flow: str, key: str) -> pd.Series:
         f"{flow}.{key}",
         f"Bundesbank {flow}.{key}",
         lambda start: bundesbank_download(flow, key, start),
-        RECENT_PART_UNREVISED,
+        RECENT_PART_REVISED if revised else RECENT_PART_UNREVISED,
         passes=(BotCheck,),
     )
 
@@ -770,16 +776,18 @@ def fetch_de_components(config: PlotConfig) -> pd.DataFrame | None:
     return pd.concat(columns, axis=1).sort_index() if columns else None
 
 
-def fetch_de_consumer_prices() -> pd.Series:
+def fetch_de_consumer_prices(*, adjusted: bool = False) -> pd.Series:
     """Return Germany's consumer price index (``DE_CPI_SERIES``, 2020 = 100), each month dated by its last day: its baked history and recent part.
 
-    If the Bundesbank fails, the bake alone, with a warning
-    (``bundesbank_series``); after a bot check, the bake alone too, with a
-    warning that names it, as the yields' does. Raises if there is neither.
+    ``adjusted``: the seasonally adjusted index instead (``DE_CPI_SA_SERIES``,
+    batch 13.4), whose recent part is a revised series'. If the Bundesbank
+    fails, the bake alone, with a warning (``bundesbank_series``); after a
+    bot check, the bake alone too, with a warning that names it, as the
+    yields' does. Raises if there is neither.
     """
-    flow, key = DE_CPI_SERIES
+    flow, key = DE_CPI_SA_SERIES if adjusted else DE_CPI_SERIES
     try:
-        return bundesbank_series(flow, key)
+        return bundesbank_series(flow, key, revised=adjusted)
     except BotCheck as exc:
         baked = read_series(BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}")
         if baked is None or baked.empty:
