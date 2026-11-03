@@ -1722,6 +1722,13 @@ def check_batch284(check: Check) -> None:
           web.for_screen(config, False) == config
           and (web.for_screen(config, True).width_px, web.for_screen(config, True).height_px) == (800, 800)
           and web.for_screen(replace(config, width_px=1600, height_px=1200), True).width_px == 1600)
+    # The script itself (AppTest runs none; measured in Chrome 2026-11-03: a
+    # window slid 400 px on one side of the limit asked for no run, where it
+    # had asked for about 50; across it, one).
+    script = web._WIDTH_JS
+    check("its script: one listener for the visit, on the page's latest answer, never one per call",
+          script.count('addEventListener("resize"') == 1 and "if (!width.listening)" in script
+          and "width.page = data.narrow;" in script and "removeEventListener" not in script)
 
 
 def check_batch291(check: Check) -> None:

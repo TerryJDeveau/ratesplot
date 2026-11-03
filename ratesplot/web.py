@@ -995,18 +995,35 @@ def _keep_sidebar_width(remember: bool) -> None:
 # The screen's width (batch 28.4): a component with nothing to show, whose
 # script says whether the browser's window is narrower than the limit, at the
 # visit's start and when it crosses it (a phone turned). It speaks only when
-# its answer differs from the page's, which the page hands it, so its answer
-# does not run the page again and again.
+# its answer differs from the page's, which the page hands it, or from what it
+# last said while the page has not yet heard it, so its answer does not run
+# the page again and again. Its script is called again with each run's data,
+# so it keeps one note and one listener for the visit (``window``): until
+# 6.28 each call added a listener and the first, holding the visit's first
+# data (no answer yet), was never removed, so every resize event ran the
+# whole page again (measured 2026-11-03: about 50 runs as a window was
+# narrowed by 400 px, as Community Cloud's "Manage app" panel slides in).
 _WIDTH_JS = """
 export default function (component) {
   const { data, setTriggerValue } = component;
-  const tell = () => {
-    const narrow = window.innerWidth < data.limit;
-    if (narrow !== data.narrow) setTriggerValue("narrow", narrow);
+  const width = (window.ratesplotWidth ??= { told: undefined });
+  width.page = data.narrow;
+  width.limit = data.limit;
+  width.trigger = setTriggerValue;
+  if (width.told === width.page) width.told = undefined;  // the page has heard it
+  width.tell ??= () => {
+    const narrow = window.innerWidth < width.limit;
+    const known = width.told === undefined ? width.page : width.told;
+    if (narrow !== known) {
+      width.told = narrow;
+      width.trigger("narrow", narrow);
+    }
   };
-  tell();
-  window.addEventListener("resize", tell);
-  return () => window.removeEventListener("resize", tell);
+  if (!width.listening) {
+    window.addEventListener("resize", () => width.tell());
+    width.listening = true;
+  }
+  width.tell();
 }
 """
 
