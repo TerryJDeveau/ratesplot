@@ -311,6 +311,15 @@ CASES: dict[str, list[str]] = {
     "cpi_sa": ["--na:ca,us,gb,de", "--cpi:sa", "--yield", "-l", "--reg", "-s:2000"],
     "cpi_pc": ["--na:ca,us", "--cpi", "-p", "--constant", "-s:1960"],
     "cpi_long": ["--na:us,gb", "--cpi", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1913"],
+    # Batch 13.5: the population on the same axis: the four nations outside the
+    # amounts, with -l and --reg; the amounts on both sides (its outer axis's
+    # labels the widest); the same under -r, and under -p with --constant; alone
+    # over the UK's and Canada's whole span, on the right axis.
+    "population": ["--na:ca,us,gb,de", "--population", "-l", "--reg", "-s:1990"],
+    "population_amounts": ["--na:de", "--pop", "--no-yield", "-l", "--reg", "-s:1990"],
+    "population_r": ["--na:ca,us", "--pop", "-r", "-s:1960"],
+    "population_pc": ["--na:ca,us", "--pop", "-p", "--constant", "-s:1960"],
+    "population_long": ["--na:gb,ca", "--pop", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "--reg", "-s:1700"],
 }
 
 

@@ -155,6 +155,8 @@ CHART_CASES = (
     "constant_pc",
     # Batch 13.4: the price index seasonally adjusted on all four, on its own axis, with --reg.
     "cpi_sa",
+    # Batch 13.5: the population on the same axis on all four, with -l and --reg.
+    "population",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -2177,6 +2179,56 @@ def check_batch134(check: Check) -> None:
           and "Seas. adj." in shown, shown[:60])
 
 
+def check_batch135(check: Check) -> None:
+    """Batch 13.5: "Population", one of it and "Price index (CPI)" at a time; the regression segments not greyed with it alone; its ⓘ and page; the two together refused in an address."""
+
+    def ticked(page: AppTest) -> tuple[bool, bool]:
+        """(“Price index (CPI)” ticked, “Population” ticked)."""
+        return page.checkbox(key="flag:cpi").value, page.checkbox(key="flag:population").value
+
+    def drawn(page: AppTest) -> tuple[bool, bool]:
+        """What the address draws: (the price index, the population)."""
+        config = config_from_choices(*sort_tokens(address(page).split())[:2])
+        return config.price_index, config.population
+
+    at = new_page("-c -s:2015 --e:2019")
+    box = at.checkbox(key="flag:population")
+    check("“Population” shown, unticked, not greyed, its tip ending with More to its page", not at.exception
+          and box.label == "Population" and not box.value and not box.disabled and box.help.endswith("[More](?help=population)"),
+          (box.label, box.value, box.disabled, box.help[-60:]))
+    box.check().run()
+    check("ticked: --population in the address, the population drawn", not at.exception and drawn(at) == (False, True)
+          and "--population" in address(at).split(), address(at))
+    at.checkbox(key="flag:cpi").check().run()
+    check("“Price index (CPI)” ticked: “Population” unticked, --cpi alone", not at.exception and ticked(at) == (True, False)
+          and drawn(at) == (True, False) and "--population" not in address(at), (address(at), ticked(at)))
+    at.checkbox(key="choice:cpi-adjustment:sa").check().run()
+    at.checkbox(key="flag:population").check().run()
+    check("“Population” ticked: “Price index (CPI)” unticked, “Seas. adj.” greyed, neither in the address", not at.exception
+          and ticked(at) == (False, True) and drawn(at) == (False, True) and "--cpi" not in address(at)
+          and at.checkbox(key="choice:cpi-adjustment:sa").disabled, (address(at), ticked(at)))
+
+    at = new_page("-c --pop --no-gdp --no-debt --no-interest -s:2015 --e:2019")
+    check("alone on the right axis: the regression segments not greyed; per capita, Top and Bottom are", not at.exception
+          and not at.checkbox(key="flag:regression").disabled and at.checkbox(key="flag:per-capita").disabled
+          and at.text_input(key="value:cdn:top").disabled, at.checkbox(key="flag:regression").disabled)
+    at.checkbox(key="flag:population").uncheck().run()
+    check("unticked again: the regression segments greyed", not at.exception and at.checkbox(key="flag:regression").disabled)
+
+    at = new_page("-c --cpi --pop -s:2015 --e:2019")
+    check("--cpi --pop in an address: reported, as -r -p is, and the defaults drawn",
+          not at.exception and any("--cpi and --population cannot be combined" in block.value for block in at.warning)
+          and not at.checkbox(key="flag:cpi").value and not at.checkbox(key="flag:population").value,
+          [block.value for block in at.warning])
+
+    view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+    view.query_params["help"] = "population"
+    view.run()
+    shown = "\n".join(block.value for block in view.markdown)
+    check("?help=population: its title and its links", not view.exception and "# Population" in shown.splitlines()
+          and all(f"(?help={link})" in shown for link in ("per-capita", "regression", "price-index")), shown[:60])
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
@@ -2184,6 +2236,7 @@ PAGE_CHECKS = (
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
+    check_batch135,
 )
 
 

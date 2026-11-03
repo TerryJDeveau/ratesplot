@@ -57,7 +57,7 @@ import synthetic_sources  # noqa: E402
 from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
 
 from ratesplot import cli, export, http  # noqa: E402
-from ratesplot.config import PRICE_INDEX_ADJUSTED_LABEL, PRICE_INDEX_BASES, PRICE_INDEX_LABEL, nation_by_key  # noqa: E402
+from ratesplot.config import POPULATION_LABEL, PRICE_INDEX_ADJUSTED_LABEL, PRICE_INDEX_BASES, PRICE_INDEX_LABEL, nation_by_key  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 
@@ -66,10 +66,10 @@ from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E
 # Germany with their rates, spreads and mortgages; the four policy rates with
 # the U.S. target range as a band; all four nations; the amounts in one master
 # currency at constant prices (13.2); the price index on its own axis with
-# --reg, and alone on the right axis (13.4).
+# --reg, and alone on the right axis (13.4); the population, the same two (13.5).
 DEFAULT_CASES = (
     "default", "c_reg1867", "u_reg_r", "c_lv_r", "c_p", "uk_rates", "de_rates", "policy_both", "all4", "constant_master",
-    "cpi", "cpi_long",
+    "cpi", "cpi_long", "population", "population_long",
 )
 # --save is run from the command line on these: two nations, then four with their own levels.
 SAVE_CASES = ("default", "nat_levels")
@@ -144,6 +144,12 @@ def check_chart(check, label: str, figure, config, key: str) -> None:
         units = list(zip(data.names, data.units))
         check(f"{label}: the price index's unit {index_unit!r} in the units row, and no other curve's",
               all((unit == index_unit) == index for (_name, unit), index in zip(units, is_index))
+              and rows[3] == ["(YYYY-MM-DD)", *(f"({unit})" for unit in data.units)], units)
+    is_population = [name == POPULATION_LABEL for name, _axis in pieces]
+    if any(is_population):
+        units = list(zip(data.names, data.units))
+        check(f"{label}: the population's unit 'persons' in the units row, and no other curve's",
+              all((unit == "persons") == population for (_name, unit), population in zip(units, is_population))
               and rows[3] == ["(YYYY-MM-DD)", *(f"({unit})" for unit in data.units)], units)
     body = rows[4:]
     read_back = all(

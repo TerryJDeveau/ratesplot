@@ -100,6 +100,10 @@ VALUES = (
     # "no" forms; adjusted with the UK alone, which publishes none (then left off the written line), and beside it.
     "--cpi", "--cpi:sa", "--cpi --yield --reg", "--cpi:sa --no-gdp --no-debt --no-interest -p", "--no-cpi",
     "--cpi:sa --no-cpi", "--nations:gb --cpi:sa", "--nations:gb,de --cpi:sa",
+    # The population (batch 13.5): beside the amounts or alone, with --reg and a tolerance (not idle with it or the
+    # index alone on the right axis), under -p, and the "no" form; beside the index refused, and off again.
+    "--population", "--pop --yield --reg", "--pop --no-gdp --no-debt --no-interest -p", "--pop --reg:2 --no-gdp --no-debt --no-interest",
+    "--cpi --reg:2 --no-gdp --no-debt --no-interest", "--no-pop", "--cpi --pop", "--cpi:sa --no-cpi --pop",
 )
 
 
