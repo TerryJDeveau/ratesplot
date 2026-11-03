@@ -1951,6 +1951,16 @@ def check_batch34(check: Check) -> None:
         web._draw = real
     check("… and a visit whose only drawing failed: laid out, given none, so nothing is written",
           (memory(failed) or {}).get("line", "x") is None and failed.session_state[web._DRAWING].error is not None, memory(failed))
+    at = new_page("-c -s:2001 --e:2019")
+    for curve in ("gdp", "debt", "interest", "yield"):
+        at.checkbox(key="flag:" + curve).uncheck().run()
+    empty = at.session_state[web._DRAWING]
+    check("a chart with no curve (\"no series selected\"): drawn, the keeper given none, so the line before stays",
+          not at.exception and empty.error is None and "--no-yield" in address(at) and (memory(at) or {}).get("line", "x") is None
+          and web.kept_line(empty) is None, (address(at), memory(at)))
+    at.checkbox(key="flag:debt").check().run()
+    check("… and a curve ticked again: its line given", (memory(at) or {}).get("line") == address(at) and "--no-debt" not in address(at),
+          memory(at))
     script = web._MEMORY_JS
     check("the script acts when the page is hidden or left, never on a run", 'addEventListener("pagehide", memory.leave)' in script
           and 'document.visibilityState === "hidden"' in script and script.count("memory.leave()") == 1

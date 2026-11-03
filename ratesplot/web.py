@@ -52,8 +52,9 @@ Remembered settings
     it stands then, the last tab closed with it ticked winning; and when the
     page is hidden, since a phone's tab closed from the switcher gives no
     other sign, putting back what was there if the box is unticked by the
-    time the tab is left (batch 34.2, ``_MEMORY_JS``). Reset gives the
-    defaults, whose line removes the cookie then. The sidebar's width, which
+    time the tab is left (batch 34.2, ``_MEMORY_JS``). A chart with no curve
+    on it is not kept: the line before it stays (``kept_line``). Reset gives
+    the defaults, whose line removes the cookie then. The sidebar's width, which
     Streamlit keeps in the browser once it is dragged, is kept only while
     the box is ticked, as the window's column's is (batch 31.1,
     ``_keep_sidebar_width``).
@@ -1082,6 +1083,24 @@ def _read_remembered() -> None:
     reader = st.components.v2.component("ratesplot_reader", js=_READER_JS)
     reader(key=_READER, data={"name": REMEMBER_COOKIE}, on_line_change=_cookie_read)
     st.caption("Looking for the settings remembered in this browser …")
+
+
+def kept_line(drawing: Drawing | None) -> str | None:
+    """The line the settings' keeper is given for ``drawing`` (``_remember_settings``): its command line, or None to keep the one it was last given.
+
+    None for no drawing, a drawing that failed, and a chart that draws no
+    curve ("no series selected"): no one gains by opening on that, and it is
+    what the page's controls gave twice on 2026-10-29 when they came back
+    unticked with no one touching them; Terry's next visit then opened on it
+    (cause not found: not reproduced on 2026-11-03 by a width changed alone or
+    in bursts, a server restarted under an open page, from the address or the
+    cookie, locally or live).
+    """
+    if drawing is None or drawing.error is not None:
+        return None
+    if not (drawing.config.has_left_axis_series or drawing.config.has_macro_series):
+        return None
+    return " ".join(drawing.tokens)
 
 
 def _remember_settings(line: str | None, remember: bool) -> None:
@@ -2438,12 +2457,12 @@ def main() -> None:
 
     with st.expander("Every option, as the command line spells it"):
         st.code(help_epilog(), language=None)
-    # The last good chart drawn, kept if the box is ticked as the visit ends
-    # (batches 24.6 and 34.2): its line is the address's. On every run, so
-    # its script knows the box. At the page's foot, not the sidebar's: a
-    # folded sidebar (a phone's, at first) runs no script of its own
-    # (measured 2026-10-27, Streamlit 1.64: no cookie written).
+    # The last good chart drawn with a curve on it, kept if the box is ticked
+    # as the visit ends (batches 24.6 and 34.2, ``kept_line``): its line is
+    # the address's. On every run, so its script knows the box. At the page's
+    # foot, not the sidebar's: a folded sidebar (a phone's, at first) runs no
+    # script of its own (measured 2026-10-27, Streamlit 1.64: no cookie written).
     remember = bool(state.get(_REMEMBER))
-    _remember_settings(" ".join(drawing.tokens) if drawing is not None and drawing.error is None else None, remember)
+    _remember_settings(kept_line(drawing), remember)
     # The sidebar's width, kept only while the box is ticked (batch 31.1): on every run, so its script knows the box.
     _keep_sidebar_width(remember)
