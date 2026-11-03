@@ -2010,6 +2010,12 @@ def check_start_stopped(check: Check) -> None:
     check("… and once ready, a later run sends no value of its own (the browser's stands)",
           not again.exception and not again.checkbox(key="flag:cdn").proto.set_value and again.checkbox(key="flag:cdn").value,
           again.checkbox(key="flag:cdn").proto.set_value)
+    # A box drawn late, after a run that sends no values (on Community Cloud the boxes' code loads after the first
+    # drawing's layout pass), mounts from that run's default: each control's default is its value now (web._now).
+    wrong = [box.key for box in again.checkbox if box.key and box.proto.default != box.value]
+    wrong += [field.key for field in again.text_input if field.key and field.proto.default != (field.value or "")]
+    check(f"every box and field's default its value now ({len(again.checkbox)} boxes, {len(again.text_input)} fields)",
+          not again.exception and not wrong and again.text_input(key="value:start").proto.default == "2001", wrong[:8])
 
 
 def check_line_help(check: Check) -> None:

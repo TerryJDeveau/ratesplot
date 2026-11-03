@@ -1555,11 +1555,30 @@ def _line_help(text: str, topic: str) -> str:
     return dollars_shown(f"{text}\n\n[More]({help_address(topic)})")
 
 
+def _now(key: str, blank: object = False) -> object:
+    """A control's value now, given to it as its default (``value=``), so a box drawn late shows it (2026-11-03).
+
+    Streamlit sends a value set from code only in the run that set it; a
+    control drawn after a later run's arrives (on Community Cloud the boxes'
+    code loads after the first drawing's layout pass, measured live) mounts
+    from that run's description, its default and no value: unticked, a
+    field blank, while the server holds the visit's settings, and the
+    browser's next request then sent those defaults back. With its value as
+    its default it shows the server's. A widget's identity here is its key
+    alone (``key_as_main_identity``), so the default changing changes no
+    widget; Streamlit takes session state's value over it, and only logs a
+    line, turned off in ``.streamlit/config.toml``, where code set the key
+    in the same run.
+    """
+    return st.session_state.get(key, blank)
+
+
 def _flag_control(where, option: Option) -> None:
     callbacks = {"country": _country_changed, "units": _measure_changed, "curves": _curve_changed}
     callback = callbacks.get(option.group)
     where.checkbox(
         option.label,
+        value=bool(_now(_FLAG + option.name)),
         key=_FLAG + option.name,
         help=_help(option),
         on_change=callback,
@@ -1647,6 +1666,7 @@ def _value_control(where, option: Option, key: str | None = None, label: str | N
     flag_off = option.turns_on is not None and not st.session_state.get(_FLAG + option.turns_on, False)
     where.text_input(
         _red_if_wrong(option.label if label is None else label, key in st.session_state.get(_WRONG, {})),
+        value=str(_now(_VALUE + key, "")),
         key=_VALUE + key,
         on_change=_field_typed,
         args=(key,),
@@ -1796,6 +1816,7 @@ def _size_control(where, option: Option) -> None:
     for (which, placeholder), fault in zip((("width", PlotConfig().width_px), ("height", PlotConfig().height_px)), faults):
         row.text_input(
             _red_if_wrong(f"{which.capitalize()} (px)", fault),
+            value=str(_now(_SIZE + which, "")),
             key=_SIZE + which,
             help=tip,
             placeholder=str(placeholder),
@@ -1804,6 +1825,7 @@ def _size_control(where, option: Option) -> None:
         )
     where.checkbox(
         "Preserve aspect ratio",
+        value=bool(_now(_SIZE + "lock", True)),
         key=_SIZE + "lock",
         on_change=_size_lock_changed,
         help="When ticked, changing one box changes the other to keep the current shape.",
@@ -1822,7 +1844,8 @@ def _levels_control(where, option: Option, nation: Nation) -> None:
     idle = option.name in _idle()  # greyed without debt or interest, as in the window
     row = where.container(horizontal=True, wrap=True)
     for letter, caption in nation.level_boxes:
-        row.checkbox(caption, key=_LEVEL + nation.key + ":" + letter, disabled=idle)
+        level = _LEVEL + nation.key + ":" + letter
+        row.checkbox(caption, value=bool(_now(level)), key=level, disabled=idle)
 
 
 def _choices_control(where, option: Option, nation: Nation | None = None) -> None:
@@ -1859,6 +1882,7 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
         for value, text in boxes:
             row.checkbox(
                 text,
+                value=bool(_now(_CHOICE + key + ":" + value)),
                 key=_CHOICE + key + ":" + value,
                 disabled=disabled,
                 on_change=_choice_changed,
@@ -1893,7 +1917,7 @@ def _controls() -> None:
     at_reset = reset_changes_nothing(_snapshot()) and st.session_state.get(_SIZE + "lock", True)
     buttons[1].button("Reset", on_click=_reset, help=RESET_HELP, width="stretch", disabled=at_reset)
     # Changing it draws nothing: it governs only the cookie (batch 24.6).
-    bar.checkbox(REMEMBER_LABEL, key=_REMEMBER, help=REMEMBER_HELP)
+    bar.checkbox(REMEMBER_LABEL, value=bool(_now(_REMEMBER, True)), key=_REMEMBER, help=REMEMBER_HELP)
     bar.caption(_REMEMBER_LINE)
     st.session_state[_HINTS] = _field_hints()
     _settle_all_ticks()  # before the "All" boxes are laid out, which fixes their state for this run
@@ -2024,6 +2048,7 @@ def _master_control(where, nation: Nation) -> None:
     """
     where.checkbox(
         master_label(nation),
+        value=bool(_now(_master_box(nation))),
         key=_master_box(nation),
         on_change=_master_changed,
         args=(nation,),
@@ -2057,6 +2082,7 @@ def _limit_control(where, nation: Nation, option: Option) -> None:
     row.markdown(f'<div style="padding-bottom: 1.4rem">{symbol}</div>', unsafe_allow_html=True, width=20)
     row.checkbox(
         "All",
+        value=bool(_now(_ALL + key)),
         key=_ALL + key,
         on_change=_all_changed,
         args=(key,),

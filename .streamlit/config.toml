@@ -1,6 +1,11 @@
 # Streamlit settings for the web page (ratesplot.web), locally and on
 # Streamlit Community Cloud.
 
+[global]
+# Each control is given its value now as its default (web._now, 2026-11-03), so in a run
+# where code also set its key Streamlit would log that both were given: expected here.
+disableWidgetStateDuplicationWarning = true
+
 [server]
 # No browser opened by the server itself, and no e-mail prompt on first run.
 headless = true
