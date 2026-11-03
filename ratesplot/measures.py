@@ -1,4 +1,4 @@
-"""How the right-axis (macro) curves are measured: in dollars, as a percentage of GDP (-r), or per person (-p); and in which currency (--master).
+"""How the right-axis (macro) curves are measured: in dollars, as a percentage of GDP (-r), or per person (-p); at constant prices (--constant); and in which currency (--master).
 
 The data layers always produce dollar amounts, with each series forward-filled
 onto the chart's dates. ``express`` converts that prepared frame (a ``DATE``
@@ -13,22 +13,94 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .config import COMPONENT_LETTERS, DATE_COLUMN, CountryMetadata, PlotConfig, component_column
+from .config import COMPONENT_LETTERS, DATE_COLUMN, CountryMetadata, PlotConfig, component_column, nation_by_key
+
+
+# The month whose consumer prices a chart's amounts are in (--constant),
+# recorded on the frame ``express`` returns; None where they are in current
+# prices (no index on or before the End). ``plotting.draw_country`` reads it.
+PRICE_BASE_ATTR = "price_base"
 
 
 def express(
-    macro: pd.DataFrame, config: PlotConfig, metadata: CountryMetadata, population: pd.Series | None = None
+    macro: pd.DataFrame,
+    config: PlotConfig,
+    metadata: CountryMetadata,
+    population: pd.Series | None = None,
+    prices: pd.Series | None = None,
 ) -> pd.DataFrame:
     """Return ``macro`` in the measure ``config`` asks for (unchanged for plain dollars), in the master currency if its chart is converted.
 
-    ``population`` (date-indexed, persons) is needed only for -p. The
-    conversion comes after the measure (plan 30.1), so per capita it
-    divides amounts already in the master currency by people.
+    ``population`` (date-indexed, persons) is needed only for -p, ``prices``
+    (the nation's consumer price index by month, ``prices.consumer_prices``)
+    only for --constant. Per person, then at constant prices (the order is
+    immaterial: each divides each amount on its date), then in the master
+    currency: the conversion comes after the measure (plan 30.1), so per
+    capita it divides amounts already in the master currency by people, and
+    at constant prices the nation's own prices are taken out before its
+    amounts are converted at the End's rate (plan 13.2's note).
     """
     if config.relative:
         return as_percent_of_gdp(macro, metadata)
     measured = per_person(macro, metadata, population) if config.per_capita else macro
+    if config.constant_prices:
+        measured = in_constant_prices(measured, metadata, prices, config.end)
     return in_master_currency(measured, config, metadata)
+
+
+def in_constant_prices(
+    macro: pd.DataFrame, metadata: CountryMetadata, prices: pd.Series | None, end: pd.Timestamp
+) -> pd.DataFrame:
+    """Return ``macro``'s amounts at the consumer prices of one month (--constant, batch 13.2), that month in ``attrs[PRICE_BASE_ATTR]``.
+
+    The month is the last the index has on or before the chart's End (the
+    latest published, on a chart ending today). Each amount is divided by
+    the index of the month its date falls in, the latest month published
+    if its own is not (a debt clock's days after it), taken when the amount
+    is observed and held until the next (``ratio_at_observations``, as per
+    capita), then multiplied by the index of that one month: so the curves
+    end where they do in current prices, and only their history moves,
+    raised by the rise in prices since. A flow over twelve months (TTM GDP,
+    interest) is divided by the index of its last month, as a stock is,
+    which keeps debt's distance from GDP on the log axis what it is in
+    current prices (the alternative, the twelve months' average index,
+    would raise the flows by about half a year's inflation). Before the
+    index begins there is no price to divide by, and nothing is drawn
+    there. With no index on or before the End, ``macro`` as it is, in
+    current prices, with a warning, and None in the attribute.
+    """
+    columns = _debt_and_interest_columns(macro, metadata)
+    if metadata.gdp_column in macro.columns:
+        columns.append(metadata.gdp_column)
+    known = pd.Series(dtype=float) if prices is None else prices.dropna().sort_index()
+    known = known.loc[known.index <= end]
+    if known.empty:
+        nation = nation_by_key(metadata.key)
+        print(
+            f"  Warning: no {nation.adjective} consumer price index on or before {end:%Y-%m-%d}; "
+            "the amounts are drawn in current prices."
+        )
+        result = macro.copy()
+        result.attrs[PRICE_BASE_ATTR] = None
+        return result
+    base_month, base_index = known.index[-1], float(known.iloc[-1])
+    result = macro.copy()
+    result.attrs[PRICE_BASE_ATTR] = base_month
+    if macro.empty or not columns:
+        return result
+    index = index_on(result[DATE_COLUMN], known)
+    for column in columns:
+        result[column] = ratio_at_observations(result[column], index) * base_index
+    return result
+
+
+def index_on(dates: pd.Series, index: pd.Series) -> pd.Series:
+    """Return a monthly price index (dated by each month's first day) on each of ``dates``: its month's value, or the latest before it; missing before its first month."""
+    when = pd.DatetimeIndex(pd.to_datetime(dates))
+    known = index.dropna().sort_index()
+    at = known.index.searchsorted(when, side="right") - 1
+    values = np.where(at >= 0, known.to_numpy(dtype=float)[np.clip(at, 0, None)], np.nan)
+    return pd.Series(values, index=dates.index)
 
 
 def in_master_currency(macro: pd.DataFrame, config: PlotConfig, metadata: CountryMetadata) -> pd.DataFrame:

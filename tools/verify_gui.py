@@ -108,6 +108,7 @@ from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E
 # both policy terms, each nation's own levels, Top and Bottom in a currency.
 CHART_CASES = (
     "default", "c2015", "u_reg_r", "c_lv_r", "uk_rates", "de_rates", "all4", "policy_both", "nat_levels", "nat_fx", "inflation",
+    "constant_pc",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -2121,7 +2122,7 @@ def check_batch292(check: Check) -> None:
         rates = ("yield", "policy", "mortgages", "spreads", "current", "cdn:yields", "cdn:policy-terms", "cdn:mortgage-terms",
                  "cdn:prime-margin", "cdn:spread-pairs", "uk:tracker-margin", "inflation")  # 29.2b; 13.1
         nations = ("cdn", "us", "uk", "germany")  # 29.2c
-        for key in ("gdp", "debt", "interest", "per-capita", "cdn:debt-parts", *rates, *nations):
+        for key in ("gdp", "debt", "interest", "per-capita", "constant", "cdn:debt-parts", *rates, *nations):  # 13.2
             app.info_marks[key].event_generate("<Button-1>")
             root.update()
             buttons = {widget.cget("text") for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton"}
@@ -2618,6 +2619,27 @@ def check_batch30(check: Check) -> None:
 
 
 # The groups in the order they run; --group picks some by these names.
+def check_batch132(check: Check) -> None:
+    """Batch 13.2: constant prices combine with per capita, -r unticks both; the written line draws what the window shows."""
+    with window(f"-c -s:2015 {END}") as w:
+        app = w.app
+        w.tick("per-capita", True)
+        w.tick("constant", True)
+        w.settle()
+        flags = {name: app.flag_vars[name].get() for name in ("relative", "per-capita", "constant")}
+        check("constant prices and per capita ticked together", flags == {"relative": False, "per-capita": True, "constant": True}, flags)
+        check("--constant and --per-capita written", {"--constant", "--per-capita"} <= set(w.command_tokens()), w.command_tokens())
+        check("its chart the written line's", w.written_draws_the_same(("cdn",)))
+        w.tick("relative", True)
+        w.settle()
+        flags = {name: app.flag_vars[name].get() for name in ("relative", "per-capita", "constant")}
+        check("-r unticks both", flags == {"relative": True, "per-capita": False, "constant": False}, flags)
+        w.tick("constant", True)
+        w.settle()
+        flags = {name: app.flag_vars[name].get() for name in ("relative", "per-capita", "constant")}
+        check("constant prices untick -r", flags == {"relative": False, "per-capita": False, "constant": True}, flags)
+
+
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
     "reset": check_reset,
@@ -2651,6 +2673,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch31": check_batch31,
     "batch33": check_batch33,
     "batch30": check_batch30,
+    "batch132": check_batch132,
 }
 
 

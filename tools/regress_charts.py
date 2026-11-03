@@ -296,6 +296,13 @@ CASES: dict[str, list[str]] = {
     # 1914, Canada 1915, the UK 1915-07, Germany 1992).
     "inflation": ["--na:ca,us,gb,de", "--inf", "-l", "-s:2018"],
     "inflation_long": ["--na:ca,us,gb,de", "--inf", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1910"],
+    # Batch 13.2: the amounts at constant prices, with the regression's real
+    # growth; per person as well, from 1950; in the master currency; and
+    # Canada's from 1900, before its index begins (1914).
+    "constant": ["--na:ca,us,gb,de", "--constant", "-l", "--reg", "-s:1990"],
+    "constant_pc": ["--na:ca,us,gb,de", "--constant", "-p", "-l", "-s:1950"],
+    "constant_master": ["--na:ca,us", "--constant", "--master:USD", "-l", "-s:2000"],
+    "constant_long": ["-c", "--constant", "--no-yield", "-s:1900"],
 }
 
 

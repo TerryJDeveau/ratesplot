@@ -254,6 +254,7 @@ from .options import (  # noqa: E402
     by_name,
     command_line_tokens,
     config_from_choices,
+    excluded_measures,
     field_default,
     help_epilog,
     margin_options,
@@ -1343,11 +1344,11 @@ def _country_changed(name: str) -> None:
 
 
 def _measure_changed(name: str) -> None:
-    """One measure at a time; Top and Bottom are in the measure's units, so they are cleared."""
+    """% of GDP alone, per capita and constant prices together or alone (``excluded_measures``); Top and Bottom are in the measure's units, so they are cleared."""
     units = [option.name for option in options_in("units") if option.in_gui and option.kind is not Kind.VALUE]
     if st.session_state[_FLAG + name]:
-        for other in units:
-            if other != name:
+        for other in excluded_measures(name):
+            if other in units:
                 st.session_state[_FLAG + other] = False
     for bound in bound_keys():
         st.session_state[_VALUE + bound] = ""

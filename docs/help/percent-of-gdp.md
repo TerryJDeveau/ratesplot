@@ -22,4 +22,4 @@ The right axis reads "Percent of TTM GDP (Log Scale)". On a log axis a ratio gro
 
 ## On the command line
 
-`-r`, `--R` or `--relative`. It can't be combined with per capita (`-p`): a curve is either a share of GDP or an amount per person, and in the window and on the page ticking one unticks the other. Without debt or interest ticked it has no effect, and its box is greyed.
+`-r`, `--R` or `--relative`. It can't be combined with per capita (`-p`): a curve is either a share of GDP or an amount per person, and in the window and on the page ticking one unticks the other. Nor with [Inflation adjusted](?help=constant-prices) (`--constant`): a share of GDP is free of inflation already. Without debt or interest ticked it has no effect, and its box is greyed.

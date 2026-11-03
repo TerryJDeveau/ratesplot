@@ -63,7 +63,7 @@ from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E
 # --reg; -r with --reg on a log axis; levels under -r; per capita; the UK and
 # Germany with their rates, spreads and mortgages; the four policy rates with
 # the U.S. target range as a band; all four nations.
-DEFAULT_CASES = ("default", "c_reg1867", "u_reg_r", "c_lv_r", "c_p", "uk_rates", "de_rates", "policy_both", "all4")
+DEFAULT_CASES = ("default", "c_reg1867", "u_reg_r", "c_lv_r", "c_p", "uk_rates", "de_rates", "policy_both", "all4", "constant_master")
 # --save is run from the command line on these: two nations, then four with their own levels.
 SAVE_CASES = ("default", "nat_levels")
 OUT = ROOT / "out" / "check_export"

@@ -145,6 +145,10 @@ ONS_SERIES = {
     # index. Measured 2026-11-03: the rise of D7BT's published index, rounded
     # to a tenth, differs from D7G7 in 190 of 453 months, by up to 0.19.
     "D7G7": ("/economy/inflationandpriceindices/timeseries/d7g7/mm23", "%", 1.0),
+    # The CPI itself, all items, 2015 = 100, monthly from 1988-01, to a tenth
+    # (batch 13.2, --constant; measured 2026-11-03): the millennium index
+    # (uk_archive_data, also 2015 = 100) before it, within 0.04 % where they meet.
+    "D7BT": ("/economy/inflationandpriceindices/timeseries/d7bt/mm23", "Index, base year = 100", 1.0),
 }
 # The frequency the program reads of each ONS series (``ons_series``): a
 # debt at the end of each month where the ONS has months (BKPX, BKPW and
@@ -165,6 +169,7 @@ ONS_SERIES_READ = {
     "YBHA": "quarters",
     "EBAQ": "quarters",
     "D7G7": "months",
+    "D7BT": "months",
 }
 ONS_BAKED_SOURCE = "ons"
 UK_DEBT_SERIES = "BKPX"
@@ -172,6 +177,7 @@ UK_NET_DEBT_SERIES = "HF6W"
 UK_INTEREST_SERIES = "NMYX"
 UK_GDP_SERIES = "YBHA"
 UK_INFLATION_SERIES = "D7G7"
+UK_CPI_SERIES = "D7BT"
 UK_POPULATION_SERIES = "EBAQ"
 # Levels of government (--debt:LETTERS): central "f", local "m". "n" (every
 # level but the central one) is local government too, drawn as "m" (the UK's

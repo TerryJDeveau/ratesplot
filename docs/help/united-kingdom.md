@@ -16,6 +16,7 @@ At the start it draws GDP, gross debt and interest on the right axis, and the 5-
 - [Inflation](?help=inflation), from 1915-07: the 12-month rise of the Bank of England's spliced consumer price index (the ONS's CPI estimates from 1949), then the ONS's own CPI rate from 1989-01.
 - [Mortgage rates](?help=mortgages): the Bank of England's quoted 2-, 3- and 5-year fixed rates and standard variable rate from 1995-01, the standard variable rate carried back to 1939 by the Bank's dataset; and a tracker rate from 1997-01-01, Bank Rate plus the margin in Tracker margin. All five are ticked at the start.
 - [Per capita](?help=per-capita): divided by the population in the Bank of England's dataset from 1707, the ONS's mid-year estimates from 1955.
+- [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the Bank of England's spliced index from 1914-07, the ONS's CPI index from 1988-01.
 - [Latest values](?help=latest-values): the day's 5-, 10- and 20-year yields quoted by CNBC's feed, their time given in London time.
 
 ## Its own controls

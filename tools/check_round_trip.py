@@ -93,6 +93,9 @@ VALUES = (
     # The inflation curve (batch 13.1): alone on the yield axis, beside the policy rate and every other rate,
     # and its "no" form.
     "--inf", "--inf --no-y", "--inf --po:target,market --mo --sp", "--no-inf --po",
+    # Constant prices (batch 13.2): alone, with -p, with the master currency and a limit, greyed with no
+    # right-axis curve, and its "no" form.
+    "--constant", "--con -p", "--con --master:usd --top:USD20t", "--con --no-gdp --no-debt --no-interest", "--no-con",
 )
 
 

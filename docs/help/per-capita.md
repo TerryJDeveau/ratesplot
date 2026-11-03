@@ -6,7 +6,7 @@ GDP, debt and interest drawn per person: each divided by the nation's population
 
 Each figure is divided when it is observed, by the population on that date, and held until the next figure, so the lines keep their steps: a debt reported once a year stays level until the next year's figure, instead of drifting down through the year as the population grows. The population between two estimates is drawn on a straight line on a log scale (steady growth from one to the next); after the last estimate it is held; before the first there is none, and nothing is drawn.
 
-Per capita can't be combined with [As % of GDP](?help=percent-of-gdp): a curve is either an amount per person or a share of GDP, and in the window and on the page ticking one unticks the other. Without [GDP](?help=gdp), [debt](?help=debt) or [interest](?help=interest) ticked it has no effect, and its box is greyed.
+Per capita can't be combined with [As % of GDP](?help=percent-of-gdp): a curve is either an amount per person or a share of GDP, and in the window and on the page ticking one unticks the other. It combines with [Inflation adjusted](?help=constant-prices), for real amounts per person. Without [GDP](?help=gdp), [debt](?help=debt) or [interest](?help=interest) ticked it has no effect, and its box is greyed.
 
 ## Where each population comes from
 

@@ -16,6 +16,7 @@ At the start it draws GDP, aggregate public debt and interest on the right axis,
 - [Inflation](?help=inflation), from 1914: the 12-month rise of the CPI for all urban consumers, from FRED; none for 2025-10 or 2026-10, as the index has no October 2025.
 - [Mortgage rates](?help=mortgages): Freddie Mac's survey, the 30-year fixed rate from 1971-04-02 and the 15-year from 1991-08-30; and the bank prime loan rate from 1955-08-04, drawn plus a margin with Prime margin. The 30-year is ticked at the start.
 - [Per capita](?help=per-capita): divided by the Bureau of Economic Analysis' population, quarterly from 1947.
+- [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the CPI for all urban consumers from 1913-01.
 - [Latest values](?help=latest-values): for the days FRED doesn't have yet, the Treasury's own daily yields, and its daily Debt to the Penny for federal debt; then the day's yields quoted by CNBC's feed, their time given in New York time.
 
 ## Its own controls

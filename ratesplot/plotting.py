@@ -81,7 +81,7 @@ from .config import (
 )
 from .console import this_thread_output_to
 from .endlabels import ValueFormatter
-from .export import MACRO_AXIS, YIELD_AXIS, mark_amounts_currency, mark_series
+from .export import MACRO_AXIS, YIELD_AXIS, mark_amounts_currency, mark_price_base, mark_series
 from .frames import filter_to_date_range
 from .fx import Rate, rate
 from .hover import attach as attach_hover
@@ -101,7 +101,8 @@ from .latest import (
     project_to_now,
 )
 from .legend import finish_legend_and_title
-from .measures import express
+from .measures import PRICE_BASE_ATTR, express
+from .prices import consumer_prices
 from .rates import (
     INFLATION_KEY,
     RateCurve,
@@ -640,6 +641,12 @@ def draw_country(
     if config.master_conversion is not None:
         metadata = replace(metadata, currency_prefix=config.master_conversion.symbol)
     mark_amounts_currency(ax_yield.figure, None if config.master_conversion is None else config.master_conversion.currency)
+    # At constant prices (batch 13.2) the month the amounts are in, known
+    # once the index is read (``measures.in_constant_prices``): it words the
+    # axis label and the title, and the figure says it for Export chart.
+    if config.constant_prices:
+        config = replace(config, price_base=macro.attrs.get(PRICE_BASE_ATTR))
+    mark_price_base(ax_yield.figure, config.price_base)
     yield_lines = draw_yield_lines(ax_yield, yields, config)
     # Policy and mortgage rates and spreads (ratesplot.rates): on the yield
     # axis, listed with the yields.
@@ -792,6 +799,20 @@ def _with_chart_end(
     return prepared
 
 
+def _consumer_prices(key: str, config: PlotConfig) -> pd.Series | None:
+    """Nation ``key``'s consumer price index for --constant (batch 13.2; ``prices.consumer_prices``), or None without it.
+
+    Read only where the amounts are drawn at constant prices: --constant is
+    off when no right-axis curve is chosen (``options.config_from_choices``).
+    The coverage warning names it where the chart begins before it.
+    """
+    if not config.constant_prices:
+        return None
+    index = consumer_prices(key)
+    warn_series_coverage(config.start, {"Consumer price index (for --constant)": index.index[0]})
+    return index
+
+
 @_with_chart_end
 def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]:
     """Fetch and align all selected Canadian inputs, in the configured measure; return ``(yields, macro, rates)``.
@@ -824,7 +845,7 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
     steered = macro.attrs.get(STEERED_ATTR, [])
     population = fetch_cdn_population() if config.per_capita else None
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
-    expressed = express(macro, config, CDN, population)
+    expressed = express(macro, config, CDN, population, _consumer_prices("cdn", config))
     expressed.attrs[PROJECTION_ATTR] = projected
     expressed.attrs[STEERED_ATTR] = steered
     return yields, expressed, rates
@@ -856,7 +877,7 @@ def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
         macro = macro.loc[macro[DATE_COLUMN] <= config.end]
     population = fetch_us_population() if config.per_capita else None
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
-    expressed = express(macro, config, US, population)
+    expressed = express(macro, config, US, population, _consumer_prices("us", config))
     expressed.attrs[PROJECTION_ATTR] = projected
     return yields, expressed, rates
 
@@ -894,7 +915,7 @@ def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     projected = macro.attrs.get(PROJECTION_ATTR, {})
     population = fetch_uk_population() if config.per_capita else None
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
-    expressed = express(macro, config, UK, population)
+    expressed = express(macro, config, UK, population, _consumer_prices("uk", config))
     expressed.attrs[PROJECTION_ATTR] = projected
     return yields, expressed, rates
 
@@ -928,7 +949,7 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     projected = macro.attrs.get(PROJECTION_ATTR, {})
     population = fetch_de_population() if config.per_capita else None
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
-    expressed = express(macro, config, DE, population)
+    expressed = express(macro, config, DE, population, _consumer_prices("de", config))
     expressed.attrs[PROJECTION_ATTR] = projected
     return yields, expressed, rates
 

@@ -17,7 +17,8 @@ Controls
     appears here with no change to this module (``in_gui=False`` opts out). The
     choices become a ``PlotConfig`` through ``options.config_from_choices``, the
     same code the command line uses, so the two cannot disagree. The measure
-    switches (-r, -p) exclude each other: ticking one unticks the other.
+    boxes: -r excludes -p and --constant, which combine (batch 13.2);
+    ticking one unticks those it excludes (``options.excluded_measures``).
     Changing the measure clears Top and Bottom, whose units it changes
     (dollars, percent, dollars per person), and under -r the GDP box is
     greyed out, GDP being only the denominator. What has no curve to act on
@@ -229,6 +230,7 @@ from .options import (
     by_name,
     command_line_tokens,
     config_from_choices,
+    excluded_measures,
     margin_options,
     nation_choice,
     options_in,
@@ -1951,10 +1953,11 @@ class RatesPlotApp:
                 self._ticked_nation = None
         units = [option.name for option in options_in("units") if option.name in self.flag_vars]
         if name in units:
-            # One measure at a time: ticking one unticks the others.
+            # % of GDP alone; per capita and constant prices together or
+            # alone (batch 13.2): ticking one unticks those it excludes.
             if self.flag_vars[name].get():
-                for other in units:
-                    if other != name:
+                for other in excluded_measures(name):
+                    if other in units:
                         self.flag_vars[other].set(False)
             # Top and Bottom are in the measure's units (dollars, or percent
             # under -r), so values typed or zoomed for one measure are wrong

@@ -59,7 +59,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import announced, bake, cdn_data, de_archive_data, de_data, latest, rates, uk_archive_data, uk_data, us_data  # noqa: E402
+from ratesplot import announced, bake, cdn_data, de_archive_data, de_data, latest, prices, rates, uk_archive_data, uk_data, us_data  # noqa: E402
 from ratesplot.cli import parse_args  # noqa: E402
 from ratesplot.config import (  # noqa: E402
     CDN_DEBT_COLUMN,
@@ -581,6 +581,9 @@ CHECKS: tuple[Check, ...] = (
     Check("statcan_cpi", "StatCan 18-10-0004 consumer prices, 12-month rise (--inflation)", PRICES, _rate(partial(rates.inflation_rate, "cdn"))),
     Check("ons_cpi", "ONS D7G7 CPI 12-month rate, the millennium index before 1989 (--inflation)", PRICES, _rate(partial(rates.inflation_rate, "uk"))),
     Check("bbk_cpi", "Bundesbank BBDP1 consumer prices, 12-month rise (--inflation)", PRICES, _rate(partial(rates.inflation_rate, "de"))),
+    # Batch 13.2: the UK's index itself, D7BT (the others' indexes are the rises' above), through the program's reader.
+    Check("ons_cpi_index", "ONS D7BT CPI index, the millennium index before 1988 (--constant)", PRICES,
+          lambda _config: (_last(prices.uk_consumer_prices()), "D7BT from 1988-01, the millennium index before")),
     Check("fred_t10y2y", "FRED T10Y2Y against the program's 10y-2y spread (--spreads)", DAILY, _spread_crosscheck("T10Y2Y", ("10y", "2y"))),
     Check("fred_t10y3m", "FRED T10Y3M against the program's 10y-3m spread (--spreads)", DAILY, _spread_crosscheck("T10Y3M", ("10y", "3m"))),
     Check("treasury_yields", "U.S. Treasury daily par yield curve (all eleven terms)", DAILY, _treasury_yields),

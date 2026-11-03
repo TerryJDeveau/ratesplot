@@ -153,6 +153,13 @@ CASES: dict[str, list[str]] = {
     # its index (the UK's: the millennium index, then the ONS's own rate from
     # 1989), across the U.S.' missing 2025-10 and the UK's join.
     "inflation": ["--na:ca,us,gb,de", "-s:1985", "--inf", "--no-yield"],
+    # Batch 13.2: the amounts at constant prices against the same charts in
+    # current prices, the index worked out here: from 1910 (each nation's
+    # index beginning inside the window, the UK's join in 1988), per capita
+    # from 1990, and in the master currency (both checks).
+    "constant": ["--na:ca,us,gb,de", "-s:1910", "--constant", "--no-yield"],
+    "constant_pc": ["--na:ca,us,gb,de", "-s:1990", "--constant", "-p", "--no-yield"],
+    "constant_master": ["--na:ca,us", "-s:2005", "--constant", "--master:usd", "--no-yield"],
 }
 
 
@@ -528,10 +535,12 @@ def check_case(name: str, tokens: list[str]) -> bool:
                 print(f"         ... {len(result.failures) - 5:,} more")
             passed &= not result.failures
         for line in drawn_curves(figure.axes[1]) if len(figure.axes) > 1 else []:
-            if not line.values.empty and config.master_currency is None:
+            if not line.values.empty and config.master_currency is None and not config.constant_prices:
                 print(f"  {key:4} {line.label[:44]:44} right axis, derived (not compared): {span(list(line.values.index))}")
         if config.master_currency is not None:
             passed &= check_master(key, figure, config)
+        if config.constant_prices:
+            passed &= check_constant(key, figure, config)
     # The drawing's warnings, each with the bulleted lines under it (the curves
     # it names), once: the curves were prepared twice, for the chart and above.
     blocks: list[list[str]] = []
@@ -577,6 +586,94 @@ def check_master(key: str, figure, config) -> bool:
             f"  {key:4} {line.label[:44]:44} {'OK' if ok else 'FAIL':5} {len(line.values):,} points, each its own currency's "
             f"x {factor:.5g} {target or nation.currency} per {nation.currency} (largest departure {worst:.1e})"
         )
+    return passed
+
+
+def price_index(nation: str) -> pd.Series:
+    """A nation's consumer price index read on its own (batch 13.2), by month (a ``Period`` index): FRED's, Statistics Canada's, the Bundesbank's whole series; the UK's built-in millennium index, then the ONS's D7BT from its first month."""
+    if nation == "uk":
+        ons = _clean(uk_data.ons_download("D7BT", "months"))
+        millennium = built_in("millennium CPI", EMBEDDED_UK_CPI_HISTORY).read()
+        values = pd.concat([millennium.loc[millennium.index < ons.index[0].replace(day=1)], ons])
+    else:
+        values = {
+            "us": fred(us_data.US_CPI_SERIES_ID),
+            "cdn": statcan("18100004", "v41690973", "CPI"),
+            "de": Source("Bundesbank BBDP1 CPI", lambda: _clean(de_data.bundesbank_download(*de_data.DE_CPI_SERIES))),
+        }[nation].read()
+    return values.groupby(values.index.to_period("M")).last()
+
+
+def check_constant(key: str, figure, config) -> bool:
+    """A chart at constant prices (batch 13.2): each right-axis curve against the same chart's in current prices; True if every point is explained.
+
+    Worked out here on its own: the index (``price_index``) of the month
+    each amount was observed in (the last change of the current-price
+    curve on or before the point; the latest month published, if its own is
+    not), against the index of the last month on or before the End. A
+    curve's first run, observed before its first point (or on it, where the
+    curve begins inside the window), is matched with the index of any of
+    the 15 months to its first point; a point not drawn must be one
+    observed before the index begins.
+    """
+    with this_thread_output_to(None):
+        plain = build_figure(next(country for country in COUNTRIES if country.key == key), replace(config, constant_prices=False))
+        index = price_index(key)
+    base = index.loc[index.index <= pd.Period(config.end, "M")]
+    if base.empty:
+        print(f"  {key:4} no index on or before the End {config.end:%Y-%m-%d}: drawn in current prices")
+        return True
+    base_month, base_value = base.index[-1], float(base.iloc[-1])
+
+    def at(month: pd.Period) -> float:
+        known = index.loc[index.index <= month]
+        return float(known.iloc[-1]) if not known.empty else np.nan
+
+    passed = True
+    plain_curves = {line.label.replace("TTM Nominal GDP", "TTM GDP"): line.values for line in drawn_curves(plain.axes[1])}
+    for line in drawn_curves(figure.axes[1]):
+        if line.values.empty:
+            continue
+        before = plain_curves.get(line.label)
+        if before is None:
+            print(f"  {key:4} {line.label[:44]:44} FAIL  not drawn in current prices")
+            passed = False
+            continue
+        changed = before.ne(before.shift())
+        changed.iloc[0] = False  # the first point's observation is before the window
+        observed = pd.Series(before.index.where(changed), index=before.index).ffill()
+        failures: list[str] = []
+        first_run = 0
+        for when, value in line.values.items():
+            if when not in before.index:
+                failures.append(f"{when:%Y-%m-%d}: drawn, but not in current prices")
+                continue
+            ratio = value / before[when]
+            seen = observed[when]
+            if pd.isna(seen):
+                # The first run: observed before its first point, in one of the 15 months before it (or on it,
+                # where the curve begins inside the window: Canada's aggregate debt in 1933).
+                first = pd.Period(before.index[0], "M")
+                months = pd.period_range(first - 15, first, freq="M")
+                if not any(abs(ratio / (base_value / at(month)) - 1.0) <= TOLERANCE for month in months):
+                    failures.append(f"{when:%Y-%m-%d}: {value:.6g}, no month's index in the 15 before explains it")
+                first_run += 1
+                continue
+            expected = base_value / at(pd.Period(seen, "M"))
+            if not abs(ratio / expected - 1.0) <= TOLERANCE:
+                failures.append(f"{when:%Y-%m-%d}: {value:.6g}, expected {before[when] * expected:.6g} (observed {seen:%Y-%m-%d})")
+        missing = before.index.difference(line.values.index)
+        late = [when for when in missing if pd.notna(observed[when]) and pd.Period(observed[when], "M") >= index.index[0]]
+        failures += [f"{when:%Y-%m-%d}: not drawn, though observed after the index begins" for when in late[:3]]
+        ok = not failures
+        passed &= ok
+        print(
+            f"  {key:4} {line.label[:44]:44} {'OK' if ok else 'FAIL':5} {len(line.values):,} points at {base_month} prices "
+            f"(index {base_value:g}), {first_run:,} of them observed before the window; "
+            f"{len(missing):,} not drawn, before the index ({index.index[0]})"
+        )
+        for failure in failures[:5]:
+            print(f"         {failure}")
     return passed
 
 

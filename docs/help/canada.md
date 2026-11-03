@@ -16,6 +16,7 @@ At the start it draws GDP, aggregate public debt and interest on the right axis,
 - [Inflation](?help=inflation), from 1915: the 12-month rise of Statistics Canada's consumer price index.
 - [Mortgage rates](?help=mortgages): the 5-year from 1951 (CMHC's rate until the banks' posted rate begins in 1975), the posted 3- and 1-year from 1980, the Bank of Canada's estimated 5-year variable rate from 2011-01-06, and the banks' prime rate from 1975, drawn plus a margin with Prime margin. The 5-year is ticked at the start.
 - [Per capita](?help=per-capita): divided by Statistics Canada's population, yearly from 1867, quarterly from 1946.
+- [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by Statistics Canada's index from 1914-01.
 - [Latest values](?help=latest-values): the day's yields quoted by CNBC's feed (all but the 7-year), their time given in Toronto time.
 
 ## Its own controls

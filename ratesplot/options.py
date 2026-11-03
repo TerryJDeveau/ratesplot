@@ -624,9 +624,21 @@ def format_components(values: tuple, _config: PlotConfig) -> str:
 
 
 def check_single_measure(values: Mapping[str, object]) -> None:
-    """Reject -r with -p: a curve is either a share of GDP or an amount per person."""
+    """Reject -r with -p or --constant: a curve is either a share of GDP or an amount, per person or at constant prices or both."""
     if values["relative"] and values["per_capita"]:
         raise ValueError("-r (% of GDP) and -p (per capita) cannot be combined; choose one")
+    if values["relative"] and values["constant_prices"]:
+        raise ValueError("-r (% of GDP) and --constant cannot be combined: a share of GDP is free of inflation already")
+
+
+def excluded_measures(name: str) -> tuple[str, ...]:
+    """The measures (the "units" group's tick boxes) that ticking ``name`` unticks in the window and on the page.
+
+    -r excludes the others (``check_single_measure``); per capita and
+    constant prices combine (batch 13.2: real debt per person).
+    """
+    measures = tuple(option.name for option in options_in("units") if option.kind is not Kind.VALUE and option.name != name)
+    return measures if name == "relative" else tuple(other for other in measures if other == "relative")
 
 
 def check_macro_bound_units(payloads: Mapping[str, str], values: Mapping[str, object]) -> None:
@@ -991,6 +1003,18 @@ OPTIONS: tuple[Option, ...] = (
         "GDP, debt and interest per person (log\ndollar axis); not with -r",
         names=("per-capita",), flag="--P", flag_help="GDP, debt and interest per person", label="Per capita",
         topic="per-capita",
+    ),
+    # Batch 13.2 (Terry asked 2026-10-12 for an "inflation adjusted" option
+    # for the existing series): the amounts at one month's consumer prices,
+    # with -p or without, never with -r (``excluded_measures``). A FLAG, not
+    # a SWITCH: argparse would take "--co" for a SWITCH's long flag. At least
+    # "con", leaving "--co" free for an option to come.
+    Option(
+        "constant", Kind.FLAG, ("constant_prices",), "units", "--con / --constant / --no-con",
+        "GDP, debt and interest at constant prices:\neach amount divided by its nation's\n"
+        "consumer price index on its date, at the\nindex of the End's month (or the latest\n"
+        "published); with -p, per person; not with -r",
+        names=("constant",), shortest=3, label="Inflation adjusted", topic="constant-prices",
     ),
     # The master currency (batch 30, decisions 77 and 78): one value for
     # every chart, shown as a tick box in each nation's panel ("Use CAD as
@@ -1553,8 +1577,13 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # (before 2026-10-13 -r hid it, leaving the right axis empty). The window
     # and the page grey -r out then (``idle_options``), and a greyed control
     # changes nothing.
-    if values["relative"] and "relative" in idle_options(values["include_debt"], values["include_gdp"], values["include_interest"]):
+    idle = idle_options(values["include_debt"], values["include_gdp"], values["include_interest"])
+    if values["relative"] and "relative" in idle:
         values["relative"] = False
+    # Constant prices with no right-axis curve change nothing and are greyed
+    # (``idle_options``); off, no drawing reads a price index it does not use.
+    if values["constant_prices"] and "constant" in idle:
+        values["constant_prices"] = False
     check_macro_bound_units(payloads, values)
     values["nation_settings"] = _nation_settings(payloads, values)
     return PlotConfig(**values)
@@ -1589,7 +1618,7 @@ def idle_option_reasons(debt: bool, gdp: bool, interest: bool) -> dict[str, str]
         reasons |= dict.fromkeys(("relative", "debt-parts", "interest-parts"), "it acts on debt and interest, and neither is ticked")
     if not (debt or gdp or interest):
         reasons |= dict.fromkeys(
-            ("per-capita", "regression", "regression-tolerance", "top", "bottom", "projections"),
+            ("per-capita", "constant", "regression", "regression-tolerance", "top", "bottom", "projections"),
             "it acts on the right axis's curves, and none of debt, GDP and interest is ticked",
         )
     return reasons
