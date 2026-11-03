@@ -1972,6 +1972,46 @@ def check_batch34(check: Check) -> None:
           "as you leave" in frontend.REMEMBER_HELP and "as you leave the page" in web._REMEMBER_LINE)
 
 
+def check_start_stopped(check: Check) -> None:
+    """A visit's start stopped for a rerun after its settings are loaded (2026-11-03): the controls still get their values."""
+    from streamlit.proto.WidgetStates_pb2 import WidgetStates
+    from streamlit.runtime.scriptrunner_utils.exceptions import RerunException
+    from streamlit.runtime.scriptrunner_utils.script_requests import RerunData
+
+    real = web._config_for
+    calls: list[int] = []
+
+    def stopped(choices):
+        """The first run stopped between the load and the controls, as a request from the browser stops it.
+
+        With the browser's widget states (none yet, as at a visit's start):
+        such a rerun clears what the run set from code, where ``st.rerun()``,
+        carrying none, does not (``ScriptRunner``: ``on_script_will_rerun``
+        only for a rerun with widget states). Until 2026-11-03 this sent the
+        boxes to the browser without their values.
+        """
+        calls.append(1)
+        if len(calls) == 1:
+            raise RerunException(RerunData(query_string=urllib.parse.urlencode({"chart": chart}), widget_states=WidgetStates()))
+        return real(choices)
+
+    chart = "-c --reg -s:2001 --e:2019"
+    web._config_for = stopped
+    try:
+        at = new_page(chart)
+    finally:
+        web._config_for = real
+    sent = {key: at.checkbox(key=key).proto.set_value for key in ("flag:cdn", "flag:regression", "flag:gdp", "remember")}
+    check("stopped after the load: the next run loads them again, each box sent to the browser with its value, ticked",
+          not at.exception and len(calls) >= 2 and all(sent.values()) and at.checkbox(key="flag:cdn").value
+          and at.checkbox(key="flag:regression").value and at.session_state["ready"] and "--regression" in address(at), (sent, address(at)))
+    again = new_page("-c --reg -s:2001 --e:2019")
+    again.checkbox(key="flag:per-capita").check().run()
+    check("… and once ready, a later run sends no value of its own (the browser's stands)",
+          not again.exception and not again.checkbox(key="flag:cdn").proto.set_value and again.checkbox(key="flag:cdn").value,
+          again.checkbox(key="flag:cdn").proto.set_value)
+
+
 def check_line_help(check: Check) -> None:
     """The two lines under the charts (Terry, 2026-10-29): each label's ⓘ, its text and More to its topic; the topics shown."""
     at = new_page("-c -s:2001 --e:2019")
@@ -2058,7 +2098,7 @@ PAGE_CHECKS = (
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
-    check_batch31, check_batch324, check_batch34, check_batch30, check_line_help,
+    check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped,
 )
 
 

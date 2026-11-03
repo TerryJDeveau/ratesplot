@@ -1097,10 +1097,10 @@ def kept_line(drawing: Drawing | None) -> str | None:
     None for no drawing, a drawing that failed, and a chart that draws no
     curve ("no series selected"): no one gains by opening on that, and it is
     what the page's controls gave twice on 2026-10-29 when they came back
-    unticked with no one touching them; Terry's next visit then opened on it
-    (cause not found: not reproduced on 2026-11-03 by a width changed alone or
-    in bursts, a server restarted under an open page, from the address or the
-    cookie, locally or live).
+    unticked with no one touching them; Terry's next visit then opened on it.
+    The cause, found on 2026-11-03, is a visit's start stopped between the
+    load and the controls (``main``, where ``_READY`` is set); this stays as a
+    second guard.
     """
     if drawing is None or drawing.error is not None:
         return None
@@ -2397,7 +2397,8 @@ def main() -> None:
         _show_help(topic)
         return
     state = st.session_state
-    if not state.get(_READY):
+    loading = not state.get(_READY)
+    if loading:
         started = _starting_choices()
         if started is None:
             _read_remembered()  # its answer runs the page again
@@ -2405,7 +2406,6 @@ def main() -> None:
         choices, state[_STARTED_FROM], state[_ADDRESS_PROBLEMS], state[_REMEMBERED_PROBLEMS] = started
         _load_choices(choices)
         state[_REMEMBER] = True  # ticked at every visit, its off state never kept (decision 74)
-        state[_READY] = True
 
     # Judged before the controls are laid out, so a wrong field's label is red (_WRONG).
     choices = _snapshot()
@@ -2414,6 +2414,20 @@ def main() -> None:
         config = for_screen(config, bool(state.get(_NARROW)))
     st.html(_INFO_ICON_STYLE)
     _controls()
+    if loading:
+        # Ready only once the controls are laid out in the run that loaded
+        # them. Streamlit sends a widget's value to the browser only in the
+        # run whose code set it (``SessionState.register_widget``'s
+        # ``value_changed``), and a rerun the browser asks for clears that mark
+        # (``st.rerun()``'s does not). Such a request stopping the run after
+        # the load but before the controls (each assignment to session state
+        # can stop it) left the next run to lay them out without their values, so the
+        # browser showed every box at its default, unticked, while the server
+        # held the visit's settings, and its next request reported every box
+        # unticked (seen live 2026-11-03 in Chrome, while the first drawing
+        # waited on another's; 2026-10-29 twice, and the settings then kept).
+        # Not ready, the next run loads them again, with their values.
+        state[_READY] = True
     _read_width()
     st.header(PAGE_TITLE)
     st.caption(PAGE_SUMMARY)
