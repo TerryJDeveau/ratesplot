@@ -108,7 +108,7 @@ from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E
 # both policy terms, each nation's own levels, Top and Bottom in a currency.
 CHART_CASES = (
     "default", "c2015", "u_reg_r", "c_lv_r", "uk_rates", "de_rates", "all4", "policy_both", "nat_levels", "nat_fx", "inflation",
-    "constant_pc",
+    "constant_pc", "cpi_sa",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -2640,6 +2640,65 @@ def check_batch132(check: Check) -> None:
         check("constant prices untick -r", flags == {"relative": False, "per-capita": False, "constant": True}, flags)
 
 
+def check_batch134(check: Check) -> None:
+    """Batch 13.4: "Seas. adj." under "Price index (CPI)", greyed while that is unticked and with the UK alone, ticked and unticked freely; its ⓘ."""
+    with window(f"-c -s:2015 {END}") as w:
+        app, root = w.app, w.root
+        editor = app.choice_editors["cpi-adjustment"]
+        box = editor.widgets[0]
+
+        def sa(on: bool) -> None:
+            editor.boxes["sa"].set(on)
+            editor.box_changed("sa")
+            w.settle()
+
+        check("“Seas. adj.”, one box, unticked and greyed while “Price index (CPI)” is unticked",
+              [str(widget.cget("text")) for widget in editor.widgets] == ["Seas. adj."] and not editor.boxes["sa"].get()
+              and not app.flag_vars["cpi"].get() and not enabled(box))
+        app.info_marks["cpi-adjustment"].event_generate("<Button-1>")
+        root.update()
+        key, tip, reason = app.info_shown
+        check("its ⓘ, at the end of its row: the tip, why it is greyed", key == "cpi-adjustment" and "Seas. adj.:" in tip
+              and reason == "Greyed because “Price index (CPI)” is unticked.", app.info_shown)
+        more = next(widget for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton" and widget.cget("text") == "More")
+        more.invoke()
+        root.update()
+        check("More opens the price index's page", "price-index" in app.topic_windows
+              and app.topic_windows["price-index"].title() == "Price index (CPI)", sorted(app.topic_windows))
+        w.tick("cpi", True)
+        w.settle()
+        check("“Price index (CPI)” ticked: --cpi written, “Seas. adj.” no longer greyed", enabled(box)
+              and "--cpi" in w.command_tokens() and not any(t.startswith("--cpi:") for t in w.command_tokens()), w.command_tokens())
+        sa(True)
+        check("“Seas. adj.” ticked: --cpi:sa written, the Canadian chart's index seasonally adjusted", "--cpi:sa" in w.command_tokens()
+              and any(line.get_label() == "Consumer price index, seasonally adjusted" for axis in app.figures["cdn"][0].axes
+                      for line in axis.get_lines()), w.command_tokens())
+        check("its chart the written line's", w.written_draws_the_same(("cdn",)))
+        sa(False)
+        check("“Seas. adj.” unticked again, freely, nothing refused: --cpi alone", not editor.boxes["sa"].get()
+              and "--cpi" in w.command_tokens() and not any(t.startswith("--cpi:") for t in w.command_tokens())
+              and "untick" not in app.status.get(), (w.command_tokens(), app.status.get()))
+        sa(True)
+        w.tick("cpi", False)
+        w.settle()
+        check("“Price index (CPI)” unticked: “Seas. adj.” greyed, neither written", not enabled(box)
+              and not any(t.startswith("--cpi") for t in w.command_tokens()), w.command_tokens())
+    with window(f"--na:gb --cpi:sa -s:2015 {END}") as w:
+        app, root = w.app, w.root
+        editor = app.choice_editors["cpi-adjustment"]
+        check("the UK alone: “Seas. adj.” greyed, ticked, left off the command line", not enabled(editor.widgets[0])
+              and editor.boxes["sa"].get() and "--cpi" in w.command_tokens()
+              and not any(t.startswith("--cpi:") for t in w.command_tokens()), w.command_tokens())
+        app.info_marks["cpi-adjustment"].event_generate("<Button-1>")
+        root.update()
+        check("its ⓘ says why", app.info_shown[2] == "Greyed because the ONS publishes no seasonally adjusted price index, "
+              "and the UK is the only nation ticked.", app.info_shown)
+        w.tick("cdn", True)
+        w.settle()
+        check("Canada ticked beside it: no longer greyed, --cpi:sa written", enabled(editor.widgets[0])
+              and "--cpi:sa" in w.command_tokens(), w.command_tokens())
+
+
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
     "reset": check_reset,
@@ -2674,6 +2733,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch33": check_batch33,
     "batch30": check_batch30,
     "batch132": check_batch132,
+    "batch134": check_batch134,
 }
 
 

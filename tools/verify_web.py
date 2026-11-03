@@ -153,6 +153,8 @@ CHART_CASES = (
     "inflation",
     # Batch 13.2: the amounts at constant prices, per person, on all four.
     "constant_pc",
+    # Batch 13.4: the price index seasonally adjusted on all four, on its own axis, with --reg.
+    "cpi_sa",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -908,8 +910,11 @@ def check_layout(check: Check) -> None:
     )
     # 2026-10-13: at the sidebar's narrow default width each list box's own
     # "?" left no room for its text (Canada's terms showed only the "?").
+    # "Seas. adj." (batch 13.4), a list with no label under its flag, has it
+    # on its one box instead, as the window's ⓘ ends its row.
     helped = [box.key for box in at.checkbox if box.key and box.key.startswith("choice:") and box.help]
-    check("a list's tick boxes carry no help of their own (it is on the list's label)", not helped, helped[:3])
+    check("a list's tick boxes carry no help of their own (it is on the list's label), but “Seas. adj.”, which has none",
+          helped == ["choice:cpi-adjustment:sa"], helped[:3])
 
 
 def check_batch15(check: Check) -> None:
@@ -2120,13 +2125,65 @@ def check_batch30(check: Check) -> None:
           and all(f"(?help={link})" in shown for link in ("percent-of-gdp", "limits", "end-labels", "hover", "regression")), shown[:60])
 
 
+def check_batch134(check: Check) -> None:
+    """Batch 13.4: "Seas. adj." under "Price index (CPI)", greyed while that is unticked and with the UK alone, ticked and unticked freely; its ⓘ."""
+    sa = "choice:cpi-adjustment:sa"
+
+    def state(page: AppTest) -> tuple[bool, bool, bool]:
+        """(“Price index (CPI)” ticked, “Seas. adj.” ticked, “Seas. adj.” greyed)."""
+        return page.checkbox(key="flag:cpi").value, page.checkbox(key=sa).value, page.checkbox(key=sa).disabled
+
+    def drawn(page: AppTest) -> tuple[bool, bool]:
+        """What the address draws: (the price index, seasonally adjusted)."""
+        config = config_from_choices(*sort_tokens(address(page).split())[:2])
+        return config.price_index, config.price_index_adjusted
+
+    at = new_page("-c -s:2015 --e:2019")
+    box = at.checkbox(key=sa)
+    check("“Seas. adj.” shown, unticked, greyed while “Price index (CPI)” is unticked, why in its tip", not at.exception
+          and box.label == "Seas. adj." and state(at) == (False, False, True)
+          and "Greyed because “Price index (CPI)” is unticked." in box.help, (state(at), box.help[-160:]))
+    check("both tips end with More to the price index's topic", at.checkbox(key="flag:cpi").help.endswith("[More](?help=price-index)")
+          and box.help.endswith("[More](?help=price-index)"), (at.checkbox(key="flag:cpi").help[-50:], box.help[-50:]))
+    at.checkbox(key="flag:cpi").check().run()
+    check("“Price index (CPI)” ticked: --cpi, “Seas. adj.” no longer greyed, no reason in its tip", not at.exception
+          and state(at) == (True, False, False) and drawn(at) == (True, False) and "--cpi" in address(at).split()
+          and "Greyed because" not in at.checkbox(key=sa).help, (address(at), state(at)))
+    at.checkbox(key=sa).check().run()
+    check("“Seas. adj.” ticked: --cpi:sa, the index seasonally adjusted", not at.exception and state(at) == (True, True, False)
+          and drawn(at) == (True, True) and "--cpi:sa" in address(at).split(), (address(at), state(at)))
+    at.checkbox(key=sa).uncheck().run()
+    check("“Seas. adj.” unticked again, freely, writing nothing: --cpi alone", not at.exception and state(at) == (True, False, False)
+          and drawn(at) == (True, False) and "--cpi:sa" not in address(at) and not at.info, (address(at), [i.value for i in at.info]))
+    at.checkbox(key=sa).check().run()
+    at.checkbox(key="flag:cpi").uncheck().run()
+    check("“Price index (CPI)” unticked: “Seas. adj.” greyed, the index not drawn, neither in the address", not at.exception
+          and state(at)[0] is False and state(at)[2] and drawn(at) == (False, False) and "--cpi" not in address(at), (address(at), state(at)))
+
+    at = new_page("--na:gb --cpi:sa -s:2015 --e:2019")
+    box = at.checkbox(key=sa)
+    check("the UK alone: “Seas. adj.” greyed, left off the address, why in its tip", not at.exception and state(at)[0] and state(at)[2]
+          and "--cpi:sa" not in address(at) and "the ONS publishes no seasonally adjusted price index" in box.help,
+          (address(at), state(at), box.help[-200:]))
+    at.checkbox(key="flag:cdn").check().run()
+    check("Canada ticked beside it: no longer greyed, --cpi:sa back in the address", not at.exception
+          and state(at) == (True, True, False) and drawn(at) == (True, True), (address(at), state(at)))
+
+    view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+    view.query_params["help"] = "price-index"
+    view.run()
+    shown = "\n".join(block.value for block in view.markdown)
+    check("?help=price-index: its title, and “Seas. adj.” in it", not view.exception and "# Price index (CPI)" in shown.splitlines()
+          and "Seas. adj." in shown, shown[:60])
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
-    check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped,
+    check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
 )
 
 

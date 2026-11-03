@@ -39,7 +39,10 @@ quarter sums, splices, projections to the chart's end): they are listed with
 their dates, not compared; but on a chart in the master currency (batch
 30), each is compared point by point with the same chart drawn without it,
 times the rate of its End date worked out here on its own (``fx.rate``):
-every amount its own currency's times that one rate.
+every amount its own currency's times that one rate. The consumer price
+index (batch 13.4), on the right axis or on its own axis outside it, is
+compared point by point with its source read here on its own: each point
+its month's index, every month of it in the window drawn.
 
 Usage (from the project root)::
 
@@ -81,7 +84,14 @@ from regress_charts import PINNED_END, install_disk_cache  # noqa: E402
 from ratesplot import cdn_data, cli, de_data, http, rates, uk_data, us_data  # noqa: E402
 from ratesplot.cdn_hist_yields import build_cdn_hist_yields  # noqa: E402
 from ratesplot.de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES  # noqa: E402
-from ratesplot.config import nation_by_key  # noqa: E402
+from ratesplot.config import (  # noqa: E402
+    PRICE_INDEX_ADJUSTED_LABEL,
+    PRICE_INDEX_LABEL,
+    SEASONALLY_ADJUSTED_NATIONS,
+    STATCAN_CDN_CPI_SA_TABLE,
+    STATCAN_CDN_CPI_SA_VECTOR,
+    nation_by_key,
+)
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.fx import rate  # noqa: E402
 from ratesplot.joins import embedded_frame  # noqa: E402
@@ -160,6 +170,12 @@ CASES: dict[str, list[str]] = {
     "constant": ["--na:ca,us,gb,de", "-s:1910", "--constant", "--no-yield"],
     "constant_pc": ["--na:ca,us,gb,de", "-s:1990", "--constant", "-p", "--no-yield"],
     "constant_master": ["--na:ca,us", "-s:2005", "--constant", "--master:usd", "--no-yield"],
+    # Batch 13.4: the consumer price index, each point its month's index read
+    # here: alone on the right axis from 1910 (each nation's index beginning
+    # inside the window, the UK's join in 1988), and seasonally adjusted on its
+    # own axis outside the amounts per capita (the UK's unadjusted, named so).
+    "cpi": ["--na:ca,us,gb,de", "-s:1910", "--cpi", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
+    "cpi_sa": ["--na:ca,us,gb,de", "-s:1945", "--cpi:sa", "-p", "--no-yield"],
 }
 
 
@@ -428,6 +444,8 @@ def match(drawn: pd.Series, sources: list[Source], read: dict[str, pd.Series]) -
         date, value = dates[position], drawn.iloc[position]
         for source in sources:
             values = read[source.name]
+            if values.empty:
+                continue  # a source that could not be read (its note printed): it explains nothing
             earlier = values.loc[values.index < (date.to_period("M").start_time if source.monthly else date)]
             if earlier.empty or not np.isclose(earlier.iloc[-1], value, rtol=0, atol=TOLERANCE):
                 continue
@@ -534,9 +552,12 @@ def check_case(name: str, tokens: list[str]) -> bool:
             if len(result.failures) > 5:
                 print(f"         ... {len(result.failures) - 5:,} more")
             passed &= not result.failures
-        for line in drawn_curves(figure.axes[1]) if len(figure.axes) > 1 else []:
-            if not line.values.empty and config.master_currency is None and not config.constant_prices:
-                print(f"  {key:4} {line.label[:44]:44} right axis, derived (not compared): {span(list(line.values.index))}")
+        for axis in figure.axes[1:]:  # the right axis, and the price index's outside it (batch 13.4)
+            for line in drawn_curves(axis):
+                if line.label in (PRICE_INDEX_LABEL, PRICE_INDEX_ADJUSTED_LABEL):
+                    passed &= check_price_index(key, line, config)
+                elif axis is figure.axes[1] and not line.values.empty and config.master_currency is None and not config.constant_prices:
+                    print(f"  {key:4} {line.label[:44]:44} right axis, derived (not compared): {span(list(line.values.index))}")
         if config.master_currency is not None:
             passed &= check_master(key, figure, config)
         if config.constant_prices:
@@ -675,6 +696,59 @@ def check_constant(key: str, figure, config) -> bool:
         for failure in failures[:5]:
             print(f"         {failure}")
     return passed
+
+
+def adjusted_price_index(nation: str) -> tuple[str, pd.Series]:
+    """A nation's seasonally adjusted consumer price index read on its own (batch 13.4), by month (a ``Period`` index), with its source's name: FRED's, Statistics Canada's, the Bundesbank's whole series."""
+    source = {
+        "us": fred(us_data.US_CPI_SA_SERIES_ID),
+        "cdn": statcan(STATCAN_CDN_CPI_SA_TABLE, STATCAN_CDN_CPI_SA_VECTOR, "CPI, seasonally adjusted"),
+        "de": Source("Bundesbank BBDP1 CPI, seasonally adjusted", lambda: _clean(de_data.bundesbank_download(*de_data.DE_CPI_SA_SERIES))),
+    }[nation]
+    values = source.read()
+    return source.name, values.groupby(values.index.to_period("M")).last()
+
+
+def check_price_index(key: str, line: Drawn, config) -> bool:
+    """The consumer price index drawn (batch 13.4): each point its month's index, every month of it in the window drawn; True if so.
+
+    Worked out here on its own: the seasonally adjusted index where --cpi:sa
+    draws one (``adjusted_price_index``), else the unadjusted one
+    (``price_index``), the UK's under --cpi:sa too; its legend name must say
+    which. Each month is dated by its first day; the window takes the months
+    whose first day is in it.
+    """
+    adjusted = config.price_index_adjusted and key in SEASONALLY_ADJUSTED_NATIONS
+    wanted = PRICE_INDEX_ADJUSTED_LABEL if adjusted else PRICE_INDEX_LABEL
+    if line.label != wanted:
+        print(f"  {key:4} {line.label[:44]:44} FAIL  named so, but the index drawn should be named {wanted!r}")
+        return False
+    try:
+        with this_thread_output_to(None):
+            name, index = adjusted_price_index(key) if adjusted else (f"{key}'s index, as check_constant reads it", price_index(key))
+    except Exception as exc:  # reported, never swallowed
+        print(f"  {key:4} {line.label[:44]:44} FAIL  its source could not be read ({exc})")
+        return False
+    expected = pd.Series(index.to_numpy(dtype=float), index=index.index.to_timestamp())
+    expected = expected.loc[(expected.index >= pd.Timestamp(config.start)) & (expected.index <= pd.Timestamp(config.end))]
+    failures: list[str] = []
+    extra = line.values.index.difference(expected.index)
+    failures += [f"{when:%Y-%m-%d} {line.values[when]:g}: drawn, but no month of the index begins there" for when in extra[:3]]
+    missing = expected.index.difference(line.values.index)
+    failures += [f"{when:%Y-%m-%d}: the index has {expected[when]:g}, not drawn" for when in missing[:3]]
+    both = line.values.index.intersection(expected.index)
+    wrong = ~np.isclose(line.values[both].to_numpy(), expected[both].to_numpy(), rtol=0, atol=TOLERANCE)
+    failures += [f"{when:%Y-%m-%d} {line.values[when]:g}: the index has {expected[when]:g}" for when in both[wrong][:5]]
+    ok = not failures
+    print(
+        f"  {key:4} {line.label[:44]:44} {'OK' if ok else 'FAIL':5} {len(line.values):,} points, each its month's index "
+        f"({name}; {span(list(both)) if len(both) else 'none'}; the index from {index.index[0]})"
+    )
+    if len(extra) + len(missing) + int(wrong.sum()) > len(failures):
+        failures.append(f"... {len(extra):,} drawn outside the index, {len(missing):,} not drawn, {int(wrong.sum()):,} different in all")
+    for failure in failures:
+        print(f"         {failure}")
+    return ok
 
 
 def _column_of(term: str) -> str:
