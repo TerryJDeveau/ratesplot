@@ -2345,12 +2345,14 @@ def _auto_refresh_tick(config: PlotConfig) -> None:
 # One style rule: Streamlit 1.64 draws the "?" as an SVG in a button labelled
 # "Help for …" (measured 2026-10-28), hidden here, the ⓘ shown in its place;
 # the tip of a button (Refresh) wraps the button itself and is left alone.
+# A Markdown block's (the lists' labels, the two lines' under the charts) is
+# labelled "Help" alone, and showed the "?" until 2026-11-03 (measured).
 # Never greyed (Terry: "It would not be greyed out when that control is
 # greyed out"): a greyed control's label colour, the text colour at 40 %,
 # reaches the ⓘ, which takes it back at full strength, in either theme.
 _INFO_ICON_STYLE = """<style>
-[data-testid="stTooltipIcon"] button[aria-label^="Help for"] svg { display: none; }
-[data-testid="stTooltipIcon"] button[aria-label^="Help for"]::after {
+[data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"]) svg { display: none; }
+[data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"])::after {
   content: "ⓘ"; font-size: 1rem; line-height: 1; color: rgb(from currentColor r g b / 1);
 }
 </style>"""

@@ -1753,7 +1753,7 @@ def check_batch291(check: Check) -> None:
     check("an “All” with one nation ticked: why it is greyed", tick.disabled and "Greyed because only one nation is ticked." in tick.help,
           tick.help)
     check("the style rule that makes each “?” an ⓘ, scoped to the help buttons",
-          'button[aria-label^="Help for"]' in web._INFO_ICON_STYLE and "ⓘ" in web._INFO_ICON_STYLE)
+          'button:is([aria-label^="Help for"], [aria-label="Help"])' in web._INFO_ICON_STYLE and "ⓘ" in web._INFO_ICON_STYLE)
     view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
     view.query_params["help"] = "percent-of-gdp"
     view.run()
