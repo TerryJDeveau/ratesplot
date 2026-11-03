@@ -4,7 +4,7 @@ Canada's chart is drawn while its box is ticked, as it is at the start, beside t
 
 ## What the chart draws
 
-At the start it draws GDP, aggregate public debt and interest on the right axis, and the 3-month, 2-, 5-, 10- and 30-year bond yields on the left; the policy rate, inflation, mortgage rates, yield spreads and the price index when they are ticked.
+At the start it draws GDP, aggregate public debt and interest on the right axis, and the 3-month, 2-, 5-, 10- and 30-year bond yields on the left; the policy rate, inflation, mortgage rates, yield spreads, the price index or the population when they are ticked.
 
 - [TTM nominal GDP](?help=gdp), from 1926: Statistics Canada's 1968 national accounts to 1960, its table 36-10-0104 from 1961.
 - [Aggregate public debt](?help=debt), from 1867: the federal government's debt alone to 1932, drawn as a dotted curve of its own; all governments' from 1933, from Historical Statistics of Canada, then the national balance sheets from 1961 and Statistics Canada's general government gross debt from 1990.
@@ -18,6 +18,7 @@ At the start it draws GDP, aggregate public debt and interest on the right axis,
 - [Per capita](?help=per-capita): divided by Statistics Canada's population, yearly from 1867, quarterly from 1946.
 - [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by Statistics Canada's index from 1914-01.
 - [Price index (CPI)](?help=price-index): Statistics Canada's consumer price index from 1914-01, 2002 = 100; seasonally adjusted from 1992-01.
+- [Population](?help=population): Statistics Canada's estimates, yearly from 1867, quarterly from 1946.
 - [Latest values](?help=latest-values): the day's yields quoted by CNBC's feed (all but the 7-year), their time given in Toronto time.
 
 ## Its own controls
