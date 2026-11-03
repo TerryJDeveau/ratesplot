@@ -255,6 +255,7 @@ from .options import (  # noqa: E402
     by_name,
     command_line_tokens,
     config_from_choices,
+    excluded_curves,
     excluded_measures,
     field_default,
     help_epilog,
@@ -1355,6 +1356,13 @@ def _measure_changed(name: str) -> None:
         st.session_state[_VALUE + bound] = ""
 
 
+def _extra_curve_changed(name: str) -> None:
+    """The price index and the population, one at a time on their axis (``excluded_curves``, batch 13.5): ticking one unticks the other."""
+    if st.session_state[_FLAG + name]:
+        for other in excluded_curves(name):
+            st.session_state[_FLAG + other] = False
+
+
 def _curve_changed(_name: str) -> None:
     """A curve ticked or unticked can give -r its effect or take it away: clear Top and Bottom in the other unit."""
     for bound in bounds_in_other_units(*_snapshot()):
@@ -1578,7 +1586,7 @@ def _now(key: str, blank: object = False) -> object:
 
 
 def _flag_control(where, option: Option) -> None:
-    callbacks = {"country": _country_changed, "units": _measure_changed, "curves": _curve_changed}
+    callbacks = {"country": _country_changed, "units": _measure_changed, "curves": _curve_changed, "extra": _extra_curve_changed}
     callback = callbacks.get(option.group)
     where.checkbox(
         option.label,

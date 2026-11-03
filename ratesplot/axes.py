@@ -6,7 +6,7 @@ import bisect
 import functools
 import math
 import warnings
-from typing import Iterable
+from typing import Callable, Iterable, NamedTuple
 
 import matplotlib as mpl
 import matplotlib.dates as mdates
@@ -99,9 +99,14 @@ def format_index(value: float) -> str:
     return f"{value:,.1f}"
 
 
-def _format_index_tick(value: float, _pos: object = None) -> str:
+def format_index_tick(value: float) -> str:
     """An index axis's tick label: the value as written, ``100``, ``112.5``, ``1,000`` (batch 13.4)."""
     return f"{value:,g}"
+
+
+def format_population(value: float) -> str:
+    """Format a count of persons as the amounts are written, without a currency: ``41.6M``, ``343M``, ``900K`` (batch 13.5)."""
+    return format_currency(value, prefix="")
 
 
 def format_inflation(value: float) -> str:
@@ -300,26 +305,34 @@ def configure_macro_axis(ax: Axes, metadata: CountryMetadata, config: PlotConfig
     ax.tick_params(axis="y", which="both", labelsize=tick_fs)
 
 
-def configure_index_axis(ax: Axes, config: PlotConfig, label: str) -> None:
-    """Configure the log axis of the consumer price index (batch 13.4), labelled ``label``, ticked in index points.
+class ExtraAxis(NamedTuple):
+    """The axis of the curve the extra axis holds (the consumer price index, batch 13.4; the population, 13.5): the axis, its label and how its ticks are written."""
 
-    The macro axis's locator: on a log axis a straight stretch of the index
-    is a steady rate of inflation, and --reg's pieces give it in %/yr.
+    axes: Axes
+    label: str
+    tick_format: Callable[[float], str]
+
+
+def configure_extra_axis(ax: Axes, config: PlotConfig, extra: ExtraAxis) -> None:
+    """Configure the log axis of the extra axis's curve (batch 13.4), labelled and ticked as ``extra`` says.
+
+    The macro axis's locator: on a log axis a straight stretch of the curve
+    is a steady rate of growth, and --reg's pieces give it in %/yr.
     """
     font_scale = config.font_scale
     tick_fs = TICK_FS * font_scale
-    ax.set_ylabel(label, fontsize=LABEL_FS * font_scale, labelpad=AXIS_LABEL_PAD_PT * font_scale)
+    ax.set_ylabel(extra.label, fontsize=LABEL_FS * font_scale, labelpad=AXIS_LABEL_PAD_PT * font_scale)
     ax.set_yscale("log")
     major = LogNiceLocator(tick_fs)
     ax.yaxis.set_major_locator(major)
     ax.yaxis.set_minor_locator(_ComplementLogLocator(major))
-    ax.yaxis.set_major_formatter(ticker.FuncFormatter(_format_index_tick))
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda value, _pos: extra.tick_format(value)))
     ax.yaxis.set_minor_formatter(ticker.NullFormatter())
     ax.tick_params(axis="y", which="both", labelsize=tick_fs)
 
 
-def set_index_ylim(ax: Axes) -> None:
-    """Pad the index's range logarithmically, as the macro axis's (batch 13.4); Top and Bottom are the macro axis's alone."""
+def set_extra_ylim(ax: Axes) -> None:
+    """Pad the extra curve's range logarithmically, as the macro axis's (batch 13.4); Top and Bottom are the macro axis's alone."""
     limits = _log_padded_limits(ax)
     if limits is not None:
         ax.set_ylim(*limits)
@@ -490,7 +503,7 @@ def apply_axes_formatting(
     config: PlotConfig,
     metadata: CountryMetadata,
     left_label: str | None = None,
-    index_axis: tuple[Axes, str] | None = None,
+    extra_axis: ExtraAxis | None = None,
 ) -> None:
     """Configure the shared x-axis and both y-axes after all lines are plotted.
 
@@ -498,14 +511,14 @@ def apply_axes_formatting(
     curves is selected the unused axis mirrors the other so the chart never
     shows a second, meaningless scale. ``left_label`` is the left axis's
     label when it is not ``config.left_axis_label`` (a spread drawn).
-    ``index_axis``: the consumer price index's axis and its label (batch
-    13.4), ``ax_macro`` itself when no curve of the macro axis is chosen
-    (the index is then the right axis's, and mirrored on the left when
-    nothing is on it), else an axis of its own outside it.
+    ``extra_axis``: the axis of the consumer price index (batch 13.4) or the
+    population (13.5), ``ax_macro`` itself when no curve of the macro axis
+    is chosen (the curve is then the right axis's, and mirrored on the left
+    when nothing is on it), else an axis of its own outside it.
     """
     scale = config.font_scale
-    ax_index, index_label = index_axis if index_axis is not None else (None, "")
-    scale_line_widths(ax_yield, ax_macro, *([ax_index] if ax_index not in (None, ax_macro) else []), config.line_scale)
+    ax_extra = extra_axis.axes if extra_axis is not None else None
+    scale_line_widths(ax_yield, ax_macro, *([ax_extra] if ax_extra not in (None, ax_macro) else []), config.line_scale)
     ax_yield.set_xlabel("Date", fontsize=LABEL_FS * scale)
     ax_yield.tick_params(axis="both", which="major", labelsize=TICK_FS * scale)
     ax_yield.tick_params(axis="both", which="minor", labelsize=(TICK_FS - 4) * scale)
@@ -525,17 +538,17 @@ def apply_axes_formatting(
     ax_yield.grid(True, which="minor", linestyle=":", alpha=0.22, linewidth=grid_width)
 
     label = left_label or config.left_axis_label
-    if ax_index is not None:
-        configure_index_axis(ax_index, config, index_label)
-        set_index_ylim(ax_index)
-    if ax_index is ax_macro and ax_index is not None:
-        # The index the only right-axis curve: drawn as it would be with others.
+    if extra_axis is not None:
+        configure_extra_axis(ax_extra, config, extra_axis)
+        set_extra_ylim(ax_extra)
+    if ax_extra is ax_macro and ax_extra is not None:
+        # The extra curve the only right-axis curve: drawn as it would be with others.
         if config.has_left_axis_series:
             configure_yield_axis(ax_yield, font_scale=scale, label=label)
             set_yield_ylim(ax_yield, config)
         else:
-            configure_index_axis(ax_yield, config, index_label)
-            ax_yield.set_ylim(ax_index.get_ylim())
+            configure_extra_axis(ax_yield, config, extra_axis)
+            ax_yield.set_ylim(ax_extra.get_ylim())
     elif config.has_left_axis_series and config.has_macro_series:
         configure_yield_axis(ax_yield, font_scale=scale, label=label)
         set_yield_ylim(ax_yield, config)

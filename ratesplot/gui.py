@@ -231,6 +231,7 @@ from .options import (
     by_name,
     command_line_tokens,
     config_from_choices,
+    excluded_curves,
     excluded_measures,
     margin_options,
     nation_choice,
@@ -1944,6 +1945,11 @@ class RatesPlotApp:
             self.flag_vars[name].set(True)
             self.status.set("At least one country must stay selected.")
             return
+        # The price index and the population, one at a time on their axis
+        # (batch 13.5): ticking one unticks the other.
+        if self.flag_vars[name].get():
+            for other in excluded_curves(name):
+                self.flag_vars[other].set(False)
         if name in nation_boxes():
             # Batch 17.4: a nation ticked by hand gets its tab once its chart is
             # drawn (``_show_chart``); unticked before that, it does not.

@@ -4,7 +4,7 @@ The UK's chart is drawn only when it is asked for: while its box is ticked, or w
 
 ## What the chart draws
 
-At the start it draws GDP, gross debt and interest on the right axis, and the 5-, 10- and 20-year gilt yields on the left; the policy rate, inflation, mortgage rates, yield spreads and the price index when they are ticked.
+At the start it draws GDP, gross debt and interest on the right axis, and the 5-, 10- and 20-year gilt yields on the left; the policy rate, inflation, mortgage rates, yield spreads, the price index or the population when they are ticked.
 
 - [TTM nominal GDP](?help=gdp), from 1700: the Bank of England's dataset "A millennium of macroeconomic data", yearly, to 1954; the ONS's quarterly GDP from 1955.
 - [Aggregate public debt](?help=debt), from 1691: central government's national debt at each financial year's end, from the Bank of England's dataset, drawn as a dotted curve of its own until general government gross debt, the Maastricht measure, begins in March 1975 (the ONS, monthly). Public sector net debt excluding the public sector banks, also from March 1975, is drawn when it is ticked under Aggregate debts: only the UK has two measures to choose from.
@@ -18,6 +18,7 @@ At the start it draws GDP, gross debt and interest on the right axis, and the 5-
 - [Per capita](?help=per-capita): divided by the population in the Bank of England's dataset from 1707, the ONS's mid-year estimates from 1955.
 - [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the Bank of England's spliced index from 1914-07, the ONS's CPI index from 1988-01.
 - [Price index (CPI)](?help=price-index): the Bank of England's spliced consumer price index from 1914-07, the ONS's CPI index from 1988-01, 2015 = 100; the ONS publishes no seasonally adjusted index.
+- [Population](?help=population): the Bank of England's yearly figures from 1707, the ONS's quarterly figures from 1955.
 - [Latest values](?help=latest-values): the day's 5-, 10- and 20-year yields quoted by CNBC's feed, their time given in London time.
 
 ## Its own controls

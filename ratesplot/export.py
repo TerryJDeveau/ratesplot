@@ -97,6 +97,8 @@ MACRO_AXIS = "macro"
 # The consumer price index's (batch 13.4), whichever axis it is drawn on: its
 # unit is the index's, "index, 2002 = 100", never the amounts'.
 INDEX_AXIS = "index"
+# The population's (batch 13.5), whichever axis it is drawn on: "persons".
+POPULATION_AXIS = "population"
 # Each currency as a column's unit names it (the axis's own symbol is "$"
 # for the U.S., which alone in a file says too little): the symbols a chart
 # in the master currency writes (config.MASTER_SYMBOLS, the same four).
@@ -104,7 +106,7 @@ _CURRENCY_UNITS = MASTER_SYMBOLS
 
 
 def mark_series(line: Line2D, name: str, axis: str) -> Line2D:
-    """Record that ``line`` is (a piece of) the curve exported as ``name``, on ``axis`` (``YIELD_AXIS``, ``MACRO_AXIS``, ``INDEX_AXIS``)."""
+    """Record that ``line`` is (a piece of) the curve exported as ``name``, on ``axis`` (``YIELD_AXIS``, ``MACRO_AXIS``, ``INDEX_AXIS``, ``POPULATION_AXIS``)."""
     setattr(line, _SERIES_ATTR, (name, axis))
     return line
 
@@ -241,11 +243,13 @@ def _macro_unit(figure: Figure, config: PlotConfig, nation_key: str) -> str:
 
 
 def _unit(axis: str, figure: Figure, config: PlotConfig, nation_key: str) -> str:
-    """The unit of a curve drawn on ``axis``: "%" on the yield axis, the index's base for the price index, else the amounts' (``_macro_unit``)."""
+    """The unit of a curve drawn on ``axis``: "%" on the yield axis, the index's base for the price index, "persons" for the population, else the amounts' (``_macro_unit``)."""
     if axis == YIELD_AXIS:
         return "%"
     if axis == INDEX_AXIS:
         return f"index, {PRICE_INDEX_BASES[nation_key]}"
+    if axis == POPULATION_AXIS:
+        return "persons"
     return _macro_unit(figure, config, nation_key)
 
 

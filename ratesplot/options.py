@@ -661,6 +661,17 @@ def excluded_measures(name: str) -> tuple[str, ...]:
     return measures if name == "relative" else tuple(other for other in measures if other == "relative")
 
 
+def check_one_extra_curve(values: Mapping[str, object]) -> None:
+    """Reject --cpi with --population: their axis holds one of the two at a time until 14.1 settles the general rule (Terry, decision 43)."""
+    if values["price_index"] and values["population"]:
+        raise ValueError("--cpi and --population cannot be combined: their axis holds one of the two at a time; choose one")
+
+
+def excluded_curves(name: str) -> tuple[str, ...]:
+    """The boxes that ticking ``name`` unticks in the window and on the page: the price index and the population, one at a time (``check_one_extra_curve``)."""
+    return {"cpi": ("population",), "population": ("cpi",)}.get(name, ())
+
+
 def check_macro_bound_units(payloads: Mapping[str, str], values: Mapping[str, object]) -> None:
     """Require right-axis bounds as percentages under -r, and in dollars otherwise.
 
@@ -802,9 +813,10 @@ GROUPS: dict[str, str] = {
         'Rates on the yield axis (policy, inflation, mortgages, spreads; each only\n'
         'when asked for, hiding nothing; at least "po", "inf", "mo", "sp"):'
     ),
-    "prices": (
-        "The consumer price index on an axis of its own (only when asked for, hiding\n"
-        'nothing; at least "cp"):'
+    "extra": (
+        "The consumer price index or the population on an axis of its own (one of\n"
+        'the two at a time, only when asked for, hiding nothing; at least "cp",\n'
+        '"pop"):'
     ),
     "units": "Measure of debt, GDP, and interest:",
     "labels": "Line labels and regression segments (--reg needs at least \"reg\"):",
@@ -881,19 +893,32 @@ OPTIONS: tuple[Option, ...] = (
     # in the window and on the page a box "Seas. adj." under the index's,
     # greyed while it is unticked (Terry, 2026-11-03).
     Option(
-        "cpi", Kind.FLAG, ("price_index",), "prices", "--cpi / --no-cpi",
+        "cpi", Kind.FLAG, ("price_index",), "extra", "--cpi / --no-cpi",
         "each country's consumer price index, not\nseasonally adjusted, on a log axis of its\n"
         "own in index points (outside the right\naxis when debt, GDP or interest is\n"
         "drawn): the U.S. from 1913, Canada and\nthe UK from 1914, Germany from 1991",
         names=("cpi",), shortest=2, label="Price index (CPI)", panel="curves", topic="price-index",
     ),
     Option(
-        "cpi-adjustment", Kind.VALUE, ("price_index_adjusted",), "prices", "--cpi:sa",
+        "cpi-adjustment", Kind.VALUE, ("price_index_adjusted",), "extra", "--cpi:sa",
         "the index seasonally adjusted: the U.S.\nfrom 1947, Canada from 1992, Germany from\n"
         "1991; the ONS publishes none, so the UK's\nchart draws its index unadjusted; turns\n--cpi on",
         names=("cpi",), shortest=2, parse=parse_cpi_adjustment, turns_on="cpi", label="Seas. adj.",
         format=format_cpi_adjustment, editor="choices", choices=((("", ((CPI_ADJUSTED, "Seas. adj."),)),)),
         panel="curves", topic="price-index",
+    ),
+    # Batch 13.5 (Terry asked 2026-10-14; decision 43): each nation's
+    # population in persons, on the price index's axis, one of the two at a
+    # time until 14.1 (``check_one_extra_curve``; ticking one unticks the
+    # other, ``excluded_curves``). A count, so never divided: the same under
+    # -r, -p and --constant. Read by -p already, so no new source. At least
+    # "pop": "--po" is --policy.
+    Option(
+        "population", Kind.FLAG, ("population",), "extra", "--population / --no-population",
+        "each country's population, in persons, on\na log axis of its own (outside the right\n"
+        "axis when debt, GDP or interest is drawn):\nthe UK from 1707, Canada from 1867, the\n"
+        "U.S. from 1947, Germany from 1960; not\nwith --cpi",
+        names=("population",), shortest=3, label="Population", panel="curves", topic="population",
     ),
     # Curve sub-options: debt and interest by level of government ("--d:" is
     # debt; the size needs at least "dim"). They set one field; see
@@ -1620,6 +1645,7 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
         values.update({nation.show_field: nation.shown_by_default for nation in NATIONS})
 
     check_single_measure(values)
+    check_one_extra_curve(values)
     # -r divides debt and interest by GDP. With neither drawn it has nothing
     # to act on, and GDP, if chosen, is drawn in dollars, as without -r
     # (before 2026-10-13 -r hid it, leaving the right axis empty). The window
@@ -1627,7 +1653,7 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # changes nothing.
     idle = idle_options(
         values["include_debt"], values["include_gdp"], values["include_interest"],
-        price_index=values["price_index"],
+        extra_curve=values["price_index"] or values["population"],
     )
     if values["relative"] and "relative" in idle:
         values["relative"] = False
@@ -1647,7 +1673,7 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     return PlotConfig(**values)
 
 
-def idle_options(debt: bool, gdp: bool, interest: bool, *, price_index: bool = False) -> frozenset[str]:
+def idle_options(debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False) -> frozenset[str]:
     """Return the options that change nothing on any chart while these right-axis curves are chosen.
 
     Terry, 2026-10-08: grey out "Regression segments", "By level", "% of GDP"
@@ -1666,14 +1692,15 @@ def idle_options(debt: bool, gdp: bool, interest: bool, *, price_index: bool = F
     Each was checked on 2026-10-13 to draw a byte-identical chart when idle,
     -r excepted: it hid GDP, which ``config_from_choices`` now stops.
 
-    The consumer price index (``price_index``, batch 13.4) is fitted by
-    --reg, so the regression segments are not idle while it is drawn; the
-    measures, the limits and the projections act on the amounts alone.
+    The extra axis's curve (``extra_curve``: the consumer price index, batch
+    13.4, or the population, 13.5) is fitted by --reg, so the regression
+    segments are not idle while it is drawn; the measures, the limits and
+    the projections act on the amounts alone.
     """
-    return frozenset(idle_option_reasons(debt, gdp, interest, price_index=price_index))
+    return frozenset(idle_option_reasons(debt, gdp, interest, extra_curve=extra_curve))
 
 
-def idle_option_reasons(debt: bool, gdp: bool, interest: bool, *, price_index: bool = False) -> dict[str, str]:
+def idle_option_reasons(debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False) -> dict[str, str]:
     """Return ``idle_options``' names, each with why it is idle, a clause to follow "Greyed because" (batch 29.1)."""
     reasons: dict[str, str] = {}
     if not (debt or interest):
@@ -1681,7 +1708,7 @@ def idle_option_reasons(debt: bool, gdp: bool, interest: bool, *, price_index: b
     if not (debt or gdp or interest):
         amounts = ("per-capita", "constant", "top", "bottom", "projections")
         reasons |= dict.fromkeys(
-            amounts if price_index else (*amounts, "regression", "regression-tolerance"),
+            amounts if extra_curve else (*amounts, "regression", "regression-tolerance"),
             "it acts on the right axis's curves, and none of debt, GDP and interest is ticked",
         )
     return reasons
@@ -1989,7 +2016,10 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     """
     defaults, default_flags = choices_from_config(PlotConfig())
     tokens: list[str] = []
-    idle = idle_options(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True))
+    idle = idle_options(
+        flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True),
+        extra_curve=flags.get("cpi", False) or flags.get("population", False),
+    )
     idle_keys = idle_margins(payloads, flags) | idle_aggregates(payloads, flags)
     payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle and key not in idle_keys}
     # The automatic refresh's minutes are greyed where it brings nothing new

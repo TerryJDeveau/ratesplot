@@ -2,7 +2,7 @@
 
 Each nation's consumer price index itself, in index points on a log axis of its own, drawn as a solid deep-pink line, each month's index a step across that month. Price index (CPI) draws it, not seasonally adjusted, and adds it to the chart, hiding nothing. Seas. adj., the box under it, draws the seasonally adjusted index instead, where one is published; it is greyed while Price index (CPI) is unticked.
 
-When GDP, debt or interest is drawn, the index has an axis of its own outside the right axis, so it keeps its own scale; without them it is on the right axis. It is drawn the same either way, and the same [per capita](?help=per-capita), [as % of GDP](?help=percent-of-gdp) and [inflation adjusted](?help=constant-prices): the index is never divided. The axis names each index's base, as its statistics office states it: "Consumer Price Index (2002 = 100, Log Scale)". Top and Bottom are the right axis's limits, not the index's.
+When GDP, debt or interest is drawn, the index has an axis of its own outside the right axis, so it keeps its own scale; without them it is on the right axis. It is drawn the same either way, and the same [per capita](?help=per-capita), [as % of GDP](?help=percent-of-gdp) and [inflation adjusted](?help=constant-prices): the index is never divided. The axis names each index's base, as its statistics office states it: "Consumer Price Index (2002 = 100, Log Scale)". Top and Bottom are the right axis's limits, not the index's. The axis holds one curve at a time for now, this or the [population](?help=population): ticking one unticks the other.
 
 On a log axis a straight stretch of the index is a steady rise in prices, and its slope is that rate. The [regression segments](?help=regression) fit the index on its own axis, by that axis's height, so each piece's %/yr is the average [inflation](?help=inflation) over it. The unadjusted index's seasonal swings can take more pieces on a short window than the adjusted one's. An end label and the read-out give the index to one decimal, as the statistics offices publish it.
 
@@ -28,4 +28,4 @@ Each source's figures are kept in the program as the source published them. A jo
 
 ## On the command line
 
-`--cpi`, at least `--cp`, the index not seasonally adjusted; `--cpi:sa` the adjusted one, which turns `--cpi` on. `--no-cpi` takes it off.
+`--cpi`, at least `--cp`, the index not seasonally adjusted; `--cpi:sa` the adjusted one, which turns `--cpi` on. `--no-cpi` takes it off. `--cpi` and `--population` together are refused.

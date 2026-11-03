@@ -84,12 +84,16 @@ from regress_charts import PINNED_END, install_disk_cache  # noqa: E402
 from ratesplot import cdn_data, cli, de_data, http, rates, uk_data, us_data  # noqa: E402
 from ratesplot.cdn_hist_yields import build_cdn_hist_yields  # noqa: E402
 from ratesplot.de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES  # noqa: E402
+from ratesplot.cdn_archive_data import EMBEDDED_CDN_POPULATION_HISTORY  # noqa: E402
 from ratesplot.config import (  # noqa: E402
+    POPULATION_LABEL,
     PRICE_INDEX_ADJUSTED_LABEL,
     PRICE_INDEX_LABEL,
     SEASONALLY_ADJUSTED_NATIONS,
     STATCAN_CDN_CPI_SA_TABLE,
     STATCAN_CDN_CPI_SA_VECTOR,
+    STATCAN_CDN_POPULATION_TABLE,
+    STATCAN_CDN_POPULATION_VECTOR,
     nation_by_key,
 )
 from ratesplot.console import this_thread_output_to  # noqa: E402
@@ -100,6 +104,7 @@ from ratesplot.uk_archive_data import (  # noqa: E402
     EMBEDDED_UK_BANK_RATE_HISTORY,
     EMBEDDED_UK_CPI_HISTORY,
     EMBEDDED_UK_MORTGAGE_HISTORY,
+    EMBEDDED_UK_POPULATION_HISTORY,
 )
 
 # Two readings of one download are the same floats; anything else is a different value.
@@ -176,6 +181,8 @@ CASES: dict[str, list[str]] = {
     # own axis outside the amounts per capita (the UK's unadjusted, named so).
     "cpi": ["--na:ca,us,gb,de", "-s:1910", "--cpi", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
     "cpi_sa": ["--na:ca,us,gb,de", "-s:1945", "--cpi:sa", "-p", "--no-yield"],
+    "population": ["--na:ca,us,gb,de", "-s:1700", "--population", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
+    "population_pc": ["--na:ca,us,gb,de", "-s:1960", "--pop", "-p", "--no-yield"],
 }
 
 
@@ -552,10 +559,12 @@ def check_case(name: str, tokens: list[str]) -> bool:
             if len(result.failures) > 5:
                 print(f"         ... {len(result.failures) - 5:,} more")
             passed &= not result.failures
-        for axis in figure.axes[1:]:  # the right axis, and the price index's outside it (batch 13.4)
+        for axis in figure.axes[1:]:  # the right axis, and the extra axis outside it (batch 13.4)
             for line in drawn_curves(axis):
                 if line.label in (PRICE_INDEX_LABEL, PRICE_INDEX_ADJUSTED_LABEL):
                     passed &= check_price_index(key, line, config)
+                elif line.label == POPULATION_LABEL:
+                    passed &= check_population(key, line, config)
                 elif axis is figure.axes[1] and not line.values.empty and config.master_currency is None and not config.constant_prices:
                     print(f"  {key:4} {line.label[:44]:44} right axis, derived (not compared): {span(list(line.values.index))}")
         if config.master_currency is not None:
@@ -730,22 +739,62 @@ def check_price_index(key: str, line: Drawn, config) -> bool:
         print(f"  {key:4} {line.label[:44]:44} FAIL  its source could not be read ({exc})")
         return False
     expected = pd.Series(index.to_numpy(dtype=float), index=index.index.to_timestamp())
+    return _each_point_is(key, line, expected, config, "the index", f"its month's index ({name}; the index from {index.index[0]})")
+
+
+def population(nation: str) -> pd.Series:
+    """A nation's population read on its own (batch 13.5), in persons, by date: each source's whole series, the older until the newer begins; a quarter dated by its middle, as its reader dates it for -p."""
+
+    def by_middle(quarters: pd.Series) -> pd.Series:
+        return quarters.set_axis(pd.DatetimeIndex(quarters.index.to_period("Q").start_time + pd.Timedelta(days=45)))
+
+    if nation == "us":
+        return fred(us_data.US_POPULATION_SERIES_ID).read() * 1000.0
+    if nation == "cdn":
+        older = built_in("Canada's estimates", EMBEDDED_CDN_POPULATION_HISTORY).read()
+        newer = statcan(STATCAN_CDN_POPULATION_TABLE, STATCAN_CDN_POPULATION_VECTOR, "population").read()
+    elif nation == "uk":
+        older = built_in("the Bank of England's estimates", EMBEDDED_UK_POPULATION_HISTORY).read()
+        newer = by_middle(_clean(uk_data.ons_download("EBAQ", "quarters")) * 1000.0)
+    else:
+        annual = _clean(de_data.parse_jsonstat(de_data.eurostat_download("demo_pjan"), "NR"))
+        older = annual.set_axis(pd.DatetimeIndex(annual.index.to_period("Y").start_time))
+        newer = by_middle(_clean(de_data.parse_jsonstat(de_data.eurostat_download("namq_10_pe"), "THS_PER")) * 1000.0)
+    return pd.concat([older.loc[older.index < newer.index[0]], newer])
+
+
+def check_population(key: str, line: Drawn, config) -> bool:
+    """The population drawn (batch 13.5): each point its date's estimate, every estimate in the window drawn, the same under -p; True if so.
+
+    Worked out here on its own (``population``). A count, so never divided.
+    """
+    try:
+        with this_thread_output_to(None):
+            people = population(key)
+    except Exception as exc:  # reported, never swallowed
+        print(f"  {key:4} {line.label[:44]:44} FAIL  its source could not be read ({exc})")
+        return False
+    return _each_point_is(key, line, people, config, "the population", f"its date's estimate (the estimates from {people.index[0]:%Y-%m-%d})")
+
+
+def _each_point_is(key: str, line: Drawn, expected: pd.Series, config, what: str, said: str) -> bool:
+    """Each point of ``line`` its date's value of ``expected``, every value in the chart's window drawn and no other; True if so, the outcome printed."""
     expected = expected.loc[(expected.index >= pd.Timestamp(config.start)) & (expected.index <= pd.Timestamp(config.end))]
     failures: list[str] = []
     extra = line.values.index.difference(expected.index)
-    failures += [f"{when:%Y-%m-%d} {line.values[when]:g}: drawn, but no month of the index begins there" for when in extra[:3]]
+    failures += [f"{when:%Y-%m-%d} {line.values[when]:g}: drawn, but {what} has no value there" for when in extra[:3]]
     missing = expected.index.difference(line.values.index)
-    failures += [f"{when:%Y-%m-%d}: the index has {expected[when]:g}, not drawn" for when in missing[:3]]
+    failures += [f"{when:%Y-%m-%d}: {what} has {expected[when]:g}, not drawn" for when in missing[:3]]
     both = line.values.index.intersection(expected.index)
     wrong = ~np.isclose(line.values[both].to_numpy(), expected[both].to_numpy(), rtol=0, atol=TOLERANCE)
-    failures += [f"{when:%Y-%m-%d} {line.values[when]:g}: the index has {expected[when]:g}" for when in both[wrong][:5]]
+    failures += [f"{when:%Y-%m-%d} {line.values[when]:g}: {what} has {expected[when]:g}" for when in both[wrong][:5]]
     ok = not failures
     print(
-        f"  {key:4} {line.label[:44]:44} {'OK' if ok else 'FAIL':5} {len(line.values):,} points, each its month's index "
-        f"({name}; {span(list(both)) if len(both) else 'none'}; the index from {index.index[0]})"
+        f"  {key:4} {line.label[:44]:44} {'OK' if ok else 'FAIL':5} {len(line.values):,} points, each {said}; "
+        f"{span(list(both)) if len(both) else 'none'}"
     )
     if len(extra) + len(missing) + int(wrong.sum()) > len(failures):
-        failures.append(f"... {len(extra):,} drawn outside the index, {len(missing):,} not drawn, {int(wrong.sum()):,} different in all")
+        failures.append(f"... {len(extra):,} drawn outside {what}, {len(missing):,} not drawn, {int(wrong.sum()):,} different in all")
     for failure in failures:
         print(f"         {failure}")
     return ok

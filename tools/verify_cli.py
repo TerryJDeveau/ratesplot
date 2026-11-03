@@ -280,6 +280,13 @@ CASES: list[list[str]] = [
     ["--cpi:sa"], ["--cp:sa"], ["--cpi:SA"], ["--cpi:nsa"], ["--cpi:"], ["--us:cpi:sa"], ["--no-cpi:sa"],
     ["--cpi", "--cpi:sa"], ["--cpi:sa", "--no-cpi"], ["--cpi:sa", "--na:gb"], ["--cpi", "--yield"],
     ["--cpi", "--reg", "--no-gdp", "--no-debt", "--no-interest"], ["--cpi", "-r"], ["--cpi:sa", "-p", "--con"],
+    # Batch 13.5: --population, at least "pop" ("--po" stays --policy, "--p" -p), a flag; no nation's own; refused
+    # beside --cpi however that is turned on, unless turned off again; beside the amounts or alone; --reg not idle
+    # with it alone on the right axis; the same under -r and -p.
+    ["--population"], ["--pop"], ["--popu"], ["--POP"], ["--po"], ["--no-population"], ["--no-pop"], ["--population:1"],
+    ["--us:population"], ["--popx"], ["--pop", "--cpi"], ["--cpi", "--pop"], ["--pop", "--cpi:sa"], ["--pop", "--cpi", "--no-cpi"],
+    ["--pop", "--cpi:sa", "--no-cpi"], ["--cpi", "--pop", "--no-pop"], ["--pop", "--yield"],
+    ["--pop", "--reg", "--no-gdp", "--no-debt", "--no-interest"], ["--pop", "-r"], ["--pop", "-p", "--con"],
 ]
 
 

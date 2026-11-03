@@ -4,7 +4,7 @@ Germany's chart is drawn only when it is asked for: while its box is ticked, or 
 
 ## What the chart draws
 
-At the start it draws GDP, debt and interest on the right axis, and the 2-, 5-, 10- and 30-year bond yields on the left; the policy rate, inflation, mortgage rates, yield spreads and the price index when they are ticked.
+At the start it draws GDP, debt and interest on the right axis, and the 2-, 5-, 10- and 30-year bond yields on the left; the policy rate, inflation, mortgage rates, yield spreads, the price index or the population when they are ticked.
 
 - [TTM nominal GDP](?help=gdp), from 1991: Eurostat's quarterly national accounts.
 - [Aggregate public debt](?help=debt), from 1991: general government consolidated gross debt, the ECB's year ends to 1999, Eurostat's quarters from 2000.
@@ -18,6 +18,7 @@ At the start it draws GDP, debt and interest on the right axis, and the 2-, 5-, 
 - [Per capita](?help=per-capita): divided by Eurostat's population, quarterly from 1991.
 - [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the Federal Statistical Office's index from 1991-01.
 - [Price index (CPI)](?help=price-index): the Federal Statistical Office's consumer price index from 1991-01, 2020 = 100, from the Bundesbank; calendar and seasonally adjusted from 1991-01.
+- [Population](?help=population): Eurostat's counts on 1 January from 1960, West Germany's until 1990, its quarterly figures from 1991.
 - [Latest values](?help=latest-values): the Bundesbank publishes the day's yields during the day, so once they are out the chart ends at them; before then, the day's yields quoted by CNBC's feed, their time given in Frankfurt time.
 
 ## Its own controls

@@ -108,7 +108,7 @@ from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E
 # both policy terms, each nation's own levels, Top and Bottom in a currency.
 CHART_CASES = (
     "default", "c2015", "u_reg_r", "c_lv_r", "uk_rates", "de_rates", "all4", "policy_both", "nat_levels", "nat_fx", "inflation",
-    "constant_pc", "cpi_sa",
+    "constant_pc", "cpi_sa", "population",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -2699,6 +2699,50 @@ def check_batch134(check: Check) -> None:
               and "--cpi:sa" in w.command_tokens(), w.command_tokens())
 
 
+def check_batch135(check: Check) -> None:
+    """Batch 13.5: "Population", one of it and "Price index (CPI)" at a time; the regression segments not greyed with it alone; its ⓘ's More; its chart the written line's."""
+    with window(f"-c -s:2015 {END}") as w:
+        app, root = w.app, w.root
+
+        def has_curve(label: str) -> bool:
+            return any(line.get_label() == label for axis in app.figures["cdn"][0].axes for line in axis.get_lines())
+
+        check("“Population” there, unticked", "population" in app.flag_vars and not app.flag_vars["population"].get())
+        app.info_marks["population"].event_generate("<Button-1>")
+        root.update()
+        more = next(widget for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton" and widget.cget("text") == "More")
+        more.invoke()
+        root.update()
+        check("More opens the population's page", "population" in app.topic_windows
+              and app.topic_windows["population"].title() == "Population", sorted(app.topic_windows))
+        w.tick("population", True)
+        w.settle()
+        check("ticked: --population written, the Canadian chart's population drawn", "--population" in w.command_tokens()
+              and has_curve("Population"), w.command_tokens())
+        check("its chart the written line's", w.written_draws_the_same(("cdn",)))
+        w.tick("cpi", True)
+        w.settle()
+        check("“Price index (CPI)” ticked: “Population” unticked, --cpi alone", not app.flag_vars["population"].get()
+              and "--cpi" in w.command_tokens() and "--population" not in w.command_tokens()
+              and has_curve("Consumer price index") and not has_curve("Population"), w.command_tokens())
+        editor = app.choice_editors["cpi-adjustment"]
+        editor.boxes["sa"].set(True)
+        editor.box_changed("sa")
+        w.settle()
+        w.tick("population", True)
+        w.settle()
+        check("“Population” ticked: “Price index (CPI)” unticked, “Seas. adj.” greyed, neither written", not app.flag_vars["cpi"].get()
+              and not enabled(editor.widgets[0]) and "--population" in w.command_tokens()
+              and not any(t.startswith("--cpi") for t in w.command_tokens()) and has_curve("Population"), w.command_tokens())
+    with window(f"-c --pop --no-gdp --no-debt --no-interest --no-yield -s:2015 {END}") as w:
+        app = w.app
+        check("alone on the right axis: the regression segments not greyed", enabled(app.flag_boxes["regression"]))
+        check("its chart the written line's", w.written_draws_the_same(("cdn",)))
+        w.tick("population", False)
+        w.settle()
+        check("unticked: the regression segments greyed", not enabled(app.flag_boxes["regression"]))
+
+
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
     "reset": check_reset,
@@ -2734,6 +2778,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch30": check_batch30,
     "batch132": check_batch132,
     "batch134": check_batch134,
+    "batch135": check_batch135,
 }
 
 
