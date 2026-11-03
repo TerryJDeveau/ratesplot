@@ -204,6 +204,7 @@ from .frontend import (  # noqa: E402
     bound_keys,
     bounds_in_other_units,
     chart_link,
+    choice_is_list,
     choice_refusal,
     choice_rows,
     choice_values,
@@ -255,7 +256,6 @@ from .options import (  # noqa: E402
     command_line_tokens,
     config_from_choices,
     excluded_measures,
-    excluded_price_index,
     field_default,
     help_epilog,
     margin_options,
@@ -1355,13 +1355,6 @@ def _measure_changed(name: str) -> None:
         st.session_state[_VALUE + bound] = ""
 
 
-def _price_index_changed(name: str) -> None:
-    """The price index unadjusted or seasonally adjusted, not both (``excluded_price_index``, batch 13.4)."""
-    if st.session_state[_FLAG + name]:
-        for other in excluded_price_index(name):
-            st.session_state[_FLAG + other] = False
-
-
 def _curve_changed(_name: str) -> None:
     """A curve ticked or unticked can give -r its effect or take it away: clear Top and Bottom in the other unit."""
     for bound in bounds_in_other_units(*_snapshot()):
@@ -1402,6 +1395,8 @@ def _choice_values_offered(key: str) -> list[str]:
 
 def _choice_changed(key: str, value: str) -> None:
     """Keep at least one box of a list ticked: drawing none is the curve's own box (``choice_refusal``)."""
+    if not choice_is_list(option_of(key)):
+        return  # a single box of a value that is no list ("Seas. adj.", batch 13.4) may be unticked
     if not any(st.session_state.get(_CHOICE + key + ":" + item, False) for item in _choice_values_offered(key)):
         st.session_state[_CHOICE + key + ":" + value] = True
         st.session_state[_NOTICE] = choice_refusal(option_of(key))
@@ -1583,7 +1578,7 @@ def _now(key: str, blank: object = False) -> object:
 
 
 def _flag_control(where, option: Option) -> None:
-    callbacks = {"country": _country_changed, "units": _measure_changed, "curves": _curve_changed, "prices": _price_index_changed}
+    callbacks = {"country": _country_changed, "units": _measure_changed, "curves": _curve_changed}
     callback = callbacks.get(option.group)
     where.checkbox(
         option.label,

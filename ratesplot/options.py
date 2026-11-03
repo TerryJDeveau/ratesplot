@@ -79,6 +79,7 @@ from .config import (
     PER_NATION_FIELDS,
     POLICY_TERMS,
     QUOTE_MAX_AGE_DAYS,
+    SEASONALLY_ADJUSTED_NATIONS,
     YIELD_TERMS,
     Nation,
     PlotConfig,
@@ -440,6 +441,25 @@ def parse_master_currency(spec: str) -> str:
     raise ValueError(f"--master:{value} names no currency: use CAD, USD, GBP or EUR (or C$, US$, £, €)")
 
 
+# --cpi:sa (batch 13.4): the one value the price index's adjustment takes.
+CPI_ADJUSTED = "sa"
+
+
+def parse_cpi_adjustment(spec: str) -> bool:
+    """Parse ``--cpi:sa``, the price index seasonally adjusted (batch 13.4): True; any other value is refused."""
+    if spec.strip().lower() != CPI_ADJUSTED:
+        raise ValueError(
+            f"--cpi:{spec.strip()}: the only value is {CPI_ADJUSTED}, the index seasonally adjusted; "
+            "--cpi alone draws it not seasonally adjusted"
+        )
+    return True
+
+
+def format_cpi_adjustment(values: tuple, _config: PlotConfig) -> str:
+    """Format the price index's adjustment as ``parse_cpi_adjustment`` takes it: "sa", or blank when not seasonally adjusted."""
+    return CPI_ADJUSTED if values[0] else ""
+
+
 def format_master_currency(values: tuple, _config: PlotConfig) -> str:
     """Format the master currency as its code, which ``parse_master_currency`` takes; blank for none."""
     return values[0] or ""
@@ -631,18 +651,6 @@ def check_single_measure(values: Mapping[str, object]) -> None:
         raise ValueError("-r (% of GDP) and --constant cannot be combined: a share of GDP is free of inflation already")
 
 
-def check_single_price_index(values: Mapping[str, object]) -> None:
-    """Reject --cpi with --sea: the index is drawn unadjusted or seasonally adjusted, not both (batch 13.4)."""
-    if values["price_index"] and values["price_index_adjusted"]:
-        raise ValueError("--cpi and --sea cannot be combined: the index is drawn unadjusted or seasonally adjusted; choose one")
-
-
-def excluded_price_index(name: str) -> tuple[str, ...]:
-    """The other of the price index's pair of tick boxes, which ticking ``name`` unticks in the window and on the page (batch 13.4)."""
-    pair = ("cpi", "seasonally-adjusted")
-    return tuple(other for other in pair if other != name) if name in pair else ()
-
-
 def excluded_measures(name: str) -> tuple[str, ...]:
     """The measures (the "units" group's tick boxes) that ticking ``name`` unticks in the window and on the page.
 
@@ -796,7 +804,7 @@ GROUPS: dict[str, str] = {
     ),
     "prices": (
         "The consumer price index on an axis of its own (only when asked for, hiding\n"
-        'nothing; at least "cp", "sea"):'
+        'nothing; at least "cp"):'
     ),
     "units": "Measure of debt, GDP, and interest:",
     "labels": "Line labels and regression segments (--reg needs at least \"reg\"):",
@@ -866,11 +874,12 @@ OPTIONS: tuple[Option, ...] = (
     # Batch 13.4 (Terry asked 2026-10-13 for the consumer price index itself
     # on the right axis, unadjusted and seasonally adjusted, fitted by --reg):
     # each nation's index, on the right axis when debt, GDP and interest are
-    # not drawn, else on an axis of its own outside it; one or the other
-    # (``check_single_price_index``, ``excluded_price_index``). Flags, not
-    # curves under the curve rule: each adds the index and hides nothing, as
-    # --inflation does. At least "cp" ("--c" is Canada); "sea" ("--sa" is
-    # --save, "--s:" the start).
+    # not drawn, else on an axis of its own outside it. A flag, not a curve
+    # under the curve rule: it adds the index and hides nothing, as
+    # --inflation does. At least "cp" ("--c" is Canada). Seasonally adjusted
+    # by --cpi:sa, a value that turns --cpi on, as --reg:TOL turns on --reg;
+    # in the window and on the page a box "Seas. adj." under the index's,
+    # greyed while it is unticked (Terry, 2026-11-03).
     Option(
         "cpi", Kind.FLAG, ("price_index",), "prices", "--cpi / --no-cpi",
         "each country's consumer price index, not\nseasonally adjusted, on a log axis of its\n"
@@ -879,11 +888,12 @@ OPTIONS: tuple[Option, ...] = (
         names=("cpi",), shortest=2, label="Price index (CPI)", panel="curves", topic="price-index",
     ),
     Option(
-        "seasonally-adjusted", Kind.FLAG, ("price_index_adjusted",), "prices", "--sea / --no-sea",
-        "the index seasonally adjusted instead: the\nU.S. from 1947, Canada from 1992, Germany\n"
-        "from 1991 (the ONS publishes none for the\nUK); not with --cpi",
-        names=("seasonally-adjusted",), shortest=3, label="Price index, seasonally adjusted", panel="curves",
-        topic="price-index",
+        "cpi-adjustment", Kind.VALUE, ("price_index_adjusted",), "prices", "--cpi:sa",
+        "the index seasonally adjusted: the U.S.\nfrom 1947, Canada from 1992, Germany from\n"
+        "1991; the ONS publishes none, so the UK's\nchart draws its index unadjusted; turns\n--cpi on",
+        names=("cpi",), shortest=2, parse=parse_cpi_adjustment, turns_on="cpi", label="Seas. adj.",
+        format=format_cpi_adjustment, editor="choices", choices=((("", ((CPI_ADJUSTED, "Seas. adj."),)),)),
+        panel="curves", topic="price-index",
     ),
     # Curve sub-options: debt and interest by level of government ("--d:" is
     # debt; the size needs at least "dim"). They set one field; see
@@ -1610,7 +1620,6 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
         values.update({nation.show_field: nation.shown_by_default for nation in NATIONS})
 
     check_single_measure(values)
-    check_single_price_index(values)
     # -r divides debt and interest by GDP. With neither drawn it has nothing
     # to act on, and GDP, if chosen, is drawn in dollars, as without -r
     # (before 2026-10-13 -r hid it, leaving the right axis empty). The window
@@ -1618,7 +1627,7 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # changes nothing.
     idle = idle_options(
         values["include_debt"], values["include_gdp"], values["include_interest"],
-        price_index=values["price_index"] or values["price_index_adjusted"],
+        price_index=values["price_index"],
     )
     if values["relative"] and "relative" in idle:
         values["relative"] = False
@@ -1626,6 +1635,13 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # (``idle_options``); off, no drawing reads a price index it does not use.
     if values["constant_prices"] and "constant" in idle:
         values["constant_prices"] = False
+    # --cpi:sa without --cpi, or with no nation drawn whose index is adjusted
+    # (the UK alone), changes nothing and is greyed (frontend.idle_control_reasons).
+    if values["price_index_adjusted"] and not (
+        values["price_index"]
+        and any(values[nation.show_field] for nation in NATIONS if nation.key in SEASONALLY_ADJUSTED_NATIONS)
+    ):
+        values["price_index_adjusted"] = False
     check_macro_bound_units(payloads, values)
     values["nation_settings"] = _nation_settings(payloads, values)
     return PlotConfig(**values)

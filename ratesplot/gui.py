@@ -175,6 +175,7 @@ from .frontend import (
     bound_keys,
     bounds_in_other_units,
     chart_link,
+    choice_is_list,
     choice_refusal,
     choice_rows,
     choice_values,
@@ -231,7 +232,6 @@ from .options import (
     command_line_tokens,
     config_from_choices,
     excluded_measures,
-    excluded_price_index,
     margin_options,
     nation_choice,
     options_in,
@@ -650,7 +650,7 @@ class _ChoicesEditor:
         if self.syncing:
             return
         ticked = [item for item, variable in self.boxes.items() if variable.get()]
-        if not ticked:
+        if not ticked and choice_is_list(self.option):
             self.boxes[value].set(True)
             self.refuse(choice_refusal(self.option))
             return
@@ -1952,11 +1952,6 @@ class RatesPlotApp:
                 self._ticked_nation = key
             elif self._ticked_nation == key:
                 self._ticked_nation = None
-        # The price index unadjusted or seasonally adjusted, not both (batch 13.4).
-        if name in self.flag_vars and self.flag_vars[name].get():
-            for other in excluded_price_index(name):
-                if other in self.flag_vars:
-                    self.flag_vars[other].set(False)
         units = [option.name for option in options_in("units") if option.name in self.flag_vars]
         if name in units:
             # % of GDP alone; per capita and constant prices together or

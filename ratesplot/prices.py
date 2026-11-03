@@ -46,6 +46,7 @@ import pandas as pd
 from .cdn_data import statcan_table
 from .config import (
     DATE_COLUMN,
+    SEASONALLY_ADJUSTED_NATIONS,
     STATCAN_CDN_CPI_SA_TABLE,
     STATCAN_CDN_CPI_SA_VECTOR,
     STATCAN_CDN_CPI_TABLE,
@@ -55,10 +56,6 @@ from .de_data import fetch_de_consumer_prices
 from .uk_archive_data import EMBEDDED_UK_CPI_HISTORY
 from .uk_data import UK_CPI_SERIES, UK_INFLATION_SERIES, ons_series
 from .us_data import US_CPI_SA_SERIES_ID, US_CPI_SERIES_ID, fred_series
-
-# The nations whose statistics office publishes a seasonally adjusted index
-# (13.4): every nation but the UK.
-SEASONALLY_ADJUSTED_NATIONS = ("us", "cdn", "de")
 
 
 def _by_month(values: pd.Series) -> pd.Series:

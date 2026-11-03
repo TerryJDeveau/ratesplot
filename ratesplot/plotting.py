@@ -77,6 +77,7 @@ from .config import (
     PRICE_INDEX_STYLE,
     PRICE_INDEX_TITLE,
     PROJECTION_ALPHA,
+    SEASONALLY_ADJUSTED_NATIONS,
     PROJECTION_KEY_COLOR,
     PROJECTION_LABEL,
     PROJECTION_LABEL_PREFIX,
@@ -117,7 +118,7 @@ from .latest import (
 )
 from .legend import finish_legend_and_title
 from .measures import PRICE_BASE_ATTR, express
-from .prices import SEASONALLY_ADJUSTED_NATIONS, consumer_prices
+from .prices import consumer_prices
 from .rates import (
     INFLATION_KEY,
     RateCurve,
@@ -698,13 +699,15 @@ def draw_country(
             macro_keys_drawn.append(style_key)
             macro_columns_drawn.append(column)
 
-    # The consumer price index (--cpi, --sea; batch 13.4): the right axis's
+    # The consumer price index (--cpi[:sa]; batch 13.4): the right axis's
     # when no curve of it is chosen, else on an axis of its own outside it;
     # drawn the same either way, and under every measure (never divided).
-    index_values = macro.attrs.get(PRICE_INDEX_ATTR)
+    index_drawn = macro.attrs.get(PRICE_INDEX_ATTR)
     index_line: Line2D | None = None
     index_axis: tuple[Axes, str] | None = None
-    if index_values is not None:
+    index_adjusted = False
+    if index_drawn is not None:
+        index_values, index_adjusted = index_drawn
         index_frame = pd.DataFrame({DATE_COLUMN: index_values.index, PRICE_INDEX_COLUMN: index_values.to_numpy()})
         ax_index = ax_yield.twinx() if config.has_macro_series else ax_macro
         index_line = add_macro_line(
@@ -712,7 +715,7 @@ def draw_country(
             filter_to_date_range(index_frame, DATE_COLUMN, config),
             enabled=True,
             column=PRICE_INDEX_COLUMN,
-            label=PRICE_INDEX_ADJUSTED_LABEL if config.price_index_adjusted else PRICE_INDEX_LABEL,
+            label=PRICE_INDEX_ADJUSTED_LABEL if index_adjusted else PRICE_INDEX_LABEL,
             style=PRICE_INDEX_STYLE,
             value_format=format_index,
             axis=INDEX_AXIS,
@@ -771,7 +774,7 @@ def draw_country(
         macro_keys_drawn=macro_keys_drawn,
         config=config,
         rate_titles=[curve.title for _line, curve in sorted(rate_lines, key=lambda item: not item[1].spread)],
-        index_title="" if index_line is None else PRICE_INDEX_ADJUSTED_TITLE if config.price_index_adjusted else PRICE_INDEX_TITLE,
+        index_title="" if index_line is None else PRICE_INDEX_ADJUSTED_TITLE if index_adjusted else PRICE_INDEX_TITLE,
     )
     title = metadata.title_for(**title_parts)
     short_title = metadata.title_for(**title_parts, short=True)
@@ -863,10 +866,11 @@ def _with_chart_end(
     return prepared
 
 
-# The consumer price index drawn (--cpi, --sea; batch 13.4), carried from a
+# The consumer price index drawn (--cpi[:sa]; batch 13.4), carried from a
 # nation's preparation to its drawing in the macro frame's attrs, as the
-# projections are: monthly, each month dated by its first day; None when not
-# drawn. Its column in the frame the drawing makes of it.
+# projections are: ``(index, adjusted)``, the index monthly, each month dated
+# by its first day, and whether it is the seasonally adjusted one; None when
+# not drawn. Its column in the frame the drawing makes of it.
 PRICE_INDEX_ATTR = "price_index"
 PRICE_INDEX_COLUMN = "Consumer price index"
 # The gap between the right axis's labels and the index's own axis outside
@@ -874,22 +878,23 @@ PRICE_INDEX_COLUMN = "Consumer price index"
 INDEX_AXIS_GAP_PT = 6.0
 
 
-def _price_index(key: str, config: PlotConfig) -> pd.Series | None:
-    """Nation ``key``'s consumer price index for --cpi or --sea (batch 13.4; ``prices.consumer_prices``), or None without them.
+def _price_index(key: str, config: PlotConfig) -> tuple[pd.Series, bool] | None:
+    """Nation ``key``'s consumer price index for --cpi (batch 13.4; ``prices.consumer_prices``) and whether it is seasonally adjusted; None without --cpi.
 
-    None too, with a note, for --sea where no seasonally adjusted index is
-    published (the UK: the ONS publishes none). The coverage warning names
-    it where the chart begins before it.
+    Under --cpi:sa the adjusted index where one is published; where none is
+    (the UK: the ONS publishes none), the unadjusted one, with a note, its
+    legend and title saying which it is. The coverage warning names it where
+    the chart begins before it.
     """
     if not config.draws_price_index:
         return None
-    if config.price_index_adjusted and key not in SEASONALLY_ADJUSTED_NATIONS:
-        print("  Note: the ONS publishes no seasonally adjusted consumer price index, so the UK's chart draws none "
-              "(--cpi draws its unadjusted index).")
-        return None
-    index = consumer_prices(key, adjusted=config.price_index_adjusted)
+    adjusted = config.price_index_adjusted and key in SEASONALLY_ADJUSTED_NATIONS
+    if config.price_index_adjusted and not adjusted:
+        print("  Note: the ONS publishes no seasonally adjusted consumer price index; the UK's chart draws its "
+              "index not seasonally adjusted.")
+    index = consumer_prices(key, adjusted=adjusted)
     warn_series_coverage(config.start, {"Consumer price index (--cpi)": index.index[0]})
-    return index
+    return index, adjusted
 
 
 def _consumer_prices(key: str, config: PlotConfig) -> pd.Series | None:

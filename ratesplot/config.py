@@ -571,14 +571,14 @@ POLICY_BAND_ALPHA = 0.25
 # across its own month, as an observed value is drawn (decision 44); a little
 # thicker than the yields, so the dots read.
 INFLATION_STYLE = {"color": "#ff1493", "linewidth": 2.0, "linestyle": ":", "drawstyle": "steps-post"}
-# --cpi and --sea (batch 13.4): the consumer price index on an axis of its
+# --cpi[:sa] (batch 13.4): the consumer price index on an axis of its
 # own, in the inflation curve's deep pink, solid, so the two read as one
 # measure (a slope of the index is the rise the inflation curve shows), and
 # as thick as the right-axis curves it is listed with. Monthly steps, each
 # month's index across its own month, as an observed value is drawn
 # (decision 44).
 PRICE_INDEX_STYLE = {"color": "#ff1493", "linewidth": 2.5, "drawstyle": "steps-post"}
-# The index drawn (--cpi, --sea): its legend label, title phrase
+# The index drawn (--cpi[:sa]): its legend label, title phrase
 # and axis label, and its unit in Export chart's data, which names each nation's base as its
 # statistics office states it (``PRICE_INDEX_BASES``).
 PRICE_INDEX_LABEL = "Consumer price index"
@@ -587,6 +587,9 @@ PRICE_INDEX_TITLE = "Consumer Price Index"
 PRICE_INDEX_ADJUSTED_TITLE = "Seasonally Adjusted Consumer Price Index"
 PRICE_INDEX_AXIS_LABEL = "Consumer Price Index ({base}, Log Scale)"
 PRICE_INDEX_BASES = {"us": "1982-84 = 100", "cdn": "2002 = 100", "uk": "2015 = 100", "de": "2020 = 100"}
+# The nations whose statistics office publishes a seasonally adjusted index
+# (--cpi:sa): every nation but the UK.
+SEASONALLY_ADJUSTED_NATIONS = ("us", "cdn", "de")
 # --mortgages (ratesplot.rates): the terms, as written on the command line ->
 # the countries that have them and the yield term whose colour they take (None:
 # no yield of that term, so a colour of their own, MORTGAGE_OWN_COLORS). In
@@ -1528,11 +1531,11 @@ class PlotConfig:
     include_debt: bool = True
     include_gdp: bool = True
     include_interest: bool = True
-    # --cpi, --sea (batch 13.4): each nation's consumer price index on an
-    # axis of its own (log, in index points), unadjusted (price_index) or
-    # seasonally adjusted (price_index_adjusted), never both
-    # (``options.check_single_price_index``); additive, as --inflation is.
-    # The same under -r, -p and --constant: the index is never divided.
+    # --cpi[:sa] (batch 13.4): each nation's consumer price index on an axis
+    # of its own (log, in index points), seasonally adjusted where published
+    # with price_index_adjusted (--cpi:sa, which has no effect without
+    # price_index); additive, as --inflation is. The same under -r, -p and
+    # --constant: the index is never divided.
     price_index: bool = False
     price_index_adjusted: bool = False
     show_cdn: bool = True
@@ -1798,8 +1801,8 @@ class PlotConfig:
 
     @property
     def draws_price_index(self) -> bool:
-        """True when the consumer price index is drawn (--cpi or --sea, batch 13.4): on the right axis when no curve of ``has_macro_series`` is, else on an axis outside it."""
-        return self.price_index or self.price_index_adjusted
+        """True when the consumer price index is drawn (--cpi, batch 13.4): on the right axis when no curve of ``has_macro_series`` is, else on an axis outside it."""
+        return self.price_index
 
     @property
     def draws_a_curve(self) -> bool:

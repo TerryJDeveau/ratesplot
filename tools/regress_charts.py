@@ -305,10 +305,10 @@ CASES: dict[str, list[str]] = {
     "constant_long": ["-c", "--constant", "--no-yield", "-s:1900"],
     # Batch 13.4: the consumer price index on an axis of its own beside the
     # amounts, with the regression and the end labels; seasonally adjusted,
-    # alone on the right axis beside the yields (the UK's chart without it);
+    # alone on the right axis beside the yields (the UK's unadjusted, named so);
     # per capita at constant prices (the index undivided); alone, from 1913.
     "cpi": ["--na:ca,us,gb,de", "--cpi", "-l", "--reg", "-s:1990"],
-    "cpi_sa": ["--na:ca,us,gb,de", "--sea", "--yield", "-l", "--reg", "-s:2000"],
+    "cpi_sa": ["--na:ca,us,gb,de", "--cpi:sa", "--yield", "-l", "--reg", "-s:2000"],
     "cpi_pc": ["--na:ca,us", "--cpi", "-p", "--constant", "-s:1960"],
     "cpi_long": ["--na:us,gb", "--cpi", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1913"],
 }

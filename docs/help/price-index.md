@@ -1,6 +1,6 @@
 # Price index (CPI)
 
-Each nation's consumer price index itself, in index points on a log axis of its own, drawn as a solid deep-pink line, each month's index a step across that month. Price index (CPI) draws it not seasonally adjusted; Price index, seasonally adjusted draws the adjusted index instead, where one is published. One or the other: in the window and on the page ticking one box unticks the other. Either adds the index to the chart and hides nothing.
+Each nation's consumer price index itself, in index points on a log axis of its own, drawn as a solid deep-pink line, each month's index a step across that month. Price index (CPI) draws it, not seasonally adjusted, and adds it to the chart, hiding nothing. Seas. adj., the box under it, draws the seasonally adjusted index instead, where one is published; it is greyed while Price index (CPI) is unticked.
 
 When GDP, debt or interest is drawn, the index has an axis of its own outside the right axis, so it keeps its own scale; without them it is on the right axis. It is drawn the same either way, and the same [per capita](?help=per-capita), [as % of GDP](?help=percent-of-gdp) and [inflation adjusted](?help=constant-prices): the index is never divided. The axis names each index's base, as its statistics office states it: "Consumer Price Index (2002 = 100, Log Scale)". Top and Bottom are the right axis's limits, not the index's.
 
@@ -18,7 +18,7 @@ Seasonal adjustment takes out the swings that come back each year at the same ti
 - **The United States, seasonally adjusted, from 1947-01.** The same index seasonally adjusted ([CPIAUCSL](https://fred.stlouisfed.org/series/CPIAUCSL)), with no value for October 2025 either. The Bureau recomputes five years of seasonal factors with each January's figures.
 - **The United Kingdom, unadjusted, 1914-07 to 1987.** The monthly consumer price index in the Bank of England's millennium dataset ([Research datasets](https://www.bankofengland.co.uk/statistics/research-datasets)), 2015 = 100: the ONS's estimates of the CPI from 1949, the cost-of-living index before them.
 - **The United Kingdom, unadjusted, from 1988-01.** The ONS's CPI index, all items, 2015 = 100 ([D7BT](https://www.ons.gov.uk/economy/inflationandpriceindices/timeseries/d7bt/mm23)), laid end to end with the Bank's index, neither scaled (they differ by 0.04 % in 1988-01).
-- **The United Kingdom, seasonally adjusted:** the ONS publishes none, so with the seasonally adjusted box ticked the UK's chart draws no index, with a note.
+- **The United Kingdom, seasonally adjusted:** the ONS publishes none, so with Seas. adj. ticked the UK's chart draws its index not seasonally adjusted, named so in the legend and the title, with a note; Seas. adj. is greyed while the UK is the only nation ticked.
 - **Germany, unadjusted, from 1991-01.** The Federal Statistical Office's consumer price index, all items, 2020 = 100, through the Bundesbank ([BBDP1.M.DE.N.VPI.C.A00000.I20.A](https://www.bundesbank.de/dynamic/action/en/statistics/time-series-databases/time-series-databases/759784/759784?tsId=BBDP1.M.DE.N.VPI.C.A00000.I20.A)). West Germany's index before it is not read.
 - **Germany, seasonally adjusted, from 1991-01.** The same index, calendar and seasonally adjusted, 2020 = 100 ([BBDP1.M.DE.Y.VPI.C.A00000.I20.A](https://www.bundesbank.de/dynamic/action/en/statistics/time-series-databases/time-series-databases/759784/759784?tsId=BBDP1.M.DE.Y.VPI.C.A00000.I20.A)).
 
@@ -28,4 +28,4 @@ Each source's figures are kept in the program as the source published them. A jo
 
 ## On the command line
 
-`--cpi`, at least `--cp`, the index not seasonally adjusted; `--seasonally-adjusted`, at least `--sea`, the adjusted one. `--no-cpi` and `--no-sea` take them off. The two can't be given together.
+`--cpi`, at least `--cp`, the index not seasonally adjusted; `--cpi:sa` the adjusted one, which turns `--cpi` on. `--no-cpi` takes it off.

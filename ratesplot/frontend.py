@@ -715,12 +715,12 @@ def idle_control_reasons(flags: Mapping[str, bool]) -> dict[str, str]:
     """
     reasons = idle_option_reasons(
         flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True),
-        price_index=flags.get("cpi", False) or flags.get("seasonally-adjusted", False),
+        price_index=flags.get("cpi", False),
     )
-    # The seasonally adjusted price index (batch 13.4): the ONS publishes
-    # none, so with the UK the only nation ticked it draws nothing.
-    if [key for name, key in nation_boxes().items() if flags.get(name, False)] == ["uk"]:
-        reasons["seasonally-adjusted"] = "the ONS publishes no seasonally adjusted price index, and the UK is the only nation ticked"
+    # The price index seasonally adjusted (batch 13.4): the ONS publishes
+    # none, so with the UK the only nation ticked "Seas. adj." changes nothing.
+    if flags.get("cpi", False) and [key for name, key in nation_boxes().items() if flags.get(name, False)] == ["uk"]:
+        reasons["cpi-adjustment"] = "the ONS publishes no seasonally adjusted price index, and the UK is the only nation ticked"
     if flags.get("relative", False) and "relative" not in reasons:
         reasons["gdp"] = "under % of GDP, GDP is the divisor and is not drawn"
     # The master currency's boxes (batch 30.2): fewer than two nations, % of
@@ -762,7 +762,7 @@ def idle_choice_reasons(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
 # nation's aggregate debts, by its key (``idle_nation_keys``).
 GREYABLE_OPTIONS = (
     frozenset(idle_option_reasons(False, False, False))
-    | {"gdp", "aggregate", "yields", "min", "max", "current", "master", "seasonally-adjusted"}
+    | {"gdp", "aggregate", "yields", "min", "max", "current", "master", "cpi-adjustment"}
     | AUTO_REFRESH_OPTIONS
 )
 
@@ -1092,7 +1092,14 @@ def choices_text(option: Option, ticked: list[str]) -> str:
     it none of its items (a blank field would be its default).
     """
     joined = ",".join(ticked)
+    if not joined and not choice_is_list(option):
+        return ""  # a box of a value that is no list ("Seas. adj.", batch 13.4): blank, its default
     return ",".join(choice_values(option, joined)) if joined else NONE_ITEM
+
+
+def choice_is_list(option: Option) -> bool:
+    """True for a list's boxes, at least one of which stays ticked (``choice_refusal``); False for a single box of a value that is no list ("Seas. adj.", batch 13.4), which may be unticked."""
+    return isinstance(getattr(PlotConfig(), option.fields[0]), tuple)  # a list's field holds a tuple
 
 
 def choice_refusal(option: Option) -> str:
