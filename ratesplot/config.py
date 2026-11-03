@@ -1208,15 +1208,15 @@ class CountryMetadata:
         macro_keys_drawn: Iterable[str],
         config: PlotConfig,
         rate_titles: Iterable[str] = (),
-        index_title: str = "",
+        extra_title: str = "",
         short: bool = False,
     ) -> str:
         """Compose the chart title from the series that were actually drawn.
 
-        ``index_title`` names the consumer price index when it is drawn
-        (batch 13.4), last, after the right axis's curves and outside their
-        -r or -p qualifier, which does not apply to it: "...; Aggregate
-        Public Debt per Capita; Consumer Price Index".
+        ``extra_title`` names the extra axis's curve when it is drawn (batch
+        13.4), last, after the right axis's curves and outside their -r or -p
+        qualifier, which does not apply to it: "...; Aggregate Public Debt
+        per Capita; Consumer Price Index".
 
         Parts are joined with commas and a final ampersand, e.g.
         ``"U.S. Treasury Yields, Aggregate Public Debt & TTM GDP"``.
@@ -1288,7 +1288,7 @@ class CountryMetadata:
             macro_parts = [macro_titles[key] for key in macro_titles if key in drawn]
         levels_suffix = LEVELS_TITLE_SUFFIX if by_level else ""
         yield_parts = ([self.yield_title] if yields_drawn else []) + list(dict.fromkeys(rate_titles))
-        index_parts = [index_title] if index_title else []
+        index_parts = [extra_title] if extra_title else []
         parts = yield_parts + macro_parts + index_parts
         if not parts:
             return f"{self.country_name}: no series selected"
