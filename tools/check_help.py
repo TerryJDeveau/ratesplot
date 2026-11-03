@@ -133,7 +133,10 @@ def check_reasons() -> None:
     """A reason exactly where the window greys, over the switches and fields that grey things."""
     print("-- the reasons against the greying")
     base_payloads, base_flags = choices_from_config(PlotConfig())
-    switches = ("debt", "gdp", "interest", "relative", "yield", "mortgages", "spreads", "policy", "regression", "current", "auto-refresh")
+    switches = (
+        "debt", "gdp", "interest", "relative", "yield", "mortgages", "spreads", "policy", "inflation", "regression", "current",
+        "auto-refresh",
+    )
     first_level = {nation.key: nation.level_boxes[0][0] for nation in NATIONS if nation.level_boxes}
     variants = {
         "the defaults": {},

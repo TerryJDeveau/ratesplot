@@ -107,7 +107,7 @@ from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E
 # levels under -r, the UK and Germany with their curves, all four nations,
 # both policy terms, each nation's own levels, Top and Bottom in a currency.
 CHART_CASES = (
-    "default", "c2015", "u_reg_r", "c_lv_r", "uk_rates", "de_rates", "all4", "policy_both", "nat_levels", "nat_fx",
+    "default", "c2015", "u_reg_r", "c_lv_r", "uk_rates", "de_rates", "all4", "policy_both", "nat_levels", "nat_fx", "inflation",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -2119,7 +2119,7 @@ def check_batch292(check: Check) -> None:
     with window(f"--na:ca,gb {END}") as w:
         app, root = w.app, w.root
         rates = ("yield", "policy", "mortgages", "spreads", "current", "cdn:yields", "cdn:policy-terms", "cdn:mortgage-terms",
-                 "cdn:prime-margin", "cdn:spread-pairs", "uk:tracker-margin")  # 29.2b
+                 "cdn:prime-margin", "cdn:spread-pairs", "uk:tracker-margin", "inflation")  # 29.2b; 13.1
         nations = ("cdn", "us", "uk", "germany")  # 29.2c
         for key in ("gdp", "debt", "interest", "per-capita", "cdn:debt-parts", *rates, *nations):
             app.info_marks[key].event_generate("<Button-1>")

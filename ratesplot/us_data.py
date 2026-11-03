@@ -108,6 +108,11 @@ US_STATE_INTEREST_SERIES_ID = "W756RC1A027NBEA"
 US_LOCAL_INTEREST_SERIES_ID = "W856RC1A027NBEA"
 US_GDP_SERIES_ID = "GDP"                    # nominal GDP, SAAR $ billions
 US_POPULATION_SERIES_ID = "B230RC0Q173SBEA"  # population (mid-period), thousands, quarterly from 1947
+# The consumer price index for all urban consumers, all items, 1982-84 = 100,
+# not seasonally adjusted, monthly from 1913-01 (batch 13.1, --inflation).
+# Measured 2026-11-03: 1,365 rows to 2026-09, one without a value, 2025-10
+# (the BLS collected no October prices during the federal shutdown).
+US_CPI_SERIES_ID = "CPIAUCNS"
 
 # FRED's series are baked (batch 19.2) under ``ratesplot/data/fred/``
 # (``tools/bake_archives.py --only fred``): the U.S. series here and in

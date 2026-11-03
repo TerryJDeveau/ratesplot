@@ -82,7 +82,8 @@ plotting, http}; cli -> {options, plotting, http}; frontend -> {options,
 config}; plotting -> {axes, legend, endlabels, regression, measures, rates,
 cdn_data, us_data, uk_data, de_data, joins, latest, baked} -> {frames, http} -> config;
 {cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data, us_data, de_data} -> baked -> {http, config};
-rates -> {cdn_data, uk_data, us_data, de_data, baked, announced, http}; announced -> http; cdn_data -> us_data (FRED's
+rates -> {cdn_data, uk_data, us_data, de_data, baked, announced, prices, http}; announced -> http;
+prices -> {cdn_data, uk_data, us_data, de_data, uk_archive_data} (batch 13.1); cdn_data -> us_data (FRED's
 Canadian GDP); plotting -> fx -> {us_data, cdn_archive_data, uk_archive_data};
 plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};

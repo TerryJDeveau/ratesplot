@@ -1,7 +1,7 @@
-"""The other curves on the yield (left) axis: policy rates, mortgage rates and yield spreads.
+"""The other curves on the yield (left) axis: policy rates, inflation, mortgage rates and yield spreads.
 
 They are additive and off by default: each is drawn only when its option is
-given (--policy, --mortgages, --spreads), and naming one does not hide the
+given (--policy, --inflation, --mortgages, --spreads), and naming one does not hide the
 default curves (they are not under the curve rule of ``options``). Each
 country's are fetched by ``rate_curves`` into ``RateCurve`` records, which
 ``plotting.draw_country`` draws on the yield axis after the yields, in the
@@ -29,6 +29,7 @@ from .config import (
     CDN_MORTGAGE_HISTORY_TABLE,
     CDN_MORTGAGE_HISTORY_VECTOR,
     DATE_COLUMN,
+    INFLATION_STYLE,
     MORTGAGE_MARGINS,
     MORTGAGE_OWN_COLORS,
     MORTGAGE_STYLE,
@@ -49,6 +50,7 @@ from .de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES
 from .de_data import ecb_series
 from .de_data import YIELD_HISTORY_ATTR as DE_YIELD_HISTORY_ATTR
 from .http import downloads_of
+from .prices import inflation
 from .uk_archive_data import EMBEDDED_UK_BANK_RATE_HISTORY, EMBEDDED_UK_MORTGAGE_HISTORY
 from .uk_data import YIELD_HISTORY_ATTR, iadb_series
 from .us_data import fred_series
@@ -423,6 +425,28 @@ def _fred(series_id: str, stopped: pd.Timestamp | None = None) -> pd.Series:
     """Return one whole FRED series, cleaned (``_clean``): its baked history and recent part (batch 19.2); a series ``stopped``, its bake alone (19.3)."""
     frame = fred_series(series_id, revised=series_id in _US_REVISED_SERIES, stopped=stopped)
     return _clean(frame.set_index("DATE")[series_id])
+
+
+# --inflation (batch 13.1): each country's 12-month rise in consumer prices
+# (``prices.inflation``), one label for every nation; the help page names
+# each nation's sources and the UK's join.
+INFLATION_KEY = "inflation"
+INFLATION_LABEL = "Inflation (CPI, 12-month)"
+
+
+def inflation_rate(country: str) -> RateCurve | None:
+    """Return one country's 12-month rise in consumer prices, each month's drawn across its own month; None, with a warning, if its source has nothing.
+
+    Each source is its baked history and recent part (batch 19.2): if it
+    fails, the bake alone, with a warning (``prices``). A month the index
+    lacks (the U.S.' 2025-10) leaves a gap of a month there and a year on.
+    """
+    try:
+        values = _clean(inflation(country))
+    except Exception as exc:
+        print(f"  Warning: {nation_by_key(country).adjective} consumer prices unavailable ({exc}); inflation not drawn.")
+        return None
+    return RateCurve(INFLATION_KEY, INFLATION_LABEL, values, INFLATION_STYLE, title="Inflation", holds=holding(values, "monthly"))
 
 
 def _parts(*named: tuple[pd.Series, str, str]) -> tuple[tuple[pd.Timestamp, str, str], ...]:
@@ -1045,6 +1069,11 @@ def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[
                     curves.append(with_followed(country, term, curve, margin, config.end, draws_policy_target(config)))
     if config.spreads:
         curves += yield_spreads(country, yields, config)
+    if config.inflation:
+        # Drawn last, so its dots lie over the spreads' thick lines (the legend
+        # lists it after the policy rate: plotting.yield_axis_legend).
+        with downloads_of(f"{adjective} consumer prices"):
+            curves.append(inflation_rate(country))
     chosen = []
     for curve in curves:
         if curve is None:

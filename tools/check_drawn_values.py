@@ -86,7 +86,11 @@ from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.fx import rate  # noqa: E402
 from ratesplot.joins import embedded_frame  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
-from ratesplot.uk_archive_data import EMBEDDED_UK_BANK_RATE_HISTORY, EMBEDDED_UK_MORTGAGE_HISTORY  # noqa: E402
+from ratesplot.uk_archive_data import (  # noqa: E402
+    EMBEDDED_UK_BANK_RATE_HISTORY,
+    EMBEDDED_UK_CPI_HISTORY,
+    EMBEDDED_UK_MORTGAGE_HISTORY,
+)
 
 # Two readings of one download are the same floats; anything else is a different value.
 TOLERANCE = 1e-9
@@ -145,6 +149,10 @@ CASES: dict[str, list[str]] = {
     "master_usd": ["--na:ca,us,gb,de", "-s:2010", "--master:usd", "--po"],
     "master_cad_p": ["--na:ca,us,gb", "-s:1990", "-p", "--master:cad"],
     "master_eur_1970": ["--na:ca,de", "-s:1955", "--e:1970", "--master:eur"],
+    # Batch 13.1: the inflation curve, each month's rise worked out here from
+    # its index (the UK's: the millennium index, then the ONS's own rate from
+    # 1989), across the U.S.' missing 2025-10 and the UK's join.
+    "inflation": ["--na:ca,us,gb,de", "-s:1985", "--inf", "--no-yield"],
 }
 
 
@@ -308,6 +316,33 @@ def policy_sources(nation: str, key: str) -> list[Source]:
     ]
 
 
+def rise_of(source: Source, name: str) -> Source:
+    """``source``'s rise over 12 months in percent, worked out here on its own: each month's value over the same month's a year before (batch 13.1)."""
+
+    def read() -> pd.Series:
+        values = source.read()
+        months = values.groupby(values.index.to_period("M")).last()
+        year_before = pd.Series(months.to_numpy(), index=months.index + 12)
+        rise = (months / year_before.reindex(months.index) - 1.0) * 100.0
+        return rise.set_axis(rise.index.to_timestamp()).dropna()
+
+    return Source(name, read, monthly=True, carry_days=MONTHLY_CARRY_DAYS)
+
+
+def inflation_sources(nation: str) -> list[Source]:
+    """The inflation curve's sources (batch 13.1): each nation's index, its rise worked out here; the UK's the ONS's own rate from 1989."""
+    if nation == "uk":
+        ons = Source("ONS D7G7", lambda: _clean(uk_data.ons_download("D7G7", "months")), monthly=True, carry_days=MONTHLY_CARRY_DAYS)
+        millennium = rise_of(built_in("millennium CPI", EMBEDDED_UK_CPI_HISTORY), "built in: millennium CPI, its 12-month rise")
+        return [within(millennium, millennium.name, end=pd.Timestamp("1989-01-01")), ons]
+    index = {
+        "us": lambda: fred(us_data.US_CPI_SERIES_ID),
+        "cdn": lambda: statcan("18100004", "v41690973", "CPI"),
+        "de": lambda: Source("Bundesbank BBDP1 CPI", lambda: _clean(de_data.bundesbank_download(*de_data.DE_CPI_SERIES))),
+    }[nation]()
+    return [rise_of(index, f"{index.name}, its 12-month rise")]
+
+
 def mortgage_sources(term: str, nation: str) -> list[Source]:
     """A mortgage term's sources on ``nation``'s chart (the prime rate is Canada's and the U.S.'; the tracker is Bank Rate)."""
     assert nation in rates.MORTGAGE_TERMS[term][0], (term, nation)
@@ -457,6 +492,8 @@ def check_case(name: str, tokens: list[str]) -> bool:
                 sources = yield_sources(key, line.label.removesuffix(" Yield"))
             elif curve is not None and curve.key in ("policy", "policy_market"):
                 sources = policy_sources(key, curve.key)
+            elif curve is not None and curve.key == rates.INFLATION_KEY:
+                sources = inflation_sources(key)
             elif curve is not None and curve.key.startswith("mortgage_"):
                 term = curve.key.removeprefix("mortgage_")
                 sources = mortgage_sources(term, key)

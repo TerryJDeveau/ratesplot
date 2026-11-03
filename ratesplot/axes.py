@@ -90,6 +90,18 @@ def format_yield(value: float) -> str:
     return (text[:-1] if text.endswith("0") else text) + "%"
 
 
+def format_inflation(value: float) -> str:
+    """Format a 12-month rise in prices in percent to one decimal, as the statistics offices publish it: ``3.7%``, ``-0.4%``.
+
+    Batch 13.1. The U.S.' and Canada's rises are computed from their index,
+    as the offices compute theirs, so to a tenth they are the published rate;
+    the UK's is the ONS's own, published to a tenth. A rise that rounds to
+    zero is ``0.0%``, never ``-0.0%``.
+    """
+    text = f"{value:.1f}"
+    return ("0.0" if text == "-0.0" else text) + "%"
+
+
 class LogNiceLocator(ticker.Locator):
     """Log-axis tick positions chosen for even *visual* spacing at "nice" values.
 

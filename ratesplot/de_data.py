@@ -139,6 +139,16 @@ _DAILY_FILL_LIMIT = 3
 # its central bank rates (flow BBIN1, the discount rate baked in batch 9.6)
 # "% p.a.", a rate per year as the yields are.
 _BUNDESBANK_PERCENT = ("percent", "prozent", "% p.a.")
+# The consumer price index, all items, Germany, monthly from 1991-01, 2020 =
+# 100, not seasonally adjusted (batch 13.1, --inflation; measured 2026-11-03:
+# 430 months to 2026-10, each with a value; the seasonally adjusted index, key
+# M.DE.Y..., for 13.4). A new base year comes as a new key (I20 for 2020 =
+# 100), this one then stopping. Baked under ``ratesplot/data/bbk/`` with the
+# term structure.
+DE_CPI_SERIES = ("BBDP1", "M.DE.N.VPI.C.A00000.I20.A")
+# The unit of each Bundesbank series not in percent, as its CSV gives it
+# (``parse_bundesbank_csv``), by flow and key.
+_BUNDESBANK_UNITS = {DE_CPI_SERIES: ("2020=100",)}
 _BUNDESBANK_DATE = re.compile(r"^\d{4}-\d{2}(-\d{2})?$")
 _BUNDESBANK_MISSING = (".", "-", "")
 
@@ -230,14 +240,14 @@ def _period_end(text: str) -> pd.Timestamp:
     raise ValueError(f"not a period: {text!r}")
 
 
-def parse_bundesbank_csv(text: str) -> pd.Series:
-    """Parse one series of a Bundesbank CSV download; a date-indexed float series in percent, named by its key.
+def parse_bundesbank_csv(text: str, units: tuple[str, ...] = _BUNDESBANK_PERCENT) -> pd.Series:
+    """Parse one series of a Bundesbank CSV download; a date-indexed float series in one of ``units`` (percent), named by its key.
 
     The layout: a header line ``"",KEY,KEY_FLAGS``, lines of metadata
     (title, unit, multiplier, last update), then ``date,value,flag`` rows;
     "." or "-" where there is no value (weekends in a daily series). A month
     ``1972-09`` is dated by its last day (the term structure's monthly
-    values are end-of-month values). The unit must be percent and the
+    values are end-of-month values). The unit must be one of ``units`` and the
     multiplier one; anything else, and an answer with no dated rows (the
     old download's "Die Zeitreihe ... ist nicht gültig"), raises.
     """
@@ -247,8 +257,8 @@ def parse_bundesbank_csv(text: str) -> pd.Series:
     key = rows[0][1].strip()
     meta = {row[0].strip().lower(): row[1].strip() for row in rows[1:] if len(row) >= 2 and not _BUNDESBANK_DATE.match(row[0].strip())}
     unit = meta.get("bbk_unit_eng", meta.get("unit", ""))
-    if unit.lower() not in _BUNDESBANK_PERCENT:
-        raise ValueError(f"Bundesbank {key}: expected percent, found unit {unit!r}")
+    if unit.lower() not in units:
+        raise ValueError(f"Bundesbank {key}: expected {units[0]}, found unit {unit!r}")
     if meta.get("unit multiplier", "one").lower() != "one":
         raise ValueError(f"Bundesbank {key}: expected the multiplier one, found {meta['unit multiplier']!r}")
     data = [row for row in rows[1:] if row and _BUNDESBANK_DATE.match(row[0].strip())]
@@ -299,7 +309,7 @@ def bundesbank_download(flow: str, key: str, start: pd.Timestamp | None = None) 
     else:
         url = BUNDESBANK_DATA_URL.format(flow=flow, key=key)
         params["startPeriod"] = _bundesbank_start_period(key, start)
-    values = parse_bundesbank_csv(de_get(url, params).text)
+    values = parse_bundesbank_csv(de_get(url, params).text, _BUNDESBANK_UNITS.get((flow, key), _BUNDESBANK_PERCENT))
     if values.name != f"{flow}.{key}":
         raise ValueError(f"the Bundesbank answered {values.name} for {flow}.{key}")
     return values
@@ -758,6 +768,25 @@ def fetch_de_components(config: PlotConfig) -> pd.DataFrame | None:
                 continue
             columns.append(values.rename(component_column(kind, letter)))
     return pd.concat(columns, axis=1).sort_index() if columns else None
+
+
+def fetch_de_consumer_prices() -> pd.Series:
+    """Return Germany's consumer price index (``DE_CPI_SERIES``, 2020 = 100), each month dated by its last day: its baked history and recent part.
+
+    If the Bundesbank fails, the bake alone, with a warning
+    (``bundesbank_series``); after a bot check, the bake alone too, with a
+    warning that names it, as the yields' does. Raises if there is neither.
+    """
+    flow, key = DE_CPI_SERIES
+    try:
+        return bundesbank_series(flow, key)
+    except BotCheck as exc:
+        baked = read_series(BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}")
+        if baked is None or baked.empty:
+            raise
+        print(f"  Warning: the Bundesbank ({exc.host}) sent a bot check instead of data; a VPN can cause this. "
+              f"Germany's consumer prices drawn from their baked history, to {baked.index[-1]:%Y-%m-%d}.")
+        return baked
 
 
 @downloads_of("Eurostat population")

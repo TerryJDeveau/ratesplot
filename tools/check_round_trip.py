@@ -90,6 +90,9 @@ VALUES = (
     # nation not drawn (then left off the written line, as with one nation).
     "--master:usd", "--master:CAD", "--master:£", "--master:eur", "--master:usd -r", "--master:cad -p --top:USD100k",
     "--master:gbp --us:top:40t --bottom:CAD1t", "--master:usd --no-gdp --no-debt --no-interest", "--master:eur --cdn:d:fp",
+    # The inflation curve (batch 13.1): alone on the yield axis, beside the policy rate and every other rate,
+    # and its "no" form.
+    "--inf", "--inf --no-y", "--inf --po:target,market --mo --sp", "--no-inf --po",
 )
 
 

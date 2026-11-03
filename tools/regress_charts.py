@@ -291,6 +291,11 @@ CASES: dict[str, list[str]] = {
     # Batch 13.6: the U.S. 3-year (FRED DGS3) between the 2- and 5-year, with
     # its end label, and Canada's beside it on the same command line.
     "us_3y": ["--na:ca,us", "--y:2,3,5", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:2001"],
+    # Batch 13.1: the inflation curve, beside each nation's yields with its end
+    # label, and alone from 1910 (each nation from its first month: the U.S.
+    # 1914, Canada 1915, the UK 1915-07, Germany 1992).
+    "inflation": ["--na:ca,us,gb,de", "--inf", "-l", "-s:2018"],
+    "inflation_long": ["--na:ca,us,gb,de", "--inf", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1910"],
 }
 
 

@@ -149,6 +149,8 @@ CHART_CASES = (
     "nat_fx",
     # Batch 30: the master currency, on all four charts, and with levels and end labels.
     "master_usd", "master_gbp_lv",
+    # Batch 13.1: the inflation curve on all four charts, with its end labels.
+    "inflation",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -866,13 +868,14 @@ def check_layout(check: Check) -> None:
     check("the titled blocks in order", titles[: len(wanted)] == wanted, titles)
     order = [box.key.split(":", 1)[1] for box in at.checkbox if box.key and box.key.startswith("flag:")]
     wanted = [
-        "relative", "per-capita", "regression", "yield", "spreads", "policy", "mortgages", "label", "current", "auto-refresh",
+        "relative", "per-capita", "regression", "yield", "spreads", "policy", "inflation", "mortgages", "label", "current",
+        "auto-refresh",
         "projections", "hover",
     ]
     keys = [box.key for box in at.checkbox if box.key]
     # By level left the column for each nation's section in batch 10.5.
     check(
-        "the measure under the curves, then the regression segments, the four rates, the line labels and the latest data",
+        "the measure under the curves, then the regression segments, the five rates, the line labels and the latest data",
         keys.index("flag:interest") < keys.index("flag:relative") and [name for name in order if name in wanted] == wanted
         and not any(key.startswith("level:") and key.count(":") == 1 for key in keys),
         order,
@@ -1774,6 +1777,8 @@ def check_batch292(check: Check) -> None:
     flags = {"gdp": "gdp", "debt": "debt", "interest": "interest", "per-capita": "per-capita",
              # 29.2b, the rates' pages.
              "yield": "yields", "policy": "policy-rates", "mortgages": "mortgages", "spreads": "spreads", "current": "latest-values",
+             # 13.1, inflation.
+             "inflation": "inflation",
              # 29.2c, the nations' pages.
              "cdn": "canada", "us": "united-states", "uk": "united-kingdom", "germany": "germany"}
     for name, topic in flags.items():
