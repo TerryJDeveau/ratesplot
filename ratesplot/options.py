@@ -2016,7 +2016,10 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     """
     defaults, default_flags = choices_from_config(PlotConfig())
     tokens: list[str] = []
-    idle = idle_options(flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True))
+    idle = idle_options(
+        flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True),
+        extra_curve=flags.get("cpi", False) or flags.get("population", False),
+    )
     idle_keys = idle_margins(payloads, flags) | idle_aggregates(payloads, flags)
     payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle and key not in idle_keys}
     # The automatic refresh's minutes are greyed where it brings nothing new
