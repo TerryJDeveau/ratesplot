@@ -44,6 +44,7 @@ from .axes import (
     format_index_tick,
     format_inflation,
     format_percent,
+    format_population,
     format_spread,
     format_yield,
 )
@@ -78,6 +79,10 @@ from .config import (
     PRICE_INDEX_LABEL,
     PRICE_INDEX_STYLE,
     PRICE_INDEX_TITLE,
+    POPULATION_AXIS_LABEL,
+    POPULATION_LABEL,
+    POPULATION_STYLE,
+    POPULATION_TITLE,
     PROJECTION_ALPHA,
     SEASONALLY_ADJUSTED_NATIONS,
     PROJECTION_KEY_COLOR,
@@ -99,7 +104,7 @@ from .config import (
 )
 from .console import this_thread_output_to
 from .endlabels import ValueFormatter
-from .export import INDEX_AXIS, MACRO_AXIS, YIELD_AXIS, mark_amounts_currency, mark_price_base, mark_series
+from .export import INDEX_AXIS, MACRO_AXIS, POPULATION_AXIS, YIELD_AXIS, mark_amounts_currency, mark_price_base, mark_series
 from .frames import filter_to_date_range
 from .fx import Rate, rate
 from .hover import attach as attach_hover
@@ -877,7 +882,7 @@ EXTRA_AXIS_GAP_PT = 6.0
 
 @dataclass(frozen=True, eq=False)
 class ExtraCurve:
-    """The curve on the extra axis (the consumer price index, batch 13.4), and how it is written.
+    """The curve on the extra axis (the consumer price index, batch 13.4; the population, 13.5; one at a time, decision 43), and how it is written.
 
     Compared by identity (``eq=False``): pandas compares a frame's attrs when
     it joins frames, and a Series has no truth value.
@@ -919,6 +924,28 @@ def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
         value_format=format_index,
         tick_format=format_index_tick,
         export_axis=INDEX_AXIS,
+    )
+
+
+def _extra_curve(key: str, config: PlotConfig, population: pd.Series | None) -> ExtraCurve | None:
+    """Nation ``key``'s curve on the extra axis: the price index (--cpi) or the population (--population, batch 13.5), which -p reads too; None without either.
+
+    ``population`` None or empty: its source failed, with a warning from its
+    reader, and the curve is not drawn. The coverage warning names it where
+    the chart begins before it.
+    """
+    if not config.population or population is None or population.empty:
+        return _price_index(key, config)
+    warn_series_coverage(config.start, {"Population (--population)": population.index[0]})
+    return ExtraCurve(
+        population,
+        label=POPULATION_LABEL,
+        title=POPULATION_TITLE,
+        axis_label=POPULATION_AXIS_LABEL,
+        style=POPULATION_STYLE,
+        value_format=format_population,
+        tick_format=format_population,
+        export_axis=POPULATION_AXIS,
     )
 
 
@@ -966,11 +993,11 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
     macro = project_to_now(align_cdn_macro(yields, series, config), observed, config, history, market)
     projected = macro.attrs.get(PROJECTION_ATTR, {})
     steered = macro.attrs.get(STEERED_ATTR, [])
-    population = fetch_cdn_population() if config.per_capita else None
+    population = fetch_cdn_population() if config.per_capita or config.population else None
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
     expressed = express(macro, config, CDN, population, _consumer_prices("cdn", config))
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _price_index("cdn", config)
+    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("cdn", config, population)
     expressed.attrs[STEERED_ATTR] = steered
     return yields, expressed, rates
 
@@ -999,11 +1026,11 @@ def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     projected = macro.attrs.get(PROJECTION_ATTR, {})
     if not macro.empty:
         macro = macro.loc[macro[DATE_COLUMN] <= config.end]
-    population = fetch_us_population() if config.per_capita else None
+    population = fetch_us_population() if config.per_capita or config.population else None
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
     expressed = express(macro, config, US, population, _consumer_prices("us", config))
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _price_index("us", config)
+    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("us", config, population)
     return yields, expressed, rates
 
 
@@ -1038,11 +1065,11 @@ def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
         aligned.loc[aligned[UK.debt_column].notna(), UK.federal_debt_column] = np.nan
     macro = project_to_now(aligned, observed, config, history)
     projected = macro.attrs.get(PROJECTION_ATTR, {})
-    population = fetch_uk_population() if config.per_capita else None
+    population = fetch_uk_population() if config.per_capita or config.population else None
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
     expressed = express(macro, config, UK, population, _consumer_prices("uk", config))
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _price_index("uk", config)
+    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("uk", config, population)
     return yields, expressed, rates
 
 
@@ -1073,11 +1100,11 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     aligned = align_macro(yields, series, config)
     macro = project_to_now(aligned, observed, config, history)
     projected = macro.attrs.get(PROJECTION_ATTR, {})
-    population = fetch_de_population() if config.per_capita else None
+    population = fetch_de_population() if config.per_capita or config.population else None
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
     expressed = express(macro, config, DE, population, _consumer_prices("de", config))
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _price_index("de", config)
+    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("de", config, population)
     return yields, expressed, rates
 
 
@@ -1154,8 +1181,9 @@ def curve_first_dates(
     yields are date-indexed, the other frames have a ``DATE`` column). The
     curves are every yield tenor, if yields are chosen, and each chosen
     right-axis curve (``metadata.macro_specs``) in the chosen measure: under
-    -r debt begins where both debt and GDP do; and the yield axis's other
-    curves (``rates``), which are there only when chosen.
+    -r debt begins where both debt and GDP do; the yield axis's other curves
+    (``rates``), which are there only when chosen; and the extra axis's
+    curve (``ExtraCurve``), there only when chosen too.
     """
     firsts: dict[str, pd.Timestamp] = {}
 
@@ -1176,6 +1204,9 @@ def curve_first_dates(
                 note(macro, dates, column, label)
     for curve in rates:
         firsts[curve.label] = curve.first
+    extra: ExtraCurve | None = macro.attrs.get(EXTRA_CURVE_ATTR)
+    if extra is not None and not extra.values.empty:
+        firsts[extra.label] = extra.values.index[0]
     return firsts
 
 

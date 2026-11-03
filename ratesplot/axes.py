@@ -104,6 +104,11 @@ def format_index_tick(value: float) -> str:
     return f"{value:,g}"
 
 
+def format_population(value: float) -> str:
+    """Format a count of persons as the amounts are written, without a currency: ``41.6M``, ``343M``, ``900K`` (batch 13.5)."""
+    return format_currency(value, prefix="")
+
+
 def format_inflation(value: float) -> str:
     """Format a 12-month rise in prices in percent to one decimal, as the statistics offices publish it: ``3.7%``, ``-0.4%``.
 
@@ -301,7 +306,7 @@ def configure_macro_axis(ax: Axes, metadata: CountryMetadata, config: PlotConfig
 
 
 class ExtraAxis(NamedTuple):
-    """The axis of the curve the extra axis holds (the consumer price index, batch 13.4): the axis, its label and how its ticks are written."""
+    """The axis of the curve the extra axis holds (the consumer price index, batch 13.4; the population, 13.5): the axis, its label and how its ticks are written."""
 
     axes: Axes
     label: str
@@ -506,10 +511,10 @@ def apply_axes_formatting(
     curves is selected the unused axis mirrors the other so the chart never
     shows a second, meaningless scale. ``left_label`` is the left axis's
     label when it is not ``config.left_axis_label`` (a spread drawn).
-    ``extra_axis``: the axis of the consumer price index (batch 13.4),
-    ``ax_macro`` itself when no curve of the macro axis is chosen (the
-    curve is then the right axis's, and mirrored on the left when nothing
-    is on it), else an axis of its own outside it.
+    ``extra_axis``: the axis of the consumer price index (batch 13.4) or the
+    population (13.5), ``ax_macro`` itself when no curve of the macro axis
+    is chosen (the curve is then the right axis's, and mirrored on the left
+    when nothing is on it), else an axis of its own outside it.
     """
     scale = config.font_scale
     ax_extra = extra_axis.axes if extra_axis is not None else None

@@ -590,6 +590,15 @@ PRICE_INDEX_BASES = {"us": "1982-84 = 100", "cdn": "2002 = 100", "uk": "2015 = 1
 # The nations whose statistics office publishes a seasonally adjusted index
 # (--cpi:sa): every nation but the UK.
 SEASONALLY_ADJUSTED_NATIONS = ("us", "cdn", "de")
+# --population (batch 13.5, decision 43): each nation's population on the same
+# extra axis, in dark goldenrod, which no other curve has, as thick as the
+# right-axis curves it is listed with. Not steps: an estimate is a count on one
+# date, not a value held across a period, and between two of them -p divides by
+# a straight line on the log scale (``measures.population_on``), which this is.
+POPULATION_STYLE = {"color": "#b8860b", "linewidth": 2.5}
+POPULATION_LABEL = "Population"
+POPULATION_TITLE = "Population"
+POPULATION_AXIS_LABEL = "Population (Persons, Log Scale)"
 # --mortgages (ratesplot.rates): the terms, as written on the command line ->
 # the countries that have them and the yield term whose colour they take (None:
 # no yield of that term, so a colour of their own, MORTGAGE_OWN_COLORS). In
@@ -1538,6 +1547,10 @@ class PlotConfig:
     # --constant: the index is never divided.
     price_index: bool = False
     price_index_adjusted: bool = False
+    # --population (batch 13.5): each nation's population on the same axis, in
+    # persons, never with --cpi (``options.check_one_extra_curve``, decision
+    # 43); never divided either.
+    population: bool = False
     show_cdn: bool = True
     show_us: bool = True
     # The UK's chart (batch 3): only when asked for (--uk, --nations:gb).
@@ -1807,7 +1820,7 @@ class PlotConfig:
     @property
     def draws_a_curve(self) -> bool:
         """True when a curve is drawn on either axis: False for a chart titled "no series selected", which neither front end remembers."""
-        return self.has_left_axis_series or self.has_macro_series or self.draws_price_index
+        return self.has_left_axis_series or self.has_macro_series or self.draws_price_index or self.population
 
     @property
     def has_explicit_macro_limits(self) -> bool:
