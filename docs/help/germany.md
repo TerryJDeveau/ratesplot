@@ -18,7 +18,7 @@ At the start it draws GDP, debt and interest on the right axis, and the 2-, 5-, 
 - [Per capita](?help=per-capita): divided by Eurostat's population, quarterly from 1991.
 - [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the Federal Statistical Office's index, West Germany's before 1991.
 - [Price index (CPI)](?help=price-index): the Federal Statistical Office's consumer price index from 1948-06, 2020 = 100: West Germany's to 1990, scaled to the index for all of Germany, from the Bundesbank; calendar and seasonally adjusted from 1991-01.
-- [Population](?help=population): Eurostat's counts on 1 January from 1960, West Germany's until 1990, its quarterly figures from 1991.
+- [Population](?help=population): the Bundesbank's yearly averages from 1950, Eurostat's counts on 1 January from 1960, West Germany's until 1990, its quarterly figures from 1991.
 - [Latest values](?help=latest-values): the Bundesbank publishes the day's yields during the day, so once they are out the chart ends at them; before then, the day's yields quoted by CNBC's feed, their time given in Frankfurt time.
 
 ## Its own controls

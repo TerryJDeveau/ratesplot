@@ -401,6 +401,12 @@ DESTATIS_CPI_LONG_SERIES_URL = (
     "https://www.destatis.de/DE/Themen/Wirtschaft/Preise/Verbraucherpreisindex/Publikationen/"
     "Downloads-Verbraucherpreise/verbraucherpreisindex-lange-reihen-xlsx-5611103.xlsx?__blob=publicationFile"
 )
+# The Bundesbank's "Lange Zeitreihen" of 2020-09-01, a PDF with data to 2019,
+# read by the German bake alone, for West Germany's population before Eurostat's
+# begins (batch 16).
+BUNDESBANK_LONG_SERIES_PDF_URL = (
+    "https://www.bundesbank.de/resource/blob/846346/6bfc076ef91cdb9d0600f257da83ca28/mL/2020-10-02-12-56-47-lange-zeitreihen-data.pdf"
+)
 ECB_SERIES_URL = "https://data-api.ecb.europa.eu/service/data/{flow}/{key}"
 EUROSTAT_DATASET_URL = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/{dataset}"
 DE_ARCHIVE_BEGIN_MARKER = "# BEGIN AUTO-GENERATED GERMAN ARCHIVE DATA"

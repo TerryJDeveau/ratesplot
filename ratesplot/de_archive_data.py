@@ -1,4 +1,4 @@
-"""Baked historical German observations: the yield on public debt securities before 1972, the discount rate before 1999, West Germany's consumer prices before 1991.
+"""Baked historical German observations: the yield on public debt securities before 1972, the discount rate before 1999, West Germany's consumer prices before 1991, its population before 1960.
 
 The Bundesbank's monthly average yield on public debt securities
 outstanding (BBK01.WU0004, from 1956) is a series of its former database
@@ -16,6 +16,9 @@ long series, whose last edition is that of December 2022: all private households
 from 1962-01, four-person households on a middle income from 1948-06, in the
 source's 1995 = 100. ``de_data.with_west_germany`` scales each to the next.
 
+West Germany's population 1950 to 1959 (batch 16), the Bundesbank's annual averages
+in its long series of 2020-09-01, before Eurostat's counts begin at 1960-01-01.
+
 The block between the BEGIN/END markers is regenerated in place by
 ``tools/bake_archives.py --only de`` (see :mod:`ratesplot.bake`). Do not
 hand-edit it.
@@ -26,6 +29,7 @@ hand-edit it.
 # bbk01_WU0004.csv (saved from https://www.bundesbank.de/statistic-rmi/StatisticDownload?tsId=BBK01.WU0004)
 # bbin1_BBKDIS.csv (saved from https://api.statistiken.bundesbank.de/rest/download/BBIN1/M.DE.BBK.BBKDIS.DEM.ME?format=csv&lang=en)
 # destatis_vpi_lange_reihen.xlsx (saved from https://www.destatis.de/DE/Themen/Wirtschaft/Preise/Verbraucherpreisindex/Publikationen/Downloads-Verbraucherpreise/verbraucherpreisindex-lange-reihen-xlsx-5611103.xlsx?__blob=publicationFile)
+# bbk_lange_zeitreihen_V1.txt (page 29, by pdftotext -layout, of https://www.bundesbank.de/resource/blob/846346/6bfc076ef91cdb9d0600f257da83ca28/mL/2020-10-02-12-56-47-lange-zeitreihen-data.pdf)
 # Historical observations in the source's own terms; de_data and rates join
 # them to the live series at run time.
 
@@ -1426,5 +1430,20 @@ EMBEDDED_DE_WEST_CPI_FOUR_PERSON = [
     ("1961-11-01", 32.8),
     ("1961-12-01", 32.9),
     ("1962-01-01", 33.1),
+]
+
+# West Germany's population, the Saarland and West Berlin included, the annual average in
+# thousands, each year dated by 1 July, to the year before Eurostat's counts begin.
+EMBEDDED_DE_WEST_POPULATION = [
+    ("1950-07-01", 49989),
+    ("1951-07-01", 50528),
+    ("1952-07-01", 50859),
+    ("1953-07-01", 51350),
+    ("1954-07-01", 51880),
+    ("1955-07-01", 52382),
+    ("1956-07-01", 53008),
+    ("1957-07-01", 53656),
+    ("1958-07-01", 54292),
+    ("1959-07-01", 54876),
 ]
 # END AUTO-GENERATED GERMAN ARCHIVE DATA

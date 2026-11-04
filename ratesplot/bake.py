@@ -41,6 +41,8 @@ import io
 import os
 import py_compile
 import re
+import shutil
+import subprocess
 import tempfile
 import textwrap
 import zipfile
@@ -93,6 +95,7 @@ from .config import (
     CENSUS_HIST_FIN_URL,
     CENSUS_OLD_ESTIMATES_URL,
     CENSUS_TABLES_URL,
+    BUNDESBANK_LONG_SERIES_PDF_URL,
     BUNDESBANK_OLD_SERIES_URL,
     BUNDESBANK_SERIES_URL,
     DE_ARCHIVE_BEGIN_MARKER,
@@ -1738,23 +1741,90 @@ def _west_german_prices(saved: Path | None) -> tuple[dict[str, pd.Series], str]:
         workbook.close()
 
 
+# West Germany's population before Eurostat's counts begin at 1960-01-01 (batch
+# 16). The Bundesbank's "Lange Zeitreihen" of 2020-09-01, part V table 1, page 29
+# of the PDF: annual averages in thousands, "49.989" meaning 49,989 thousand, a
+# year to a row from 1950 to 2019, West Germany to 1991 and all of Germany from
+# 1992. Terminated, so baked. pdftotext -layout shifts the rows against the year
+# labels, so a value's year is its place in the column; the first figure for all
+# of Germany falling at 1992, as the table's note says, proves the places.
+# Measured 2026-11-04: on the whole territory throughout, the Saarland and West
+# Berlin included, with no step at 1960 (batch16.md).
+_DE_LONG_SERIES_POPULATION_PAGE = 29
+_DE_LONG_SERIES_POPULATION_YEARS = (1950, 2019)
+_DE_LONG_SERIES_FIRST_UNIFIED_YEAR = 1992
+_DE_WEST_POPULATION_LAST_YEAR = 1959
+_DE_LONG_SERIES_POPULATION_HEADINGS = (
+    "1. Bevölkerung und Arbeitsmarkt",
+    "Jahresdurchschnitte",
+    "Anzahl in Tsd",
+    "Bis 1991 Westdeutschland, ab 1992 Deutschland",
+)
+# A row of the table: a year's label or none, the population, then the labour force.
+_DE_LONG_SERIES_POPULATION_ROW = re.compile(r"^\s*(?:\d{4}\s+)?(\d\d\.\d{3})\s+\d\d\.\d{3}\s")
+
+
+def parse_long_series_population(text: str) -> pd.Series:
+    """Return the long series' population column in thousands, each year's annual average dated by its 1 July, from the page's text.
+
+    Raises if a heading has moved, a row is missing or added, or all of Germany
+    does not begin where the table says, so a changed table cannot shift a curve.
+    """
+    flat = " ".join(text.split())
+    missing = [heading for heading in _DE_LONG_SERIES_POPULATION_HEADINGS if heading not in flat]
+    if missing:
+        raise RuntimeError(f"the Bundesbank's long series: {missing} not found on the page; data module not modified.")
+    values = [float(found.group(1).replace(".", "")) for found in map(_DE_LONG_SERIES_POPULATION_ROW.match, text.splitlines()) if found]
+    first, last = _DE_LONG_SERIES_POPULATION_YEARS
+    if len(values) != last - first + 1:
+        raise RuntimeError(f"the Bundesbank's long series: {len(values)} years of population, not {last - first + 1}; data module not modified.")
+    population = pd.Series(values, index=pd.DatetimeIndex([pd.Timestamp(year, 7, 1) for year in range(first, last + 1)], name=DATE_COLUMN), dtype=float)
+    # Unification, 17 million in one year, is the one rise of that size.
+    unified = population.index[population.diff() > 10_000]
+    if len(unified) != 1 or unified[0].year != _DE_LONG_SERIES_FIRST_UNIFIED_YEAR:
+        raise RuntimeError(f"the Bundesbank's long series: all of Germany begins at {list(unified)}, not {_DE_LONG_SERIES_FIRST_UNIFIED_YEAR}; data module not modified.")
+    return population
+
+
+def _west_german_population(saved: Path | None) -> tuple[pd.Series, str]:
+    """Return ``(West Germany's population 1950 to 1959, where it was read from)``: from the Bundesbank's PDF, through pdftotext, or the page's text ``saved``."""
+    if saved is not None:
+        text = Path(saved).read_text(encoding="utf-8")
+        source_name = f"{Path(saved).name} (page {_DE_LONG_SERIES_POPULATION_PAGE}, by pdftotext -layout, of {BUNDESBANK_LONG_SERIES_PDF_URL})"
+    else:
+        reader = shutil.which("pdftotext")
+        if reader is None:
+            raise RuntimeError("the Bundesbank's long series is a PDF, and pdftotext is not installed: give the page's text (tools/de_fixtures); data module not modified.")
+        print("Downloading the Bundesbank's long series …")
+        with tempfile.TemporaryDirectory() as folder:
+            pdf = Path(folder) / "lange_zeitreihen.pdf"
+            pdf.write_bytes(de_get(BUNDESBANK_LONG_SERIES_PDF_URL).content)
+            page = str(_DE_LONG_SERIES_POPULATION_PAGE)
+            text = subprocess.run([reader, "-layout", "-enc", "UTF-8", "-f", page, "-l", page, str(pdf), "-"], capture_output=True, check=True).stdout.decode("utf-8")
+        source_name = BUNDESBANK_LONG_SERIES_PDF_URL
+    population = parse_long_series_population(text)
+    return population.loc[population.index.year <= _DE_WEST_POPULATION_LAST_YEAR], source_name
+
+
 def bake_german_archives(
     source_path: Path | None = None,
     saved_csv: Path | None = None,
     saved_discount_csv: Path | None = None,
     saved_cpi_workbook: Path | None = None,
+    saved_population_text: Path | None = None,
 ) -> None:
-    """Extract the Bundesbank's yield on public debt securities and its discount rate, and West Germany's consumer prices, and embed them into ``ratesplot/de_archive_data.py``.
+    """Extract the Bundesbank's yield on public debt securities and its discount rate, and West Germany's consumer prices and population, and embed them into ``ratesplot/de_archive_data.py``.
 
-    ``saved_csv``, ``saved_discount_csv`` and ``saved_cpi_workbook`` read the
-    downloads already on disk (as saved in ``tools/de_fixtures``) instead of
-    fetching them. The yield is a monthly average, so each month is dated by
+    ``saved_csv``, ``saved_discount_csv``, ``saved_cpi_workbook`` and
+    ``saved_population_text`` read the downloads already on disk (as saved in
+    ``tools/de_fixtures``) instead of fetching them. The yield is a monthly average, so each month is dated by
     its first day; every value the series has is kept (to 2020-04), and
     ``de_data`` uses the months before the term structure begins. The discount
     rate is kept on the days it changed (``parse_bundesbank_change_days``);
     ``rates`` draws it before the ECB's rate (batch 9.6). The consumer prices
     (batch 16) are in the source's 1995 = 100, each index to the month it is
-    joined at; ``de_data`` scales them when it joins them.
+    joined at; ``de_data`` scales them when it joins them. The population (batch
+    16) is the Bundesbank's annual averages to 1959, in thousands, dated 1 July.
     """
     source_path = source_path or Path(__file__).resolve().with_name("de_archive_data.py")
     if saved_csv is None:
@@ -1789,11 +1859,14 @@ def bake_german_archives(
     west_prices, west_prices_name = _west_german_prices(saved_cpi_workbook)
     west_all = _require_rows(west_prices["all_households"].rename("value").to_frame(), "West German prices, all private households")
     west_four = _require_rows(west_prices["four_person"].rename("value").to_frame(), "West German prices, four-person households")
+    west_people, west_people_name = _west_german_population(saved_population_text)
+    west_population = _require_rows(west_people.rename("value").to_frame(), "West Germany's population")
     block = (
         f"{DE_ARCHIVE_BEGIN_MARKER}\n"
         f"# Generated on {dt.date.today():%Y-%m-%d} from the Deutsche Bundesbank and the Federal Statistical Office, read from:\n# {source_name}\n"
         f"# {discount_name}\n"
         f"# {west_prices_name}\n"
+        f"# {west_people_name}\n"
         "# Historical observations in the source's own terms; de_data and rates join\n"
         "# them to the live series at run time.\n\n"
         + _embedded_list("EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY", comment, data, "value")
@@ -1816,14 +1889,23 @@ def bake_german_archives(
             west_four,
             "value",
         )
+        + "\n"
+        + _embedded_list(
+            "EMBEDDED_DE_WEST_POPULATION",
+            "West Germany's population, the Saarland and West Berlin included, the annual average in\n"
+            "thousands, each year dated by 1 July, to the year before Eurostat's counts begin.",
+            west_population,
+            "value",
+        )
         + f"{DE_ARCHIVE_END_MARKER}"
     )
     _replace_generated_block(source_path, DE_ARCHIVE_BEGIN_MARKER, DE_ARCHIVE_END_MARKER, block)
-    print(f"Embedded the Bundesbank's yield on public debt securities and its discount rate, and West Germany's consumer prices, into {source_path}")
+    print(f"Embedded the Bundesbank's yield on public debt securities and its discount rate, and West Germany's consumer prices and population, into {source_path}")
     print(f"  EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY {len(data):5,} values, {data.index[0]:%Y-%m-%d} to {data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_DISCOUNT_RATE_CHANGES     {len(discount_data):5,} changes, {discount_data.index[0]:%Y-%m-%d} to {discount_data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS   {len(west_all):5,} months, {west_all.index[0]:%Y-%m-%d} to {west_all.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_WEST_CPI_FOUR_PERSON      {len(west_four):5,} months, {west_four.index[0]:%Y-%m-%d} to {west_four.index[-1]:%Y-%m-%d}")
+    print(f"  EMBEDDED_DE_WEST_POPULATION           {len(west_population):5,} years, {west_population.index[0]:%Y-%m-%d} to {west_population.index[-1]:%Y-%m-%d}")
 
 
 # ---------------------------------------------------------------------------

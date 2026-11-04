@@ -48,6 +48,10 @@ sources served on 2026-10-06 evening (Toronto).
     "Verbraucherpreisindizes für Deutschland, Lange Reihen ab 1948", its last edition (December
     2022), from `config.DESTATIS_CPI_LONG_SERIES_URL`; sheet "Monate", read and baked by
     `bake.parse_west_german_prices`.)*
+  - *(Added 2026-11-04, batch 16: `bbk_lange_zeitreihen_V1.txt`, page 29 of the Bundesbank's "Lange
+    Zeitreihen" of 2020-09-01 (`config.BUNDESBANK_LONG_SERIES_PDF_URL`, 5.6 MB), part V table 1, as
+    `pdftotext -layout -enc UTF-8 -f 29 -l 29` gives it; read and baked by
+    `bake.parse_long_series_population`.)*
 
 ### ECB Data Portal (`https://data-api.ecb.europa.eu/service/data/{flow}/{key}?format=csvdata`)
 
