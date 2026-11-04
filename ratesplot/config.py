@@ -523,6 +523,7 @@ YIELD_TERMS = {
 }
 DEFAULT_YIELD_TERMS = ("3m", "2y", "5y", "10y", "30y")
 REAL_YIELD_TERMS = ("r5", "r7", "r10", "r20", "r30")
+REAL_YIELD_ROW = "real"  # their row of boxes' caption (options._YIELD_CHOICES)
 NOMINAL_YIELD_TERMS = tuple(term for term in YIELD_TERMS if term not in REAL_YIELD_TERMS)
 
 GDP_COLUMN = "TTM Nominal GDP ($)"

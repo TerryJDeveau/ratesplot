@@ -79,6 +79,7 @@ from .config import (
     NOMINAL_YIELD_TERMS,
     PER_NATION_FIELDS,
     POLICY_TERMS,
+    REAL_YIELD_ROW,
     REAL_YIELD_TERMS,
     QUOTE_MAX_AGE_DAYS,
     SEASONALLY_ADJUSTED_NATIONS,
@@ -779,7 +780,7 @@ class Option:
 _YIELD_CHOICES = (
     ("", tuple((term, term) for term in DEFAULT_YIELD_TERMS)),
     ("more", tuple((term, term) for term in NOMINAL_YIELD_TERMS if term not in DEFAULT_YIELD_TERMS)),
-    ("real", tuple((term, term) for term in REAL_YIELD_TERMS)),
+    (REAL_YIELD_ROW, tuple((term, term) for term in REAL_YIELD_TERMS)),
 )
 _MORTGAGE_CHOICES = (
     ("U.S.", (("30", "30y"), ("15", "15y"))),
