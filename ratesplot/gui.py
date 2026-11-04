@@ -139,7 +139,7 @@ from PIL import Image, ImageTk
 
 from matplotlib.figure import Figure
 
-from . import export, hover, http
+from . import export, hover, http, monitors
 from .config import DOWNLOAD_MAX_AGE_SECONDS, EARLIEST_DATE, NATIONS, WEB_PAGE_ADDRESS, Nation, PlotConfig
 from .console import this_thread_output_to
 from .export import EXPORT_CHOICES, IMAGE_FORMATS
@@ -231,6 +231,7 @@ from .frontend import (
     with_leading_zero,
     zoom_updates,
 )
+from .monitors import Rect
 from .options import (
     Kind,
     Option,
@@ -1933,7 +1934,7 @@ class RatesPlotApp:
         panel.update_idletasks()
         spot = (mark.winfo_rootx(), mark.winfo_rooty(), mark.winfo_rootx() + mark.winfo_width(), mark.winfo_rooty() + mark.winfo_height())
         screen = (panel.winfo_screenwidth(), panel.winfo_screenheight())
-        panel.geometry(_beside(spot, panel.winfo_reqwidth(), panel.winfo_reqheight(), _monitor_work_areas(), screen))
+        panel.geometry(_beside(spot, panel.winfo_reqwidth(), panel.winfo_reqheight(), monitors.monitor_work_areas(), screen))
         panel.focus_set()
         self.info_panel = panel
         self.info_shown = (key, tip, reason)  # what the panel says, for tools/verify_gui.py
@@ -3184,43 +3185,6 @@ class RatesPlotApp:
         self.root.destroy()
 
 
-def _monitor_work_areas() -> list[tuple[int, int, int, int]]:
-    """Return each monitor's work area (left, top, right, bottom, without the taskbar) in the window's coordinates.
-
-    Windows only (``EnumDisplayMonitors``), and in the same pixels as Tk's
-    geometry, the process being DPI-aware (``_enable_windows_dpi_awareness``).
-    Empty elsewhere, or if the call fails.
-    """
-    if sys.platform != "win32":
-        return []
-    import ctypes
-    from ctypes import wintypes
-
-    class MonitorInfo(ctypes.Structure):
-        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
-
-    areas: list[tuple[int, int, int, int]] = []
-    user32 = ctypes.windll.user32
-
-    def found(monitor, _dc, _rect, _data) -> int:
-        info = MonitorInfo()
-        info.cbSize = ctypes.sizeof(MonitorInfo)
-        if user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
-            work = info.rcWork
-            areas.append((work.left, work.top, work.right, work.bottom))
-        return 1  # go on to the next monitor
-
-    callback = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.LPARAM)
-    try:
-        user32.EnumDisplayMonitors(None, None, callback(found), 0)
-    except (AttributeError, OSError):
-        return []
-    return areas
-
-
-Rect = tuple[int, int, int, int]  # left, top, right, bottom
-
-
 def _window_frame() -> Rect:
     """Return how far a window's frame reaches beyond its inside: (left, top, right, bottom), in Tk's pixels.
 
@@ -3251,27 +3215,10 @@ def _outer_rect(width: int, height: int, x: int, y: int, frame: Rect) -> Rect:
     return (x, y, x + width + frame[0] + frame[2], y + height + frame[1] + frame[3])
 
 
-def _gap(a: Rect, b: Rect) -> float:
-    """How far apart two rectangles are (0 when they touch or overlap)."""
-    across = max(a[0] - b[2], b[0] - a[2], 0)
-    down = max(a[1] - b[3], b[1] - a[3], 0)
-    return (across * across + down * down) ** 0.5
-
-
 def _middle(rect: Rect) -> Rect:
     """A rectangle's middle, as a rectangle of no size."""
     across, down = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
     return (across, down, across, down)
-
-
-def _overlap(a: Rect, b: Rect) -> int:
-    """The area two rectangles share."""
-    return max(0, min(a[2], b[2]) - max(a[0], b[0])) * max(0, min(a[3], b[3]) - max(a[1], b[1]))
-
-
-def _monitor_of(rect: Rect, areas: list[Rect]) -> Rect:
-    """The work area holding most of ``rect``, else the nearest one (as Windows' ``MonitorFromRect`` chooses)."""
-    return max(areas, key=lambda area: (_overlap(rect, area), -_gap(rect, area)))
 
 
 def _over_window(root: tk.Misc, width: int, height: int, areas: list[Rect] | None = None) -> str:
@@ -3281,7 +3228,7 @@ def _over_window(root: tk.Misc, width: int, height: int, areas: list[Rect] | Non
     same monitor where the GUI window is located"). Given a size and no
     place, Windows put it on the primary monitor, wherever the window was.
     Kept whole inside that monitor's work area (``areas``: every monitor's,
-    ``_monitor_work_areas`` by default); with none known, simply centred.
+    ``monitors.monitor_work_areas`` by default); with none known, simply centred.
     """
     match = _GEOMETRY_PATTERN.match(root.geometry())
     if not match:
@@ -3290,9 +3237,9 @@ def _over_window(root: tk.Misc, width: int, height: int, areas: list[Rect] | Non
     outer = _outer_rect(*map(int, match.groups()), frame)
     x = (outer[0] + outer[2]) // 2 - (width + frame[0] + frame[2]) // 2
     y = (outer[1] + outer[3]) // 2 - (height + frame[1] + frame[3]) // 2
-    areas = _monitor_work_areas() if areas is None else areas
+    areas = monitors.monitor_work_areas() if areas is None else areas
     if areas:
-        left, top, right, bottom = _monitor_of(outer, areas)
+        left, top, right, bottom = monitors.monitor_of(outer, areas)
         x = max(left, min(x, right - (width + frame[0] + frame[2])))
         y = max(top, min(y, bottom - (height + frame[1] + frame[3])))
     return f"{width}x{height}+{x}+{y}"
@@ -3305,14 +3252,14 @@ def _beside(mark: Rect, width: int, height: int, areas: list[Rect], screen: tupl
     above the primary: the panel was kept inside the primary screen
     (``winfo_screenwidth``, and ``max(y, 0)``), so above it, at a negative
     y, it came up on the primary's top edge. Now inside the work area of
-    the monitor holding the ⓘ (``areas``, ``_monitor_work_areas``), as
+    the monitor holding the ⓘ (``areas``, ``monitors.monitor_work_areas``), as
     More's window is (``_over_window``, batch 31.10); with no monitors
     known (not Windows), inside the primary ``screen`` as before.
     """
     x, y = mark[2] + 6, mark[1]
     if areas:
         frame = _window_frame()
-        left, top, right, bottom = _monitor_of(mark, areas)
+        left, top, right, bottom = monitors.monitor_of(mark, areas)
         x = max(left, min(x, right - (width + frame[0] + frame[2])))
         y = max(top, min(y, bottom - (height + frame[1] + frame[3])))
         return f"+{x}+{y}"
@@ -3340,10 +3287,10 @@ def _moved_onto_a_monitor(width: int, height: int, x: int, y: int, areas: list[R
     outer = _outer_rect(width, height, x, y, frame)
     if own is not None:
         # The nearest; of those touching it, the one whose middle is nearest its middle.
-        target = min(areas, key=lambda area: (_gap(area, own), _gap(_middle(area), _middle(own))))
+        target = min(areas, key=lambda area: (monitors.gap(area, own), monitors.gap(_middle(area), _middle(own))))
         x, y = target[0] + x - own[0], target[1] + y - own[1]
     else:
-        target = _monitor_of(outer, areas)
+        target = monitors.monitor_of(outer, areas)
     left, top, right, bottom = target
     outer_width = min(outer[2] - outer[0], right - left)
     outer_height = min(outer[3] - outer[1], bottom - top)
@@ -3355,10 +3302,10 @@ def _moved_onto_a_monitor(width: int, height: int, x: int, y: int, areas: list[R
 def _window_monitor(geometry: str) -> list[int] | None:
     """The work area of the monitor holding most of a window with this geometry, for the remembered settings."""
     match = _GEOMETRY_PATTERN.match(geometry)
-    areas = _monitor_work_areas()
+    areas = monitors.monitor_work_areas()
     if not match or not areas:
         return None
-    return list(_monitor_of(_outer_rect(*map(int, match.groups()), _window_frame()), areas))
+    return list(monitors.monitor_of(_outer_rect(*map(int, match.groups()), _window_frame()), areas))
 
 
 def _remembered_monitor(state: dict) -> Rect | None:
@@ -3398,7 +3345,7 @@ def _initial_geometry(root: tk.Tk, state: dict) -> str:
     match = _GEOMETRY_PATTERN.match(str(state.get("geometry", "")))
     if match:
         width, height, x, y = map(int, match.groups())
-        areas = _monitor_work_areas()
+        areas = monitors.monitor_work_areas()
         if areas:
             if _title_bar_on_screen(width, x, y, areas):
                 return f"{width}x{height}+{x}+{y}"

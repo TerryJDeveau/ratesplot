@@ -98,7 +98,7 @@ import synthetic_sources  # noqa: E402
 from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
 
 import ratesplot  # noqa: E402
-from ratesplot import cli, export, frontend, gui, hover, http, options, wait  # noqa: E402
+from ratesplot import cli, export, frontend, gui, hover, http, monitors, options, wait  # noqa: E402
 from ratesplot.axes import format_yield  # noqa: E402
 from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
@@ -2451,10 +2451,10 @@ def check_batch31(check: Check) -> None:
         root.update()
         topic = app.topic_windows["debt"]
         outer = gui._outer_rect(topic.winfo_width(), topic.winfo_height(), topic.winfo_x(), topic.winfo_y(), gui._window_frame())
-        real = gui._monitor_work_areas()
-        mine = gui._monitor_of(gui._outer_rect(*map(int, gui._GEOMETRY_PATTERN.match(root.geometry()).groups()),
+        real = monitors.monitor_work_areas()
+        mine = monitors.monitor_of(gui._outer_rect(*map(int, gui._GEOMETRY_PATTERN.match(root.geometry()).groups()),
                                                 gui._window_frame()), real) if real else None
-        check("More's window opened on the window's monitor", mine is None or gui._monitor_of(outer, real) == mine, (outer, mine))
+        check("More's window opened on the window's monitor", mine is None or monitors.monitor_of(outer, real) == mine, (outer, mine))
         topic.destroy()
 
     with window(f"-c -s:2001 {END}", size=placed("1728x640")) as w:
@@ -2594,11 +2594,11 @@ def check_batch30(check: Check) -> None:
         check("its ⓘ: the tip, why it is greyed, and More", key == "cdn:master" and "Master currency:" in tip
               and reason == "Greyed because % of GDP is in effect, and a share of GDP is in no currency.", app.info_shown)
         # Found 2026-10-29 by Terry: on a monitor above the primary the panel came up on the primary's top edge.
-        areas = gui._monitor_work_areas()
+        areas = monitors.monitor_work_areas()
         panel = app.info_panel
         panel_rect = (panel.winfo_rootx(), panel.winfo_rooty(), panel.winfo_rootx() + panel.winfo_width(), panel.winfo_rooty() + panel.winfo_height())
         root_rect = (root.winfo_rootx(), root.winfo_rooty(), root.winfo_rootx() + root.winfo_width(), root.winfo_rooty() + root.winfo_height())
-        check("the ⓘ's panel on the window's own monitor", not areas or gui._monitor_of(panel_rect, areas) == gui._monitor_of(root_rect, areas),
+        check("the ⓘ's panel on the window's own monitor", not areas or monitors.monitor_of(panel_rect, areas) == monitors.monitor_of(root_rect, areas),
               (panel_rect, root_rect))
         more = next(widget for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton" and widget.cget("text") == "More")
         more.invoke()
