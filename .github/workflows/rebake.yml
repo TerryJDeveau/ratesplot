@@ -44,7 +44,8 @@ jobs:
           python-version: "3.14"
 
       - name: Install what the bake needs (the versions in requirements.txt)
-        run: grep -E '^(numpy|pandas|requests)==' requirements.txt | xargs python -m pip install --quiet
+        # openpyxl: the Bank of England's real curve comes in Excel files (batch 13.3).
+        run: grep -E '^(numpy|openpyxl|pandas|requests)==' requirements.txt | xargs python -m pip install --quiet
 
       - name: Re-bake
         id: bake

@@ -15,3 +15,7 @@ In the window, Copy beside the line puts it on the clipboard; on the web page, t
 The same charts, from the same sources, at the size the Size boxes give. On a narrow screen the web page draws a smaller chart with larger text, but the line is the controls', so it draws the full-size chart ([Size and layout](?help=layout)). With End left blank it draws up to the day it is run, so the same line run later draws the latest data ([Start and End](?help=dates)).
 
 Every option, as the line spells it, is listed by `python ratesplot.py --help`, and on the web page under "Every option, as the command line spells it" at the page's foot.
+
+## The version in the data saved
+
+The data Export chart and `--save:FILE` write (XLSX, CSV, TSV) end their subtitle, the second row, with the version that wrote them: `; v7.9, build: 1a2b3c4`. `--no-ver` leaves it out. It has no control: a window or a web page started with it keeps it until it closes, in the line and the link it writes, so a copy keeps it too, and it is not remembered for the next start. The images are the same either way. `-v` or `--version` alone prints the version and draws nothing.

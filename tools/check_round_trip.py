@@ -108,6 +108,8 @@ VALUES = (
     # nominal less real (no box offers it, so a box of its own), and taken out.
     "--y:r10", "--y:10,r10", "--y:r5,r7,r10,r20,r30", "--us:y:r5,r30", "--cdn:y:r30 --y:10", "--uk:y:r20 --y:r10", "--ger:y:r7",
     "--sp:10y-r10", "--y:10,r10 --sp:10y-r10", "--y:10,r10 --no-y:r10", "--y:r30 --mo --po",
+    # --no-ver (batch 37.2): no control, but kept in the written line and the address; --ver changes neither.
+    "--no-ver", "--no-ver --mo --us:y:2,10", "--ver",
 )
 
 
@@ -191,6 +193,8 @@ def _drawn(config, key: str):
     hidden = {field: None for field, flag in _LISTS.items() if not getattr(drawn, flag)}
     if drawn.refresh_brings_nothing is not None:
         hidden["auto_refresh_minutes"] = None  # greyed, its minutes left off the written line (batch 11.3)
+    if drawn.version is True:
+        hidden["version"] = None  # --ver draws what no option draws, and is not written back (batch 37.2); --no-ver must be
     return replace(drawn, **hidden) if hidden else drawn
 
 

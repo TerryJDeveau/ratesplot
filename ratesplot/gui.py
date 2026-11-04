@@ -226,7 +226,6 @@ from .frontend import (
     starting_choices,
     trim_history,
     unzoom_target,
-    version_text,
     wheel_zoom_text,
     with_leading_zero,
     zoom_updates,
@@ -248,6 +247,7 @@ from .options import (
 )
 from .plotting import COUNTRIES, Country, build_figure, resolve_start
 from .refresh import Ticker
+from .version import version_text
 from .wait import Figures, Wait
 
 WINDOW_TITLE = "Rates plot: yields, public debt, GDP & interest"
@@ -1043,6 +1043,9 @@ class RatesPlotApp:
         # and where one went that was not the name picked (batch 33).
         self._saved_files = export.SavedFiles(say=self._note_saved)
         self._saved_note = ""
+        # Started with --no-ver (batch 37.2), which no control shows: kept to the
+        # window's closing, through Reset and Back, in what it draws and writes.
+        self._no_version = choices[1].get("version") is False
         # "Remember my settings" (batch 24.6): ticked at every start, its off
         # state never saved; and the settings read at the start, which the box
         # unticked puts back (``_remember``, batch 34.2).
@@ -1992,11 +1995,11 @@ class RatesPlotApp:
         self._update_dependent_controls()
 
     def _snapshot(self) -> Choices:
-        """Return every control's current value, blanks included."""
-        return (
-            {name: var.get() for name, var in self.payload_vars.items()},
-            {name: var.get() for name, var in self.flag_vars.items()},
-        )
+        """Return every control's current value, blanks included, and --no-ver where the window was started with it (batch 37.2)."""
+        flags = {name: var.get() for name, var in self.flag_vars.items()}
+        if self._no_version:
+            flags["version"] = False
+        return {name: var.get() for name, var in self.payload_vars.items()}, flags
 
     def _flag_changed(self, name: str) -> None:
         if name == "hover" and not self.flag_vars[name].get():
@@ -3141,6 +3144,8 @@ class RatesPlotApp:
             # and so does the automatic refresh's (11.3), so they are remembered
             # as they stand, as the preview's zoom is.
             flags = {**flags, "hover": self.flag_vars["hover"].get(), "auto-refresh": self.flag_vars["auto-refresh"].get()}
+            # --no-ver lasts for this window (batch 37.2): at the next start no control could take it off.
+            flags.pop("version", None)
             payloads = {**payloads, "auto-refresh-minutes": self.payload_vars["auto-refresh-minutes"].get()}
             settings = {
                 "payloads": payloads,

@@ -12,7 +12,8 @@ and the command line's --save:FILE all come here.
   saved again in that format (PDF and SVG as lines and text, sharp at any
   size).
 * The data (``DATA_FORMATS``, ``chart_data``): the first row the chart's
-  title, the second its subtitle (the dates), the third each column's name
+  title, the second its subtitle (the dates), ending with the version that
+  wrote it unless --no-ver (batch 37.2), the third each column's name
   (the date, then each curve as its legend names it), the fourth each
   column's unit in brackets, the values from the fifth. A row for each date
   in the window on which any curve drawn has a point. Each column holds the
@@ -54,6 +55,7 @@ from matplotlib.lines import Line2D
 from matplotlib.text import Text
 
 from .config import MASTER_SYMBOLS, PRICE_INDEX_BASES, PlotConfig, nation_by_key
+from .version import version_text
 
 # The file's extension -> matplotlib's format name.
 IMAGE_FORMATS = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".pdf": "pdf", ".svg": "svg"}
@@ -253,6 +255,20 @@ def _unit(axis: str, figure: Figure, config: PlotConfig, nation_key: str) -> str
     return _macro_unit(figure, config, nation_key)
 
 
+def _with_version(subtitle: str, config: PlotConfig) -> str:
+    """The subtitle a data file writes: the chart's, then "; v7.9, build: 1a2b3c4", or the chart's alone under --no-ver.
+
+    Terry, 2026-11-03: "The current way that the subtitle line is written in
+    --sav:XLSX/CSV/TSV is how it should be when --no-ver is specified.
+    Otherwise (-v, --ver, or default) add the following string to the end of
+    the subtitle line: '; vnn.mm, build: xxxxxx'." From the window's and the
+    page's Export chart too: "the default should be to include them".
+    """
+    if config.version is False:
+        return subtitle
+    return f"{subtitle}; {version_text()}" if subtitle else version_text()
+
+
 def chart_data(figure: Figure, config: PlotConfig, nation_key: str) -> ChartData:
     """Return the data ``figure`` shows (see the module docstring); ``config`` is the nation's own (``for_nation``)."""
     curves = _pieces(figure)
@@ -268,7 +284,7 @@ def chart_data(figure: Figure, config: PlotConfig, nation_key: str) -> ChartData
     )
     return ChartData(
         title=title,
-        subtitle=subtitle_text.get_text() if subtitle_text is not None else "",
+        subtitle=_with_version(subtitle_text.get_text() if subtitle_text is not None else "", config),
         names=tuple(name for name, _axis in curves),
         units=units,
         dates=tuple(pd.Timestamp(mdates.num2date(day).replace(tzinfo=None)).normalize() for day in days),
@@ -325,8 +341,13 @@ def _cell(value: object) -> object:
 def xlsx_bytes(sheets: Sequence[tuple[str, ChartData]]) -> bytes:
     """A workbook with a sheet for each ``(sheet name, data)``: dates as dates shown YYYY-MM-DD, numbers as numbers."""
     from openpyxl import Workbook  # only when a workbook is written: the page installs it, the rest need not
-    from openpyxl.styles import Font
+    from openpyxl.styles import Alignment, Font
 
+    # Rows 3 and 4, the columns' names and units, right-justified over the dates
+    # and numbers Excel puts on the right (Terry, 2026-11-03, 37.3). Wrapped: a
+    # text wider than its column (the widths stop at 40 characters) with a
+    # neighbour beside it would otherwise lose its start.
+    heads = Alignment(horizontal="right", wrap_text=True)
     book = Workbook()
     book.remove(book.active)
     for sheet_name, data in sheets:
@@ -334,9 +355,12 @@ def xlsx_bytes(sheets: Sequence[tuple[str, ChartData]]) -> bytes:
         for row in _table(data):
             sheet.append([_cell(value) for value in row])
         sheet["A1"].font = Font(bold=True)
+        for row in sheet.iter_rows(min_row=3, max_row=4):
+            for cell in row:
+                cell.alignment = heads
         for cell in sheet["A"][4:]:
             cell.number_format = "yyyy-mm-dd"
-        sheet.column_dimensions["A"].width = 13
+        sheet.column_dimensions["A"].width = 15  # 13 made Excel wrap "(YYYY-MM-DD)", row 4 opening twice as high
         for column in range(2, len(data.names) + 2):
             sheet.column_dimensions[sheet.cell(row=3, column=column).column_letter].width = max(12, min(40, len(data.names[column - 2]) + 2))
         sheet.freeze_panes = "B5"

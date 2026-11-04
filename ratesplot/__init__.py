@@ -72,6 +72,7 @@ options           the option table, value parsers/formatters, choices <-> PlotCo
 frontend          what the window and the web page share without a GUI toolkit: starting
                   choices, remembered settings, each nation's own controls, option
                   help, PNG bytes and file names
+version           the version as shown and saved, with the commit started from (batch 11.7)
 monitors          a window kept on its monitor (batch 39): the monitors, the corner that
                   suits, the factor that fits; no tkinter (the window is handed in)
 gui               the interactive window (default; --no-gui for plain matplotlib windows)
@@ -91,7 +92,7 @@ Canadian GDP); plotting -> fx -> {us_data, cdn_archive_data, uk_archive_data};
 plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
 regression -> occupancy; options -> config; {plotting, legend, options, cli,
-gui, web} -> export -> config; {plotting, gui, web} -> hover -> {export, legend};
+gui, web} -> export -> {config, version}; {plotting, gui, web} -> hover -> {export, legend};
 {plotting, cli, gui, web} -> refresh -> {latest, http, config}; {plotting, gui} -> monitors. Data modules never import
 plotting. Nothing imports web or gui, and cli imports gui only when the
 window is opened, so --no-gui and the web page never load tkinter.
@@ -101,5 +102,5 @@ window is opened, so --no-gui and the web page never load tkinter.
 # type of series (CPI, population and the like), batch 11 being 6; the minor goes up by one at each push of a
 # build, in a commit of its own made before the push (the daily data job's commits leave it). It counts from 0 at
 # the first work on batch 11: its four pushes of 2026-10-27 made 6.4. Shown with the commit the program was
-# started from (frontend.version_text).
-__version__ = "7.8"
+# started from (version.version_text).
+__version__ = "7.9"

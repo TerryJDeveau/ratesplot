@@ -252,7 +252,7 @@ CASES: list[list[str]] = [
     ["--au:0"], ["--au:1441"], ["--au:-5"], ["--au:2.5"], ["--au:x"], ["--au:"], ["--au:10m"], ["--au:10", "--no-au"],
     ["--no-au", "--au:10"], ["--au", "--au:20"], ["--au:20", "--au"], ["--au", "--save:r.png"], ["--au:30", "--no-gui", "-u"],
     ["--au", "--no-cur"], ["--au", "--no-yields"], ["--au", "--no-yields", "--sp"], ["--au", "-e:2020-01-01"],
-    # Batch 11.7: --version, at least "ver" (in the option table, so argparse never takes "--v" for it).
+    # Batch 11.7: --version, in the option table; "--v" and "--ve" refused until batch 37.1 made -v a spelling of it.
     ["--version"], ["--ver"], ["--VERSION"], ["--vers"], ["--v"], ["--ve"], ["--version:1"], ["--version", "-c"],
     # Batch 30 (decisions 77 and 78): --master:CODE, at least "mas" ("--ma" is --max); a code or a mark, in either
     # case; a bare "$", another currency, none, or no value refused; no nation's own (--us:master); the last given
@@ -292,6 +292,10 @@ CASES: list[list[str]] = [
     ["--y:r10"], ["--y:r10y"], ["--y:R10"], ["--y:10,r10"], ["--y:r5,r7,r10,r20,r30"], ["--y:r3"], ["--y:r3m"], ["--y:r"], ["--y:rr10"],
     ["--us:y:r5,r30"], ["--cdn:y:r30"], ["--cdn:y:r10"], ["--uk:y:r20"], ["--ger:y:r10", "--na:de"], ["--ger:y:r30", "--na:de"],
     ["--sp:10y-r10"], ["--us:sp:10-r10"], ["--cdn:sp:30-r30"], ["--y:10,r10", "--no-y:r10"], ["--no-y:r10"],
+    # Batch 37: -v, and no value; --ver with --save (it saves, 37.2); --no-ver, the last given winning; no nation's own.
+    ["-v"], ["v"], ["-V"], ["-v:1"], ["-v", "-c"], ["--no-v"], ["--no-ver"], ["--no-version"], ["--NO-VER"], ["--no-ver:1"],
+    ["-v", "--save:r.png"], ["--ver", "--save:r.csv"], ["--no-ver", "--save:r.xlsx"], ["--no-ver", "-v"], ["-v", "--no-ver"],
+    ["--us:v"], ["--us:no-ver"],
 ]
 
 
