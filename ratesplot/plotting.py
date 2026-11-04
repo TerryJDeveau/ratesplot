@@ -115,7 +115,7 @@ from .hover import attach as attach_hover
 from .hover import detach as detach_hover
 from .hover import mark as mark_reading
 from .hover import mark_quote
-from .http import download_cache_on, in_parallel
+from .http import download_cache_on, in_parallel, task_for_nation
 from .joins import align_macro
 from .latest import (
     PROJECTION_ATTR,
@@ -1266,7 +1266,7 @@ def resolve_end(config: PlotConfig) -> PlotConfig:
         if getattr(config, country.show_field) and draws_announced(country.key, config.for_nation(country.key))
     ]
     with this_thread_output_to(None):
-        lasts = in_parallel([partial(policy_target_last, key) for key in targets])
+        lasts = in_parallel([task_for_nation(key, partial(policy_target_last, key)) for key in targets])
     latest = max((last for last in lasts if isinstance(last, pd.Timestamp)), default=None)
     if latest is None or latest <= config.end:
         return config
@@ -1325,7 +1325,7 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
     unprepared: list[str] = []
     chosen = [country for country in COUNTRIES if getattr(config, country.show_field)]
     with this_thread_output_to(None):
-        prepared = in_parallel([partial(country.prepare, trial.for_nation(country.key)) for country in chosen])
+        prepared = in_parallel([task_for_nation(country.key, partial(country.prepare, trial.for_nation(country.key))) for country in chosen])
         for country, outcome in zip(chosen, prepared):
             if isinstance(outcome, Exception):  # warned of below, out of the silenced pass
                 unprepared.append(f"{country.metadata.country_name} ({type(outcome).__name__}: {outcome})")
@@ -1382,7 +1382,7 @@ def _download_side_by_side(config: PlotConfig) -> None:
         return
     quiet = replace(config, current=False)
     with this_thread_output_to(None):
-        in_parallel([partial(country.prepare, quiet.for_nation(country.key)) for country in chosen])
+        in_parallel([task_for_nation(country.key, partial(country.prepare, quiet.for_nation(country.key))) for country in chosen])
 
 
 def chart_config(config: PlotConfig, key: str) -> PlotConfig:

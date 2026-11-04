@@ -161,7 +161,7 @@ def _copy_used(key: tuple, fetched_wall: float, failure: Exception) -> None:
         earlier = drawing.copies.get(label)
         if earlier is None or fetched_wall < earlier[0]:  # a group's oldest copy is the one named
             drawing.copies[label] = (fetched_wall, why)
-        copies = drawing.fallback(source_name(_host_of(key)), why).copies
+        copies = drawing.fallback(source_name(host_of(key)), why).copies
         copies[label] = min(fetched_wall, copies.get(label, fetched_wall))
 
 
@@ -292,6 +292,13 @@ class _Drawing:
     unavailable: dict[str, Exception] = field(default_factory=dict)
     # Its tasks may run side by side (``in_parallel``): ``copies`` is read and then written.
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    # What the wait line learns from (batch 35.1, ``wait``): each real download
+    # that succeeded, as (the nation asking or None, cache key, seconds, less
+    # any wait for its host's turn), in the order they ended; each nation's
+    # requests, kept or not; the seconds the quotes of the moment took (never cached).
+    requests: list[tuple[str | None, tuple, float]] = field(default_factory=list)
+    asked: dict[str, set[tuple]] = field(default_factory=dict)
+    quote_seconds: float = 0.0
 
     def copies_used(self) -> list[str]:
         """The sources drawn from their last good copies, each with the copy's date: "FRED Treasury yields (2026-10-21 18:30 UTC)"."""
@@ -436,6 +443,36 @@ def in_parallel(tasks: Sequence[Callable[[], T]]) -> list[T | Exception]:
     return outcomes  # type: ignore[return-value]  (every task has ended: no None is left)
 
 
+def asking_for(nation: str | None) -> None:
+    """Name the nation whose chart the calling thread's downloads are for, for the wait line (batch 35.1, ``wait``); None for none."""
+    _log_state.nation = nation
+
+
+def task_for_nation(nation: str, task: Callable[[], T]) -> Callable[[], T]:
+    """``task``, for ``in_parallel``, its downloads named as nation ``nation``'s (``asking_for``): each task has a thread of its own."""
+
+    def run() -> T:
+        asking_for(nation)
+        return task()
+
+    return run
+
+
+def note_quote_seconds(seconds: float) -> None:
+    """Add one nation's quotes of the moment to the calling thread's drawing, for the wait line (batch 35.1)."""
+    drawing = getattr(_log_state, "drawing", None)
+    if drawing is not None:
+        drawing.quote_seconds += seconds
+
+
+def download_is_kept(key: tuple) -> bool:
+    """Whether a request (its cache key) would be answered from the kept downloads now, by ``_cached``'s own rule (batch 35.1)."""
+    with _download_cache_lock:
+        if _download_cache is None or key not in _download_cache:
+            return False
+        return _download_cache_max_age is None or time.monotonic() - _download_cache[key][0] <= _download_cache_max_age
+
+
 def enable_download_cache(max_age_seconds: float | None = None) -> None:
     """Keep every download for the rest of the session, or for ``max_age_seconds`` each (see above)."""
     global _download_cache, _download_cache_max_age
@@ -476,6 +513,10 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     there is one, and is named in the drawing's log; a copy is not put in
     the memory cache, so the next drawing asks the source again.
 
+    What the wait line learns from is noted here (batch 35.1, ``wait``): the
+    nation asking (``asking_for``), and a real download's time, less the time it
+    waited for its host's turn, so a host's figure is its own answer's.
+
     A request that failed is not made again in the same drawing (Terry,
     2026-10-21: the program must not become a nuisance to the servers it
     asks): its failure is raised again, or its copy returned, at once. The
@@ -486,22 +527,30 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     raised at once, before the download is logged, and the request's copy
     returned if it has one, as if the request itself had failed.
     """
+    drawing = getattr(_log_state, "drawing", None)
+    nation = getattr(_log_state, "nation", None)
+    if drawing is not None and nation is not None:
+        drawing.asked.setdefault(nation, set()).add(key)
     with _download_cache_lock:
         if _download_cache is not None and key in _download_cache:
             fetched_at, fetched_wall, result = _download_cache[key]
             if _download_cache_max_age is None or time.monotonic() - fetched_at <= _download_cache_max_age:
                 _note_reused(key, fetched_at, fetched_wall)
                 return result  # type: ignore[return-value]
-    drawing = getattr(_log_state, "drawing", None)
     earlier = drawing.failed.get(key) if drawing is not None else None
     if earlier is None and drawing is not None:
-        earlier = drawing.unavailable.get(_host_of(key))
+        earlier = drawing.unavailable.get(host_of(key))
     try:
         if earlier is not None:
             # With this call's traceback only: the object is the one raised before, whose
             # traceback (the first pass's, perhaps another thread's) each raise would extend.
             raise earlier.with_traceback(None)
+        began = time.monotonic()
+        turns_before = getattr(_log_state, "turns", 0.0)
         result = download()
+        if drawing is not None:
+            seconds = time.monotonic() - began - (getattr(_log_state, "turns", 0.0) - turns_before)
+            drawing.requests.append((nation, key, seconds))
     except Exception as failure:
         if drawing is not None:
             drawing.failed[key] = failure
@@ -519,7 +568,7 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     return result
 
 
-def _host_of(key: tuple) -> str:
+def host_of(key: tuple) -> str:
     """The host a download's cache key asks (as ``host_turn`` names it): FRED's for ``("fred", ...)``, else its address's."""
     return urlsplit(FRED_CSV_URL if key[0] == "fred" else key[1]).netloc
 
@@ -618,7 +667,10 @@ def host_turn(url: str) -> Iterator[None]:
     with _host_locks_lock:
         lock = _host_locks.setdefault(host, threading.Lock())
     drawing = getattr(_log_state, "drawing", None)
+    waiting_since = time.monotonic()
     with lock:
+        # The time waited here is another request's, not this one's (``_cached``, for the wait line).
+        _log_state.turns = getattr(_log_state, "turns", 0.0) + time.monotonic() - waiting_since
         down = drawing.unavailable.get(host) if drawing is not None else None
         if down is not None:
             # With this call's traceback only, as ``_cached`` raises a request's earlier failure.
