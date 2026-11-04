@@ -68,10 +68,23 @@ Visitors
       drawn when its source fails, with a notice above the charts (batch 20,
       ``http.enable_last_good_copies``). The disk lasts only while the app
       runs: a Reboot or a sleep starts it empty.
-    - Charts are drawn one at a time (``_DRAWING_LOCK``). Matplotlib does not
-      promise that drawing in several threads at once is safe, and a free
-      server has two processors; a visitor who asks during another's drawing
-      waits for it, a few seconds.
+    - Charts are drawn one at a time, in the order asked (``_DRAWING_LOCK``,
+      ``_take_turn``). Matplotlib does not promise that drawing in several
+      threads at once is safe, and a free server has two processors; a visitor
+      who asks during another's drawing waits for it, and the wait line
+      counts it in.
+
+The wait (batch 35.2)
+    A drawing runs on a worker thread of its own (``_start_job``), the page's
+    script thread rewriting one line above the charts each second with a
+    spinning icon of its own: "Please wait about 12 s (5 s so far)"
+    (``_await_drawing``; the sum and the words in ``wait``). Before it, the
+    script thread drew, so nothing on the page could change until the drawing
+    ended, and a spinner's text cannot be changed once shown. Each rewrite is a
+    point where Streamlit can stop a run, so a click now takes effect at once:
+    a new run with the same chart goes back to waiting for the same drawing, and
+    one with another chart stops it between charts (``main``), as a visitor
+    gone does (``_visit_ended``), so the next drawing starts sooner.
     - What a drawing prints (progress, warnings, the start found) goes to
       that visitor's log only (``console``).
     - "Today", the default end, is the markets' date (Toronto) on a server,
@@ -143,7 +156,8 @@ import threading
 import time
 import urllib.parse
 import zlib
-from dataclasses import dataclass, replace
+from collections.abc import Iterator
+from dataclasses import dataclass, field, replace
 
 import matplotlib
 
@@ -151,6 +165,9 @@ matplotlib.use("Agg")  # before pyplot is imported (by plotting): a server has n
 
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
+from streamlit import runtime  # noqa: E402
+from streamlit.delta_generator import DeltaGenerator  # noqa: E402
+from streamlit.runtime.scriptrunner import get_script_run_ctx  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 from . import export, hover, http  # noqa: E402
@@ -266,6 +283,7 @@ from .options import (  # noqa: E402
 )
 from .plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 from .refresh import Ticker  # noqa: E402
+from .wait import Figures, Wait  # noqa: E402
 
 PAGE_TITLE = "Bond Yields and Public Debt"
 PAGE_SUMMARY = (
@@ -353,6 +371,7 @@ _WIDTH = "width"         # the component that says whether the screen is narrow 
 _NARROW = "narrow"       # True below PHONE_WIDTH_PX; absent until the page's script has said
 _NOTICE = "notice"   # a message from a control's callback, shown once
 _DRAWING = "drawing"  # the last Drawing
+_JOB = "job"          # the drawing under way, a _Job, until its Drawing is taken (batch 35.2)
 _FORCE = "force_redraw"
 _HINTS = "hints"    # the grey values the fields were laid out with (frontend.field_hints), by key
 _HISTORY = "history"  # the choices before each zoom, pan or Reset, for Back and Unzoom
@@ -2118,14 +2137,92 @@ def _limit_control(where, nation: Nation, option: Option) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
+@dataclass(eq=False)
+class _Job:
+    """One drawing asked for (batch 35.2): its wait, and, once its worker has ended, its Drawing.
+
+    It stays in the visitor's session state until the Drawing is taken, so a
+    new run of the page with the same chart goes back to waiting for it.
+    """
+
+    config: PlotConfig
+    tokens: tuple[str, ...]
+    wait: Wait
+    stopped: threading.Event = field(default_factory=threading.Event)  # left behind: stop between charts, nothing kept
+    done: threading.Event = field(default_factory=threading.Event)
+    drawing: Drawing | None = None
+    failure: Exception | None = None  # what ``_draw`` did not expect, raised on the page as it was before batch 35.2
+
+
+def _new_job(config: PlotConfig, tokens: tuple[str, ...]) -> _Job:
+    """A drawing asked for, not yet in the line: its wait counts what is left of those ahead of it when it joins them."""
+    job: _Job
+
+    def ahead() -> float:
+        with _DRAWINGS_LOCK:
+            before = _DRAWINGS[: _DRAWINGS.index(job)] if job in _DRAWINGS else list(_DRAWINGS)
+        return sum(other.wait.own_remaining() for other in before)
+
+    job = _Job(config, tokens, Wait.of_config(_FIGURES, config, _nations_of(config), ahead=ahead))
+    return job
+
+
+def _nations_of(config: PlotConfig) -> list[str]:
+    """The charts ``config`` shows, by key."""
+    return [country.key for country in COUNTRIES if getattr(config, country.show_field)]
+
+
+def _take_turn(job: _Job) -> bool:
+    """Wait until every drawing asked for before ``job`` has ended, and hold ``_DRAWING_LOCK``; False if it is stopped first.
+
+    In the order asked: a plain lock lets any waiter in, and the wait line
+    counts those ahead. Export chart's images hold the lock too (``_export_bytes``).
+    """
+    while not job.stopped.is_set():
+        with _DRAWINGS_LOCK:
+            first = _DRAWINGS[0] is job
+        if not first:
+            time.sleep(_TURN_POLL_SECONDS)
+        elif _DRAWING_LOCK.acquire(timeout=_TURN_POLL_SECONDS):
+            return True
+    return False
+
+
+@contextlib.contextmanager
+def _turn(job: _Job) -> Iterator[bool]:
+    """``job``'s turn to draw (``_take_turn``), True unless it is stopped first; the message log names a wait of a second or more."""
+    with _DRAWINGS_LOCK:
+        if job not in _DRAWINGS:
+            _DRAWINGS.append(job)
+    began = time.monotonic()
+    taken = False
+    try:
+        taken = _take_turn(job)
+        waited = time.monotonic() - began
+        if taken and waited >= 1.0:
+            print(f"Waited {waited:.0f} s for an earlier drawing.")
+        yield taken
+    finally:
+        if taken:
+            _DRAWING_LOCK.release()
+        with _DRAWINGS_LOCK:
+            _DRAWINGS.remove(job)
+
+
+def _draw(config: PlotConfig, tokens: tuple[str, ...], job: _Job | None = None) -> Drawing:
     """Draw every chosen country's chart for ``config``; never raises (a failure is in the Drawing).
 
     A chart that cannot be drawn (its source down: FRED's maintenance page,
     2026-10-21, took every chart with it) is named in ``Drawing.failed`` and
     the others are drawn. A source that fails but has a last good copy is
     drawn from it, and named in ``Drawing.copies`` (batch 20).
+
+    ``job``: the drawing as the page asked for it, on its worker (``_start_job``):
+    its wait told of each step (``wait.Wait``), and it stops between charts once
+    stopped, its Drawing then being nobody's. None: drawn here and now (the checks).
     """
+    if job is None:
+        job = _new_job(config, tokens)
     lines: list[str] = []
     began = time.perf_counter()
     source = "the automatic start" if config.start is None else f"{config.start:%Y-%m-%d}"
@@ -2137,32 +2234,42 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
     readouts: dict[str, bytes] = {}
     error: str | None = None
     failed: dict[str, str] = {}
-    # Each real download logged, and those reused counted, once the lock is held (http.drawing_downloads).
-    with this_thread_output_to(lines.append), _DRAWING_LOCK, http.drawing_downloads() as downloads:
-        try:
-            drawn = resolve_start(config)
-        except Exception as exc:  # shown on the page and in the log, never swallowed
-            error, trace = http.not_drawn(exc)
-            lines.extend([trace or "", http.not_drawn_line("the charts", error)])
-        else:
-            for country in COUNTRIES:
-                if not getattr(drawn, country.show_field):
-                    continue
-                try:
-                    figure = build_figure(country, drawn)
-                except Exception as exc:  # that chart alone; shown on the page and in the log
-                    # One line, "NOT DRAWN: ...", for a source not answering; the traceback too for anything else (batch 19.4).
-                    why, trace = http.not_drawn(exc)
-                    failed[country.key] = why
-                    lines.extend([trace or "", http.not_drawn_line(f"the {TAB_TITLES[country.key]} chart", why)])
-                    continue
-                pngs[country.key] = png_bytes(figure)
-                figures[country.key] = figure
-                # Measured after savefig, so the axes positions are the final rendered ones (as in the window).
-                geometry[country.key] = ChartGeometry.from_figure(figure, drawn)
-                drawn_lines = hover.chart_lines(figure)
-                if drawn_lines is not None:
-                    readouts[country.key] = zlib.compress(json.dumps(hover.payload(drawn_lines), separators=(",", ":")).encode())
+    # Each real download logged, and those reused counted, once the turn has come (http.drawing_downloads).
+    with this_thread_output_to(lines.append), _turn(job) as taken, http.drawing_downloads() as downloads:
+        if taken:
+            job.wait.began_work(downloads)
+            try:
+                drawn = resolve_start(config)
+            except Exception as exc:  # shown on the page and in the log, never swallowed
+                error, trace = http.not_drawn(exc)
+                lines.extend([trace or "", http.not_drawn_line("the charts", error)])
+            else:
+                job.wait.start_ended()
+                for country in COUNTRIES:
+                    if not getattr(drawn, country.show_field):
+                        continue
+                    if job.stopped.is_set():  # left behind: the next drawing starts sooner (batch 35.2)
+                        break
+                    job.wait.chart_begun(country.key)
+                    try:
+                        figure = build_figure(country, drawn)
+                    except Exception as exc:  # that chart alone; shown on the page and in the log
+                        job.wait.chart_ended(False)
+                        # One line, "NOT DRAWN: ...", for a source not answering; the traceback too for anything else (batch 19.4).
+                        why, trace = http.not_drawn(exc)
+                        failed[country.key] = why
+                        lines.extend([trace or "", http.not_drawn_line(f"the {TAB_TITLES[country.key]} chart", why)])
+                        continue
+                    pngs[country.key] = png_bytes(figure)
+                    figures[country.key] = figure
+                    # Measured after savefig, so the axes positions are the final rendered ones (as in the window).
+                    geometry[country.key] = ChartGeometry.from_figure(figure, drawn)
+                    drawn_lines = hover.chart_lines(figure)
+                    if drawn_lines is not None:
+                        readouts[country.key] = zlib.compress(json.dumps(hover.payload(drawn_lines), separators=(",", ":")).encode())
+                    job.wait.chart_ended(True)
+    if drawn is not None and not job.stopped.is_set():
+        job.wait.finished()
     return Drawing(
         config=config,
         drawn=drawn,
@@ -2178,6 +2285,70 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
         finished=pd.Timestamp.now(tz=MARKET_TIMEZONE),
         readouts=readouts,
     )
+
+
+def _run_job(job: _Job) -> None:
+    """The worker's whole work: the job's drawing, its end marked whatever happens."""
+    try:
+        job.drawing = _draw(job.config, job.tokens, job)
+    except Exception as failure:  # raised on the page by the run waiting for it (``_await_drawing``)
+        job.failure = failure
+    finally:
+        job.done.set()
+
+
+def _start_job(config: PlotConfig, tokens: tuple[str, ...]) -> _Job:
+    """Begin drawing ``config`` on a worker thread, keeping the job in session state first.
+
+    Each assignment to session state can stop the run (see ``main``), so the
+    job is kept before its thread starts: none runs that no run can stop, and
+    none waits in the line that has no thread.
+    """
+    job = _new_job(config, tokens)
+    st.session_state[_JOB] = job
+    with _DRAWINGS_LOCK:
+        _DRAWINGS.append(job)
+    threading.Thread(target=_run_job, args=(job,), name="ratesplot drawing", daemon=True).start()
+    return job
+
+
+def _visit_ended() -> bool:
+    """Whether the visitor has gone: the tab closed or reloaded (Streamlit then keeps the session a while, and this run with it)."""
+    context = get_script_run_ctx()
+    return context is not None and runtime.exists() and not runtime.get_instance().is_active_session(context.session_id)
+
+
+def _await_drawing(job: _Job, slot: DeltaGenerator) -> None:
+    """Wait for ``job``'s drawing, showing the wait line in ``slot``, above the charts (batch 35.2; Terry, decision 101).
+
+    ``slot`` is laid out in every run of the page, so the line never takes the
+    place of the charts' buttons: Streamlit keeps a block's children from the
+    run before until this one ends, so the line beside the old buttons (seen in
+    Chrome, 2026-11-04). Rewritten when its words change, each second. Each rewrite is a point where
+    Streamlit can stop this run for a newer one (``main`` then goes back to
+    waiting, or stops the job). The icon is an element of its own, written once,
+    so its turning does not begin again at each rewrite (``_INFO_ICON_STYLE``).
+    A drawing over within the first look shows nothing. A failure the drawing
+    did not expect is raised here, as it was when the script thread drew.
+    """
+    line = None
+    shown = ""
+    while not job.done.wait(_LINE_POLL_SECONDS):
+        if _visit_ended():
+            job.stopped.set()
+            st.stop()
+        if line is None:
+            row = slot.container(horizontal=True, vertical_alignment="center", gap="small")
+            row.html(_WAIT_ICON, width="content")
+            line = row.empty()
+        text = job.wait.line()
+        if text != shown:
+            line.markdown(text, width="content")
+            shown = text
+    if line is not None:
+        slot.empty()
+    if job.failure is not None:
+        raise job.failure
 
 
 def _set_address(tokens: tuple[str, ...]) -> None:
@@ -2404,12 +2575,20 @@ def _auto_refresh_tick(config: PlotConfig) -> None:
 # Never greyed (Terry: "It would not be greyed out when that control is
 # greyed out"): a greyed control's label colour, the text colour at 40 %,
 # reaches the ⓘ, which takes it back at full strength, in either theme.
+# The wait line's icon (batch 35.2): a ring turning in the text's colour, in either theme.
 _INFO_ICON_STYLE = """<style>
 [data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"]) svg { display: none; }
 [data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"])::after {
   content: "ⓘ"; font-size: 1rem; line-height: 1; color: rgb(from currentColor r g b / 1);
 }
+.ratesplot-wait-icon {
+  width: 1rem; height: 1rem; box-sizing: border-box; border-radius: 50%;
+  border: 2px solid rgb(from currentColor r g b / 0.25); border-top-color: currentColor;
+  animation: ratesplot-wait-turn 1s linear infinite;
+}
+@keyframes ratesplot-wait-turn { to { transform: rotate(360deg); } }
 </style>"""
+_WAIT_ICON = '<div class="ratesplot-wait-icon"></div>'
 
 
 def _show_help(topic: str) -> None:
@@ -2489,8 +2668,16 @@ def main() -> None:
     if state.get(_NOTICE):
         st.info(state.pop(_NOTICE))
 
+    wait_slot = st.empty()  # the wait line's (``_await_drawing``)
     previous: Drawing | None = state.get(_DRAWING)
     forced = state.pop(_FORCE, False)
+    job: _Job | None = state.get(_JOB)
+    if job is not None and (job.stopped.is_set() or forced or config is None or not config.same_chart(job.config)):
+        # Left behind by a changed control or a Refresh (whose downloads it may
+        # be using): stopped between charts, so the next drawing starts sooner (batch 35.2).
+        job.stopped.set()
+        del state[_JOB]
+        job = None
     if config is not None and previous is not None and not forced and previous.config != config and config.same_chart(previous.config):
         # Only the hover read-out's box changed (batch 11.2), or the automatic
         # refresh's (11.3): they draw nothing, so the charts stay; the address
@@ -2501,18 +2688,16 @@ def main() -> None:
             _set_address(tokens)
     if config is None:
         st.error("Not drawn: " + "; ".join(problems))
-    elif previous is None or previous.config != config or forced:
+    elif job is not None or previous is None or previous.config != config or forced:
         tokens = tuple(command_line_tokens(*choices))
-        if _DRAWING_LOCK.locked():
-            note = "Another visitor's chart is being drawn; yours is next …"
-        elif previous is None:
-            note = "Drawing … (after a quiet hour the data are downloaded first: about 15 s)"
-        else:
-            note = "Drawing …"
-        with st.spinner(note, show_time=True):
-            drawing = _draw(config, tokens)
+        if job is None:
+            job = _start_job(config, tokens)
+        _await_drawing(job, wait_slot)
+        # The hover read-out's box or the refresh's may have changed meanwhile: they draw nothing.
+        drawing = replace(job.drawing, config=config, tokens=tokens)
         state[_DRAWING] = drawing
-        if previous is not None:
+        del state[_JOB]
+        if previous is not None and previous is not job.drawing:
             # The visitor has moved on from the chart the visit opened on.
             state[_ADDRESS_PROBLEMS] = state[_REMEMBERED_PROBLEMS] = []
         if drawing.error is None:
