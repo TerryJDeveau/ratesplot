@@ -92,7 +92,7 @@ plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
 regression -> occupancy; options -> config; {plotting, legend, options, cli,
 gui, web} -> export -> config; {plotting, gui, web} -> hover -> {export, legend};
-{plotting, cli, gui, web} -> refresh -> {latest, http, config}; gui -> monitors. Data modules never import
+{plotting, cli, gui, web} -> refresh -> {latest, http, config}; {plotting, gui} -> monitors. Data modules never import
 plotting. Nothing imports web or gui, and cli imports gui only when the
 window is opened, so --no-gui and the web page never load tkinter.
 """
