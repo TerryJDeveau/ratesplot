@@ -103,6 +103,7 @@ from ratesplot.axes import format_yield  # noqa: E402
 from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
+from ratesplot.version import version_text  # noqa: E402
 
 # Regression cases drawn both ways: the defaults, a later start, -r with --reg,
 # levels under -r, the UK and Germany with their curves, all four nations,
@@ -721,7 +722,7 @@ def check_version(check: Check) -> None:
     with window(f"-c -s:2015 {END}") as w:
         label = w.app.version_label
         text = str(label.cget("text"))
-        check("the version and the commit, as the page shows them", text == frontend.version_text()
+        check("the version and the commit, as the page shows them", text == version_text()
               and text.startswith(f"v{ratesplot.__version__}"), text)
         # In a row of its own since batch 35.3, the wait line right of it or under it while a chart is drawn.
         head = label.master

@@ -226,7 +226,6 @@ from .frontend import (
     starting_choices,
     trim_history,
     unzoom_target,
-    version_text,
     wheel_zoom_text,
     with_leading_zero,
     zoom_updates,
@@ -248,6 +247,7 @@ from .options import (
 )
 from .plotting import COUNTRIES, Country, build_figure, resolve_start
 from .refresh import Ticker
+from .version import version_text
 from .wait import Figures, Wait
 
 WINDOW_TITLE = "Rates plot: yields, public debt, GDP & interest"

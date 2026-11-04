@@ -263,7 +263,6 @@ from .frontend import (  # noqa: E402
     starting_choices,
     trim_history,
     unzoom_target,
-    version_text,
     with_leading_zero,
     zoom_updates,
 )
@@ -285,6 +284,7 @@ from .options import (  # noqa: E402
 )
 from .plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 from .refresh import Ticker  # noqa: E402
+from .version import version_text  # noqa: E402
 from .wait import Figures, Wait  # noqa: E402
 
 PAGE_TITLE = "Bond Yields and Public Debt"

@@ -84,7 +84,8 @@ import ratesplot  # noqa: E402
 from ratesplot import cli, frontend, hover, http, options, plotting, web  # noqa: E402
 from ratesplot.cli import sort_tokens  # noqa: E402
 from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS, PlotConfig  # noqa: E402
-from ratesplot.frontend import move_dates_updates, starting_choices, version_text  # noqa: E402
+from ratesplot.frontend import move_dates_updates, starting_choices  # noqa: E402
+from ratesplot.version import version_text  # noqa: E402
 from ratesplot.options import command_line_tokens, config_from_choices, drawn_config  # noqa: E402
 
 # AppTest touches Streamlit's state before each page's first run, outside any
