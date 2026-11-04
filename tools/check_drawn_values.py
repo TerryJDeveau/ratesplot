@@ -83,7 +83,11 @@ from regress_charts import PINNED_END, install_disk_cache  # noqa: E402
 
 from ratesplot import cdn_data, cli, de_data, http, rates, uk_data, us_data  # noqa: E402
 from ratesplot.cdn_hist_yields import build_cdn_hist_yields  # noqa: E402
-from ratesplot.de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES  # noqa: E402
+from ratesplot.de_archive_data import (  # noqa: E402
+    EMBEDDED_DE_DISCOUNT_RATE_CHANGES,
+    EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS,
+    EMBEDDED_DE_WEST_CPI_FOUR_PERSON,
+)
 from ratesplot.cdn_archive_data import EMBEDDED_CDN_POPULATION_HISTORY  # noqa: E402
 from ratesplot.config import (  # noqa: E402
     BOC_FINANCIAL_MARKET_TABLE,
@@ -183,6 +187,10 @@ CASES: dict[str, list[str]] = {
     # own axis outside the amounts per capita (the UK's unadjusted, named so).
     "cpi": ["--na:ca,us,gb,de", "-s:1910", "--cpi", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
     "cpi_sa": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:1945", "--cpi:sa", "-p", "--no-yield"],
+    # Batch 16: West Germany's prices, each month's index and rise worked out here,
+    # the two joins (1962-01, 1991-01) inside the window.
+    "de_inflation_1949": ["--na:de", "-s:1949", "--inf"],
+    "de_cpi_1948": ["--na:de", "-s:1948", "--cpi"],
     "population": ["--na:ca,us,gb,de", "-s:1700", "--population", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
     "population_pc": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:1960", "--pop", "-p", "--no-yield"],
     # Batch 13.3: the real yields, each nation's every one; Canada's monthly from 1991, then daily; the UK's
@@ -418,9 +426,23 @@ def inflation_sources(nation: str) -> list[Source]:
     index = {
         "us": lambda: fred(us_data.US_CPI_SERIES_ID),
         "cdn": lambda: statcan("18100004", "v41690973", "CPI"),
-        "de": lambda: Source("Bundesbank BBDP1 CPI", lambda: _clean(de_data.bundesbank_download(*de_data.DE_CPI_SERIES))),
+        "de": german_price_source,
     }[nation]()
     return [rise_of(index, f"{index.name}, its 12-month rise")]
+
+
+def german_price_source() -> Source:
+    """Germany's consumer price index read on its own (batch 16): the Bundesbank's whole series, West Germany's two indexes scaled here to it at the first month each shares with the next."""
+
+    def joined() -> pd.Series:
+        unified = _clean(de_data.bundesbank_download(*de_data.DE_CPI_SERIES))
+        west = pd.Series({pd.Timestamp(date).to_period("M").end_time.normalize(): value for date, value in EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS})
+        four = pd.Series({pd.Timestamp(date).to_period("M").end_time.normalize(): value for date, value in EMBEDDED_DE_WEST_CPI_FOUR_PERSON})
+        scaled_west = west * unified.iloc[0] / west.iloc[-1]
+        scaled_four = four * scaled_west.iloc[0] / four.iloc[-1]
+        return pd.concat([scaled_four.iloc[:-1], scaled_west.iloc[:-1], unified])
+
+    return Source("West Germany's two indexes and Bundesbank BBDP1 CPI", joined)
 
 
 def mortgage_sources(term: str, nation: str) -> list[Source]:
@@ -679,7 +701,7 @@ def price_index(nation: str) -> pd.Series:
         values = {
             "us": fred(us_data.US_CPI_SERIES_ID),
             "cdn": statcan("18100004", "v41690973", "CPI"),
-            "de": Source("Bundesbank BBDP1 CPI", lambda: _clean(de_data.bundesbank_download(*de_data.DE_CPI_SERIES))),
+            "de": german_price_source(),
         }[nation].read()
     return values.groupby(values.index.to_period("M")).last()
 

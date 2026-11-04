@@ -97,6 +97,7 @@ from .config import (
     BUNDESBANK_SERIES_URL,
     DE_ARCHIVE_BEGIN_MARKER,
     DE_ARCHIVE_END_MARKER,
+    DESTATIS_CPI_LONG_SERIES_URL,
     DATE_COLUMN,
     GDP_COLUMN,
     HISTORICAL_CDN_GDP_ANNUAL_TABLE,
@@ -1668,16 +1669,92 @@ def _bundesbank_text(series: tuple[str, str], saved: Path | None) -> tuple[str, 
     return Path(saved).read_text(encoding="utf-8-sig"), f"{Path(saved).name} (saved from {url})"
 
 
-def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None = None, saved_discount_csv: Path | None = None) -> None:
-    """Extract the Bundesbank's yield on public debt securities and its discount rate, and embed them into ``ratesplot/de_archive_data.py``.
+# West Germany's consumer prices (batch 16). The Federal Statistical Office's
+# "Verbraucherpreisindizes für Deutschland, Lange Reihen ab 1948", its last
+# edition (December 2022; measured 2026-11-04): sheet "Monate", a row per month
+# from 1948-01, a column per index, all 1995 = 100, to a tenth, "-" where an
+# index has no value. Terminated, so baked. West Germany's two indexes read:
+# all private households, 1962-01 to 1999-12, and before it, as the Bundesbank's
+# own long series joins them, four-person households of workers and employees on
+# a middle income, 1948-06 to 1999-12. Each kept to the month it is joined at:
+# the first of the next index, which ``de_data.with_west_germany`` scales it to.
+DE_WEST_CPI_SHEET = "Monate"
+_DE_WEST_CPI_COLUMNS = {
+    "all_households": (4, "Alle privaten Haushalte", pd.Timestamp("1962-01-01"), pd.Timestamp("1991-01-01")),
+    "four_person": (6, "4-Personen-Haushalte von Arbeitern und Angestellten mit mittlerem Einkommen", pd.Timestamp("1948-06-01"), pd.Timestamp("1962-01-01")),
+}
+_GERMAN_MONTHS = {
+    name: number
+    for number, name in enumerate(("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"), 1)
+}
 
-    ``saved_csv`` and ``saved_discount_csv`` read the downloads already on
-    disk (as saved in ``tools/de_fixtures``) instead of fetching them. The
-    yield is a monthly average, so each month is dated by its first day;
-    every value the series has is kept (to 2020-04), and ``de_data`` uses
-    the months before the term structure begins. The discount rate is kept
-    on the days it changed (``parse_bundesbank_change_days``); ``rates``
-    draws it before the ECB's rate (batch 9.6).
+
+def _workbook_heading(cell: object) -> str:
+    """Return a heading of the workbook as one line, its words broken at line ends put together."""
+    return " ".join(str(cell if cell is not None else "").replace("-\n", "").split())
+
+
+def parse_west_german_prices(workbook) -> dict[str, pd.Series]:
+    """Return West Germany's two consumer price indexes from the long series' workbook, each month dated by its first day, 1995 = 100.
+
+    Keyed as ``_DE_WEST_CPI_COLUMNS``, each to the month it is joined at.
+    Raises if a heading has moved, an index begins elsewhere than measured or
+    a month is missing, so a changed table cannot shift a curve.
+    """
+    rows = list(workbook[DE_WEST_CPI_SHEET].iter_rows(values_only=True))
+    found: dict[str, pd.Series] = {}
+    for name, (column, title, first, last) in _DE_WEST_CPI_COLUMNS.items():
+        headings = [_workbook_heading(rows[0][4]), _workbook_heading(rows[1][4]), _workbook_heading(rows[2][column]), _workbook_heading(rows[3][4])]
+        if headings != ["Früheres Bundesgebiet", "Preisindex für die Lebenshaltung", title, "1995 = 100"]:
+            raise RuntimeError(f"West German prices, {name}: the headings are now {headings}; data module not modified.")
+        year = None
+        values: dict[pd.Timestamp, float] = {}
+        for row in rows[4:]:
+            label = str(row[0] if row[0] is not None else "").strip()
+            year = int(label) if re.fullmatch(r"\d{4}", label) else year
+            month = _GERMAN_MONTHS.get(str(row[1] if row[1] is not None else "").strip())
+            if year is not None and month is not None and isinstance(row[column], (int, float)):
+                values[pd.Timestamp(year, month, 1)] = float(row[column])
+        series = pd.Series(values, dtype=float).sort_index()
+        if series.empty or series.index[0] != first or not series.index.equals(pd.date_range(first, series.index[-1], freq="MS")) or series.index[-1] < last:
+            raise RuntimeError(f"West German prices, {name}: not every month from {first:%Y-%m} to {last:%Y-%m}; data module not modified.")
+        found[name] = series.loc[:last]
+    return found
+
+
+def _west_german_prices(saved: Path | None) -> tuple[dict[str, pd.Series], str]:
+    """Return ``(West Germany's two indexes, where they were read from)``: from the Federal Statistical Office, or the copy ``saved``."""
+    import openpyxl  # the bake's own dependency, as the UK's: the program does not need it for this
+
+    if saved is None:
+        print("Downloading the Federal Statistical Office's long series of consumer prices …")
+        content, source_name = de_get(DESTATIS_CPI_LONG_SERIES_URL).content, DESTATIS_CPI_LONG_SERIES_URL
+    else:
+        content, source_name = Path(saved).read_bytes(), f"{Path(saved).name} (saved from {DESTATIS_CPI_LONG_SERIES_URL})"
+    workbook = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    try:
+        return parse_west_german_prices(workbook), source_name
+    finally:
+        workbook.close()
+
+
+def bake_german_archives(
+    source_path: Path | None = None,
+    saved_csv: Path | None = None,
+    saved_discount_csv: Path | None = None,
+    saved_cpi_workbook: Path | None = None,
+) -> None:
+    """Extract the Bundesbank's yield on public debt securities and its discount rate, and West Germany's consumer prices, and embed them into ``ratesplot/de_archive_data.py``.
+
+    ``saved_csv``, ``saved_discount_csv`` and ``saved_cpi_workbook`` read the
+    downloads already on disk (as saved in ``tools/de_fixtures``) instead of
+    fetching them. The yield is a monthly average, so each month is dated by
+    its first day; every value the series has is kept (to 2020-04), and
+    ``de_data`` uses the months before the term structure begins. The discount
+    rate is kept on the days it changed (``parse_bundesbank_change_days``);
+    ``rates`` draws it before the ECB's rate (batch 9.6). The consumer prices
+    (batch 16) are in the source's 1995 = 100, each index to the month it is
+    joined at; ``de_data`` scales them when it joins them.
     """
     source_path = source_path or Path(__file__).resolve().with_name("de_archive_data.py")
     if saved_csv is None:
@@ -1709,21 +1786,44 @@ def bake_german_archives(source_path: Path | None = None, saved_csv: Path | None
         "1957; replaced by the ECB's rates from 1999-01-01.\n"
         f"{discount.name}: discount rate of the Bundesbank, percent per year"
     )
+    west_prices, west_prices_name = _west_german_prices(saved_cpi_workbook)
+    west_all = _require_rows(west_prices["all_households"].rename("value").to_frame(), "West German prices, all private households")
+    west_four = _require_rows(west_prices["four_person"].rename("value").to_frame(), "West German prices, four-person households")
     block = (
         f"{DE_ARCHIVE_BEGIN_MARKER}\n"
-        f"# Generated on {dt.date.today():%Y-%m-%d} from the Deutsche Bundesbank, read from:\n# {source_name}\n"
+        f"# Generated on {dt.date.today():%Y-%m-%d} from the Deutsche Bundesbank and the Federal Statistical Office, read from:\n# {source_name}\n"
         f"# {discount_name}\n"
+        f"# {west_prices_name}\n"
         "# Historical observations in the source's own terms; de_data and rates join\n"
         "# them to the live series at run time.\n\n"
         + _embedded_list("EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY", comment, data, "value")
         + "\n"
         + _embedded_list("EMBEDDED_DE_DISCOUNT_RATE_CHANGES", discount_comment, discount_data, "value")
+        + "\n"
+        + _embedded_list(
+            "EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS",
+            "West Germany's cost-of-living index, all private households, 1995 = 100, to a tenth, each\n"
+            "month dated by its first day, to the first month of the index for all of Germany.",
+            west_all,
+            "value",
+        )
+        + "\n"
+        + _embedded_list(
+            "EMBEDDED_DE_WEST_CPI_FOUR_PERSON",
+            "West Germany's cost-of-living index, four-person households of workers and employees on a\n"
+            "middle income, 1995 = 100, to a tenth, each month dated by its first day, to the first\n"
+            "month of the index for all private households.",
+            west_four,
+            "value",
+        )
         + f"{DE_ARCHIVE_END_MARKER}"
     )
     _replace_generated_block(source_path, DE_ARCHIVE_BEGIN_MARKER, DE_ARCHIVE_END_MARKER, block)
-    print(f"Embedded the Bundesbank's yield on public debt securities and its discount rate into {source_path}")
+    print(f"Embedded the Bundesbank's yield on public debt securities and its discount rate, and West Germany's consumer prices, into {source_path}")
     print(f"  EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY {len(data):5,} values, {data.index[0]:%Y-%m-%d} to {data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_DISCOUNT_RATE_CHANGES     {len(discount_data):5,} changes, {discount_data.index[0]:%Y-%m-%d} to {discount_data.index[-1]:%Y-%m-%d}")
+    print(f"  EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS   {len(west_all):5,} months, {west_all.index[0]:%Y-%m-%d} to {west_all.index[-1]:%Y-%m-%d}")
+    print(f"  EMBEDDED_DE_WEST_CPI_FOUR_PERSON      {len(west_four):5,} months, {west_four.index[0]:%Y-%m-%d} to {west_four.index[-1]:%Y-%m-%d}")
 
 
 # ---------------------------------------------------------------------------

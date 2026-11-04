@@ -13,11 +13,11 @@ At the start it draws GDP, debt and interest on the right axis, and the 2-, 5-, 
 - [Bond yields](?help=yields), from 1956: the Bundesbank's. The yield of public debt securities outstanding, drawn as the 10-year, from 1956-05; then the yields of Federal securities from its term structure, the 1-, 2-, 5-, 7- and 10-year from 1972-09, the 20-year from 1986-06 and the 30-year from 2000-01, at month ends until they are daily from 1997-08-07 (the 30-year from 2000-08-01). No 1-, 3- or 6-month or 3-year. The real yields, worked out by the program between the inflation-linked Federal bonds, daily: r10 from 2014-04, r7 from 2016-04, r5 from 2018-04.
 - [Yield spreads](?help=spreads): 10y–2y from 1972-09 and 30y–10y from 2000-01, both ticked at the start.
 - [Policy rates](?help=policy-rates): the Bundesbank's discount rate from 1948-07 (the Bank deutscher Länder's until 1957), then the ECB's main refinancing rate from 1999-01-01; the overnight market's rate, EONIA from 1999-01-04, €STR from 2019-10-01. From 1999 the rates are the euro area's.
-- [Inflation](?help=inflation), from 1992: the 12-month rise of the Federal Statistical Office's consumer price index, from the Bundesbank.
+- [Inflation](?help=inflation), from 1949-06: the 12-month rise of the Federal Statistical Office's consumer price index: West Germany's to 1990, then the index for all of Germany, from the Bundesbank.
 - [Mortgage rates](?help=mortgages): the ECB's rates on new loans to households in Germany for house purchase, fixed for over 1 to 5, over 5 to 10 and over 10 years, monthly from 2000-01. All three are ticked at the start.
 - [Per capita](?help=per-capita): divided by Eurostat's population, quarterly from 1991.
-- [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the Federal Statistical Office's index from 1991-01.
-- [Price index (CPI)](?help=price-index): the Federal Statistical Office's consumer price index from 1991-01, 2020 = 100, from the Bundesbank; calendar and seasonally adjusted from 1991-01.
+- [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the Federal Statistical Office's index, West Germany's before 1991.
+- [Price index (CPI)](?help=price-index): the Federal Statistical Office's consumer price index from 1948-06, 2020 = 100: West Germany's to 1990, scaled to the index for all of Germany, from the Bundesbank; calendar and seasonally adjusted from 1991-01.
 - [Population](?help=population): Eurostat's counts on 1 January from 1960, West Germany's until 1990, its quarterly figures from 1991.
 - [Latest values](?help=latest-values): the Bundesbank publishes the day's yields during the day, so once they are out the chart ends at them; before then, the day's yields quoted by CNBC's feed, their time given in Frankfurt time.
 

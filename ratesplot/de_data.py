@@ -88,7 +88,11 @@ from .config import (
     component_column,
 )
 from .baked import frame_with_recent_part, read_series, with_recent_part
-from .de_archive_data import EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY
+from .de_archive_data import (
+    EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY,
+    EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS,
+    EMBEDDED_DE_WEST_CPI_FOUR_PERSON,
+)
 from .http import BotCheck, de_get, downloads_of
 from .joins import embedded_frame, ttm_sum
 
@@ -184,7 +188,8 @@ _BUNDESBANK_PERCENT = ("percent", "prozent", "% p.a.")
 # 100, not seasonally adjusted (batch 13.1, --inflation; measured 2026-11-03:
 # 430 months to 2026-10, each with a value). A new base year comes as a new
 # key (I20 for 2020 = 100), this one then stopping. Baked under
-# ``ratesplot/data/bbk/`` with the term structure.
+# ``ratesplot/data/bbk/`` with the term structure. West Germany's older
+# indexes carry it back (``with_west_germany``, batch 16).
 DE_CPI_SERIES = ("BBDP1", "M.DE.N.VPI.C.A00000.I20.A")
 # The same index seasonally adjusted (key M.DE.Y...), on the same base (batch
 # 13.4, the price index on the right axis; measured 2026-11-03: 1991-01 to
@@ -885,25 +890,55 @@ def fetch_de_components(config: PlotConfig) -> pd.DataFrame | None:
     return pd.concat(columns, axis=1).sort_index() if columns else None
 
 
+def _month_ends(rows: list[tuple[str, float]]) -> pd.Series:
+    """Return a baked monthly list, each month dated by its first day there, dated by its last day, as the Bundesbank's months are."""
+    months = pd.DatetimeIndex([date for date, _value in rows], name=DATE_COLUMN).to_period("M")
+    return pd.Series([value for _date, value in rows], index=months.end_time.normalize(), dtype=float)
+
+
+def with_west_germany(unified: pd.Series) -> pd.Series:
+    """Return Germany's consumer price index carried back to 1948-06 by West Germany's, on its base; from its own first month, unchanged.
+
+    Three indexes, each scaled to the next at the month where the next begins,
+    so each keeps its own rises and no level is lost: four-person households on
+    a middle income to 1961-12, all private households to 1990-12, then the
+    index for all of Germany from 1991-01. Unlike the amounts, an index has no
+    step at unification: the East's prices enter as a share of a rise, not as
+    a jump in a level. The rises of the 12 months of 1991 are the months' index
+    for all of Germany over West Germany's a year before. If ``unified`` does not
+    begin where the older index is kept, it is returned alone, with a warning.
+    """
+    all_households = _month_ends(EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS)
+    four_person = _month_ends(EMBEDDED_DE_WEST_CPI_FOUR_PERSON)
+    join = unified.index[0]
+    if join not in all_households.index:
+        print(f"  Warning: Germany's consumer prices begin {join:%Y-%m-%d}, where West Germany's are not kept; drawn without them.")
+        return unified
+    west = all_households * (unified.iloc[0] / all_households.loc[join])
+    older = four_person * (west.iloc[0] / four_person.loc[west.index[0]])
+    return pd.concat([older.loc[older.index < west.index[0]], west.loc[west.index < join], unified]).rename(unified.name)
+
+
 def fetch_de_consumer_prices(*, adjusted: bool = False) -> pd.Series:
-    """Return Germany's consumer price index (``DE_CPI_SERIES``, 2020 = 100), each month dated by its last day: its baked history and recent part.
+    """Return Germany's consumer price index (``DE_CPI_SERIES``, 2020 = 100), each month dated by its last day: its baked history and recent part, carried back by West Germany's (``with_west_germany``, batch 16).
 
     ``adjusted``: the seasonally adjusted index instead (``DE_CPI_SA_SERIES``,
-    batch 13.4), whose recent part is a revised series'. If the Bundesbank
-    fails, the bake alone, with a warning (``bundesbank_series``); after a
-    bot check, the bake alone too, with a warning that names it, as the
-    yields' does. Raises if there is neither.
+    batch 13.4, from 1991-01; West Germany's index was published unadjusted),
+    whose recent part is a revised series'. If the Bundesbank fails, the bake
+    alone, with a warning (``bundesbank_series``); after a bot check, the bake
+    alone too, with a warning that names it, as the yields' does. Raises if
+    there is neither.
     """
     flow, key = DE_CPI_SA_SERIES if adjusted else DE_CPI_SERIES
     try:
-        return bundesbank_series(flow, key, revised=adjusted)
+        index = bundesbank_series(flow, key, revised=adjusted)
     except BotCheck as exc:
-        baked = read_series(BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}")
-        if baked is None or baked.empty:
+        index = read_series(BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}")
+        if index is None or index.empty:
             raise
         print(f"  Warning: the Bundesbank ({exc.host}) sent a bot check instead of data; a VPN can cause this. "
-              f"Germany's consumer prices drawn from their baked history, to {baked.index[-1]:%Y-%m-%d}.")
-        return baked
+              f"Germany's consumer prices drawn from their baked history, to {index.index[-1]:%Y-%m-%d}.")
+    return index if adjusted else with_west_germany(index)
 
 
 @downloads_of("Eurostat population")

@@ -12,8 +12,9 @@ all-items index, not seasonally adjusted, monthly:
 * Canada: Statistics Canada's table 18-10-0004, vector v41690973, from
   1914-01 (2002 = 100; ``cdn_data.STATCAN_SERIES_READ``);
 * Germany: the Bundesbank's BBDP1 series of the Federal Statistical
-  Office's index, from 1991-01 (2020 = 100; ``de_data.DE_CPI_SERIES``);
-  West Germany's older index is not read (Terry, 2026-11-03: a follow-up);
+  Office's index, from 1991-01 (2020 = 100; ``de_data.DE_CPI_SERIES``), and
+  before it West Germany's, from 1948-06, scaled to it
+  (``de_data.with_west_germany``, batch 16);
 * the UK: the ONS's own 12-month rate, D7G7, from 1989-01, and before it the
   rise of the Bank of England's spliced monthly index in its millennium
   dataset, from 1914-07 (the ONS's CPI estimates from 1949, the cost-of-living

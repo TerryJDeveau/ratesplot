@@ -315,6 +315,9 @@ CASES: dict[str, list[str]] = {
     # per capita at constant prices (the index undivided); alone, from 1913.
     "cpi": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us,gb,de", "--cpi", "-l", "--reg", "-s:1990"],
     "cpi_sa": ["--na:ca,us,gb,de", "--cpi:sa", "--yield", "-l", "--reg", "-s:2000"],
+    # Batch 16: West Germany's prices before 1991, and the rate beside them.
+    "de_inflation1949": ["--na:de", "--inf", "--policy", "-l", "-s:1949"],
+    "de_cpi1948": ["--na:de", "--cpi", "-l", "--reg", "-s:1948"],
     "cpi_pc": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us", "--cpi", "-p", "--constant", "-s:1960"],
     "cpi_long": ["--na:us,gb", "--cpi", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1913"],
     # Batch 13.5: the population on the same axis: the four nations outside the

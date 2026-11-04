@@ -44,6 +44,10 @@ sources served on 2026-10-06 evening (Toronto).
     discount rate's change days) and `bbin1_BBKLOM.csv` (kept to be refused: its month-end values
     hold the special Lombard rate in 1973-74 and 1981-82). The flow also has the ECB's three rates
     and the base rates.)*
+  - *(Added 2026-11-04, batch 16: `destatis_vpi_lange_reihen.xlsx`, the Federal Statistical Office's
+    "Verbraucherpreisindizes für Deutschland, Lange Reihen ab 1948", its last edition (December
+    2022), from `config.DESTATIS_CPI_LONG_SERIES_URL`; sheet "Monate", read and baked by
+    `bake.parse_west_german_prices`.)*
 
 ### ECB Data Portal (`https://data-api.ecb.europa.eu/service/data/{flow}/{key}?format=csvdata`)
 

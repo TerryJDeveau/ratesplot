@@ -19,8 +19,10 @@ the BEGIN/END markers of
   instead of fetching the 27.5 MB workbook.
 * ``ratesplot/de_archive_data.py``: Germany's 10-year before 1972 (the
   Bundesbank's frozen yield on public debt securities, from 1956), and the
-  Bundesbank's discount rate 1948-1998 on the days it changed (batch 9.6).
-  ``--de-csv FILE`` and ``--de-discount-csv FILE`` read the downloads
+  Bundesbank's discount rate 1948-1998 on the days it changed (batch 9.6), and
+  West Germany's consumer prices from 1948 (the Federal Statistical Office's
+  long series, batch 16; needs ``openpyxl``). ``--de-csv FILE``,
+  ``--de-discount-csv FILE`` and ``--de-cpi-workbook FILE`` read the downloads
   already saved (tools/de_fixtures).
 * ``ratesplot/data/boe/``: the Bank of England database's series, every value
   of each, one file per series (batch 19.2: the live sources' history, of
@@ -62,7 +64,7 @@ Usage (from the project root)::
     python tools/bake_archives.py            # every nation, and boe, boc, fred, ecb, eurostat, ons, bbk and statcan
     python tools/bake_archives.py --only us  # or cdn, uk, de, boe, boc, fred, ecb, eurostat, ons, bbk, statcan
     python tools/bake_archives.py --only uk --uk-workbook a-millennium-of-macroeconomic-data-for-the-uk.xlsx
-    python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv
+    python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv --de-cpi-workbook tools/de_fixtures/raw/destatis_vpi_lange_reihen.xlsx
 """
 
 from __future__ import annotations
@@ -112,6 +114,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--uk-workbook", type=Path, help="the UK millennium workbook already on disk (not downloaded)")
     parser.add_argument("--de-csv", type=Path, help="the Bundesbank's WU0004 download already on disk (not downloaded)")
     parser.add_argument("--de-discount-csv", type=Path, help="the Bundesbank's discount rate download (BBIN1) already on disk")
+    parser.add_argument("--de-cpi-workbook", type=Path, help="the Federal Statistical Office's long series of consumer prices already on disk")
     args = parser.parse_args(argv)
     all_baked = True
     # One pass, as a drawing: a source that does not answer is asked nothing more in it (batch 19.3).
@@ -121,7 +124,7 @@ def main(argv: list[str]) -> int:
                 if key == "uk":
                     bake(workbook_path=args.uk_workbook)
                 elif key == "de":
-                    bake(saved_csv=args.de_csv, saved_discount_csv=args.de_discount_csv)
+                    bake(saved_csv=args.de_csv, saved_discount_csv=args.de_discount_csv, saved_cpi_workbook=args.de_cpi_workbook)
                 else:
                     # The archives raise when they cannot be baked; a live source's
                     # history returns a SeriesBake per series, each written or not.
