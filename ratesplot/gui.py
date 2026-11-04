@@ -3162,6 +3162,8 @@ class RatesPlotApp:
                 # is gone at the next start, the window keeps its place relative
                 # to another's corner (batch 15.4). None off Windows.
                 "monitor": _window_monitor(geometry),
+                # Every monitor there is, so that the next start can tell whether they are the same (batch 39). None off Windows.
+                "monitors": [list(bounds) for bounds in monitors.monitor_bounds()] or None,
                 # Where the save dialogs open next (batch 11.5; frontend.save_dialog_folder).
                 "save_folder": self._save_folder,
                 # What the drawings have taught the wait line (batch 35.1), kept whatever the box says, as the layout is.
@@ -3269,34 +3271,35 @@ def _beside(mark: Rect, width: int, height: int, areas: list[Rect], screen: tupl
 
 
 def _moved_onto_a_monitor(width: int, height: int, x: int, y: int, areas: list[Rect], own: Rect | None, frame: Rect) -> str:
-    """Return a geometry for a window no monitor shows the title bar of, its size kept where it can be.
+    """Return a geometry that shows all of a window on one monitor: moved first, and shrunk, keeping its shape, only if it cannot fit there.
 
     Terry, 2026-10-13 (batch 15.4): a window remembered on a monitor no
     longer there came back at the default size and place; it should keep
     its size and place on another monitor, shifted or shrunk only where
     needed so that all of it shows. With its own monitor remembered
     (``own``, a work area), it goes to the remaining one nearest to that,
-    at the same place relative to that one's top left corner; without it
-    (settings saved before batch 15), to the one nearest the window. Then
-    it is moved, and only then shrunk, as little as puts the whole window,
-    frame and all, on that monitor's work area (the screen less the
-    taskbar). Run on Buddug's three upper monitors unplugged, Terry's
-    3456x1944 window across two of them comes back 3456x1944 on the main
-    screen, 167 px from its left as it was from its own monitor's.
+    at the same place relative to that one's top left corner; without it,
+    to the monitor holding most of it, else the nearest.
+
+    Then as NG_analysis's windows do (``monitors.fitted``; Terry, 2026-11-03
+    and 2026-11-04, batch 39): to the corner nearest its middle if it passes an
+    edge, and by one factor if it still cannot fit, so its shape is kept
+    (each side was cut on its own before), with the frame, which does not
+    shrink, on that monitor's work area too. Run on Buddug's three upper
+    monitors unplugged, Terry's 3456x1944 window across two of them comes
+    back 3456x1944 at the main screen's left, where 15.4 kept it 167 px in.
+    The chart is scaled to its tab (``_refresh_view``), so nothing is drawn
+    again for it, and one geometry set before the window is shown leaves
+    no resize to undo the move, the trap NG_analysis's windows have.
     """
-    outer = _outer_rect(width, height, x, y, frame)
     if own is not None:
         # The nearest; of those touching it, the one whose middle is nearest its middle.
         target = min(areas, key=lambda area: (monitors.gap(area, own), monitors.gap(_middle(area), _middle(own))))
         x, y = target[0] + x - own[0], target[1] + y - own[1]
     else:
-        target = monitors.monitor_of(outer, areas)
-    left, top, right, bottom = target
-    outer_width = min(outer[2] - outer[0], right - left)
-    outer_height = min(outer[3] - outer[1], bottom - top)
-    x = min(max(x, left), right - outer_width)
-    y = min(max(y, top), bottom - outer_height)
-    return f"{outer_width - frame[0] - frame[2]}x{outer_height - frame[1] - frame[3]}+{x}+{y}"
+        target = monitors.monitor_of(_outer_rect(width, height, x, y, frame), areas)
+    scale, (x, y) = monitors.fitted((width, height), (frame[0] + frame[2], frame[1] + frame[3]), (x, y), target)
+    return f"{int(width * scale)}x{int(height * scale)}+{x}+{y}"
 
 
 def _window_monitor(geometry: str) -> list[int] | None:
@@ -3308,12 +3311,33 @@ def _window_monitor(geometry: str) -> list[int] | None:
     return list(monitors.monitor_of(_outer_rect(*map(int, match.groups()), _window_frame()), areas))
 
 
+def _as_rect(value: object) -> Rect | None:
+    """A rectangle read from the remembered settings, or None if it is not one."""
+    if isinstance(value, list) and len(value) == 4 and all(isinstance(number, int) for number in value):
+        return tuple(value)
+    return None
+
+
 def _remembered_monitor(state: dict) -> Rect | None:
     """The work area of the monitor the window was on when its settings were saved, if they say (since batch 15)."""
-    monitor = state.get("monitor")
-    if isinstance(monitor, list) and len(monitor) == 4 and all(isinstance(value, int) for value in monitor):
-        return tuple(monitor)
-    return None
+    return _as_rect(state.get("monitor"))
+
+
+def _monitors_changed(state: dict, areas: list[Rect], bounds: list[Rect]) -> bool:
+    """True when the monitors now are not those the settings were saved with (batch 39).
+
+    Told by their whole rectangles (``bounds``, ``monitors.monitor_bounds``), in
+    any order: a taskbar moved or hidden changes a work area, not the monitors.
+    Settings saved before batch 39 hold one work area, the window's monitor's: gone
+    from ``areas``, they have changed; otherwise they are taken to be the same, so a
+    window stretched across several is not shrunk at the first start after the upgrade.
+    """
+    saved = state.get("monitors")
+    rects = [_as_rect(value) for value in saved] if isinstance(saved, list) else []
+    if rects and None not in rects:
+        return sorted(rects) != sorted(bounds)
+    own = _remembered_monitor(state)
+    return own is not None and own not in areas
 
 
 def _title_bar_on_screen(width: int, x: int, y: int, areas: list[tuple[int, int, int, int]]) -> bool:
@@ -3326,20 +3350,35 @@ def _title_bar_on_screen(width: int, x: int, y: int, areas: list[tuple[int, int,
     return False
 
 
-def _initial_geometry(root: tk.Tk, state: dict) -> str:
-    """Return the remembered window geometry if the window can still be reached, else 90 % of the main screen.
+def _remembered_geometry(width: int, height: int, x: int, y: int, state: dict, areas: list[Rect], bounds: list[Rect], frame: Rect) -> str:
+    """Return the geometry a window remembered at this size and place opens with, the monitors being known.
 
     Terry, 2026-10-12: a window made larger than the default, moved to another
     monitor or stretched across several came back at the default size on the
-    main screen. The check was against the main screen alone; his remembered
-    window, 3456x1944 at (1115, -2149), sat across two of the three monitors
-    above it. Now any size and place is kept while enough of the title bar
-    is on some monitor to drag the window by (``_title_bar_on_screen``),
-    even with part of the window off the screens. Otherwise (its monitor
-    since unplugged) it keeps its size on another monitor, moved and
-    shrunk as little as shows all of it (``_moved_onto_a_monitor``, batch
-    15.4); it was given the default size. Without the monitors' list (not
-    Windows), the main screen's old test.
+    main screen; his remembered window, 3456x1944 at (1115, -2149), sat across
+    two of the three monitors above it. So any size and place is kept while the
+    monitors are those it was saved with and enough of the title bar is on one
+    of them to drag the window by (``_title_bar_on_screen``), even with part of
+    the window off the screens.
+
+    Terry, 2026-11-04 (batch 39), of a size "remembered from a previous run that
+    may have used a larger monitor than the present run": where the monitors
+    have changed, a window on one of them that fits stays as it is, and one
+    that does not is moved, then shrunk only as far as shows all of it on the
+    monitor holding most of it. A window with no title bar to drag (its monitor
+    since unplugged) goes to the monitor nearest the one it was on, as in batch
+    15.4 (``_moved_onto_a_monitor`` for both).
+    """
+    reachable = _title_bar_on_screen(width, x, y, areas)
+    if reachable and not _monitors_changed(state, areas, bounds):
+        return f"{width}x{height}+{x}+{y}"
+    return _moved_onto_a_monitor(width, height, x, y, areas, None if reachable else _remembered_monitor(state), frame)
+
+
+def _initial_geometry(root: tk.Tk, state: dict) -> str:
+    """Return the remembered window geometry (``_remembered_geometry``) if the settings hold one, else 90 % of the main screen.
+
+    Without the monitors' list (not Windows), the main screen's old test.
     """
     screen_width, screen_height = root.winfo_screenwidth(), root.winfo_screenheight()
     match = _GEOMETRY_PATTERN.match(str(state.get("geometry", "")))
@@ -3347,9 +3386,7 @@ def _initial_geometry(root: tk.Tk, state: dict) -> str:
         width, height, x, y = map(int, match.groups())
         areas = monitors.monitor_work_areas()
         if areas:
-            if _title_bar_on_screen(width, x, y, areas):
-                return f"{width}x{height}+{x}+{y}"
-            return _moved_onto_a_monitor(width, height, x, y, areas, _remembered_monitor(state), _window_frame())
+            return _remembered_geometry(width, height, x, y, state, areas, monitors.monitor_bounds(), _window_frame())
         elif width <= screen_width and height <= screen_height and 0 <= x < screen_width - 100 and 0 <= y < screen_height - 100:
             return f"{width}x{height}+{x}+{y}"
     return f"{round(screen_width * _SCREEN_FRACTION)}x{round(screen_height * _SCREEN_FRACTION)}+20+20"

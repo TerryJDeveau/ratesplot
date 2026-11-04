@@ -2621,6 +2621,72 @@ def check_batch30(check: Check) -> None:
               and not any(t.startswith("--master") for t in w.command_tokens()), ticks())
 
 
+def check_batch39(check: Check) -> None:
+    """Batch 39: a window opened from what is remembered, on the real monitors: as it was while they are the same; moved and shrunk when not."""
+    real_areas, real_bounds = monitors.monitor_work_areas(), monitors.monitor_bounds()
+    if not real_areas:
+        check("no monitors known (not Windows): nothing to check", True)
+        return
+    frame = gui._window_frame()
+    home = monitors.monitor_of((PLACE[0], PLACE[1], PLACE[0] + 100, PLACE[1] + 100), real_areas)
+
+    def opened(state: dict) -> tuple[str, str, tuple[int, int, int, int]]:
+        """The geometry a real window is given from ``state``, what it reads back, and its real rectangle by its frame."""
+        root = tk.Tk()
+        try:
+            geometry = gui._initial_geometry(root, state)
+            root.geometry(geometry)
+            for _ in range(10):
+                root.update()
+            match = gui._GEOMETRY_PATTERN.match(root.geometry())
+            return geometry, root.geometry(), gui._outer_rect(*map(int, match.groups()), frame)
+        finally:
+            root.destroy()
+
+    # The monitors unchanged: a window across the edge of the monitor stays as it was (the ruling of 2026-10-12).
+    wide = f"{home[2] - home[0] + 400}x700+{home[0] + 100}+{home[1] + 100}"
+    same = {"geometry": wide, "monitor": list(home), "monitors": [list(rect) for rect in real_bounds]}
+    geometry, shown, _outer = opened(same)
+    check("the monitors unchanged: a window wider than its monitor opens as it was", geometry == wide and shown == wide, (wide, geometry, shown))
+    geometry, shown, _outer = opened({"geometry": wide, "monitor": list(home)})
+    check("settings of before batch 39, its monitor there: as it was", geometry == wide and shown == wide, (wide, geometry, shown))
+
+    # The monitors said to be others: moved, then shrunk, on the monitor holding most of it, the real window where it is told.
+    changed = {**same, "monitors": [[0, 0, 640, 480]]}
+    geometry, shown, outer = opened(changed)
+    check("the monitors changed: the window told is the window shown", geometry == shown, (geometry, shown))
+    check("... all of it on its monitor", outer[0] >= home[0] and outer[1] >= home[1] and outer[2] <= home[2] and outer[3] <= home[3], (outer, home))
+    width, height = map(int, gui._GEOMETRY_PATTERN.match(shown).groups()[:2])
+    check("... its shape kept, within a pixel", abs(width / height - (home[2] - home[0] + 400) / 700) < 2 * width / height / height, shown)
+    check("... shrunk only as far as that: its width fills the monitor", outer[2] - outer[0] >= home[2] - home[0] - 1, (outer, home))
+
+    # A window that fits, the monitors changed: left as it is.
+    fits = f"800x600+{home[0] + 100}+{home[1] + 100}"
+    geometry, shown, _outer = opened({"geometry": fits, "monitor": list(home), "monitors": [[0, 0, 640, 480]]})
+    check("the monitors changed, a window that fits: as it was", geometry == fits and shown == fits, (fits, geometry, shown))
+
+    # What the window saves, read back: the monitors, and so the same window at the next start.
+    with window("-c -s:2020", placed("900x600")) as w:
+        w.app.remember.set(True)
+        w.app._remember()
+        state, _note, _path = frontend.load_state()
+    check("the settings hold every monitor", sorted(tuple(rect) for rect in state.get("monitors", [])) == sorted(real_bounds), state.get("monitors"))
+    check("... and the window's own, as before", state.get("monitor") == list(home), state.get("monitor"))
+    geometry, shown, _outer = opened(state)
+    check("the next start from them: the same size and place", geometry == placed("900x600") and shown == geometry, (geometry, shown))
+    # Maximized, the monitors changed: its normal size and place are the ones fitted (run_gui zooms it on that monitor).
+    root = tk.Tk()
+    try:
+        root.geometry(gui._initial_geometry(root, changed))
+        root.state("zoomed")
+        for _ in range(10):
+            root.update()
+        check("maximized from the moved window: on that monitor", monitors.monitor_of((root.winfo_rootx(), root.winfo_rooty(), root.winfo_rootx() + 100, root.winfo_rooty() + 100), real_areas) == home,
+              root.geometry())
+    finally:
+        root.destroy()
+
+
 # The groups in the order they run; --group picks some by these names.
 def check_batch132(check: Check) -> None:
     """Batch 13.2: constant prices combine with per capita, -r unticks both; the written line draws what the window shows."""
@@ -2944,6 +3010,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch135": check_batch135,
     "batch133": check_batch133,
     "batch35": check_batch35,
+    "batch39": check_batch39,
 }
 
 
