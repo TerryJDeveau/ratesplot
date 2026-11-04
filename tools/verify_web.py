@@ -1976,7 +1976,7 @@ def check_batch34(check: Check) -> None:
           not at.exception and at.error and kept is not None and kept["line"] == good and kept["remember"] is True, kept)
     real = web._draw
     try:
-        web._draw = lambda config, tokens: replace(real(config, tokens), error="a drawing made to fail")
+        web._draw = lambda config, tokens, job=None: replace(real(config, tokens, job), error="a drawing made to fail")
         failed = new_page("-u -s:2001 --e:2019")
     finally:
         web._draw = real
@@ -2266,6 +2266,66 @@ def check_batch133(check: Check) -> None:
           not view.exception and "## Real yields" in shown and all(word in shown for word in ("DFII10", "Real Return Bonds", "real spot curve", "inflation-linked")), shown[:60])
 
 
+def check_batch35(check: Check) -> None:
+    """Batch 35: the drawing on a worker, the wait line gone once it is drawn; a run going back to it, or stopping it; the date buttons' reasons; the right-drag."""
+    at = new_page("-c -s:2001 --e:2019")
+    drawing = at.session_state[web._DRAWING]
+    check("drawn on a worker: no exception, its charts kept, its job gone", not at.exception and drawing.pngs and web._JOB not in at.session_state, at.exception)
+    check("the wait line is off the page once drawn", not any("Please wait" in block.value for block in at.markdown), [block.value for block in at.markdown][:5])
+    check("no spinner of Streamlit's, and no word of another visitor", not at.get("spinner") and not any("visitor" in block.value for block in [*at.markdown, *at.caption]))
+    check("the hint names the pan, in the window's words", any("right/middle click-drag: pan" in block.value for block in at.caption))
+    # A run finding a job: the same chart goes back to it; another stops it.
+    config, tokens = drawing.config, drawing.tokens
+    job = web._new_job(config, tokens)
+    job.drawing = replace(drawing, log="the job's own\n")
+    job.done.set()
+    at.session_state[web._JOB] = job
+    at.run()
+    check("a new run with the same chart takes the job's drawing, and draws nothing more",
+          not at.exception and at.session_state[web._DRAWING].log == "the job's own\n" and web._JOB not in at.session_state, at.exception)
+    job = web._new_job(config, tokens)
+    job.drawing = replace(drawing, log="never shown\n")
+    job.done.set()
+    at.session_state[web._JOB] = job
+    at.text_input(key="value:start").input("2003").run()
+    check("… another chart stops it, and draws its own", job.stopped.is_set() and web._JOB not in at.session_state and at.session_state[web._DRAWING].log != "never shown\n", address(at))
+    stale = web._new_job(config, tokens)
+    stale.drawing = replace(drawing, log="never shown\n")
+    stale.done.set()
+    at.session_state[web._JOB] = stale
+    at.session_state[web._FORCE] = True
+    at.run()
+    check("… so does a Refresh, whose downloads it may be using", stale.stopped.is_set() and at.session_state[web._DRAWING].log != "never shown\n")
+    at = new_page("-c -s:2001 --e:2019")
+    at.checkbox(key="flag:hover").uncheck().run()
+    check("a box that draws nothing leaves the charts", not at.exception and at.session_state[web._DRAWING].pngs)
+    # The date buttons: why each is greyed, under its tip.
+    today = new_page("-c -s:2001")
+    helps = {each.label: each.help for each in today.button}
+    check("Later at today: why it is greyed", "Move the dates on by half the window" in helps["Later ▶"] and "Greyed because the chart ends today." in helps["Later ▶"], helps["Later ▶"])
+    check("Earlier not greyed: its tip alone", helps["◀ Earlier"] == frontend.EARLIER_HELP, helps["◀ Earlier"])
+    # The right-drag, by the window's rule; what the browser sends is checked.
+    at = new_page("-c -s:2001 --e:2019")
+    drawing = at.session_state[web._DRAWING]
+    width, height = web._png_size(drawing.pngs["cdn"])
+    wanted = frontend.pan_updates(drawing.geometry["cdn"], drawing.drawn.for_nation("cdn"), -0.1 * width, 0.05 * height)
+    check("a pan: the window's rule at the picture's size", web._pan_view(drawing, "cdn", {"dx": -0.1, "dy": 0.05}) == wanted and {"start", "end", "max", "min"} <= set(wanted), wanted)
+    for sent in (None, {}, {"dx": 0.1}, {"dx": "x", "dy": 0.0}, {"dx": float("nan"), "dy": 0.0}, {"dx": 100.0, "dy": 0.0}):
+        check(f"a pan that is no pan is ignored: {sent}", web._pan_view(drawing, "cdn", sent) is None)
+    script = web._CHART_JS
+    check("the picture's script pans with the right or middle button, sends a share of its size, never for a finger",
+          'event.button === 1 || event.button === 2' in script and 'setTriggerValue("pan"' in script and 'event.pointerType === "touch") return;' in script
+          and "oncontextmenu" in script and "__" not in script)
+    # AppTest runs no script: the pan itself, and Back after it, are checked in Chrome (batch35's record in the skill).
+    # The help says so.
+    view = new_page("--e:2026-09-01")
+    view.query_params["help"] = "dates"
+    view.run()
+    shown = "\n".join(block.value for block in view.markdown)
+    check("?help=dates: the right or middle button, and the buttons in the window and the page alike",
+          "**Dragging with the right or middle button**" in shown and '**"◀ Earlier" and "Later ▶"**' in shown and "**On the page**, " not in shown and "**In the window**, " not in shown, shown[-600:])
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
@@ -2273,7 +2333,7 @@ PAGE_CHECKS = (
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
-    check_batch135, check_batch133,
+    check_batch135, check_batch133, check_batch35,
 )
 
 

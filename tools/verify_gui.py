@@ -60,6 +60,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import types
 from pathlib import Path
@@ -97,7 +98,7 @@ import synthetic_sources  # noqa: E402
 from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
 
 import ratesplot  # noqa: E402
-from ratesplot import cli, export, frontend, gui, hover, http, options  # noqa: E402
+from ratesplot import cli, export, frontend, gui, hover, http, options, wait  # noqa: E402
 from ratesplot.axes import format_yield  # noqa: E402
 from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
@@ -722,8 +723,10 @@ def check_version(check: Check) -> None:
         text = str(label.cget("text"))
         check("the version and the commit, as the page shows them", text == frontend.version_text()
               and text.startswith(f"v{ratesplot.__version__}"), text)
-        first = label.master.pack_slaves()[0] if label.master.pack_slaves() else None
-        check("first in the column, at its left", first is label and str(label.pack_info().get("anchor")) == "w", str(first))
+        # In a row of its own since batch 35.3, the wait line right of it or under it while a chart is drawn.
+        head = label.master
+        first = head.master.pack_slaves()[0] if head.master.pack_slaves() else None
+        check("first in the column, at its left", first is head and head.grid_slaves(row=0, column=0) == [label] and str(label.grid_info().get("sticky")) == "w", str(first))
         check("small and grey", str(label.cget("foreground")) == gui._VERSION_FOREGROUND, str(label.cget("foreground")))
 
 
@@ -2295,7 +2298,7 @@ def check_batch31(check: Check) -> None:
     with window(f"-c {END}") as w:
         app, root = w.app, w.root
         w.pump(20)
-        top, refresh, reset, box = app.version_label.master, app.refresh_button, app.reset_button, app.remember_box
+        top, refresh, reset, box = app._top, app.refresh_button, app.reset_button, app.remember_box
         first_block = app.flows[0][1].frame
 
         def bottom(widget) -> int:
@@ -2743,6 +2746,133 @@ def check_batch135(check: Check) -> None:
         check("unticked: the regression segments greyed", not enabled(app.flag_boxes["regression"]))
 
 
+def check_batch35(check: Check) -> None:
+    """Batch 35.3, 35.4: the wait line beside the build line while a chart is drawn, its arc turning, under it when narrow; a queued drawing part of the wait; the figures learned and saved; Earlier, Later and Zoom out."""
+    # Each chart held until the checks have looked: a drawing with its downloads kept is over in a second.
+    gate = threading.Event()
+    real_build = gui.build_figure
+
+    def held(country, drawn):
+        gate.wait(60)
+        return real_build(country, drawn)
+
+    gui.build_figure = held
+    w = Window(f"-c -s:2015 {END}", settle=False)
+    try:
+        app, root = w.app, w.root
+        began = time.monotonic()
+        while not app.rendering and time.monotonic() - began < 30:
+            root.update()
+            time.sleep(0.01)
+        root.update()
+        check("a drawing under way: the line shown", app.rendering and app.wait_row.winfo_manager() == "grid" and app.wait_text.get().startswith("Please wait"), app.wait_text.get())
+        check("… in Terry's words, the time still expected and the time so far", re.fullmatch(r"Please wait(, nearly done| about \d+ (s|min)) \(\d+ s so far\)", app.wait_text.get()), app.wait_text.get())
+        check("… right of the build line, the column being wide enough", app.wait_row.grid_info()["row"] == 0 and app.wait_row.grid_info()["column"] == 1, app.wait_row.grid_info())
+        check("… and no “Drawing …” in the status line", "Drawing …" not in app.status.get(), app.status.get())
+        angle = app._arc_angle
+        time.sleep(0.2)
+        root.update()
+        check("the arc turns", app._arc_angle != angle, (angle, app._arc_angle))
+        saved_narrow = app.wait_text.get()
+        app.wait_text.set(saved_narrow + " " + "x" * 400)
+        root.update()
+        app._arrange_wait()
+        root.update()
+        check("too narrow for the column: under the build line", app.wait_row.grid_info()["row"] == 1 and app.wait_row.grid_info()["column"] == 0, app.wait_row.grid_info())
+        app.wait_text.set(saved_narrow)
+        root.update()
+        app._arrange_wait()
+        root.update()
+        check("… wide enough again: back beside it", app.wait_row.grid_info()["row"] == 0, app.wait_row.grid_info())
+        gate.set()
+        w.settle()
+        check("drawn: the line gone, its timers stopped", app._wait is None and app._wait_after is None and app._arc_after is None and not app.wait_row.winfo_manager(), app.wait_row.winfo_manager())
+        check("the status line as before", app.status.get().startswith("Drawn"), app.status.get())
+        check("the figures moved by the drawing", app._wait_figures.chart != wait.STARTING_CHART_SECONDS, app._wait_figures.to_saved())
+
+        # A drawing queued behind the one under way is part of the wait.
+        gate.clear()
+        w.typed("start", "2016")
+        began = time.monotonic()
+        while not app.rendering and time.monotonic() - began < 30:
+            root.update()
+            time.sleep(0.01)
+        current = app._wait
+        w.typed("start", "2017")
+        began = time.monotonic()
+        while app.pending is None and time.monotonic() - began < 5:
+            root.update()
+            time.sleep(0.01)
+        check("a drawing queued: part of the wait", app.pending is not None and current.then is not None and current.then() > 0.0
+              and abs(current.remaining() - current.own_remaining() - current.then()) < 0.1, (current.remaining(), current.own_remaining()))
+        check("… the status line says so", "Will redraw" in app.status.get(), app.status.get())
+        waited_from = current.began
+        seen_after = None
+        gate.set()
+        began = time.monotonic()
+        while (app.rendering or app.pending is not None) and time.monotonic() - began < 60:
+            root.update()
+            if app._wait is not None and app._wait is not current:
+                seen_after = app._wait
+            time.sleep(0.01)
+        w.settle()
+        check("… its wait carries on from when the wait began", seen_after is not None and seen_after.began == waited_from, seen_after)
+    finally:
+        gate.set()
+        gui.build_figure = real_build
+        w.close()
+
+    # Earlier, Later and Zoom out (35.4).
+    with window("-c -s:2001 --e:2010") as w:
+        app, root = w.app, w.root
+        controls = {key: app.date_widgets[key] for key in ("earlier", "later", "zoom-out")}
+        check("the three buttons, as the page labels them", [str(each.cget("text")) for each in controls.values()] == ["◀ Earlier", "Later ▶", "Zoom out"])
+        check("none greyed in the middle of the dates", not any(each.instate(["disabled"]) for each in controls.values()))
+        check("each has its tip and its ⓘ", all(key in app.info_marks for key in controls) and all(gui._Tooltip.tips.get(each) for each in controls.values()))
+        first = (w.app.payload_vars["start"].get(), w.app.payload_vars["end"].get())
+        drawn = app.drawn_config
+        wanted = frontend.move_dates_updates(drawn.start, drawn.end, shift=-frontend.DATE_STEP_FRACTION)
+        controls["earlier"].invoke()
+        w.settle()
+        check("Earlier: half a window back, as on the page", (app.payload_vars["start"].get(), app.payload_vars["end"].get()) == (wanted["start"], wanted["end"]), wanted)
+        check("… its charts the written line's", w.written_draws_the_same(), w.command_tokens())
+        app.back_button.invoke()
+        w.settle()
+        check("… one step Back undoes", (app.payload_vars["start"].get(), app.payload_vars["end"].get()) == first, first)
+        check("… and no step left behind", not app.history, app.history)
+        controls["zoom-out"].invoke()
+        w.settle()
+        span = (app.drawn_config.end - app.drawn_config.start).days
+        check("Zoom out: twice the span", abs(span - 2 * (drawn.end - drawn.start).days) <= 2, span)
+        app.unzoom_button.invoke()
+        w.settle()
+        check("Unzoom brings it back", (app.payload_vars["start"].get(), app.payload_vars["end"].get()) == first)
+        controls["later"].invoke()
+        w.settle()
+        controls["later"].invoke()
+        w.settle()
+        check("Later, twice: on by a whole window", app.drawn_config.start > drawn.start + pd.Timedelta(days=(drawn.end - drawn.start).days * 0.9), app.drawn_config.start)
+        log = app.log.get("1.0", "end")
+        check("the message log says each", "--- earlier: " in log and "--- zoomed out: " in log and "--- later: " in log, log[-300:])
+    with window("-c -s:2015") as w:
+        app, root = w.app, w.root
+        check("a chart ending today: Later greyed, the others not", app.date_widgets["later"].instate(["disabled"]) and not app.date_widgets["earlier"].instate(["disabled"])
+              and not app.date_widgets["zoom-out"].instate(["disabled"]))
+        app.info_marks["later"].event_generate("<Button-1>")
+        root.update()
+        check("… its ⓘ says why", app.info_shown[2] == "Greyed because the chart ends today.", app.info_shown)
+        app._close_info()
+        app.info_marks["earlier"].event_generate("<Button-1>")
+        root.update()
+        check("… not greyed: no reason, and More", app.info_shown[2] == "", app.info_shown)
+        app._close_info()
+    first = frontend.EARLIEST_DATE
+    today = pd.Timestamp.today().normalize()
+    at_both = {each.key: each.greyed for each in frontend.date_buttons(types.SimpleNamespace(start=first, end=today))}
+    check("from the earliest date to today: all three greyed, each saying why", all(at_both.values()) and "1600-01-01" in at_both["earlier"] and "ends today" in at_both["later"], at_both)
+    check("before a chart is drawn: all three greyed", all(each.greyed for each in frontend.date_buttons(None)))
+
+
 def check_batch133(check: Check) -> None:
     """Batch 13.3: the real yields as terms of their own: each panel offers its nation's, none ticked; a box ticked is written and drawn, dashed, in its nominal term's colour; a real yield alone."""
     with window(f"--na:ca,us,gb,de -s:2015 --no-gdp --no-debt --no-interest {END}") as w:
@@ -2813,6 +2943,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch134": check_batch134,
     "batch135": check_batch135,
     "batch133": check_batch133,
+    "batch35": check_batch35,
 }
 
 

@@ -57,6 +57,7 @@ alone. It is a better projection, not data: it is drawn as one.
 from __future__ import annotations
 
 import io
+import time
 from typing import Iterable
 
 import pandas as pd
@@ -78,7 +79,7 @@ from .config import (
     component_column,
     nation_by_key,
 )
-from .http import downloads_of, latest_get, parse_boc_csv
+from .http import downloads_of, latest_get, note_quote_seconds, parse_boc_csv
 
 # Where ``plotting.prepare_us`` / ``prepare_cdn`` record, in the yields frame's
 # ``attrs``, the time of the newest quote added (for the subtitle).
@@ -435,8 +436,10 @@ def fetch_quotes(country: str, columns: Iterable[str] | None = None) -> dict[str
         "output": "json",
         "events": "1",
     }
+    began = time.monotonic()
     with downloads_of(f"{nation_by_key(country).adjective} yield quotes of the moment, CNBC (--cur)"):
         response = latest_get(CNBC_QUOTE_URL, params, cached=False, timeout=LATEST_QUOTE_TIMEOUT_SECONDS)
+    note_quote_seconds(time.monotonic() - began)  # for the wait line (batch 35.1)
     quotes = response.json()["FormattedQuoteResult"]["FormattedQuote"]
     if isinstance(quotes, dict):  # a single symbol comes back unlisted
         quotes = [quotes]

@@ -68,10 +68,23 @@ Visitors
       drawn when its source fails, with a notice above the charts (batch 20,
       ``http.enable_last_good_copies``). The disk lasts only while the app
       runs: a Reboot or a sleep starts it empty.
-    - Charts are drawn one at a time (``_DRAWING_LOCK``). Matplotlib does not
-      promise that drawing in several threads at once is safe, and a free
-      server has two processors; a visitor who asks during another's drawing
-      waits for it, a few seconds.
+    - Charts are drawn one at a time, in the order asked (``_DRAWING_LOCK``,
+      ``_take_turn``). Matplotlib does not promise that drawing in several
+      threads at once is safe, and a free server has two processors; a visitor
+      who asks during another's drawing waits for it, and the wait line
+      counts it in.
+
+The wait (batch 35.2)
+    A drawing runs on a worker thread of its own (``_start_job``), the page's
+    script thread rewriting one line above the charts each second with a
+    spinning icon of its own: "Please wait about 12 s (5 s so far)"
+    (``_await_drawing``; the sum and the words in ``wait``). Before it, the
+    script thread drew, so nothing on the page could change until the drawing
+    ended, and a spinner's text cannot be changed once shown. Each rewrite is a
+    point where Streamlit can stop a run, so a click now takes effect at once:
+    a new run with the same chart goes back to waiting for the same drawing, and
+    one with another chart stops it between charts (``main``), as a visitor
+    gone does (``_visit_ended``), so the next drawing starts sooner.
     - What a drawing prints (progress, warnings, the start found) goes to
       that visitor's log only (``console``).
     - "Today", the default end, is the markets' date (Toronto) on a server,
@@ -95,9 +108,11 @@ Zoom and dates
     today, keeping the span). "Back" undoes one zoom, move, Unzoom or Reset;
     "Unzoom" returns to the charts before the first zoom or move since the
     last Reset (batch 28.2), as one more step that Back undoes; each is
-    greyed while it would do nothing (as in the window). The axis limits are
-    each nation's own, so zooming one chart's axes leaves the other's; the
-    dates are shared, as on the command line.
+    greyed while it would do nothing (as in the window). A right- or
+    middle-drag on a chart pans it, as in the window (35.4, ``_panned``,
+    ``frontend.pan_updates``), with the mouse only: a finger drag scrolls the
+    page. The axis limits are each nation's own, so zooming one chart's axes
+    leaves the other's; the dates are shared, as on the command line.
 
 Dates
     Beside each date field a 📅 button opens Streamlit's calendar (between
@@ -125,13 +140,11 @@ The hover read-out
     following a line asks nothing of the server. Its box ("Hover read-out")
     changes no chart: unticking it sends the charts without the data, and
     draws nothing again.
-
-Not here (the window has it)
-    The right-drag pan (the buttons move the dates).
 """
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import functools
 import json
@@ -143,7 +156,8 @@ import threading
 import time
 import urllib.parse
 import zlib
-from dataclasses import dataclass, replace
+from collections.abc import Iterator
+from dataclasses import dataclass, field, replace
 
 import matplotlib
 
@@ -151,6 +165,9 @@ matplotlib.use("Agg")  # before pyplot is imported (by plotting): a server has n
 
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
+from streamlit import runtime  # noqa: E402
+from streamlit.delta_generator import DeltaGenerator  # noqa: E402
+from streamlit.runtime.scriptrunner import get_script_run_ctx  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 from . import export, hover, http  # noqa: E402
@@ -224,7 +241,9 @@ from .frontend import (  # noqa: E402
     level_text,
     limit_copies,
     limit_unit,
+    date_buttons,
     move_dates_updates,
+    pan_updates,
     master_label,
     master_text,
     master_ticked,
@@ -266,6 +285,7 @@ from .options import (  # noqa: E402
 )
 from .plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 from .refresh import Ticker  # noqa: E402
+from .wait import Figures, Wait  # noqa: E402
 
 PAGE_TITLE = "Bond Yields and Public Debt"
 PAGE_SUMMARY = (
@@ -318,17 +338,27 @@ _MARGIN_FIELD_PX = 110
 # (batch 18): narrow enough for the three to share a row in half the sidebar.
 _LIMIT_FIELD_PX = 80
 _DRAWING_LOCK = threading.Lock()
+# What the drawings so far have taught the wait line (batch 35.1, ``wait``): in
+# the server's memory, for every visitor; a Reboot or a sleep starts it again.
+_FIGURES = Figures()
+# How often a waiting drawing looks for its turn, and the script thread for the
+# drawing's end; the line is rewritten when its words change (each second).
+_TURN_POLL_SECONDS = 0.1
+_LINE_POLL_SECONDS = 0.25
+# The drawings asked for and not yet ended, the one drawing first (``_take_turn``).
+_DRAWINGS: list[_Job] = []
+_DRAWINGS_LOCK = threading.Lock()
 # How many zoom and pan steps "Back" can undo (as in the window); the view
 # before the first one is always kept, for Unzoom.
 _HISTORY_LIMIT = 50
-# The buttons move the dates by this fraction of the window, or scale it by this factor.
-_DATE_STEP_FRACTION = 0.5
-_ZOOM_OUT_FACTOR = 2.0
-# The window's words and bars (Terry, 2026-10-08); the page has no pan.
+# The window's words and bars (Terry, 2026-10-08); the pan as in the window since 35.4.
 _ZOOM_HINT = (
     "Drag pointer: zoom to box (its width sets the dates, its height the axes' limits) | "
-    "wheel: zoom dates | buttons: move the dates | Back: undo a zoom"
+    "right/middle click-drag: pan | wheel: zoom dates | buttons: move the dates | Back: undo a zoom"
 )
+# How far a pan may say the pointer moved, in pictures: a drag is held to the
+# screen, so a check on what reaches the server (a phone-sized picture on a wide screen stays within this).
+_PAN_MAX_FRACTION = 20.0
 # The notches a wheel's turn may send, either way: the page's script counts
 # what the browser reports, so a check on what reaches the server. More
 # would ask for a span past all the data, which the zoom cuts anyway.
@@ -353,6 +383,7 @@ _WIDTH = "width"         # the component that says whether the screen is narrow 
 _NARROW = "narrow"       # True below PHONE_WIDTH_PX; absent until the page's script has said
 _NOTICE = "notice"   # a message from a control's callback, shown once
 _DRAWING = "drawing"  # the last Drawing
+_JOB = "job"          # the drawing under way, a _Job, until its Drawing is taken (batch 35.2)
 _FORCE = "force_redraw"
 _HINTS = "hints"    # the grey values the fields were laid out with (frontend.field_hints), by key
 _HISTORY = "history"  # the choices before each zoom, pan or Reset, for Back and Unzoom
@@ -733,6 +764,27 @@ export default function (component) {
   };
   const controller = new Controller(show, hide);
 
+  // The pan (35.4), as the window's: a right- or middle-drag with the mouse, the
+  // picture following the pointer until the page draws it again. A finger drag
+  // scrolls the page, as it did. A right click with no drag keeps the browser's
+  // own menu: it comes after the button is let go on Windows, but as it is
+  // pressed elsewhere, where it would stop the drag, so there it is held back.
+  let panFrom = null, panned = false;
+  img.oncontextmenu = (event) => {
+    if (panFrom !== null || panned) event.preventDefault();
+    panned = false;
+  };
+  const panTo = (event) => {
+    const dx = event.clientX - panFrom.x, dy = event.clientY - panFrom.y;
+    img.style.transform = "translate(" + dx + "px, " + dy + "px)";
+    return { dx, dy };
+  };
+  const panEnded = () => {
+    panFrom = null;
+    frame.style.overflow = "";
+    img.style.cursor = "";
+  };
+
   let start = null;
   const point = (event) => {
     const rect = img.getBoundingClientRect();
@@ -752,13 +804,27 @@ export default function (component) {
   };
   img.onpointerdown = (event) => {
     controller.stop();
-    if (event.pointerType === "touch" || event.button !== 0) return;
+    if (event.pointerType === "touch") return;
+    if (event.button === 1 || event.button === 2) {
+      event.preventDefault();  // a middle button would start the browser's own scrolling
+      img.setPointerCapture(event.pointerId);
+      panFrom = { x: event.clientX, y: event.clientY };
+      panned = false;
+      frame.style.overflow = "hidden";
+      img.style.cursor = "grabbing";
+      return;
+    }
+    if (event.button !== 0) return;
     event.preventDefault();
     img.setPointerCapture(event.pointerId);
     start = point(event);
     showBand(start, start);
   };
   img.onpointermove = (event) => {
+    if (panFrom !== null) {
+      panTo(event);
+      return;
+    }
     if (start) {
       showBand(start, point(event));
       return;
@@ -770,6 +836,18 @@ export default function (component) {
   };
   img.onpointerleave = () => controller.moved(null, 0, 0);
   img.onpointerup = (event) => {
+    if (panFrom !== null) {
+      const { dx, dy } = panTo(event);
+      const rect = img.getBoundingClientRect();
+      panEnded();
+      if (Math.abs(dx) < MIN_DRAG && Math.abs(dy) < MIN_DRAG) {
+        img.style.transform = "";
+        return;
+      }
+      panned = true;
+      setTriggerValue("pan", { dx: dx / rect.width, dy: dy / rect.height });
+      return;
+    }
     if (!start) return;
     const a = start;
     const b = point(event);
@@ -786,6 +864,10 @@ export default function (component) {
   img.onpointercancel = () => {
     start = null;
     band.style.display = "none";
+    if (panFrom !== null) {
+      panEnded();
+      img.style.transform = "";
+    }
   };
 
   // A turn begun off the picture scrolls the page, and goes on scrolling it
@@ -805,7 +887,7 @@ export default function (component) {
       return;
     }
     event.preventDefault();
-    if (start) return;  // a box is being dragged
+    if (start || panFrom !== null) return;  // a box is being dragged, or the chart panned
     controller.stop();
     notches -= event.deltaY / (event.deltaMode === 1 ? 3 : event.deltaMode === 2 ? 1 : 100);
     const at = point(event);
@@ -1497,6 +1579,33 @@ def _wheel_turned(key: str) -> None:
         _apply_view(updates)
 
 
+def _pan_view(drawing: Drawing, key: str, pan: object) -> dict[str, str] | None:
+    """Return the fields' texts for a pan of ``key``'s chart, or None for one that is no pan (35.4, by the window's rule, ``frontend.pan_updates``).
+
+    The page's script sends how far the pointer moved, as fractions of the
+    picture's width and height. They come from the browser, so anything but
+    two finite numbers within about the picture is ignored, as a wheel's turn is.
+    """
+    try:
+        dx, dy = float(pan["dx"]), float(pan["dy"])
+    except (TypeError, KeyError, ValueError):
+        return None
+    if not (math.isfinite(dx) and math.isfinite(dy)) or abs(dx) > _PAN_MAX_FRACTION or abs(dy) > _PAN_MAX_FRACTION:
+        return None
+    width, height = _png_size(drawing.pngs[key])
+    return pan_updates(drawing.geometry[key], drawing.drawn.for_nation(key) if drawing.drawn is not None else None, dx * width, dy * height)
+
+
+def _panned(key: str) -> None:
+    """``key``'s chart was dragged with the right or middle button: pan it, as the window does (35.4)."""
+    drawing: Drawing | None = st.session_state.get(_DRAWING)
+    if drawing is None or drawing.geometry.get(key) is None:
+        return
+    updates = _pan_view(drawing, key, (st.session_state.get(drawing.chart_key(key)) or {}).get("pan"))
+    if updates:
+        _apply_view(updates, key)
+
+
 def _move_dates(shift: float, scale: float) -> None:
     """Move or rescale the dates drawn (``frontend.move_dates_updates``): the buttons over the charts."""
     drawing: Drawing | None = st.session_state.get(_DRAWING)
@@ -2118,14 +2227,92 @@ def _limit_control(where, nation: Nation, option: Option) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
+@dataclass(eq=False)
+class _Job:
+    """One drawing asked for (batch 35.2): its wait, and, once its worker has ended, its Drawing.
+
+    It stays in the visitor's session state until the Drawing is taken, so a
+    new run of the page with the same chart goes back to waiting for it.
+    """
+
+    config: PlotConfig
+    tokens: tuple[str, ...]
+    wait: Wait
+    stopped: threading.Event = field(default_factory=threading.Event)  # left behind: stop between charts, nothing kept
+    done: threading.Event = field(default_factory=threading.Event)
+    drawing: Drawing | None = None
+    failure: Exception | None = None  # what ``_draw`` did not expect, raised on the page as it was before batch 35.2
+
+
+def _new_job(config: PlotConfig, tokens: tuple[str, ...]) -> _Job:
+    """A drawing asked for, not yet in the line: its wait counts what is left of those ahead of it when it joins them."""
+    job: _Job
+
+    def ahead() -> float:
+        with _DRAWINGS_LOCK:
+            before = _DRAWINGS[: _DRAWINGS.index(job)] if job in _DRAWINGS else list(_DRAWINGS)
+        return sum(other.wait.own_remaining() for other in before)
+
+    job = _Job(config, tokens, Wait.of_config(_FIGURES, config, _nations_of(config), ahead=ahead))
+    return job
+
+
+def _nations_of(config: PlotConfig) -> list[str]:
+    """The charts ``config`` shows, by key."""
+    return [country.key for country in COUNTRIES if getattr(config, country.show_field)]
+
+
+def _take_turn(job: _Job) -> bool:
+    """Wait until every drawing asked for before ``job`` has ended, and hold ``_DRAWING_LOCK``; False if it is stopped first.
+
+    In the order asked: a plain lock lets any waiter in, and the wait line
+    counts those ahead. Export chart's images hold the lock too (``_export_bytes``).
+    """
+    while not job.stopped.is_set():
+        with _DRAWINGS_LOCK:
+            first = _DRAWINGS[0] is job
+        if not first:
+            time.sleep(_TURN_POLL_SECONDS)
+        elif _DRAWING_LOCK.acquire(timeout=_TURN_POLL_SECONDS):
+            return True
+    return False
+
+
+@contextlib.contextmanager
+def _turn(job: _Job) -> Iterator[bool]:
+    """``job``'s turn to draw (``_take_turn``), True unless it is stopped first; the message log names a wait of a second or more."""
+    with _DRAWINGS_LOCK:
+        if job not in _DRAWINGS:
+            _DRAWINGS.append(job)
+    began = time.monotonic()
+    taken = False
+    try:
+        taken = _take_turn(job)
+        waited = time.monotonic() - began
+        if taken and waited >= 1.0:
+            print(f"Waited {waited:.0f} s for an earlier drawing.")
+        yield taken
+    finally:
+        if taken:
+            _DRAWING_LOCK.release()
+        with _DRAWINGS_LOCK:
+            _DRAWINGS.remove(job)
+
+
+def _draw(config: PlotConfig, tokens: tuple[str, ...], job: _Job | None = None) -> Drawing:
     """Draw every chosen country's chart for ``config``; never raises (a failure is in the Drawing).
 
     A chart that cannot be drawn (its source down: FRED's maintenance page,
     2026-10-21, took every chart with it) is named in ``Drawing.failed`` and
     the others are drawn. A source that fails but has a last good copy is
     drawn from it, and named in ``Drawing.copies`` (batch 20).
+
+    ``job``: the drawing as the page asked for it, on its worker (``_start_job``):
+    its wait told of each step (``wait.Wait``), and it stops between charts once
+    stopped, its Drawing then being nobody's. None: drawn here and now (the checks).
     """
+    if job is None:
+        job = _new_job(config, tokens)
     lines: list[str] = []
     began = time.perf_counter()
     source = "the automatic start" if config.start is None else f"{config.start:%Y-%m-%d}"
@@ -2137,32 +2324,42 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
     readouts: dict[str, bytes] = {}
     error: str | None = None
     failed: dict[str, str] = {}
-    # Each real download logged, and those reused counted, once the lock is held (http.drawing_downloads).
-    with this_thread_output_to(lines.append), _DRAWING_LOCK, http.drawing_downloads() as downloads:
-        try:
-            drawn = resolve_start(config)
-        except Exception as exc:  # shown on the page and in the log, never swallowed
-            error, trace = http.not_drawn(exc)
-            lines.extend([trace or "", http.not_drawn_line("the charts", error)])
-        else:
-            for country in COUNTRIES:
-                if not getattr(drawn, country.show_field):
-                    continue
-                try:
-                    figure = build_figure(country, drawn)
-                except Exception as exc:  # that chart alone; shown on the page and in the log
-                    # One line, "NOT DRAWN: ...", for a source not answering; the traceback too for anything else (batch 19.4).
-                    why, trace = http.not_drawn(exc)
-                    failed[country.key] = why
-                    lines.extend([trace or "", http.not_drawn_line(f"the {TAB_TITLES[country.key]} chart", why)])
-                    continue
-                pngs[country.key] = png_bytes(figure)
-                figures[country.key] = figure
-                # Measured after savefig, so the axes positions are the final rendered ones (as in the window).
-                geometry[country.key] = ChartGeometry.from_figure(figure, drawn)
-                drawn_lines = hover.chart_lines(figure)
-                if drawn_lines is not None:
-                    readouts[country.key] = zlib.compress(json.dumps(hover.payload(drawn_lines), separators=(",", ":")).encode())
+    # Each real download logged, and those reused counted, once the turn has come (http.drawing_downloads).
+    with this_thread_output_to(lines.append), _turn(job) as taken, http.drawing_downloads() as downloads:
+        if taken:
+            job.wait.began_work(downloads)
+            try:
+                drawn = resolve_start(config)
+            except Exception as exc:  # shown on the page and in the log, never swallowed
+                error, trace = http.not_drawn(exc)
+                lines.extend([trace or "", http.not_drawn_line("the charts", error)])
+            else:
+                job.wait.start_ended()
+                for country in COUNTRIES:
+                    if not getattr(drawn, country.show_field):
+                        continue
+                    if job.stopped.is_set():  # left behind: the next drawing starts sooner (batch 35.2)
+                        break
+                    job.wait.chart_begun(country.key)
+                    try:
+                        figure = build_figure(country, drawn)
+                    except Exception as exc:  # that chart alone; shown on the page and in the log
+                        job.wait.chart_ended(False)
+                        # One line, "NOT DRAWN: ...", for a source not answering; the traceback too for anything else (batch 19.4).
+                        why, trace = http.not_drawn(exc)
+                        failed[country.key] = why
+                        lines.extend([trace or "", http.not_drawn_line(f"the {TAB_TITLES[country.key]} chart", why)])
+                        continue
+                    pngs[country.key] = png_bytes(figure)
+                    figures[country.key] = figure
+                    # Measured after savefig, so the axes positions are the final rendered ones (as in the window).
+                    geometry[country.key] = ChartGeometry.from_figure(figure, drawn)
+                    drawn_lines = hover.chart_lines(figure)
+                    if drawn_lines is not None:
+                        readouts[country.key] = zlib.compress(json.dumps(hover.payload(drawn_lines), separators=(",", ":")).encode())
+                    job.wait.chart_ended(True)
+    if drawn is not None and not job.stopped.is_set():
+        job.wait.finished()
     return Drawing(
         config=config,
         drawn=drawn,
@@ -2180,6 +2377,70 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...]) -> Drawing:
     )
 
 
+def _run_job(job: _Job) -> None:
+    """The worker's whole work: the job's drawing, its end marked whatever happens."""
+    try:
+        job.drawing = _draw(job.config, job.tokens, job)
+    except Exception as failure:  # raised on the page by the run waiting for it (``_await_drawing``)
+        job.failure = failure
+    finally:
+        job.done.set()
+
+
+def _start_job(config: PlotConfig, tokens: tuple[str, ...]) -> _Job:
+    """Begin drawing ``config`` on a worker thread, keeping the job in session state first.
+
+    Each assignment to session state can stop the run (see ``main``), so the
+    job is kept before its thread starts: none runs that no run can stop, and
+    none waits in the line that has no thread.
+    """
+    job = _new_job(config, tokens)
+    st.session_state[_JOB] = job
+    with _DRAWINGS_LOCK:
+        _DRAWINGS.append(job)
+    threading.Thread(target=_run_job, args=(job,), name="ratesplot drawing", daemon=True).start()
+    return job
+
+
+def _visit_ended() -> bool:
+    """Whether the visitor has gone: the tab closed or reloaded (Streamlit then keeps the session a while, and this run with it)."""
+    context = get_script_run_ctx()
+    return context is not None and runtime.exists() and not runtime.get_instance().is_active_session(context.session_id)
+
+
+def _await_drawing(job: _Job, slot: DeltaGenerator) -> None:
+    """Wait for ``job``'s drawing, showing the wait line in ``slot``, above the charts (batch 35.2; Terry, decision 101).
+
+    ``slot`` is laid out in every run of the page, so the line never takes the
+    place of the charts' buttons: Streamlit keeps a block's children from the
+    run before until this one ends, so the line beside the old buttons (seen in
+    Chrome, 2026-11-04). Rewritten when its words change, each second. Each rewrite is a point where
+    Streamlit can stop this run for a newer one (``main`` then goes back to
+    waiting, or stops the job). The icon is an element of its own, written once,
+    so its turning does not begin again at each rewrite (``_INFO_ICON_STYLE``).
+    A drawing over within the first look shows nothing. A failure the drawing
+    did not expect is raised here, as it was when the script thread drew.
+    """
+    line = None
+    shown = ""
+    while not job.done.wait(_LINE_POLL_SECONDS):
+        if _visit_ended():
+            job.stopped.set()
+            st.stop()
+        if line is None:
+            row = slot.container(horizontal=True, vertical_alignment="center", gap="small")
+            row.html(_WAIT_ICON, width="content")
+            line = row.empty()
+        text = job.wait.line()
+        if text != shown:
+            line.markdown(text, width="content")
+            shown = text
+    if line is not None:
+        slot.empty()
+    if job.failure is not None:
+        raise job.failure
+
+
 def _set_address(tokens: tuple[str, ...]) -> None:
     """Write the chart's command line into the page's address (nothing at all for the defaults)."""
     text = " ".join(tokens)
@@ -2194,15 +2455,14 @@ def _set_address(tokens: tuple[str, ...]) -> None:
 def _view_buttons(drawing: Drawing) -> None:
     """Back, Unzoom and the date buttons, in one row over the charts, and how to zoom."""
     history = st.session_state.get(_HISTORY, [])
-    drawn = drawing.drawn
-    at_first = drawn is None or drawn.start <= EARLIEST_DATE
-    at_today = drawn is None or drawn.end >= pd.Timestamp.today().normalize()
     buttons = (
         ("◀ Back", _back, (), not history, BACK_HELP),
         ("Unzoom", _unzoom, (), _unzoomed(), UNZOOM_HELP),
-        ("◀ Earlier", _move_dates, (-_DATE_STEP_FRACTION, 1.0), at_first, "Move the dates back by half the window."),
-        ("Later ▶", _move_dates, (_DATE_STEP_FRACTION, 1.0), at_today, "Move the dates on by half the window, up to today."),
-        ("Zoom out", _move_dates, (0.0, _ZOOM_OUT_FACTOR), at_first and at_today, "Twice the span of dates, about its middle."),
+        *(
+            # Why it is greyed under its tip (batch 29.1's rule; 35.4).
+            (each.label, _move_dates, (each.shift, each.scale), bool(each.greyed), "\n\n".join(filter(None, (each.tip, greyed_line(each.greyed)))))
+            for each in date_buttons(drawing.drawn)
+        ),
     )
     # A row that wraps (not st.columns, which a phone stacks one per line,
     # pushing the charts below the screen).
@@ -2310,6 +2570,7 @@ def _show(drawing: Drawing, config: PlotConfig | None = None) -> None:
                     data=_chart_bytes(drawing, key),
                     on_box_change=functools.partial(_box_dragged, key),
                     on_wheel_change=functools.partial(_wheel_turned, key),
+                    on_pan_change=functools.partial(_panned, key),
                 )
                 _export_row(drawing, key)
         narrow = drawing.drawn is not None and drawing.drawn.font_floor > PlotConfig().font_floor
@@ -2404,12 +2665,20 @@ def _auto_refresh_tick(config: PlotConfig) -> None:
 # Never greyed (Terry: "It would not be greyed out when that control is
 # greyed out"): a greyed control's label colour, the text colour at 40 %,
 # reaches the ⓘ, which takes it back at full strength, in either theme.
+# The wait line's icon (batch 35.2): a ring turning in the text's colour, in either theme.
 _INFO_ICON_STYLE = """<style>
 [data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"]) svg { display: none; }
 [data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"])::after {
   content: "ⓘ"; font-size: 1rem; line-height: 1; color: rgb(from currentColor r g b / 1);
 }
+.ratesplot-wait-icon {
+  width: 1rem; height: 1rem; box-sizing: border-box; border-radius: 50%;
+  border: 2px solid rgb(from currentColor r g b / 0.25); border-top-color: currentColor;
+  animation: ratesplot-wait-turn 1s linear infinite;
+}
+@keyframes ratesplot-wait-turn { to { transform: rotate(360deg); } }
 </style>"""
+_WAIT_ICON = '<div class="ratesplot-wait-icon"></div>'
 
 
 def _show_help(topic: str) -> None:
@@ -2489,8 +2758,16 @@ def main() -> None:
     if state.get(_NOTICE):
         st.info(state.pop(_NOTICE))
 
+    wait_slot = st.empty()  # the wait line's (``_await_drawing``)
     previous: Drawing | None = state.get(_DRAWING)
     forced = state.pop(_FORCE, False)
+    job: _Job | None = state.get(_JOB)
+    if job is not None and (job.stopped.is_set() or forced or config is None or not config.same_chart(job.config)):
+        # Left behind by a changed control or a Refresh (whose downloads it may
+        # be using): stopped between charts, so the next drawing starts sooner (batch 35.2).
+        job.stopped.set()
+        del state[_JOB]
+        job = None
     if config is not None and previous is not None and not forced and previous.config != config and config.same_chart(previous.config):
         # Only the hover read-out's box changed (batch 11.2), or the automatic
         # refresh's (11.3): they draw nothing, so the charts stay; the address
@@ -2501,18 +2778,16 @@ def main() -> None:
             _set_address(tokens)
     if config is None:
         st.error("Not drawn: " + "; ".join(problems))
-    elif previous is None or previous.config != config or forced:
+    elif job is not None or previous is None or previous.config != config or forced:
         tokens = tuple(command_line_tokens(*choices))
-        if _DRAWING_LOCK.locked():
-            note = "Another visitor's chart is being drawn; yours is next …"
-        elif previous is None:
-            note = "Drawing … (after a quiet hour the data are downloaded first: about 15 s)"
-        else:
-            note = "Drawing …"
-        with st.spinner(note, show_time=True):
-            drawing = _draw(config, tokens)
+        if job is None:
+            job = _start_job(config, tokens)
+        _await_drawing(job, wait_slot)
+        # The hover read-out's box or the refresh's may have changed meanwhile: they draw nothing.
+        drawing = replace(job.drawing, config=config, tokens=tokens)
         state[_DRAWING] = drawing
-        if previous is not None:
+        del state[_JOB]
+        if previous is not None and previous is not job.drawing:
             # The visitor has moved on from the chart the visit opened on.
             state[_ADDRESS_PROBLEMS] = state[_REMEMBERED_PROBLEMS] = []
         if drawing.error is None:
