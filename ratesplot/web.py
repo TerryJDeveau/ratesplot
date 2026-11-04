@@ -156,7 +156,7 @@ import threading
 import time
 import urllib.parse
 import zlib
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field, replace
 
 import matplotlib
@@ -273,6 +273,7 @@ from .options import (  # noqa: E402
     Option,
     by_name,
     command_line_tokens,
+    curves_under_former_rule,
     config_from_choices,
     excluded_curves,
     excluded_measures,
@@ -313,6 +314,8 @@ REMEMBER_COOKIE = "ratesplot_settings"
 # makes up for each visit, so a tab unticked as it is left puts back the
 # settings from before its own write only (``_MEMORY_JS``).
 REMEMBER_BY_COOKIE = "ratesplot_settings_by"
+# In front of a line kept since batch 38, whose series rule is today's (``remembered_line``).
+_KEPT_LINE_MARK = "r38 "
 _REMEMBER_DAYS = 365
 # The one line under the box, saying what is kept (Terry, decision 60).
 _REMEMBER_LINE = (
@@ -1154,9 +1157,17 @@ def for_screen(config: PlotConfig, narrow: bool) -> PlotConfig:
 def remembered_line(value: object) -> str:
     """The command line in the cookie's value as the page's script sent it (batch 24.6), decoded as ``_MEMORY_JS`` encoded it.
 
-    "" for anything but text.
+    "" for anything but text. A line kept before batch 38 has no mark
+    (``_KEPT_LINE_MARK``) and drew what the series rule then said: --policy, its
+    rate added to the four curves, which it no longer means. So its curves are
+    written out, and the settings a visitor had kept go on drawing the same
+    chart; the next line kept has the mark.
     """
-    return urllib.parse.unquote(value) if isinstance(value, str) else ""
+    line = urllib.parse.unquote(value) if isinstance(value, str) else ""
+    if not line or line.startswith(_KEPT_LINE_MARK):
+        return line.removeprefix(_KEPT_LINE_MARK)
+    payloads, flags, _unmatched, _misspelled = sort_tokens(line.split())
+    return " ".join([*line.split(), *curves_under_former_rule(payloads, flags)])
 
 
 def _remembered_line() -> str | None:
@@ -1194,7 +1205,13 @@ def kept_line(drawing: Drawing | None) -> str | None:
     if not drawing.config.draws_a_curve:
         return None
     # --no-ver lasts for this visit (batch 37.2): at the next no control could take it off.
-    return " ".join(token for token in drawing.tokens if token != NO_VERSION_TOKEN)
+    line = _without_no_version(drawing.tokens)
+    return _KEPT_LINE_MARK + line if line else line
+
+
+def _without_no_version(tokens: Iterable[str]) -> str:
+    """A line as the cookie would keep it, --no-ver left out (``kept_line``)."""
+    return " ".join(token for token in tokens if token != NO_VERSION_TOKEN)
 
 
 def _remember_settings(line: str | None, remember: bool) -> None:

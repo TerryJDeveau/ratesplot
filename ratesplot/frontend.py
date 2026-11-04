@@ -96,6 +96,7 @@ from .options import (
     options_of,
     parse_master_currency,
     per_nation,
+    series_named,
     switch_of,
     unticked,
 )
@@ -340,6 +341,7 @@ def starting_choices(
     if state.get("payloads", {}).get("start") == _FORMER_DEFAULT_START:
         state = {**state, "payloads": {**state["payloads"], "start": ""}}
         notes.append(f"The remembered Start {_FORMER_DEFAULT_START} was the former default: now blank, the automatic start.")
+    series_given = series_named(cli_payloads, cli_flags)
 
     def combine(use_state: bool) -> Choices:
         payloads, flags = choices_from_config(PlotConfig())
@@ -355,14 +357,6 @@ def starting_choices(
         for name, text in cli_payloads.items():
             if name in payloads:
                 payloads[name] = text
-        # The levels (--debt:LETTERS, --interest:LETTERS, for every chart or
-        # for one nation) name their curves, as --debt would; each nation's
-        # one control (the debt one) is set below with the other nations' own.
-        levels_given = any(
-            name in cli_payloads or nation_choice(nation, by_name(name)) in cli_payloads
-            for name in ("debt-parts", "interest-parts")
-            for nation in NATIONS
-        )
         # A list taken out of a field (--no-yields:30y) has no control of its
         # own: the field's control shows what the command line left.
         for option in options_of(Kind.VALUE):
@@ -382,12 +376,13 @@ def starting_choices(
                 if any(other.name in cli_payloads or nation_choice(nation, other) in cli_payloads for other in given):
                     payloads[key] = cli_config_payloads[key]
         # Curves, and countries, are overridden as a group: on the command line
-        # "--gdp" means "GDP only", which the resolved config already reflects.
+        # "--gdp" means "GDP only", which the resolved config already reflects,
+        # and so does any series named (--policy, --yields:2,10, --debt:fp).
         # The measure as given: -r without debt or interest has no effect
         # (``options.idle_options``), and stays ticked, greyed, as in the window.
         for group_name in GROUPS_CHOSEN_TOGETHER:
             group = [option.name for option in options_in(group_name) if option.name in flags]
-            if any(name in cli_flags for name in group) or (group_name == "curves" and levels_given):
+            if any(name in cli_flags for name in group) or (group_name == "curves" and series_given):
                 for name in group:
                     flags[name] = bool(cli_flags.get(name, False)) if group_name == "units" else cli_config_flags[name]
         for option in OPTIONS:

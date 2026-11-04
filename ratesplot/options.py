@@ -814,16 +814,17 @@ _AGGREGATE_CHOICES = (
 GROUPS: dict[str, str] = {
     "country": "Country selection:",
     "curves": (
-        "Curve selection (naming any curve positively shows *only* the named curves;\n"
-        "``--no-`` forms hide curves from the default set of all four):"
+        "Curve selection (naming any series, one of these or a rate, the price index\n"
+        "or the population below, shows *only* the series named; ``--no-`` forms hide\n"
+        "curves from the default set of all four):"
     ),
     "rates": (
         'Rates on the yield axis (policy, inflation, mortgages, spreads; each only\n'
-        'when asked for, hiding nothing; at least "po", "inf", "mo", "sp"):'
+        'when named, as a series is; at least "po", "inf", "mo", "sp"):'
     ),
     "extra": (
         "The consumer price index or the population on an axis of its own (one of\n"
-        'the two at a time, only when asked for, hiding nothing; at least "cp",\n'
+        'the two at a time, each only when named, as a series is; at least "cp",\n'
         '"pop"):'
     ),
     "units": "Measure of debt, GDP, and interest:",
@@ -894,9 +895,9 @@ OPTIONS: tuple[Option, ...] = (
     # Batch 13.4 (Terry asked 2026-10-13 for the consumer price index itself
     # on the right axis, unadjusted and seasonally adjusted, fitted by --reg):
     # each nation's index, on the right axis when debt, GDP and interest are
-    # not drawn, else on an axis of its own outside it. A flag, not a curve
-    # under the curve rule: it adds the index and hides nothing, as
-    # --inflation does. At least "cp" ("--c" is Canada). Seasonally adjusted
+    # not drawn, else on an axis of its own outside it. A flag, off until named,
+    # and a series under the series rule (batch 38.2, ``series_named``), as
+    # --inflation is. At least "cp" ("--c" is Canada). Seasonally adjusted
     # by --cpi:sa, a value that turns --cpi on, as --reg:TOL turns on --reg;
     # in the window and on the page a box "Seas. adj." under the index's,
     # greyed while it is unticked (Terry, 2026-11-03).
@@ -949,8 +950,8 @@ OPTIONS: tuple[Option, ...] = (
     ),
     # The aggregate debts (batch 10.4, decision 33): gross, and the UK's net
     # too; gross alone by default. The debt curve's lines, as the yield terms
-    # are the yield curve's: the list names no curve under the curve rule, and
-    # --no-debt hides whichever are chosen. Per nation (--uk:aggregate:net); a
+    # are the yield curve's: the list names the debt curve (batch 38.2,
+    # ``series_named``), and --no-debt hides whichever are chosen. Per nation (--uk:aggregate:net); a
     # nation with gross debt alone draws it whatever the list names
     # (``Nation.view``). At least "agg", as the plan has it.
     Option(
@@ -965,10 +966,11 @@ OPTIONS: tuple[Option, ...] = (
         names=("yield", "yields"), label="Bond yields", panel="rates", topic="yields",
     ),
     # The yield terms (config.YIELD_TERMS): named, or dropped from the default
-    # five. They choose which yield lines the curve draws; they do not name a
-    # curve under the curve rule, so the other curves stay. The window has the
-    # one field; --no-yields:LIST is a command-line convenience (Terry,
-    # 2026-10-06: drop a few defaults rather than list all the wanted ones).
+    # five. --yields:LIST names the yield curve under the series rule (batch
+    # 38.2, ``series_named``); --no-yields:LIST names nothing, so the other
+    # curves stay. The window has the one field; --no-yields:LIST is a
+    # command-line convenience (Terry, 2026-10-06: drop a few defaults rather
+    # than list all the wanted ones).
     Option(
         "yields", Kind.VALUE, ("yield_terms",), "curves", "--yields:LIST / --y:LIST",
         "the yield terms drawn: 1m 3m 6m 1 2 3 5\n7 10 20 30 (years unless m; default\n"
@@ -983,9 +985,9 @@ OPTIONS: tuple[Option, ...] = (
         "drop these terms from the default five\n(or from --yields:LIST)",
         names=("yields",), parse=partial(parse_terms, kind="--no-yields"), removes=True, in_gui=False,
     ),
-    # The yield axis's other curves (ratesplot.rates). Flags, not curves under
-    # the curve rule: each adds its curve and hides nothing. At least "po", so
-    # "-p" stays per capita.
+    # The yield axis's other curves (ratesplot.rates). Flags, off until named,
+    # and series under the series rule (batch 38.2, ``series_named``). At least
+    # "po", so "-p" stays per capita.
     Option(
         "policy", Kind.FLAG, ("policy_rates",), "rates", "--policy / --no-policy",
         "each country's policy rate, the central\nbank's official rate: the fed funds\n"
@@ -1363,6 +1365,69 @@ def list_switch(option: Option) -> Option:
     return by_name(option.turns_on or "yield")
 
 
+# The help groups holding the series, each drawn only when named once any is
+# (``series_named``).
+_SERIES_GROUPS = ("curves", "rates", "extra")
+
+
+def series_switches() -> list[Option]:
+    """Return every switch that draws a series: the four curves, the rates on the yield axis, the price index and the population."""
+    return [option for option in OPTIONS if option.group in _SERIES_GROUPS and option.kind is not Kind.VALUE]
+
+
+def _series_of_value(option: Option) -> Option | None:
+    """Return the series switch a value option names, or None: none for a value outside the series, or one that takes items out (--no-yields:LIST)."""
+    if option.group not in _SERIES_GROUPS or option.removes:
+        return None
+    if option.name in _PART_OPTIONS:
+        return by_name(_PART_OPTIONS[option.name])
+    return list_switch(option)
+
+
+def series_named(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> frozenset[str]:
+    """Return the names of the series switches these choices name; none named, the curves are the default four, less any switched off.
+
+    Batch 38.2 (Terry, 2026-11-03): "On the CLI and (URL) switches like --gdp
+    (and other such series selection switches), if any are selected, should
+    automatically turn off all non-specified series"; asked whether the rates
+    too, "Yes, one rule". So a series is named by its switch, or by a value that
+    says what it draws: a list (--policy:market, --yields:2,10, --aggregate:net),
+    the levels (--debt:fp), a margin (--prime:0.5), --cpi:sa, for every chart or
+    for one nation's. Not by a value that takes items out (--no-yields:30), nor
+    one that names none (--cdn:yields:none), nor one whose switch is given off
+    (--no-yield --yields:2,10, as the window writes a list it keeps). Both uses
+    of the choices follow this: ``config_from_choices``, and the window's start
+    (``frontend.starting_choices``).
+    """
+    named = {option.name for option in series_switches() if flags.get(option.name) is True}
+    for option in options_of(Kind.VALUE):
+        switch = _series_of_value(option)
+        if switch is None or flags.get(switch.name) is False:
+            continue
+        keys = (option.name, *(nation_choice(nation, option) for nation in NATIONS))
+        if any(payloads[key].strip() and not _is_none(payloads[key]) for key in keys if key in payloads):
+            named.add(switch.name)
+    return frozenset(named)
+
+
+def curves_under_former_rule(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> list[str]:
+    """Return the tokens that keep a line written before batch 38 drawing what it drew: each curve written out, on or off.
+
+    Until then only the four curves' switches and the levels named a series:
+    --policy added its rate to the four, and --yields:2,10 chose the yield
+    curve's lines. For a line that says nothing of when it was written, which
+    only the page's cookie can tell (``web.remembered_line``).
+    """
+    curves = options_of(Kind.TOGGLE)
+    levels = {
+        curve for name, curve in _PART_OPTIONS.items()
+        if name in payloads or any(nation_choice(nation, by_name(name)) in payloads for nation in NATIONS)
+    }
+    named = {option.name for option in curves if flags.get(option.name, option.name in levels) is True}
+    on = [option for option in curves if (option.name in named if named else flags.get(option.name) is not False)]
+    return [f"--{option.name}" if option in on else f"--no-{option.name}" for option in curves]
+
+
 def _removed(option: Option, spec: str, current: tuple) -> tuple:
     """Return ``current`` without the items ``spec`` names (``option.removes``); raise if it names none, one is not there or none is left."""
     dropped = option.parse(spec)
@@ -1580,10 +1645,11 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     options are parsed in table order and each option's ``check`` runs straight
     after it, against everything gathered so far. Two rules span several options:
 
-    * Curves: if any curve is chosen positively, only the positively chosen
-      curves are drawn; otherwise all four are, minus any switched off. (With
-      every curve given explicitly, as the GUI does, this is simply "draw the
-      ones switched on".)
+    * Series: if any series is named (``series_named``: a curve, a rate, the
+      price index or the population, by its switch or a value that names it),
+      only the series named are drawn; otherwise the four curves are, minus any
+      switched off. (With every switch given explicitly, as the GUI does, this is
+      simply "draw the ones switched on".)
     * Countries: no country chosen means both charts.
     * Curve sub-options: --debt:LETTERS and --interest:LETTERS set the same
       levels, so given on both they must agree. Each also names its curve,
@@ -1641,19 +1707,17 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
         if option.turns_on
         and (option.name in payloads or any(nation_choice(nation, option) in payloads for nation in NATIONS))
     }
-    # A nation's own levels name their curve too, on every chart, as a value
-    # given for one nation turns its flag on for both (batch 10.5).
-    named_parts = set(given_parts) | {
-        curve for name, curve in _PART_OPTIONS.items() if any(nation_choice(nation, by_name(name)) in payloads for nation in NATIONS)
-    }
-    flags = {**{curve: True for curve in named_parts}, **turned_on, **flags}
+    # What is named before ``turned_on`` is laid in: "none" for one nation
+    # turns its flag on for the others but names nothing (--us:policy:none).
+    named = series_named(payloads, flags)
+    flags = {**turned_on, **dict.fromkeys(named, True), **flags}
 
     for option in options_of(Kind.FLAG):
         if option.name in flags:
             values[option.fields[0]] = flags[option.name]
 
     curves = {option.fields[0]: flags.get(option.name) for option in options_of(Kind.TOGGLE)}
-    if any(chosen is True for chosen in curves.values()):
+    if named:
         values.update({field: chosen is True for field, chosen in curves.items()})
     else:
         values.update({field: chosen is not False for field, chosen in curves.items()})
@@ -2068,27 +2132,12 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
             nations = {nation.show_field: nation for nation in NATIONS}
             tokens.append("--nations:" + ",".join(nations[option.fields[0]].codes[0] for option in chosen))
 
-    # Curves: name the ones on, or negate the ones off, whichever is shorter
-    # (both mean the same under the curve rule; all off needs every "--no-").
-    # With levels chosen every curve is written out, because --debt:LETTERS
-    # would otherwise name debt and hide the curves left unnamed.
-    curves = options_of(Kind.TOGGLE)
-    on = [option for option in curves if flags.get(option.name, True)]
-    off = [option for option in curves if option not in on]
+    # The curves go here, once the values are written: what they say depends on
+    # whether those name a series (``_curve_tokens``).
+    curves_at = len(tokens)
     # A nation drawn only when asked for, and not asked for, writes nothing
     # (its fields stay in the window for when it is).
     written_for = [n for n in NATIONS if n.shown_by_default or flags.get(switch_of(n), False)]
-    with_levels = any(
-        payloads.get(nation_choice(nation, by_name(name)), payloads.get(name, "")).strip()
-        for nation in written_for
-        for name in _PART_OPTIONS
-    )
-    if with_levels:
-        tokens += [f"--{option.name}" if option in on else f"--no-{option.name}" for option in curves]
-    elif off and (not on or len(off) <= len(on)):
-        tokens += [f"--no-{option.name}" for option in off]
-    elif off:
-        tokens += [f"--{option.name}" for option in on]
 
     # The measure and the line labels: each switch that is on, spelled out.
     tokens += [
@@ -2105,6 +2154,14 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     level_key = "interest" if not flags.get("debt", True) and flags.get("interest", True) else "debt"
     values: list[str] = []
     stood_for: set[str] = set()
+    named_by_values: set[str] = set()
+
+    def note_named(option: Option, written: list[str]) -> None:
+        """Note the curve a value just written names (``series_named``): a removal, or a list that is none, names nothing."""
+        switch = _series_of_value(option)
+        if switch is not None and any(":no-" not in token and not token.startswith("--no-") and not token.endswith(":none") for token in written):
+            named_by_values.add(level_key if option.name in _PART_OPTIONS else switch.name)
+
     for option in options_of(Kind.VALUE):
         text = payloads.get(option.name, "").strip()
         texts = {}
@@ -2121,6 +2178,7 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
             if written and option.turns_on:
                 stood_for.add(option.turns_on)
             values += written
+            note_named(option, written)
             continue
         default = defaults.get(option.name)
         if default is None and per_nation(option) and option.format:
@@ -2134,6 +2192,7 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
         shorter = _shorter_as_removal(option, text)
         if shorter != "":  # "": the default, spelled another way ("3m,2,5,10,30")
             values.append(shorter or f"{spelling}:{text}")
+            note_named(option, values[-1:])
 
     # On/off flags in the window (--cur, --reg): only when not at their default.
     for option in options_of(Kind.FLAG):
@@ -2145,7 +2204,35 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # with it keep it in their flags, and write it, so a copy of the line keeps it.
     if flags.get("version") is False:
         tokens.append(NO_VERSION_TOKEN)
+    tokens[curves_at:curves_at] = _curve_tokens(flags, stood_for, named_by_values)
     return tokens + values
+
+
+def _curve_tokens(flags: Mapping[str, bool], stood_for: set[str], named_by_values: set[str]) -> list[str]:
+    """Return the tokens for the four curves in a line whose other series are written: the fewest that draw just these (batch 38.2).
+
+    With no other series on and no value naming one, name the curves on or
+    negate those off, whichever is shorter (both mean the same under the series
+    rule; all off needs every "--no-"). Otherwise something on the line names a
+    series, so every curve on must be named too, or it would be hidden: the
+    whole set with the policy rate is --gdp --debt --interest --yield --policy.
+    A value names its own curve (--yields:2,10), so a curve off with its list
+    kept says so (--no-yield --yields:2,10). If all that shows an on rate is a
+    nation's "none" (--cdn:policy:none), which names nothing, every curve off is
+    written out, or all four would be drawn.
+    """
+    curves = options_of(Kind.TOGGLE)
+    on = [option for option in curves if flags.get(option.name, True)]
+    off = [option for option in curves if option not in on]
+    others_on = [option.name for option in series_switches() if option.kind is Kind.FLAG and flags.get(option.name)]
+    if named_by_values or others_on:
+        positive = [option for option in on if option.name not in named_by_values]
+        if not positive and not named_by_values and all(name in stood_for for name in others_on):
+            return [f"--no-{option.name}" for option in off]
+        return [f"--{option.name}" for option in positive] + [f"--no-{option.name}" for option in off if option.name in named_by_values]
+    if off and (not on or len(off) <= len(on)):
+        return [f"--no-{option.name}" for option in off]
+    return [f"--{option.name}" for option in on] if off else []
 
 
 # ---------------------------------------------------------------------------
@@ -2165,6 +2252,9 @@ part of a name will do: -r, --rel and --relative are the same. A name is never
 matched by its first letter alone (--reg is not -r, --yes is not --yield). An
 option that takes a value is written NAME:VALUE, and one that takes none must
 not be given one (-r:1 is an error).
+
+Naming a series (--gdp, --policy, --yields:2,10, --mo:5) draws only the series
+named.
 
 {per_nation}
 """

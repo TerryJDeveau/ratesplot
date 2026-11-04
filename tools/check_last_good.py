@@ -77,7 +77,7 @@ from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E
 CASES = {
     "default": ["--e:2026-09-01"],
     # The UK's net debt asked for (batch 10.4: gross alone by default), so its fallback stays tested.
-    "rates": ["--na:ca,us,gb,de", "--e:2026-09-01", "-s:2000", "--policy", "--mo", "--sp", "--uk:agg:gross,net"],
+    "rates": ["--gdp", "--interest", "--yield", "--na:ca,us,gb,de", "--e:2026-09-01", "-s:2000", "--policy", "--mo", "--sp", "--uk:agg:gross,net"],
     "levels": ["-c", "-u", "--e:2026-09-01", "-s:1990", "--debt:fp", "-p"],
 }
 
