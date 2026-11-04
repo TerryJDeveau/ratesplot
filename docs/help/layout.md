@@ -2,7 +2,7 @@
 
 ## Size
 
-The chart's width and height in pixels, at least 800 each way; 2048 by 1536 when blank. In the window and on the page the two are typed in their own boxes, and "Preserve aspect ratio" keeps their ratio as one is changed. Export chart writes a PNG of exactly this size.
+The chart's width and height in pixels, at least 800 each way; 2048 by 1536 when blank. In the window and on the page the two are typed in their own boxes, and "Preserve aspect ratio" keeps their ratio as one is changed. Export chart writes a PNG of exactly this size. In the plain chart windows of `--no-gui` a blank size too large for the monitor is drawn at the size that fits; a size given is kept.
 
 The text and the lines are scaled with the size: every font by the smaller of width ÷ 2048 and height ÷ 1536, never below half its size, with the spacing tied to the text (the legend's margins, the gaps around the titles); the lines never thinner than on the default chart. On a narrow screen (under 700 pixels wide) the page draws 800 by 800 unless a size is typed, and its text is never below 80 % of its size: at half size, with the chart shown as a phone shows it, the legend and the ticks could not be read.
 
