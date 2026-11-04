@@ -332,6 +332,9 @@ CASES: dict[str, list[str]] = {
     # Batch 16: West Germany's population before 1960, alone and beside the amounts.
     "de_population1950": ["--na:de", "--pop", "-l", "--reg", "-s:1950"],
     "de_population_amounts1950": ["--gdp", "--debt", "--interest", "--na:de", "--pop", "-p", "-s:1950"],
+    # Batch 16: Germany's mortgage rates back to 1982-06, alone and across the join at 2003-01, with its yields and amounts.
+    "de_mortgages1982": ["--na:de", "--mo:1-5,5-10,over10", "-l", "-s:1982"],
+    "de_mortgages_join": ["--gdp", "--debt", "--interest", "--yield", "--na:de", "--mo:1-5,5-10,over10", "-l", "-s:1997", "--e:2006"],
     # Batch 36.3: where no shape of the legend fits free. A little of a line
     # covered (12 cells), no limit moved; room made at the top, where the limits
     # are blank; at the bottom, Max set; no limit free, the least busy place.

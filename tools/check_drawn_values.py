@@ -192,6 +192,8 @@ CASES: dict[str, list[str]] = {
     # the two joins (1962-01, 1991-01) inside the window.
     "de_inflation_1949": ["--na:de", "-s:1949", "--inf"],
     "de_cpi_1948": ["--na:de", "-s:1948", "--cpi"],
+    # Batch 16: Germany's mortgage bands across the Bundesbank's older rates and the join to the ECB's (2003-01).
+    "de_mortgages_1982": ["--na:de", "-s:1982", "--e:2006", "--mo:1-5,5-10,over10"],
     "population": ["--na:ca,us,gb,de", "-s:1700", "--population", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
     "population_pc": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:1960", "--pop", "-p", "--no-yield"],
     # Batch 13.3: the real yields, each nation's every one; Canada's monthly from 1991, then daily; the UK's
@@ -466,7 +468,15 @@ def mortgage_sources(term: str, nation: str) -> list[Source]:
         if term == "svr":
             sources.append(built_in("variable mortgage rate 1939-2017", EMBEDDED_UK_MORTGAGE_HISTORY, monthly=True, carry_days=MONTHLY_CARRY_DAYS))
         return sources
-    return [ecb("MIR", rates.DE_MORTGAGE_SERIES[term], "PCPA", monthly=True, carry_days=MONTHLY_CARRY_DAYS)]
+    reported = ecb("MIR", rates.DE_MORTGAGE_SERIES[term], "PCPA", monthly=True, carry_days=MONTHLY_CARRY_DAYS)
+    if term not in rates.DE_MORTGAGE_HISTORY:
+        return [reported]
+    # Each source only on its side of the join (batch 16), or a value drawn from the wrong one in 2000-2002 would pass.
+    older = built_in(f"the Bundesbank's older rate under {term}", rates.DE_MORTGAGE_HISTORY[term], monthly=True, carry_days=MONTHLY_CARRY_DAYS)
+    return [
+        replace(reported, read=lambda: (values := reported.read()).loc[values.index >= rates.DE_MORTGAGE_JOIN]),
+        replace(older, read=lambda: (values := older.read()).loc[values.index < rates.DE_MORTGAGE_JOIN]),
+    ]
 
 
 # ---------------------------------------------------------------------------

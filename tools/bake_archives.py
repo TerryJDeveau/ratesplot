@@ -23,8 +23,10 @@ the BEGIN/END markers of
   West Germany's consumer prices from 1948 (the Federal Statistical Office's
   long series, batch 16; needs ``openpyxl``) and its population 1950 to 1959
   (the Bundesbank's long series, a PDF, batch 16; needs ``pdftotext`` unless its
-  page's text is given). ``--de-csv FILE``, ``--de-discount-csv FILE``,
-  ``--de-cpi-workbook FILE`` and ``--de-population-text FILE`` read the
+  page's text is given) and the Bundesbank's older mortgage rates, 1982 to 2003
+  (flow BBIB1, batch 16). ``--de-csv FILE``, ``--de-discount-csv FILE``,
+  ``--de-cpi-workbook FILE``, ``--de-population-text FILE``,
+  ``--de-mortgage-5y-csv FILE`` and ``--de-mortgage-10y-csv FILE`` read the
   downloads already saved (tools/de_fixtures).
 * ``ratesplot/data/boe/``: the Bank of England database's series, every value
   of each, one file per series (batch 19.2: the live sources' history, of
@@ -66,7 +68,7 @@ Usage (from the project root)::
     python tools/bake_archives.py            # every nation, and boe, boc, fred, ecb, eurostat, ons, bbk and statcan
     python tools/bake_archives.py --only us  # or cdn, uk, de, boe, boc, fred, ecb, eurostat, ons, bbk, statcan
     python tools/bake_archives.py --only uk --uk-workbook a-millennium-of-macroeconomic-data-for-the-uk.xlsx
-    python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv --de-cpi-workbook tools/de_fixtures/raw/destatis_vpi_lange_reihen.xlsx --de-population-text tools/de_fixtures/raw/bbk_lange_zeitreihen_V1.txt
+    python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv --de-cpi-workbook tools/de_fixtures/raw/destatis_vpi_lange_reihen.xlsx --de-population-text tools/de_fixtures/raw/bbk_lange_zeitreihen_V1.txt --de-mortgage-5y-csv tools/de_fixtures/raw/bbib1_HYP_F05J.csv --de-mortgage-10y-csv tools/de_fixtures/raw/bbib1_HYP_F10J.csv
 """
 
 from __future__ import annotations
@@ -118,6 +120,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--de-discount-csv", type=Path, help="the Bundesbank's discount rate download (BBIN1) already on disk")
     parser.add_argument("--de-cpi-workbook", type=Path, help="the Federal Statistical Office's long series of consumer prices already on disk")
     parser.add_argument("--de-population-text", type=Path, help="the text of the population's page of the Bundesbank's long series already on disk")
+    parser.add_argument("--de-mortgage-5y-csv", type=Path, help="the Bundesbank's older 5-year mortgage rate (BBIB1) already on disk")
+    parser.add_argument("--de-mortgage-10y-csv", type=Path, help="the Bundesbank's older 10-year mortgage rate (BBIB1) already on disk")
     args = parser.parse_args(argv)
     all_baked = True
     # One pass, as a drawing: a source that does not answer is asked nothing more in it (batch 19.3).
@@ -127,7 +131,13 @@ def main(argv: list[str]) -> int:
                 if key == "uk":
                     bake(workbook_path=args.uk_workbook)
                 elif key == "de":
-                    bake(saved_csv=args.de_csv, saved_discount_csv=args.de_discount_csv, saved_cpi_workbook=args.de_cpi_workbook, saved_population_text=args.de_population_text)
+                    bake(
+                        saved_csv=args.de_csv,
+                        saved_discount_csv=args.de_discount_csv,
+                        saved_cpi_workbook=args.de_cpi_workbook,
+                        saved_population_text=args.de_population_text,
+                        saved_mortgage_csvs={"EMBEDDED_DE_MORTGAGE_5Y_HISTORY": args.de_mortgage_5y_csv, "EMBEDDED_DE_MORTGAGE_10Y_HISTORY": args.de_mortgage_10y_csv},
+                    )
                 else:
                     # The archives raise when they cannot be baked; a live source's
                     # history returns a SeriesBake per series, each written or not.

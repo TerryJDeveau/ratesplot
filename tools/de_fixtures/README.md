@@ -48,6 +48,10 @@ sources served on 2026-10-06 evening (Toronto).
     "Verbraucherpreisindizes für Deutschland, Lange Reihen ab 1948", its last edition (December
     2022), from `config.DESTATIS_CPI_LONG_SERIES_URL`; sheet "Monate", read and baked by
     `bake.parse_west_german_prices`.)*
+  - *(Added 2026-11-04, batch 16: `bbib1_HYP_F05J.csv` and `bbib1_HYP_F10J.csv`, the Bundesbank's
+    flow BBIB1, `M.DE.B.S.DNB.HYP.F05J.A.E1.11A` (SU0043) and `...F10J...` (SU0046), the effective
+    rate on new mortgages fixed for 5 and for 10 years, "% p.a.", monthly 1982-06 to 2003-06; read and
+    baked by `bake.parse_german_mortgage_history`.)*
   - *(Added 2026-11-04, batch 16: `bbk_lange_zeitreihen_V1.txt`, page 29 of the Bundesbank's "Lange
     Zeitreihen" of 2020-09-01 (`config.BUNDESBANK_LONG_SERIES_PDF_URL`, 5.6 MB), part V table 1, as
     `pdftotext -layout -enc UTF-8 -f 29 -l 29` gives it; read and baked by
@@ -106,4 +110,4 @@ debt `ecb_gfs_a_debt` (year-ends 1991-1999) + `est_ggdebt_q`; interest `est_edpt
   have Frankfurt overnight money from 1960, `SU0101` monthly and `ST0101` daily).
 - German GDP, debt, interest and population **before 1991** (West Germany): Destatis or the
   Bundesbank's long series; candidates for a bake, like the UK's millennium dataset.
-- Mortgage rates before 2003 (the Bundesbank's old interest rate statistics, to 2003-06).
+- *(Found 2026-11-04: the mortgage rates before 2003, above.)*
