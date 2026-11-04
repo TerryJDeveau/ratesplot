@@ -329,6 +329,9 @@ CASES: dict[str, list[str]] = {
     "population_r": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us", "--pop", "-r", "-s:1960"],
     "population_pc": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us", "--pop", "-p", "--constant", "-s:1960"],
     "population_long": ["--na:gb,ca", "--pop", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "--reg", "-s:1700"],
+    # Batch 16: West Germany's population before 1960, alone and beside the amounts.
+    "de_population1950": ["--na:de", "--pop", "-l", "--reg", "-s:1950"],
+    "de_population_amounts1950": ["--gdp", "--debt", "--interest", "--na:de", "--pop", "-p", "-s:1950"],
     # Batch 36.3: where no shape of the legend fits free. A little of a line
     # covered (12 cells), no limit moved; room made at the top, where the limits
     # are blank; at the bottom, Max set; no limit free, the least busy place.

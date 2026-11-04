@@ -36,7 +36,8 @@ reach them; ``tools/de_fixtures/README.md`` holds the measurements):
 * Population: Eurostat namq_10_pe (thousands, quarterly from 1991, dated
   mid-quarter), and before it demo_pjan (on 1 January, from 1960: West
   Germany until 1990, so the curve steps up by 17 million at unification,
-  as the UK's steps at Ireland's independence).
+  as the UK's steps at Ireland's independence), and before it the
+  Bundesbank's annual averages for 1950 to 1959, baked, each dated 1 July.
 
 Every figure is dated by the day it describes: a stock at the end of its
 quarter or year, a four-quarter sum at the end of its last quarter, an
@@ -92,6 +93,7 @@ from .de_archive_data import (
     EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY,
     EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS,
     EMBEDDED_DE_WEST_CPI_FOUR_PERSON,
+    EMBEDDED_DE_WEST_POPULATION,
 )
 from .http import BotCheck, de_get, downloads_of
 from .joins import embedded_frame, ttm_sum
@@ -941,16 +943,29 @@ def fetch_de_consumer_prices(*, adjusted: bool = False) -> pd.Series:
     return index if adjusted else with_west_germany(index)
 
 
+def west_german_population() -> pd.Series:
+    """Return West Germany's population 1950 to 1959, in persons: the Bundesbank's annual averages, each dated by 1 July (batch 16).
+
+    On the whole territory, the Saarland and West Berlin included, as Eurostat's
+    counts from 1960 are, and within about 0.2 % of the first of them, so the two
+    are laid end to end unscaled, as Canada's two estimates are.
+    """
+    dates = pd.DatetimeIndex([date for date, _value in EMBEDDED_DE_WEST_POPULATION], name=DATE_COLUMN)
+    return pd.Series([value * THOUSAND for _date, value in EMBEDDED_DE_WEST_POPULATION], index=dates, dtype=float)
+
+
 @downloads_of("Eurostat population")
 def fetch_de_population() -> pd.Series | None:
-    """Return Germany's population for -p: the 1 January counts (from 1960; West Germany to 1990) until the quarters begin (1991).
+    """Return Germany's population for -p: West Germany's annual averages (from 1950), then the 1 January counts (from 1960; West Germany to 1990), until the quarters begin (1991).
 
-    The quarters (thousands) are dated by their middles, the counts by 1
-    January. Either alone, with a warning, if the other fails.
+    The averages are dated by 1 July, the quarters (thousands) by their middles,
+    the counts by 1 January. Either source of Eurostat's alone, with a warning, if
+    the other fails; the averages only with the counts, or a gap of 30 years.
     """
     try:
         annual = eurostat_series("demo_pjan")
         annual = annual.set_axis(pd.DatetimeIndex(annual.index.to_period("Y").start_time, name=DATE_COLUMN))
+        annual = _before(west_german_population(), annual)
     except Exception as exc:
         print(f"  Warning: Eurostat German population on 1 January unavailable ({exc}); from 1991 only.")
         annual = None

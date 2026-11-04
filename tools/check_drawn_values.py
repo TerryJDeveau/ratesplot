@@ -87,6 +87,7 @@ from ratesplot.de_archive_data import (  # noqa: E402
     EMBEDDED_DE_DISCOUNT_RATE_CHANGES,
     EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS,
     EMBEDDED_DE_WEST_CPI_FOUR_PERSON,
+    EMBEDDED_DE_WEST_POPULATION,
 )
 from ratesplot.cdn_archive_data import EMBEDDED_CDN_POPULATION_HISTORY  # noqa: E402
 from ratesplot.config import (  # noqa: E402
@@ -830,7 +831,8 @@ def population(nation: str) -> pd.Series:
         newer = by_middle(_clean(uk_data.ons_download("EBAQ", "quarters")) * 1000.0)
     else:
         annual = _clean(de_data.parse_jsonstat(de_data.eurostat_download("demo_pjan"), "NR"))
-        older = annual.set_axis(pd.DatetimeIndex(annual.index.to_period("Y").start_time))
+        west = built_in("the Bundesbank's long series", EMBEDDED_DE_WEST_POPULATION).read() * 1000.0
+        older = pd.concat([west, annual.set_axis(pd.DatetimeIndex(annual.index.to_period("Y").start_time))])
         newer = by_middle(_clean(de_data.parse_jsonstat(de_data.eurostat_download("namq_10_pe"), "THS_PER")) * 1000.0)
     return pd.concat([older.loc[older.index < newer.index[0]], newer])
 

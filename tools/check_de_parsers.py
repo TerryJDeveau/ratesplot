@@ -207,6 +207,36 @@ def check_west_prices() -> None:
           len(alone) == 1 and "where West Germany's are not kept" in printed.getvalue(), (len(alone), printed.getvalue()))
 
 
+def check_west_population() -> None:
+    """Batch 16: West Germany's population, read from the page of the Bundesbank's long series (saved 2026-11-04), and its join to Eurostat's counts."""
+    page = text("bbk_lange_zeitreihen_V1.txt")
+    column = bake.parse_long_series_population(page)
+    check("long series: 70 years, 49,989 thousand in 1950, 54,876 in 1959, 55,433 in 1960, 83,093 in 2019",
+          len(column) == 70 and column.iloc[0] == 49_989 and column.loc["1959-07-01"] == 54_876 and column.loc["1960-07-01"] == 55_433 and column.iloc[-1] == 83_093,
+          (len(column), column.iloc[0], column.iloc[-1]))
+    check("long series: 64,074 thousand in 1991 (West Germany), 80,594 in 1992 (all of Germany), as the table's note says",
+          column.loc["1991-07-01"] == 64_074 and column.loc["1992-07-01"] == 80_594, column.loc["1990-07-01":"1993-07-01"].to_dict())
+    baked_values = pd.Series({pd.Timestamp(date): value for date, value in de_archive_data.EMBEDDED_DE_WEST_POPULATION}, dtype=float)
+    check("bake: the baked ten years are the column's first ten, each dated 1 July",
+          baked_values.equals(column.iloc[:10].rename(None).rename_axis(None)), (len(baked_values), baked_values.index[-1]))
+    # The places in the column against a source of its own: each year from 1960 to 1988 against
+    # the mean of Eurostat's counts on the 1 January before and after it (the census of 1970 the widest).
+    january = de_data.parse_jsonstat(jsonstat("est_pjan_a"), "NR") / 1000
+    gaps = {year: abs(column.loc[f"{year}-07-01"] / ((january.loc[f"{year}-12-31"] + january.loc[f"{year + 1}-12-31"]) / 2) - 1) for year in range(1960, 1989)}
+    check("long series: every year 1960 to 1988 within 0.75 % of the mean of Eurostat's counts either side of it, all but 1970 within 0.35 %",
+          max(gaps.values()) < 0.0075 and all(gap < 0.0035 for year, gap in gaps.items() if year != 1970), max(gaps, key=gaps.get))
+    check("long series: a heading gone is refused", raises(bake.parse_long_series_population, page.replace("Jahresdurchschnitte", "Jahresenden")) is not None)
+    check("long series: a row gone is refused", raises(bake.parse_long_series_population, page.replace("53.008", "")) is not None)
+    lines = page.splitlines()
+    first_rows = [number for number, line in enumerate(lines) if bake._DE_LONG_SERIES_POPULATION_ROW.match(line)]
+    swapped = lines[:first_rows[-1]] + lines[first_rows[-1] + 1:]
+    swapped.insert(first_rows[0], lines[first_rows[-1]])
+    check("long series: a row out of its place, so that unification falls elsewhere, is refused", raises(bake.parse_long_series_population, "\n".join(swapped)) is not None)
+    people = de_data.west_german_population()
+    check("reader: persons, 1950-07-01 to 1959-07-01", people.index[0] == pd.Timestamp("1950-07-01") and people.iloc[0] == 49_989_000
+          and people.index[-1] == pd.Timestamp("1959-07-01") and len(people) == 10, people.iloc[-1])
+
+
 def check_ecb() -> None:
     parse = de_data.parse_ecb_csv
     fixed = parse(text("ecb_mro_fixed.csv"), "FM.B.U2.EUR.4F.KR.MRR_FR.LEV", "PCPA")
@@ -290,9 +320,9 @@ def check_fetchers() -> None:
         gdp = de_data.fetch_de_gdp(config)["TTM Nominal GDP ($)"]
         check("GDP: four-quarter sums from 1991 Q4", gdp.index[0] == pd.Timestamp("1991-12-31"))
         people = de_data.fetch_de_population()
-        check("population: 1 January from 1960 (1991's the first unified), then mid-quarters (79,777 thousand on 1991-02-15)",
-              people.index[0] == pd.Timestamp("1960-01-01") and people.loc["1991-01-01"] == 79_753_227
-              and people.loc["1991-02-15"] == 79_777_000 and pd.Timestamp("1991-04-01") not in people.index)
+        check("population: annual averages 1950 to 1959, then 1 January from 1960 (1991's the first unified), then mid-quarters (79,777 thousand on 1991-02-15)",
+              people.index[0] == pd.Timestamp("1950-07-01") and people.loc["1959-07-01"] == 54_876_000 and people.loc["1960-01-01"] == 55_257_088
+              and people.loc["1991-01-01"] == 79_753_227 and people.loc["1991-02-15"] == 79_777_000 and pd.Timestamp("1991-04-01") not in people.index)
         levels = de_data.fetch_de_components(PlotConfig(start=config.start, end=config.end, components="fnpm"))
         n = levels[component_column("debt", "n")]
         check("levels: f n p m debt and interest; n is the Länder and local together",
@@ -391,7 +421,7 @@ def check_cnbc() -> None:
 
 
 def main() -> int:
-    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
+    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
         group()
     passed = sum(RESULTS)
     print(f"[de parsers] {passed} of {len(RESULTS)} checks passed")

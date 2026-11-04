@@ -926,7 +926,7 @@ OPTIONS: tuple[Option, ...] = (
         "population", Kind.FLAG, ("population",), "extra", "--population / --no-population",
         "each country's population, in persons, on\na log axis of its own (outside the right\n"
         "axis when debt, GDP or interest is drawn):\nthe UK from 1707, Canada from 1867, the\n"
-        "U.S. from 1947, Germany from 1960; not\nwith --cpi",
+        "U.S. from 1947, Germany from 1950; not\nwith --cpi",
         names=("population",), shortest=3, label="Population", panel="curves", topic="population",
     ),
     # Curve sub-options: debt and interest by level of government ("--d:" is

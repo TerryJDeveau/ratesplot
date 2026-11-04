@@ -15,7 +15,7 @@ These are the figures Per capita divides by; [its page](?help=per-capita) gives 
 - **Canada, from 1867.** Statistics Canada's estimates, yearly to 1945, quarterly from 1946.
 - **The United States, from 1947.** The Bureau of Economic Analysis' population, quarterly, through FRED. Nothing earlier is read.
 - **The United Kingdom, from 1707.** The Bank of England's yearly figures to 1954 (Great Britain to 1800, with all of Ireland from 1801 to 1921, with Northern Ireland alone from 1922), then the ONS's quarterly figures.
-- **Germany, from 1960.** Eurostat's counts on 1 January to 1990, for West Germany, then its quarterly figures for all of Germany from 1991, a step of 17 million at unification.
+- **Germany, from 1950.** The Bundesbank's yearly averages to 1959, then Eurostat's counts on 1 January to 1990, both for West Germany with the Saarland and West Berlin, then Eurostat's quarterly figures for all of Germany from 1991, a step of 17 million at unification.
 
 ## On the command line
 
