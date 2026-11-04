@@ -59,7 +59,9 @@ fails, the baked history alone, with a warning.
 
 from __future__ import annotations
 
+import functools
 import io
+import zipfile
 from datetime import datetime
 
 import pandas as pd
@@ -68,6 +70,8 @@ from .config import (
     BILLION,
     BOE_IADB_FROM,
     BOE_IADB_URL,
+    BOE_LATEST_CURVES_URL,
+    BOE_REAL_CURVE_ARCHIVE_URL,
     DATE_COLUMN,
     GDP_COLUMN,
     MILLION,
@@ -115,6 +119,30 @@ UK_YIELD_EARLIEST = {
 UK_YIELD_TERMS = tuple(term for term, column in YIELD_TERMS.items() if column in UK_YIELD_SERIES)
 # The baked monthly history of a term, drawn as steps before its daily series begins.
 _YIELD_HISTORY = {"10-Year": EMBEDDED_UK_10Y_HISTORY, "20-Year": EMBEDDED_UK_20Y_HISTORY}
+# The real yields (batch 13.3): chart column -> its years on the Bank of
+# England's real spot curve, fitted to index-linked gilts, in Excel files on its
+# Yield curves page, and the first day of each (measured 2026-11-04: daily; 5, 7
+# and 10 years from the first; 20 years with none from 1988-10 to 1992-04 or from
+# 1995-12 to 1996-02, breaks in its line; 30 years only since the curve was
+# published past 25, 2016).
+UK_REAL_TERMS = {"5-Year Real": 5, "7-Year Real": 7, "10-Year Real": 10, "20-Year Real": 20, "30-Year Real": 30}
+UK_REAL_EARLIEST = {
+    "5-Year Real": pd.Timestamp("1985-01-02"),
+    "7-Year Real": pd.Timestamp("1985-01-02"),
+    "10-Year Real": pd.Timestamp("1985-01-02"),
+    "20-Year Real": pd.Timestamp("1986-06-09"),
+    "30-Year Real": pd.Timestamp("2016-01-04"),
+}
+# In either of the Bank's zips: the real curve's workbooks, by their names'
+# start, and in each the sheet of its spot curve ("4. spot curve", "4.  real
+# spot curve" to 2004), not its short end's.
+_REAL_WORKBOOK_START = "GLC Real"
+_REAL_SPOT_SHEET_WORD = "spot curve"
+# The current month's file is all a drawing asks for, so it can only add days
+# after the bake's last (a bake more than a few days old leaves a gap, a break
+# in the line, until the daily job's next run): the recent part begins the day
+# after it. A fitted curve's day is not revised there.
+_REAL_CURVE_RECENT = pd.DateOffset(days=-1)
 # Where ``fetch_uk_yields`` records, in the frame's ``attrs``, the last date
 # of each column's monthly history ({column: date}), which is drawn as steps.
 YIELD_HISTORY_ATTR = "monthly_history_through"
@@ -272,6 +300,80 @@ def iadb_series(code: str, *, revised: bool = False) -> pd.Series:
     )
 
 
+def real_curve_code(column: str) -> str:
+    """The name of a real yield's baked file: the Bank's curve and its years (``GLC.REAL.SPOT.10``)."""
+    return f"GLC.REAL.SPOT.{UK_REAL_TERMS[column]}"
+
+
+@functools.lru_cache(maxsize=2)
+def parse_real_spot_curves(content: bytes) -> pd.DataFrame:
+    """Read one of the Bank's yield-curve zips: its real spot curve at the years of ``UK_REAL_TERMS``, a date-indexed float column per chart column.
+
+    Each workbook of the real curve holds a sheet of the spot curve: a row of
+    its years, then a row per day, the date first, an empty cell at a year
+    with no value (no bonds there that day). A zip with no such workbook or
+    sheet, or a sheet with no row of years, raises; a month with no day yet
+    is no rows. Cached as it is read once for each term: the caller's own copy.
+    """
+    import openpyxl
+
+    wanted = {years: column for column, years in UK_REAL_TERMS.items()}
+    rows: dict[pd.Timestamp, dict[str, float]] = {}
+    with zipfile.ZipFile(io.BytesIO(content)) as bundle:
+        names = [name for name in bundle.namelist() if name.startswith(_REAL_WORKBOOK_START) and name.endswith(".xlsx")]
+        if not names:
+            raise ValueError(f"no workbook of the real curve among {bundle.namelist()}")
+        for name in names:
+            book = openpyxl.load_workbook(io.BytesIO(bundle.read(name)), read_only=True, data_only=True)
+            sheets = [sheet for sheet in book.sheetnames if _REAL_SPOT_SHEET_WORD in sheet.lower() and "short" not in sheet.lower()]
+            if len(sheets) != 1:
+                raise ValueError(f"{name}: expected one sheet of the spot curve, found {book.sheetnames}")
+            places: dict[int, str] | None = None
+            for row in book[sheets[0]].iter_rows(values_only=True):
+                if places is None:
+                    # The row of years: numbers after its first cell (2.5, 3 … 25 or 40).
+                    if sum(isinstance(cell, (int, float)) for cell in row[1:]) > len(wanted):
+                        places = {place: wanted[cell] for place, cell in enumerate(row) if cell in wanted}
+                elif isinstance(row[0], datetime):
+                    values = {
+                        column: float(row[place]) for place, column in places.items()
+                        if place < len(row) and isinstance(row[place], (int, float))
+                    }
+                    if values:
+                        rows[pd.Timestamp(row[0])] = values
+            book.close()
+            if places is None:
+                raise ValueError(f"{name}: no row of years in its sheet {sheets[0]!r}")
+    frame = pd.DataFrame.from_dict(rows, orient="index", columns=list(UK_REAL_TERMS), dtype=float)
+    return frame.set_axis(pd.DatetimeIndex(frame.index, name=DATE_COLUMN)).sort_index()
+
+
+def real_curve_latest() -> pd.DataFrame:
+    """Ask the Bank for the current month's file of its curves: the real spot curve's days so far this month (``parse_real_spot_curves``)."""
+    return parse_real_spot_curves(uk_get(BOE_LATEST_CURVES_URL).content).copy()
+
+
+def real_curve_archive() -> pd.DataFrame:
+    """Ask the Bank for its archive of the real curve, 25 MB: every finished month (``parse_real_spot_curves``); for the bake alone, and a copy with no bake."""
+    return parse_real_spot_curves(uk_get(BOE_REAL_CURVE_ARCHIVE_URL).content).copy()
+
+
+def real_spot_series(column: str) -> pd.Series:
+    """Return one real yield of the Bank's spot curve, without missing days: its baked history, then the days of the current month's file after it.
+
+    As ``iadb_series`` (batch 19.2), but for what the recent part can be
+    (``_REAL_CURVE_RECENT``). If the Bank fails, the baked history alone, to
+    its last date, with a warning.
+    """
+
+    def answer(start: pd.Timestamp | None) -> pd.Series:
+        latest = real_curve_latest()
+        whole = latest if start is not None else pd.concat([real_curve_archive(), latest]).sort_index()
+        return whole[column].dropna()
+
+    return with_recent_part(BOE_BAKED_SOURCE, real_curve_code(column), f"Bank of England {real_curve_code(column)}", answer, _REAL_CURVE_RECENT)
+
+
 def _ons_date(row: dict, frequency: str) -> pd.Timestamp:
     """Return the last day of the period an ONS row describes: ``1975 Q1`` -> 1975-03-31, ``1975 MAR`` -> 1975-03-31."""
     text = str(row["date"]).strip()
@@ -378,6 +480,8 @@ def uk_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
             history = _YIELD_HISTORY.get(column)
             source = "monthly average before the par yield" if history else UK_YIELD_SERIES[column]
             earliest[f"{column} Yield ({source})"] = pd.Timestamp(history[0][0]) if history else UK_YIELD_EARLIEST[column]
+        elif term in terms and column in UK_REAL_TERMS:
+            earliest[f"{column} Yield (the Bank of England's real spot curve)"] = UK_REAL_EARLIEST[column]
     named = {
         "UK National Debt (alone, before 1975)": EMBEDDED_UK_DEBT_HISTORY,
         "TTM Nominal GDP (UK, annual before 1955)": EMBEDDED_UK_GDP_HISTORY,
@@ -396,10 +500,11 @@ def fetch_uk_yields(config: PlotConfig) -> pd.DataFrame:
     fails is drawn from its bake (batch 19.2, ``iadb_series``); one neither
     baked nor answered leaves the term drawn from its monthly history alone,
     or left out where it has none, with a warning. A chosen term the UK does
-    not have is named.
+    not have is named. A real yield (batch 13.3) is its daily spot curve
+    (``real_spot_series``), with no history before it.
     """
-    chosen = [column for column in config.fetched_yield_columns if column in UK_YIELD_SERIES]
-    absent = [column for column in config.yield_columns if column not in UK_YIELD_SERIES]
+    chosen = [column for column in config.fetched_yield_columns if column in UK_YIELD_SERIES or column in UK_REAL_TERMS]
+    absent = [column for column in config.yield_columns if column not in UK_YIELD_SERIES and column not in UK_REAL_TERMS]
     if absent and len(absent) < len(config.yield_columns):  # none left: plotting._warn_no_yields
         print(f"  Note: no UK {', '.join(absent)} yield; the UK chart is drawn without it.")
     if not chosen:
@@ -408,6 +513,12 @@ def fetch_uk_yields(config: PlotConfig) -> pd.DataFrame:
     columns: dict[str, pd.Series] = {}
     history_through: dict[str, pd.Timestamp] = {}
     for column in chosen:
+        if column in UK_REAL_TERMS:
+            try:
+                columns[column] = real_spot_series(column).rename(column)
+            except Exception as exc:
+                print(f"  Warning: Bank of England {column} yield unavailable ({exc}); drawn without it.")
+            continue
         code = UK_YIELD_SERIES[column]
         history = embedded_frame(_YIELD_HISTORY.get(column, []), column)
         try:

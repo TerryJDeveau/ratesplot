@@ -110,9 +110,12 @@ def _growth(dates: pd.DatetimeIndex, first: float, last: float, name: str) -> np
 # FRED's daily series: each yield's term in years, and each series' first day.
 _TENOR_YEARS = {
     "DGS1MO": 1 / 12, "DGS3MO": 0.25, "DGS6MO": 0.5, "DGS1": 1, "DGS2": 2, "DGS3": 3, "DGS5": 5, "DGS7": 7,
-    "DGS10": 10, "DGS20": 20, "DGS30": 30,
+    "DGS10": 10, "DGS20": 20, "DGS30": 30, "DFII5": 5, "DFII7": 7, "DFII10": 10, "DFII20": 20, "DFII30": 30,
 }
+# The real yields (batch 13.3) run this far below the nominal ones (each its own noise, whose floor keeps it above zero).
+_REAL_OFFSET = -2.0
 _DAILY_START = {
+    "DFII5": "2003-01-02", "DFII7": "2003-01-02", "DFII10": "2003-01-02", "DFII20": "2004-07-27", "DFII30": "2010-02-22",
     "DGS1MO": "2001-07-31", "DGS3MO": "1981-09-01", "DGS6MO": "1981-09-01", "DGS1": "1962-01-02",
     "DGS2": "1976-06-01", "DGS3": "1962-01-02", "DGS5": "1962-01-02", "DGS7": "1969-07-01", "DGS10": "1962-01-02",
     "DGS20": "1962-01-02", "DGS30": "1977-02-15", "DFF": "1954-07-01", "T10Y2Y": "1976-06-01",
@@ -205,7 +208,7 @@ def fred(series_id: str) -> pd.DataFrame:
                 both = both.loc[both.index >= dates[0]]
                 dates, values = both.index, np.round(both.to_numpy(), 2)
             else:
-                values = _yield_path(series_id, dates, _TENOR_YEARS[series_id])
+                values = _yield_path(series_id, dates, _TENOR_YEARS[series_id], _REAL_OFFSET if series_id.startswith("DFII") else 0.0)
     else:
         raise KeyError(f"no synthetic FRED series {series_id}")
     return pd.DataFrame({"DATE": dates, series_id: np.asarray(values, dtype=float)})
@@ -273,6 +276,7 @@ def valet(url: str, params: tuple) -> bytes:
                 ("BD.CDN.10YR.DQ.YLD", 10), ("BD.CDN.LONG.DQ.YLD", 30),
             )
         }
+        columns["BD.CDN.RRB.DQ.YLD"] = _yield_path("cdnBD.CDN.RRB.DQ.YLD", dates, 30, _CDN_OFFSET + _REAL_OFFSET)
         return _valet_csv(columns, dates)
     code = url.rstrip("/").split("/")[-2]
     first, freq, years, margin = _VALET_SERIES[code]
@@ -405,6 +409,15 @@ def statcan(table_id: str) -> bytes:
             "UOM": "2002=100", **_UNITS, "VECTOR": "v41690914", "VALUE": np.round(values, 1),
         })
         return _zip(table_id, frame)
+    if table_id == "10100122":
+        # The Real Return Bonds' long-term yield (batch 13.3), monthly from 1991-11, its months before that blank.
+        months = pd.date_range("1962-01-01", "2026-09-01", freq="MS")
+        values = _yield_path("cdn_rrb", months, 30, _CDN_OFFSET + _REAL_OFFSET)
+        frame = pd.DataFrame({
+            "REF_DATE": [f"{d:%Y-%m}" for d in months], "GEO": "Canada", "Rates": "Real return bonds, long-term",
+            "UOM": "Percent", **_UNITS, "VECTOR": "v122553", "VALUE": np.where(months >= pd.Timestamp("1991-11-01"), values, np.nan),
+        })
+        return _zip(table_id, frame)
     raise KeyError(f"no synthetic StatCan table {table_id}")
 
 
@@ -486,6 +499,48 @@ def iadb(params: tuple) -> bytes:
     return "\n".join(lines).encode()
 
 
+# The Bank of England's real spot curve (batch 13.3): years -> its first day,
+# and the span with none from (its 20-year's gap, as the Bank's has one).
+_UK_REAL_YEARS = {5: "1985-01-02", 7: "1985-01-02", 10: "1985-01-02", 20: "1986-06-09", 30: "2016-01-04"}
+_UK_REAL_GAP = ("1988-10-05", "1992-04-29")
+
+
+def uk_real_curve() -> pd.DataFrame:
+    """The real spot curve, a date-indexed column per ``years``, to the last day the synthetic Bank of England has."""
+    dates = pd.bdate_range("1985-01-02", "2026-10-02")
+    frame = pd.DataFrame(index=dates)
+    for years, first in _UK_REAL_YEARS.items():
+        frame[years] = np.where(dates >= pd.Timestamp(first), _yield_path(f"ukreal{years}", dates, years, _UK_OFFSET + _REAL_OFFSET), np.nan)
+    frame.loc[_UK_REAL_GAP[0] : _UK_REAL_GAP[1], 20] = np.nan
+    return frame
+
+
+def _uk_real_zip(url: str) -> bytes:
+    """One of the Bank's yield-curve zips: a workbook of the real curve, its sheet of the spot curve (``uk_data.parse_real_spot_curves``).
+
+    The archive holds the days to the bake's end, the current month's file
+    those after it: so the join gives the whole answer, as for the others.
+    """
+    import openpyxl
+
+    frame = uk_real_curve()
+    latest = "latest-yield-curve-data" in url
+    frame = frame.loc[frame.index > SYNTHETIC_BAKE_END] if latest else frame.loc[frame.index <= SYNTHETIC_BAKE_END]
+    book = openpyxl.Workbook(write_only=True)
+    sheet = book.create_sheet("4. spot curve")
+    years = [2.5, *frame.columns, 40]
+    sheet.append(["years:", *years])
+    for day, row in frame.iterrows():
+        sheet.append([day.to_pydatetime(), None, *(None if np.isnan(value) else float(value) for value in row), None])
+    workbook = io.BytesIO()
+    book.save(workbook)
+    buffer = io.BytesIO()
+    name = "GLC Real daily data current month.xlsx" if latest else "GLC Real daily data_1985 to present.xlsx"
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(name, workbook.getvalue())
+    return buffer.getvalue()
+
+
 def ons(cdid: str) -> bytes:
     """An ONS time series's JSON: its description (with the unit) and lists of months, quarters and years."""
     unit, first, kind, low, high, has_months = _ONS_SERIES[cdid]
@@ -527,6 +582,11 @@ _BUNDESBANK_TERMS = {
     "R05XX": (5, "1972-09", "1997-08-01"), "R07XX": (7, "1972-09", "1997-08-01"), "R10XX": (10, "1972-09", "1997-08-01"),
     "R15XX": (15, "1986-06", "1997-08-01"), "R20XX": (20, "1986-06", "1997-08-01"), "R30XX": (30, "2000-01", "2000-08-01"),
 }
+# The inflation-linked Federal bonds' real yields (batch 13.3): ISIN -> first day, last day.
+_DE_LINKED_BONDS = {
+    "DE0001030542": ("2012-03-22", "2023-04-12"), "DE0001030567": ("2015-03-10", "2026-04-10"), "DE0001030559": ("2014-04-08", "2026-10-02"),
+    "DE0001030583": ("2021-02-09", "2026-10-02"), "DE0001030575": ("2015-06-12", "2026-10-02"),
+}
 
 
 def bundesbank(url: str) -> bytes:
@@ -545,6 +605,15 @@ def bundesbank(url: str) -> bytes:
         values = _growth(months, 60.5, 126.4, "de_cpi_sa" if ".M.DE.Y." in key else "de_cpi")
         lines = [f'"",{key},{key}_FLAGS', '"",synthetic consumer price index,', "unit,2020=100,", "unit multiplier,One,"]
         lines += [f"{day:%Y-%m},{value:.1f}," for day, value in zip(months, values)]
+        return ("\ufeff" + "\n".join(lines)).encode()
+    if key.startswith("BBSSY."):
+        # An inflation-linked bond's real yield (batch 13.3), each business day of its life.
+        isin = key.split(".")[5]
+        first, last = _DE_LINKED_BONDS[isin]
+        dates = pd.bdate_range(first, last)
+        values = _yield_path("de" + isin, dates, 10, _DE_OFFSET + _REAL_OFFSET / 2)
+        lines = [f'"",{key},{key}_FLAGS', f'"",synthetic {isin} / Yield,', "unit,Prozent,", "unit multiplier,One,"]
+        lines += [f"{day:%Y-%m-%d},{value:.4f}," for day, value in zip(dates, values)]
         return ("\ufeff" + "\n".join(lines)).encode()
     frequency, term = key.split(".")[1], key.split(".")[9]
     years, first_month, first_day = _BUNDESBANK_TERMS[term]
@@ -726,6 +795,8 @@ def synth(key: tuple):
         return _response(statcan_wds(params))
     if "bankofengland.co.uk/boeapps/database" in url:
         return _response(iadb(params))
+    if "bankofengland.co.uk/-/media/boe/files/statistics/yield-curves/" in url:
+        return _response(_uk_real_zip(url))
     if "ons.gov.uk" in url:
         return _response(ons(url.split("/timeseries/")[1].split("/")[0].upper()))
     if "api.statistiken.bundesbank.de/rest/download/" in url or "api.statistiken.bundesbank.de/rest/data/" in url:
@@ -777,6 +848,11 @@ def install_synthetic_bake(folder: Path) -> bool:
 
     for code in _IADB_SERIES:
         bake(uk_data.BOE_BAKED_SOURCE, code, uk_data.parse_iadb_csv(iadb((("SeriesCodes", code),)).decode())[code])
+    # The real spot curve (batch 13.3; a tree before it reads no such file).
+    if hasattr(uk_data, "UK_REAL_TERMS"):
+        curve = uk_real_curve()
+        for column, years in uk_data.UK_REAL_TERMS.items():
+            bake(uk_data.BOE_BAKED_SOURCE, uk_data.real_curve_code(column), curve[years])
     valet_url = "https://www.bankofcanada.ca/valet/observations/"
     group = http.parse_boc_csv(valet(f"{valet_url}group/bond_yields_benchmark/csv", ()).decode())
     for code in group.columns:
@@ -813,6 +889,12 @@ def install_synthetic_bake(folder: Path) -> bool:
             answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
             units = de_data._BUNDESBANK_UNITS[(flow, key)]
             bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer, units))
+    # The inflation-linked bonds' real yields (batch 13.3; a tree before it reads no such file).
+    if hasattr(de_data, "DE_LINKED_BONDS"):
+        for isin in de_data.DE_LINKED_BONDS:
+            flow, key = de_data.DE_LINKED_BOND_FLOW, de_data.linked_bond_key(isin)
+            answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
+            bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer))
     # Statistics Canada's live tables, each vector read, selected by the program's own labels (a tree before
     # 19.2's Statistics Canada stage has no STATCAN_SERIES_READ, and reads no Statistics Canada file).
     cdn_data = importlib.import_module("ratesplot.cdn_data")

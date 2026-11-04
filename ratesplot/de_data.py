@@ -63,7 +63,9 @@ from __future__ import annotations
 import csv
 import io
 import re
+from typing import Mapping, NamedTuple
 
+import numpy as np
 import pandas as pd
 
 from .config import (
@@ -125,6 +127,45 @@ DE_YIELD_EARLIEST = {
 DE_YIELD_TERMS = tuple(term for term, column in YIELD_TERMS.items() if column in DE_YIELD_SERIES)
 # The baked monthly history of a term, before its end-of-month series begins.
 _YIELD_HISTORY = {"10-Year": EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY}
+
+
+class LinkedBond(NamedTuple):
+    """One inflation-linked Federal bond (``DE_LINKED_BONDS``): its class in flow BBSSY's key, its redemption day, and its last value's day once redeemed."""
+
+    security_class: str
+    redeemed: pd.Timestamp
+    last_value: pd.Timestamp | None = None
+
+
+# Germany's real yields (batch 13.3; Terry, 2026-11-04, decision 108). The
+# Bundesbank publishes no real curve, but each inflation-linked Federal bond's
+# real yield, daily, by ISIN (flow BBSSY, "Yields by ISIN": "The yield
+# indicated here for I/L is the real yield", its price list of 2026-11-03,
+# whose figures it matches), for these five, all it holds; the bonds of 2006
+# and 2009 are not in it. Their redemption days from that list and the bonds'
+# names (all on 15 April); no new one has been issued since 2023 (Finanzagentur,
+# 2023-11-22), so after April 2032 no term below has a bond under it.
+DE_LINKED_BOND_FLOW = "BBSSY"
+_LINKED_BOND_KEY = "D.REN.EUR.{security_class}.{isin}.A"
+DE_LINKED_BONDS = {
+    "DE0001030542": LinkedBond("A630", pd.Timestamp("2023-04-15"), pd.Timestamp("2023-04-12")),
+    "DE0001030567": LinkedBond("A630", pd.Timestamp("2026-04-15"), pd.Timestamp("2026-04-10")),
+    "DE0001030559": LinkedBond("A630", pd.Timestamp("2030-04-15")),
+    "DE0001030583": LinkedBond("A630", pd.Timestamp("2033-04-15")),
+    "DE0001030575": LinkedBond("A640", pd.Timestamp("2046-04-15")),
+}
+# Chart column -> its constant years to redemption, and its first day (the
+# first with a bond on either side, measured 2026-11-04).
+DE_REAL_TERMS = {"5-Year Real": 5.0, "7-Year Real": 7.0, "10-Year Real": 10.0}
+DE_REAL_EARLIEST = {
+    "5-Year Real": pd.Timestamp("2018-04-16"),
+    "7-Year Real": pd.Timestamp("2016-04-15"),
+    "10-Year Real": pd.Timestamp("2014-04-08"),
+}
+# A bond this near redemption is left out: its yield runs wild on so little
+# time left (the bond of 2023 reached about -6 in its last year or so).
+_LINKED_BOND_MIN_YEARS = 1.0
+_DAYS_IN_A_YEAR = 365.25
 # Where ``fetch_de_yields`` records, in the frame's ``attrs``, the last date
 # of each column's monthly part ({column: date}), drawn as steps; the same
 # name as the UK's, so the drawing and the spreads read both alike.
@@ -154,6 +195,11 @@ DE_CPI_SA_SERIES = ("BBDP1", "M.DE.Y.VPI.C.A00000.I20.A")
 # The unit of each Bundesbank series not in percent, as its CSV gives it
 # (``parse_bundesbank_csv``), by flow and key.
 _BUNDESBANK_UNITS = {DE_CPI_SERIES: ("2020=100",), DE_CPI_SA_SERIES: ("2020=100",)}
+# A series whose CSV gives a multiplier that is not its figures': the bond of
+# 2023's says "Tens", where its figures are percent as written, as the other
+# bonds' are (0.090 on its first day, issued at about par with a coupon of
+# 0.1; measured 2026-11-04).
+_BUNDESBANK_MULTIPLIER_MISWRITTEN = ("BBSSY.D.REN.EUR.A630.DE0001030542.A",)
 _BUNDESBANK_DATE = re.compile(r"^\d{4}-\d{2}(-\d{2})?$")
 _BUNDESBANK_MISSING = (".", "-", "")
 
@@ -264,7 +310,7 @@ def parse_bundesbank_csv(text: str, units: tuple[str, ...] = _BUNDESBANK_PERCENT
     unit = meta.get("bbk_unit_eng", meta.get("unit", ""))
     if unit.lower() not in units:
         raise ValueError(f"Bundesbank {key}: expected {units[0]}, found unit {unit!r}")
-    if meta.get("unit multiplier", "one").lower() != "one":
+    if meta.get("unit multiplier", "one").lower() != "one" and key not in _BUNDESBANK_MULTIPLIER_MISWRITTEN:
         raise ValueError(f"Bundesbank {key}: expected the multiplier one, found {meta['unit multiplier']!r}")
     data = [row for row in rows[1:] if row and _BUNDESBANK_DATE.match(row[0].strip())]
     if not data:
@@ -320,7 +366,7 @@ def bundesbank_download(flow: str, key: str, start: pd.Timestamp | None = None) 
     return values
 
 
-def bundesbank_series(flow: str, key: str, *, revised: bool = False) -> pd.Series:
+def bundesbank_series(flow: str, key: str, *, revised: bool = False, stopped: pd.Timestamp | None = None) -> pd.Series:
     """Return one series of the Bundesbank's database (``parse_bundesbank_csv``): its baked history, then its recent part from the Bundesbank.
 
     Batch 19.2 (``ratesplot.baked``): the history is in
@@ -331,7 +377,8 @@ def bundesbank_series(flow: str, key: str, *, revised: bool = False) -> pd.Serie
     the baked history alone, to its last value, with a warning; but a bot
     check is raised (``BotCheck``), for the caller to name once. Measured
     2026-10-22: the bake joined to its recent part is the Bundesbank's whole
-    answer, value for value.
+    answer, value for value. A series ``stopped`` (a bond redeemed, batch
+    13.3) is its bake alone, as ``baked.with_recent_part`` says.
     """
     return with_recent_part(
         BUNDESBANK_BAKED_SOURCE,
@@ -340,6 +387,7 @@ def bundesbank_series(flow: str, key: str, *, revised: bool = False) -> pd.Serie
         lambda start: bundesbank_download(flow, key, start),
         RECENT_PART_REVISED if revised else RECENT_PART_UNREVISED,
         passes=(BotCheck,),
+        stopped=stopped,
     )
 
 
@@ -594,6 +642,8 @@ def de_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
                 earliest[f"{column} Yield (public debt securities before the fitted yield)"] = pd.Timestamp(history[0][0])
             else:
                 earliest[f"{column} Yield (Svensson fitted)"] = DE_YIELD_EARLIEST[column]
+        elif term in terms and column in DE_REAL_TERMS:
+            earliest[f"{column} Yield (between the inflation-linked bonds)"] = DE_REAL_EARLIEST[column]
     return {**earliest, **DE_SERIES_EARLIEST}
 
 
@@ -606,6 +656,40 @@ def _baked_term(column: str, frequency: str) -> pd.Series:
     """Return one term's series from its bake alone, without asking the Bundesbank; no values if it has no bake."""
     series = read_series(BUNDESBANK_BAKED_SOURCE, f"{BUNDESBANK_TERM_STRUCTURE_FLOW}.{term_structure_key(column, frequency)}")
     return _NO_VALUES if series is None else series
+
+
+def linked_bond_key(isin: str) -> str:
+    """The key of one inflation-linked Federal bond's real yield in flow ``DE_LINKED_BOND_FLOW``."""
+    return _LINKED_BOND_KEY.format(security_class=DE_LINKED_BONDS[isin].security_class, isin=isin)
+
+
+def real_yield_at(years: float, bonds: Mapping[str, pd.Series]) -> pd.Series:
+    """Return the real yield at a constant ``years`` to redemption, day by day, between the inflation-linked bonds either side of it.
+
+    In a straight line by years left, between the nearest bond at or under
+    ``years`` and the nearest at or over it, each with at least
+    ``_LINKED_BOND_MIN_YEARS`` left (Terry, 2026-11-04, decision 108): the
+    Bundesbank publishes no real curve, and the other nations' terms are at a
+    constant maturity. A bond's yield is carried over a holiday as a nominal
+    yield's is. A day without a bond on either side has no value, so the term
+    begins when two bonds first span it and ends when they no longer do.
+    ``bonds``: each bond's real yield, by ISIN (``DE_LINKED_BONDS``).
+    """
+    table = pd.DataFrame(dict(bonds)).sort_index().ffill(limit=_DAILY_FILL_LIMIT)
+    rows = np.arange(len(table))
+    left = np.column_stack([(DE_LINKED_BONDS[isin].redeemed - table.index).days / _DAYS_IN_A_YEAR for isin in table.columns])
+    values = table.to_numpy(dtype=float)
+    usable = ~np.isnan(values) & (left >= _LINKED_BOND_MIN_YEARS)
+    under = np.where(usable & (left <= years), left, -np.inf)
+    over = np.where(usable & (left >= years), left, np.inf)
+    below, above = under.argmax(axis=1), over.argmin(axis=1)
+    spanned = np.isfinite(under[rows, below]) & np.isfinite(over[rows, above])
+    rows, below, above = rows[spanned], below[spanned], above[spanned]
+    low, high = left[rows, below], left[rows, above]
+    # A bond exactly at the term is both of them, its own yield.
+    share = np.divide(years - low, high - low, out=np.zeros_like(low), where=high > low)
+    result = values[rows, below] + (values[rows, above] - values[rows, below]) * share
+    return pd.Series(result, index=table.index[spanned], name=DATE_COLUMN).rename(None)
 
 
 @downloads_of("Bundesbank Federal yields")
@@ -621,10 +705,12 @@ def fetch_de_yields(config: PlotConfig) -> pd.DataFrame:
     bake that fails is left out with a warning, and the term drawn from the
     rest; a term with nothing left is left out. A bot check is named once,
     and the Bundesbank asked nothing more in the drawing: that part and
-    every later one drawn from its bake.
+    every later one drawn from its bake. A real yield (batch 13.3) is worked
+    out between the inflation-linked bonds (``real_yield_at``), daily, each
+    bond read as a term's parts are.
     """
-    chosen = [column for column in config.fetched_yield_columns if column in DE_YIELD_SERIES]
-    absent = [column for column in config.yield_columns if column not in DE_YIELD_SERIES]
+    chosen = [column for column in config.fetched_yield_columns if column in DE_YIELD_SERIES or column in DE_REAL_TERMS]
+    absent = [column for column in config.yield_columns if column not in DE_YIELD_SERIES and column not in DE_REAL_TERMS]
     if absent and len(absent) < len(config.yield_columns):  # none left: plotting._warn_no_yields
         print(f"  Note: no German {', '.join(absent)} yield; the German chart is drawn without it.")
     if not chosen:
@@ -634,7 +720,7 @@ def fetch_de_yields(config: PlotConfig) -> pd.DataFrame:
     history_through: dict[str, pd.Timestamp] = {}
     bot_check: BotCheck | None = None  # the Bundesbank sent one: no more requests
     bake_ends: list[pd.Timestamp] = []  # after it, the last date of each bake drawn
-    for column in chosen:
+    for column in (column for column in chosen if column in DE_YIELD_SERIES):
         parts: dict[str, pd.Series] = {}
         for frequency, name in (("M", "end-of-month"), ("D", "daily")):
             if bot_check is None:
@@ -666,6 +752,29 @@ def fetch_de_yields(config: PlotConfig) -> pd.DataFrame:
         if not monthly.empty:
             history_through[column] = monthly.index[-1]
         columns[column] = pd.concat([monthly, daily]).rename(column)
+
+    real = [column for column in chosen if column in DE_REAL_TERMS]
+    if real:
+        bonds: dict[str, pd.Series] = {}
+        for isin, bond in DE_LINKED_BONDS.items():
+            key = linked_bond_key(isin)
+            if bot_check is None:
+                try:
+                    bonds[isin] = bundesbank_series(DE_LINKED_BOND_FLOW, key, stopped=bond.last_value)
+                except BotCheck as exc:
+                    bot_check = exc
+                except Exception as exc:
+                    print(f"  Warning: Bundesbank inflation-linked bond {isin} unavailable ({exc}); the real yields drawn without it.")
+            if bot_check is not None:
+                baked = read_series(BUNDESBANK_BAKED_SOURCE, f"{DE_LINKED_BOND_FLOW}.{key}")
+                if baked is not None:
+                    bonds[isin] = baked
+                    bake_ends.append(baked.index[-1])
+        if bonds:
+            for column in real:
+                values = real_yield_at(DE_REAL_TERMS[column], bonds)
+                if not values.empty:
+                    columns[column] = values.rename(column)
 
     if bot_check is not None:
         drawn = (f"The German yields drawn from their baked history, to {max(bake_ends):%Y-%m-%d}." if bake_ends

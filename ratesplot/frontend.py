@@ -62,6 +62,7 @@ from .config import (
     MIN_CANVAS_PX,
     MIN_WINDOW_DAYS,
     NATIONS,
+    REAL_YIELD_ROW,
     Nation,
     PlotConfig,
 )
@@ -1050,13 +1051,14 @@ def choice_rows(option: Option, text: str, nation: Nation | None = None) -> list
     line), so nothing chosen is hidden. For a nation's own field, only the
     boxes its chart can draw, without the rows' captions ("U.S. only",
     "Canada"), which say whose they are, and in its own words where it has
-    them ("market (SONIA)", ``_nation_box``).
+    them ("market (SONIA)", ``_nation_box``). The real yields' row keeps its
+    caption (batch 13.3), which says what they are, not whose.
     """
     rows = [(caption, list(boxes)) for caption, boxes in option.choices]
     if nation is not None:
         rows = [
-            ("", [_nation_box(nation, option, box) for box in boxes if _offers(nation, option, box[0])])
-            for _caption, boxes in rows
+            (caption if caption == REAL_YIELD_ROW else "", [_nation_box(nation, option, box) for box in boxes if _offers(nation, option, box[0])])
+            for caption, boxes in rows
         ]
         rows = [row for row in rows if row[1]]
     offered = {value for _caption, boxes in rows for value, _box in boxes}

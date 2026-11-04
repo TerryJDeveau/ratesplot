@@ -66,10 +66,11 @@ from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E
 # Germany with their rates, spreads and mortgages; the four policy rates with
 # the U.S. target range as a band; all four nations; the amounts in one master
 # currency at constant prices (13.2); the price index on its own axis with
-# --reg, and alone on the right axis (13.4); the population, the same two (13.5).
+# --reg, and alone on the right axis (13.4); the population, the same two (13.5);
+# the real yields, with the UK's breaks and Germany's terms between its bonds (13.3).
 DEFAULT_CASES = (
     "default", "c_reg1867", "u_reg_r", "c_lv_r", "c_p", "uk_rates", "de_rates", "policy_both", "all4", "constant_master",
-    "cpi", "cpi_long", "population", "population_long",
+    "cpi", "cpi_long", "population", "population_long", "real_alone",
 )
 # --save is run from the command line on these: two nations, then four with their own levels.
 SAVE_CASES = ("default", "nat_levels")

@@ -60,6 +60,7 @@ from .cdn_data import (
     BOC_BENCHMARK_GROUP,
     BOC_BILL_SERIES,
     BOC_VALET_FROM,
+    CDN_REAL_RETURN_VECTOR,
     FRED_CDN_GDP_SERIES,
     GFS_VECTORS,
     STATCAN_BAKED_SOURCE,
@@ -143,7 +144,10 @@ from .de_data import (
     EUROSTAT_QUERIES,
     EUROSTAT_SERIES_READ,
     TERM_STRUCTURE_FREQUENCIES,
+    DE_LINKED_BOND_FLOW,
+    DE_LINKED_BONDS,
     bundesbank_download,
+    linked_bond_key,
     ecb_download,
     eurostat_code,
     eurostat_download,
@@ -180,8 +184,12 @@ from .uk_data import (
     ONS_BAKED_SOURCE,
     ONS_SERIES,
     ONS_SERIES_READ,
+    UK_REAL_TERMS,
     UK_YIELD_SERIES,
     iadb_download,
+    real_curve_archive,
+    real_curve_code,
+    real_curve_latest,
     ons_download,
 )
 from .us_data import (
@@ -1743,6 +1751,8 @@ _BOE_SERIES_TITLES = {
     "IUMBV37": "quoted rate on a 3-year fixed-rate mortgage at 75% loan to value; monthly",
     "IUMBV42": "quoted rate on a 5-year fixed-rate mortgage at 75% loan to value; monthly",
     "IUMTLMV": "quoted standard variable mortgage rate; monthly",
+    **{real_curve_code(column): f"real spot yield, {years} years, from the Bank's fitted curve of index-linked gilts; daily"
+       for column, years in UK_REAL_TERMS.items()},
 }
 # How many revised values a re-bake lists one by one before giving only their count.
 _REVISIONS_LISTED = 20
@@ -1750,8 +1760,11 @@ _NO_DATES = pd.DatetimeIndex([])
 
 
 def boe_baked_codes() -> list[str]:
-    """Every Bank of England database series the program reads: the yields (``uk_data``), Bank Rate, SONIA and the mortgage rates (``rates``)."""
-    return sorted({*UK_YIELD_SERIES.values(), UK_POLICY_SERIES, UK_MARKET_SERIES, *UK_MORTGAGE_SERIES.values()})
+    """Every Bank of England series the program reads: the yields (``uk_data``), Bank Rate, SONIA and the mortgage rates (``rates``) of its database; its real spot curve's yields, from its Yield curves page (batch 13.3)."""
+    return sorted({
+        *UK_YIELD_SERIES.values(), UK_POLICY_SERIES, UK_MARKET_SERIES, *UK_MORTGAGE_SERIES.values(),
+        *map(real_curve_code, UK_REAL_TERMS),
+    })
 
 
 def _dates_text(dates: pd.Index, most: int = 5) -> str:
@@ -1889,15 +1902,57 @@ def _bake_live_series(
     return results
 
 
+def _real_curve_for_the_bake() -> pd.DataFrame:
+    """Every day of the Bank's real spot curve that it publishes or the bake holds: a column per chart column.
+
+    The current month's file, which the Bank adds to each day, is read at
+    every bake. The archive, 25 MB, holds the months finished, and is read
+    only at the first bake of a month, or with no bake yet (Terry, 2026-10-28,
+    decision 89: "We only poll for data we need"); it may lag the month's
+    turn, so the days baked after its last are kept.
+    """
+    latest = real_curve_latest()
+    bakes = {column: baked.read_series(BOE_BAKED_SOURCE, real_curve_code(column)) for column in UK_REAL_TERMS}
+    known = {column: series for column, series in bakes.items() if series is not None}
+    held = pd.DataFrame(known, columns=list(UK_REAL_TERMS), dtype=float) if known else latest.iloc[:0]
+    this_month = latest.index.min() if not latest.empty else pd.Timestamp.now().normalize()
+    if held.empty or held.index.max().to_period("M") != this_month.to_period("M"):
+        archive = real_curve_archive()
+        held = pd.concat([archive, held.loc[held.index > archive.index.max()]])
+    return pd.concat([held.loc[held.index < this_month], latest]).sort_index()
+
+
 def bake_boe_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
-    """Bake every Bank of England database series the program reads, whole, into ``ratesplot/data/boe/`` (batch 19.2).
+    """Bake every Bank of England series the program reads, whole, into ``ratesplot/data/boe/`` (batch 19.2).
 
     As every live source is baked (``_bake_live_series``: ``folder``,
-    ``accept_withdrawn``, what is printed and returned).
+    ``accept_withdrawn``, what is printed and returned). The real spot
+    curve's yields (batch 13.3) come from the Bank's Excel files, read once
+    for all of them (``_real_curve_for_the_bake``), the others from its
+    database. A failure of the files keeps their yields' files as they were.
     """
-    print("Baking the Bank of England database's series …")
+    print("Baking the Bank of England's series …")
+    real_codes = {real_curve_code(column): column for column in UK_REAL_TERMS}
+    try:
+        real_curve: pd.DataFrame | Exception = _real_curve_for_the_bake()
+    except Exception as exc:
+        real_curve = exc
+
+    def download(code: str) -> pd.Series:
+        if code not in real_codes:
+            return iadb_download(code)
+        if isinstance(real_curve, Exception):
+            raise real_curve
+        return real_curve[real_codes[code]].dropna().rename(code)
 
     def comment(code: str, title: str) -> str:
+        if code in real_codes:
+            return (
+                f"Bank of England yield curves, {code}: {title}.\n"
+                "Every day the Bank's real curve files give a value for that term, as they date it.\n"
+                "Written by tools/bake_archives.py --only boe (ratesplot.bake), read by ratesplot.baked;\n"
+                "not edited by hand."
+            )
         return (
             f"Bank of England database (IADB), series {code}: {title}.\n"
             f"Every value the database gives from {BOE_IADB_FROM} on, dated as the database dates it.\n"
@@ -1906,13 +1961,13 @@ def bake_boe_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
         )
 
     titles = {code: _BOE_SERIES_TITLES[code] for code in boe_baked_codes()}
-    return _bake_live_series(BOE_BAKED_SOURCE, titles, iadb_download, comment, folder, accept_withdrawn)
+    return _bake_live_series(BOE_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
 
 
 # Each Bank of Canada Valet series the program reads, for its file's first
 # line (Valet's own labels, read 2026-10-22). The benchmark yields are one
-# group, asked for in one request; the group's real return bond yield is not
-# read, and not baked. A series read but not named here stops the bake (KeyError).
+# group, asked for in one request. A series read but not named here stops the
+# bake (KeyError).
 _BOC_SERIES_TITLES = {
     "BD.CDN.2YR.DQ.YLD": "Government of Canada benchmark bond yield, 2-year; daily (group bond_yields_benchmark)",
     "BD.CDN.3YR.DQ.YLD": "Government of Canada benchmark bond yield, 3-year; daily (group bond_yields_benchmark)",
@@ -1920,6 +1975,7 @@ _BOC_SERIES_TITLES = {
     "BD.CDN.7YR.DQ.YLD": "Government of Canada benchmark bond yield, 7-year; daily (group bond_yields_benchmark)",
     "BD.CDN.10YR.DQ.YLD": "Government of Canada benchmark bond yield, 10-year; daily (group bond_yields_benchmark)",
     "BD.CDN.LONG.DQ.YLD": "Government of Canada benchmark bond yield, long-term; daily (group bond_yields_benchmark)",
+    "BD.CDN.RRB.DQ.YLD": "Real Return Bonds yield, long-term; daily (group bond_yields_benchmark)",
     "TB.CDN.30D.MID": "Government of Canada treasury bills, 1-month, mid-market yield; daily",
     "TB.CDN.90D.MID": "Government of Canada treasury bills, 3-month, mid-market yield; daily",
     "TB.CDN.180D.MID": "Government of Canada treasury bills, 6-month, mid-market yield; daily",
@@ -1995,6 +2051,11 @@ _FRED_SERIES_TITLES = {
     "DGS10": "Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis; daily",
     "DGS20": "Market Yield on U.S. Treasury Securities at 20-Year Constant Maturity, Quoted on an Investment Basis; daily",
     "DGS30": "Market Yield on U.S. Treasury Securities at 30-Year Constant Maturity, Quoted on an Investment Basis; daily",
+    "DFII5": "Market Yield on U.S. Treasury Securities at 5-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed; daily",
+    "DFII7": "Market Yield on U.S. Treasury Securities at 7-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed; daily",
+    "DFII10": "Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed; daily",
+    "DFII20": "Market Yield on U.S. Treasury Securities at 20-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed; daily",
+    "DFII30": "Market Yield on U.S. Treasury Securities at 30-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed; daily",
     "GFDEBTN": "Federal Debt: Total Public Debt; quarterly, end of period",
     "SLGSDODNS": "State and Local Governments; Debt Securities and Loans; Liability, Level; quarterly, end of period",
     "A180RC1Q027SBEA": "Government current expenditures: Interest payments; quarterly",
@@ -2315,6 +2376,12 @@ _BBK_SERIES_TITLES = {
     _bbk_code("30-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 30.0 years / daily data{_DAILY}",
     ".".join(DE_CPI_SERIES): "Consumer price index / Germany / Unadjusted figure Overall index; 2020 = 100; monthly",
     ".".join(DE_CPI_SA_SERIES): "Consumer price index / Germany / Calendar and seasonally adjusted / Overall index; 2020 = 100; monthly",
+    # The inflation-linked Federal bonds' real yields (batch 13.3): as the CSV's second line gives them, read 2026-11-04.
+    **{f"{DE_LINKED_BOND_FLOW}.{linked_bond_key(isin)}": f"{isin} / Yield / {coupon} / Inflationsindex. Anl.v.{issue}; the real yield; daily"
+       for isin, coupon, issue in (
+           ("DE0001030542", "0,100", "12(23)"), ("DE0001030559", "0,500", "14(30)"), ("DE0001030567", "0,000", "15(26)"),
+           ("DE0001030575", "0,000", "15(46)"), ("DE0001030583", "0,000", "21(33)"),
+       )},
 }
 # The unit of each Bundesbank series baked not in percent, in words (the
 # consumer price indexes, batches 13.1 and 13.4).
@@ -2322,10 +2389,11 @@ _BBK_UNIT_WORDS = {".".join(series): "index points, 2020 = 100" for series in (D
 
 
 def bbk_baked_series() -> dict[str, tuple[str, str]]:
-    """Every Bundesbank series the program reads, by its file's name (``FLOW.KEY``): its flow and key. Each term's end-of-month and daily term structure, and the consumer price indexes, unadjusted and seasonally adjusted (``de_data``)."""
+    """Every Bundesbank series the program reads, by its file's name (``FLOW.KEY``): its flow and key. Each term's end-of-month and daily term structure, each inflation-linked bond's real yield, and the consumer price indexes, unadjusted and seasonally adjusted (``de_data``)."""
     return dict(sorted([
         *((_bbk_code(column, frequency), (BUNDESBANK_TERM_STRUCTURE_FLOW, term_structure_key(column, frequency)))
           for column in DE_YIELD_SERIES for frequency in TERM_STRUCTURE_FREQUENCIES),
+        *((f"{DE_LINKED_BOND_FLOW}.{linked_bond_key(isin)}", (DE_LINKED_BOND_FLOW, linked_bond_key(isin))) for isin in DE_LINKED_BONDS),
         (".".join(DE_CPI_SERIES), DE_CPI_SERIES),
         (".".join(DE_CPI_SA_SERIES), DE_CPI_SA_SERIES),
     ]))
@@ -2378,6 +2446,7 @@ _STATCAN_TABLE_TITLES = {
     CDN_MORTGAGE_HISTORY_TABLE: "Canada Mortgage and Housing Corporation, conventional mortgage lending rate, 5-year term; monthly",
     STATCAN_CDN_CPI_TABLE: "Consumer Price Index, monthly, not seasonally adjusted",
     STATCAN_CDN_CPI_SA_TABLE: "Consumer Price Index, monthly, seasonally adjusted",
+    BOC_FINANCIAL_MARKET_TABLE: "Financial market statistics, last Wednesday unless otherwise stated, Bank of Canada, monthly",
 }
 # Each vector read: Statistics Canada's own series title (WDS
 # getSeriesInfoFromVector, read 2026-10-22); the GFS table's are
@@ -2390,6 +2459,7 @@ _STATCAN_SERIES_TITLES = {
     CDN_MORTGAGE_HISTORY_VECTOR: "Canada",
     STATCAN_CDN_CPI_VECTOR: "Canada;All-items",
     STATCAN_CDN_CPI_SA_VECTOR: "Canada;All-items",
+    CDN_REAL_RETURN_VECTOR: "Canada;Real return bonds, long-term",
     **{vector: f"Canada;{sector};{item}" for (sector, item), vector in GFS_VECTORS.items()},
 }
 # A table's unit and scale (cdn_data.StatcanRead), in words.

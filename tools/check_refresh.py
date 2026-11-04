@@ -61,7 +61,7 @@ from matplotlib.figure import Figure  # noqa: E402
 
 import ratesplot  # noqa: E402
 from ratesplot import cli, export, frontend, hover, latest, plotting, refresh  # noqa: E402
-from ratesplot.config import PlotConfig  # noqa: E402
+from ratesplot.config import MARKET_TIMEZONE, PlotConfig  # noqa: E402
 
 TODAY = pd.Timestamp.today().normalize()
 
@@ -126,9 +126,10 @@ def check_quote_state(check) -> None:
     latest.fetch_quotes = fetch
     try:
         today = f"{TODAY:%Y-%m-%d}"
+        # At today's offset in market time: with -0400 written here, 17:05 read as 16:05 once daylight time ended.
         answers["us"] = {
-            "3-Month": quote("3.900%", f"{today}T10:00:00.000-0400"),
-            "2-Year": quote("3.500%", f"{today}T17:05:00.000-0400"),  # the next day's session
+            "3-Month": quote("3.900%", pd.Timestamp(f"{today} 10:00", tz=MARKET_TIMEZONE).isoformat()),
+            "2-Year": quote("3.500%", pd.Timestamp(f"{today} 17:05", tz=MARKET_TIMEZONE).isoformat()),  # the next day's session
             "10-Year": None,
             "30-Year": {"last": "4.6%"},  # no time: unusable
         }

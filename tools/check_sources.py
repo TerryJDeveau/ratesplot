@@ -68,6 +68,7 @@ from ratesplot.config import (  # noqa: E402
     GDP_COLUMN,
     MARKET_TIMEZONE,
     QUOTE_SYMBOLS,
+    REAL_YIELD_TERMS,
     UK_DEBT_COLUMN,
     UK_INTEREST_COLUMN,
     UK_NET_DEBT_COLUMN,
@@ -155,8 +156,10 @@ def _fred(series_id: str, *, quarterly: bool) -> Callable[[PlotConfig], tuple[pd
 
 # The terms outside the default five (--yields:LIST): the U.S.' (with the
 # 3-year since batch 13.6), and Canada's (batch 9.3), of which CNBC quotes all but the 7-year.
-EXTRA_US_COLUMNS = tuple(column for column in us_data.US_YIELD_SERIES if column not in YIELD_COLUMNS)
-EXTRA_CDN_COLUMNS = tuple(column for column in cdn_data.CDN_YIELD_COLUMNS if column not in YIELD_COLUMNS)
+# The real yields (batch 13.3), which it quotes none of, have checks of their own.
+REAL_COLUMNS = tuple(YIELD_TERMS[term] for term in REAL_YIELD_TERMS)
+EXTRA_US_COLUMNS = tuple(column for column in us_data.US_YIELD_SERIES if column not in YIELD_COLUMNS and column not in REAL_COLUMNS)
+EXTRA_CDN_COLUMNS = tuple(column for column in cdn_data.CDN_YIELD_COLUMNS if column not in YIELD_COLUMNS and column not in REAL_COLUMNS)
 EXTRA_CDN_QUOTED = tuple(column for column in EXTRA_CDN_COLUMNS if column in QUOTE_SYMBOLS["cdn"])
 
 
@@ -206,13 +209,29 @@ def _us_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
 
 
 def _us_extra_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
-    every = replace(config, yield_terms=tuple(term for term, column in YIELD_TERMS.items() if column in us_data.US_YIELD_SERIES))
+    every = replace(config, yield_terms=tuple(term for term, column in YIELD_TERMS.items() if column in us_data.US_YIELD_SERIES and column not in REAL_COLUMNS))
     return _last(_all_yields(us_data.fetch_us_yields(every).set_index("DATE"), EXTRA_US_COLUMNS)), ""
 
 
+def _real_yields(fetch: Callable[[PlotConfig], pd.DataFrame], terms: tuple[str, ...]) -> Callable[[PlotConfig], tuple[pd.Timestamp | None, str]]:
+    """One nation's real yields (batch 13.3), through its own fetcher; the note gives each one's newest value."""
+
+    def run(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+        frame = fetch(replace(config, yield_terms=terms))
+        frame = frame.set_index("DATE") if "DATE" in frame.columns else frame
+        columns = tuple(YIELD_TERMS[term] for term in terms)
+        return _last(_all_yields(frame, columns)), ", ".join(f"{column} {frame[column].dropna().iloc[-1]:.2f}" for column in columns)
+
+    return run
+
+
 def _treasury_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
-    columns = tuple(us_data.US_YIELD_SERIES)
+    columns = tuple(column for column in us_data.US_YIELD_SERIES if column not in REAL_COLUMNS)
     return _last(_all_yields(latest.treasury_yields_after(RECENT, config, columns).set_index("DATE"), columns)), ""
+
+
+def _treasury_real_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    return _last(_all_yields(latest.treasury_yields_after(RECENT, config, REAL_COLUMNS).set_index("DATE"), REAL_COLUMNS)), ""
 
 
 def _debt_to_penny(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
@@ -594,6 +613,12 @@ CHECKS: tuple[Check, ...] = (
     Check("fred_t10y2y", "FRED T10Y2Y against the program's 10y-2y spread (--spreads)", DAILY, _spread_crosscheck("T10Y2Y", ("10y", "2y"))),
     Check("fred_t10y3m", "FRED T10Y3M against the program's 10y-3m spread (--spreads)", DAILY, _spread_crosscheck("T10Y3M", ("10y", "3m"))),
     Check("treasury_yields", "U.S. Treasury daily par yield curve (all eleven terms)", DAILY, _treasury_yields),
+    # The real yields (batch 13.3).
+    Check("fred_real", "FRED real yields (DFII5, DFII7, DFII10, DFII20, DFII30)", DAILY, _real_yields(us_data.fetch_us_yields, REAL_YIELD_TERMS)),
+    Check("treasury_real", "U.S. Treasury daily real yield curve (its five terms)", DAILY, _treasury_real_yields),
+    Check("boc_real", "Bank of Canada Real Return Bonds' long-term yield", DAILY, _real_yields(cdn_data.fetch_cdn_yields, ("r30",))),
+    Check("boe_real", "Bank of England real spot curve, 5 7 10 20 30 years (the current month's file)", DAILY, _real_yields(uk_data.fetch_uk_yields, REAL_YIELD_TERMS)),
+    Check("bbk_real", "Bundesbank inflation-linked Federal bonds, r5 r7 r10 worked out between them", DAILY, _real_yields(de_data.fetch_de_yields, ("r5", "r7", "r10"))),
     Check("debt_to_penny", "U.S. Treasury Debt to the Penny", DAILY, _debt_to_penny),
     Check("cnbc_cdn", "CNBC quote feed, Canadian yields (unofficial)", QUOTES, _quotes("cdn")),
     Check("cnbc_cdn_more", "CNBC quote feed, Canadian 1m 6m 1y 3y (unofficial)", QUOTES, _quotes("cdn", EXTRA_CDN_QUOTED)),

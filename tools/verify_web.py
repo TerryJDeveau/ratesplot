@@ -157,6 +157,8 @@ CHART_CASES = (
     "cpi_sa",
     # Batch 13.5: the population on the same axis on all four, with -l and --reg.
     "population",
+    # Batch 13.3: the real yields beside a nominal one on all four, with end labels.
+    "real_four",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -956,9 +958,9 @@ def check_batch9(check: Check) -> None:
     keys = {box.key for box in at.checkbox if box.key}
     canada = {key for key in keys if key.startswith("choice:cdn:yields:")}
     united = {key for key in keys if key.startswith("choice:us:yields:")}
-    wanted = {f"choice:cdn:yields:{term}" for term in ("1m", "3m", "6m", "1y", "2y", "3y", "5y", "7y", "10y", "30y")}
-    check("Canada offers 1m 3m 6m 1y 2y 3y 5y 7y 10y 30y, not 20y", canada == wanted, sorted(canada))
-    check("13.6: the U.S. offers all eleven, 3y too", "choice:us:yields:3y" in united and len(united) == 11, sorted(united))
+    wanted = {f"choice:cdn:yields:{term}" for term in ("1m", "3m", "6m", "1y", "2y", "3y", "5y", "7y", "10y", "30y", "r30")}
+    check("Canada offers 1m 3m 6m 1y 2y 3y 5y 7y 10y 30y and r30 (13.3), not 20y", canada == wanted, sorted(canada))
+    check("13.6: the U.S. offers all eleven nominal, 3y too, and five real (13.3)", "choice:us:yields:3y" in united and len(united) == 16, sorted(united))
     check("… its 3y not ticked (not a default term)", not at.checkbox(key="choice:us:yields:3y").value)
     ticked = {key.rsplit(":", 1)[1] for key in canada if at.checkbox(key=key).value}
     check("Canada's default five ticked, the new terms not", ticked == {"3m", "2y", "5y", "10y", "30y"}, sorted(ticked))
@@ -2229,6 +2231,41 @@ def check_batch135(check: Check) -> None:
           and all(f"(?help={link})" in shown for link in ("per-capita", "regression", "price-index")), shown[:60])
 
 
+def check_batch133(check: Check) -> None:
+    """Batch 13.3: the real yields as terms of their own: each nation offers its own, none ticked at the start; a box ticked is in the address and drawn; the spread of nominal less real; the help."""
+    at = new_page("--na:ca,us,gb,de --e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    keys = {box.key for box in at.checkbox if box.key}
+    offered = {
+        nation: {key.rsplit(":", 1)[1] for key in keys if key.startswith(f"choice:{nation}:yields:r")}
+        for nation in NATION_KEYS
+    }
+    check("each nation offers its own real terms", offered == {
+        "cdn": {"r30"}, "us": {"r5", "r7", "r10", "r20", "r30"}, "uk": {"r5", "r7", "r10", "r20", "r30"}, "de": {"r5", "r7", "r10"},
+    }, offered)
+    check("none ticked at the start", not any(at.checkbox(key=f"choice:{nation}:yields:{term}").value for nation, terms in offered.items() for term in terms))
+    check("a box's caption is its term", at.checkbox(key="choice:us:yields:r10").label == "r10", at.checkbox(key="choice:us:yields:r10").label)
+    check("the row captioned “real”, in each of the four sections", sum(block.value == "real" for block in at.caption) == 4, [block.value for block in at.caption][:12])
+    at.checkbox(key="choice:us:yields:r10").check().run()
+    tokens = address(at).split()
+    config = config_from_choices(*sort_tokens(tokens)[:2])
+    check("r10 ticked for the U.S.: in the address, drawn with its defaults, the others' charts unchanged",
+          not at.exception and drawn_config(config, "us").yield_terms == ("3m", "2y", "5y", "10y", "30y", "r10")
+          and "r10" not in drawn_config(config, "cdn").yield_terms, address(at))
+    at = new_page("-u --y:r10 --e:2026-09-01")
+    check("an address of a real yield alone: its box ticked, the others not, and it draws",
+          not at.exception and at.checkbox(key="choice:us:yields:r10").value and not at.checkbox(key="choice:us:yields:10y").value)
+    at = new_page("-u --y:10,r10 --sp:10y-r10 --e:2026-09-01")
+    spread = [box for box in at.checkbox if box.key and box.key.startswith("choice:us:spread-pairs:") and "r10" in box.key]
+    check("a spread of nominal less real: a box of its own, ticked", not at.exception and len(spread) == 1 and spread[0].value, [box.key for box in spread])
+    view = new_page("--e:2026-09-01")
+    view.query_params["help"] = "yields"
+    view.run()
+    shown = "\n".join(block.value for block in view.markdown)
+    check("?help=yields: its section on the real yields, each nation's source",
+          not view.exception and "## Real yields" in shown and all(word in shown for word in ("DFII10", "Real Return Bonds", "real spot curve", "inflation-linked")), shown[:60])
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
@@ -2236,7 +2273,7 @@ PAGE_CHECKS = (
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
-    check_batch135,
+    check_batch135, check_batch133,
 )
 
 

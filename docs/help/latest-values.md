@@ -16,7 +16,7 @@ It adds nothing to GDP, interest, population or the other nations' debts, which 
 - **The subtitle** gives the quote's time in the chart's own market's time zone (Toronto, New York, London, Frankfurt), "intraday, provisional".
 - **Germany:** the Bundesbank publishes the day's yields during the day, so once they are out the chart ends at them and adds no quote.
 
-The quotes reach the [yields](?help=yields) and so the [spreads](?help=spreads) taken from them.
+The quotes reach the [yields](?help=yields) and so the [spreads](?help=spreads) taken from them, but not the real yields, which the feed doesn't quote; the U.S.' take the days FRED doesn't have yet from the Treasury's [daily real yield curve](https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_real_yield_curve).
 
 ## When it adds nothing
 

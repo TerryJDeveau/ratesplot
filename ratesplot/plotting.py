@@ -65,11 +65,13 @@ from .config import (
     CDN,
     DATE_COLUMN,
     DEFAULT_START_FLOOR,
+    DAILY_YIELD_GAP,
     DEFAULT_YIELD_TERMS,
     EARLIEST_DATA_START,
     MACRO_PLOT_STYLES,
     MIN_WINDOW_DAYS,
     MORTGAGE_LEGEND_ORDER,
+    NOMINAL_YIELD_TERMS,
     NATIONS,
     POLICY_BAND_ALPHA,
     PRICE_INDEX_ADJUSTED_LABEL,
@@ -89,6 +91,8 @@ from .config import (
     PROJECTION_LABEL,
     PROJECTION_LABEL_PREFIX,
     PROJECTION_LABEL_STEERED,
+    REAL_YIELD_STYLE,
+    REAL_YIELD_TERMS,
     SPREAD_AXIS_LABEL,
     SPREAD_INVERSION_ALPHA,
     TERM_COLORS,
@@ -287,7 +291,22 @@ def _yield_style(column: str, config: PlotConfig, nation_key: str) -> dict:
     if tuple(term for term in config.yield_terms if term in own) == DEFAULT_YIELD_TERMS:
         return YIELD_LINE_STYLE
     term = next(key for key, name in YIELD_TERMS.items() if name == column)
-    return YIELD_LINE_STYLE | {"color": TERM_COLORS[term]}
+    return YIELD_LINE_STYLE | {"color": TERM_COLORS[term]} | (REAL_YIELD_STYLE if term in REAL_YIELD_TERMS else {})
+
+
+def _broken_at_gaps(series: pd.Series) -> pd.Series:
+    """Return a daily yield with a blank value in each gap longer than ``DAILY_YIELD_GAP``: a break in its line, not a straight line across.
+
+    The U.S.' yields have their gaps' rows, without a value; the others have
+    no row for a day without one, so a line drawn from them would run straight
+    across any gap (the UK's real 20-year has none from 1988-10 to 1992-04,
+    batch 13.3).
+    """
+    gaps = series.index.to_series().diff() > DAILY_YIELD_GAP
+    if not gaps.any():
+        return series
+    blanks = pd.Series(float("nan"), index=series.index[gaps] - pd.Timedelta(days=1), dtype=float)
+    return pd.concat([series, blanks]).sort_index()
 
 
 def add_canadian_yield_lines(ax: Axes, yields: pd.DataFrame, config: PlotConfig) -> list[Line2D]:
@@ -352,6 +371,7 @@ def add_stepped_yield_lines(
             legend_lines.append(line)
 
         if not current.empty:
+            current = _broken_at_gaps(current)
             (line,) = ax.plot(
                 current.index,
                 current.values,
@@ -604,7 +624,9 @@ def yield_axis_legend(yield_lines: list[Line2D], rate_lines: list[tuple[Line2D, 
     the same one is on top. A curve drawn with its band (the U.S. target
     range) is entered as the band (``_BandKey``, batch 24.4).
     """
-    longest_first = {f"{name} Yield": rank for rank, name in enumerate(reversed(YIELD_TERMS.values()))}
+    # The real yields after the nominal ones, which they run below (batch 13.3).
+    names = [YIELD_TERMS[term] for term in (*reversed(NOMINAL_YIELD_TERMS), *reversed(REAL_YIELD_TERMS))]
+    longest_first = {f"{name} Yield": rank for rank, name in enumerate(names)}
     yields = sorted(yield_lines, key=lambda line: longest_first.get(line.get_label(), len(longest_first)))
 
     def place(item: tuple[Line2D, RateCurve]) -> tuple[int, int]:

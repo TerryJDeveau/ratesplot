@@ -394,6 +394,9 @@ def check_stopped_declared() -> None:
         (us_data.FRED_BAKED_SOURCE, rates.US_TARGET_SERIES): rates.US_TARGET_ENDED,
         (de_data.ECB_BAKED_SOURCE, ".".join(rates.DE_POLICY_MINIMUM_BID[:2])): rates.DE_MINIMUM_BID_ENDED,
         (de_data.ECB_BAKED_SOURCE, ".".join(rates.DE_EONIA[:2])): rates.DE_EONIA_ENDED,
+        # The inflation-linked bonds redeemed (batch 13.3), declared beside the bonds in ``de_data``.
+        **{(de_data.BUNDESBANK_BAKED_SOURCE, f"{de_data.DE_LINKED_BOND_FLOW}.{de_data.linked_bond_key(isin)}"): bond.last_value
+           for isin, bond in de_data.DE_LINKED_BONDS.items() if bond.last_value is not None},
     }
     ends = {key: baked.read_series(*key).last_valid_index() for key in declared}
     wrong = {"/".join(key): f"{ends[key]:%Y-%m-%d}, declared {end:%Y-%m-%d}" for key, end in declared.items() if ends[key] != end}

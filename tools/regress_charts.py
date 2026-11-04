@@ -291,6 +291,12 @@ CASES: dict[str, list[str]] = {
     # Batch 13.6: the U.S. 3-year (FRED DGS3) between the 2- and 5-year, with
     # its end label, and Canada's beside it on the same command line.
     "us_3y": ["--na:ca,us", "--y:2,3,5", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:2001"],
+    # Batch 13.3: the real yields beside a nominal one on all four, with end labels; alone, the UK's 20-year's
+    # breaks showing and each title saying so; beside the amounts under -r; a spread of the nominal less the real.
+    "real_four": ["--na:ca,us,gb,de", "--y:10,r5,r10,r30", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1985"],
+    "real_alone": ["--na:ca,us,gb,de", "--y:r5,r7,r10,r20,r30", "--no-gdp", "--no-debt", "--no-interest", "-s:1985"],
+    "real_amounts": ["--na:gb,de", "--y:r10", "-r", "-s:2012"],
+    "real_breakeven": ["--na:us,gb", "--y:10,r10", "--sp:10y-r10", "-s:2010"],
     # Batch 13.1: the inflation curve, beside each nation's yields with its end
     # label, and alone from 1910 (each nation from its first month: the U.S.
     # 1914, Canada 1915, the UK 1915-07, Germany 1992).
