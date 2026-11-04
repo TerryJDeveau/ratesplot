@@ -83,6 +83,11 @@ _TARGET_MARGIN_PX = 200
 # (points below LEGEND_FS, before scaling).
 _COLUMN_PREFERENCE = (2, 3, 1)
 _FONT_SIZE_REDUCTIONS_PT = (0, 2, 4)
+# The legend's background (Terry, 2026-11-03: "it would be better if it were
+# slightly more transparent"; shown a legend over a curve at 0.95, 0.85, 0.75
+# and 0.65, "go with 0.7 ... Will adjust later if it turns out to be too
+# transparent"). It was 0.95.
+_LEGEND_FRAME_ALPHA = 0.7
 
 # Title block, at font scale 1. The subtitle's top sits this many title font
 # sizes below the title's top (the spacing tuned on the default canvas: 0.027
@@ -176,7 +181,7 @@ def _draw_legend(ax: Axes, handles: Sequence[Artist], *, ncols: int, fontsize: f
         borderaxespad=0.0,
         ncols=ncols,
         fontsize=fontsize,
-        framealpha=0.95,
+        framealpha=_LEGEND_FRAME_ALPHA,
     )
 
 
