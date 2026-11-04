@@ -47,13 +47,19 @@ How the pieces are chosen
   each of its pieces is that long, but at most three times the tolerance;
   one or two short pieces are mostly a jump and stay. The message log names
   each stretch so loosened (``loosen_short_runs``).
-- The pieces are separate regressions and do not join: a jump in the data
-  (debt in 2020) falls between two of them.
+- Neighbouring pieces share the observation where they meet, one piece's
+  last and the next one's first (36.1, Terry 2026-11-03), so no stretch of
+  the curve is left without a line, and that observation is within the
+  tolerance of both. They are still separate regressions and do not join
+  in value: at the date they share, each line stands within the tolerance of
+  the observation, not on the other line. A jump in the data (debt in 2020)
+  is a short, steep piece of its own.
 
 How they are drawn
 ------------------
 - Each piece is a thick, paler, translucent line in its curve's colour,
-  under the curves, from its first observation to its last.
+  under the curves, from its first observation to its last, so each begins
+  on the date the one before it ends.
 - Its rate is written beside it, turned to lie along it, in the curve's own
   colour, after the layout, the date limits and the -l labels are final
   (``add_rate_labels``, called by ``legend.finish_legend_and_title``). It
@@ -265,21 +271,28 @@ class _Sums:
 def fit_pieces(x: np.ndarray, z: np.ndarray, w: np.ndarray, tolerance: float) -> list[Piece]:
     """Cover the observations with the fewest least-squares lines each within ``tolerance`` of all its points.
 
-    ``x`` ascending (years), ``z`` = ln(value), ``w`` the weights. Among the
-    coverings with fewest pieces, the one with the least total weighted
-    squared error is taken. Pieces have at least two observations.
+    ``x`` ascending (years), ``z`` = ln(value), ``w`` the weights. Neighbouring
+    pieces share the observation where they meet: ``i..j``, then ``j..k``
+    (36.1, Terry 2026-11-03, "Share the figure"), so no interval between two
+    observations is left without a line, and that observation must lie
+    within the tolerance of both. Among the coverings with fewest pieces, the
+    one with the least total weighted squared error is taken, a shared
+    observation counting in each of its two pieces.
 
     1. For each first observation ``i``, ``reach[i]`` is the last one a piece
-       starting there can extend to. A piece that fits still fits with its
-       first observation dropped, so ``reach`` never decreases, and one pass
-       with two pointers finds it all.
-    2. Dynamic programming over the end of the covered run: the best covering
-       of observations ``0..j`` is the best covering of ``0..i-1`` plus the
-       piece ``i..j``, over every ``i`` that can reach ``j``, compared by
+       starting there can extend to. A piece that fits nearly always still
+       fits with its first observation dropped, so ``reach`` is taken never
+       to decrease, and one pass with two pointers finds it all.
+    2. Dynamic programming over the last observation of the last piece: the
+       best covering of observations ``0..j`` ending at ``j`` is the best
+       covering of ``0..i`` ending at ``i`` plus the piece ``i..j``, over
+       every ``i`` that can reach ``j`` and whose piece fits, compared by
        (pieces, squared error).
 
-    A run of three observations is always allowed, even beyond the tolerance,
-    so that a covering exists however noisy the data (two are always exact).
+    Two observations always fit, exactly, so a covering exists however noisy
+    the data. (Before 36.1, when each observation went to one piece, a run of
+    three had to be allowed beyond the tolerance for that; with the ends
+    shared none is.)
     """
     count = len(x)
     if count < 2:
@@ -299,29 +312,29 @@ def fit_pieces(x: np.ndarray, z: np.ndarray, w: np.ndarray, tolerance: float) ->
             last += 1
         reach[first] = last
     reach[count - 1] = count - 1
-    reach = np.maximum.accumulate(np.maximum(reach, np.minimum(np.arange(count) + 2, count - 1)))
 
-    # best_*[k]: the best covering of observations 0..k-1; start[k] is where its last piece begins.
-    best_pieces = np.full(count + 1, np.inf)
-    best_error = np.full(count + 1, np.inf)
-    best_pieces[0] = best_error[0] = 0.0
-    start = np.zeros(count + 1, dtype=int)
+    # best_*[j]: the best covering of observations 0..j whose last piece ends at j; start[j] is where that piece begins.
+    best_pieces = np.zeros(count)
+    best_error = np.zeros(count)
+    start = np.zeros(count, dtype=int)
     for end in range(1, count):
+        # ``end - 1`` always reaches ``end``, so there is at least one.
         firsts = np.arange(int(np.searchsorted(reach, end)), end)
-        if not len(firsts):
-            continue
         pieces = best_pieces[firsts] + 1
         error = best_error[firsts] + sums.fit(firsts, end)[2]
-        choice = np.lexsort((error, pieces))[0]
-        best_pieces[end + 1], best_error[end + 1], start[end + 1] = pieces[choice], error[choice], firsts[choice]
-    if not np.isfinite(best_pieces[count]):
-        return []
+        # Best first, as ``reach`` only comes close: a least-squares line moves when a point is
+        # dropped, so a piece within it can lie a little beyond the tolerance (measured on a made-up
+        # random walk: 1.006 % against 1 %). Tested only here, on the few it would take.
+        for choice in np.lexsort((error, pieces)):
+            if fits(int(firsts[choice]), end):
+                break
+        best_pieces[end], best_error[end], start[end] = pieces[choice], error[choice], firsts[choice]
 
     runs: list[tuple[int, int]] = []
-    end = count
+    end = count - 1
     while end > 0:
-        runs.append((int(start[end]), end - 1))
-        end = start[end]
+        runs.append((int(start[end]), end))
+        end = int(start[end])
     return [_fitted(x, z, w, first, last) for first, last in reversed(runs)]
 
 
