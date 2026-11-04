@@ -22,13 +22,23 @@ lines drawn on a twin axis, so the legend is placed here instead:
    used. Otherwise the target is treated as aspirational: the legend goes
    where it is furthest from both the lines and the axes frame, i.e. centred
    in the largest pocket.
-5. If no shape fits anywhere without covering a line, the legend goes where
-   it covers the least of the lines' busy stretches (batch 24.1, decision
-   55): of every shape and position, those covering the fewest cells of the
-   -l and --reg labels, then the fewest reversals of direction, then the
-   fewest visible value changes, then the fewest occupied cells
-   (``_busy_tiers``); the first such shape in preference order wins.
-6. It is drawn exactly where it was placed (``borderaxespad=0``).
+5. If no shape fits anywhere without covering a line, a place that covers no
+   -l or --reg label and only a little of the lines is taken as it is: the
+   legend is see-through (36.3, Terry 2026-11-03: "only some very minor
+   obscuring", ``_MINOR_COVER_CELLS``).
+6. Failing that, room is made (36.3), as a last resort: if every upper limit
+   on the chart is automatic, all the axes are raised by the same share of
+   their height, just enough for the shape that needs the least; if not, and
+   every lower limit is, they are lowered (``_side_to_move``). The labels are
+   placed again and steps 3 to 5 run again. The --reg pieces were fitted
+   before this, by the limits as they were, so making room changes none.
+7. If no room can be made, or it was not enough, the legend goes where it
+   covers the least of the lines' busy stretches (batch 24.1, decision 55):
+   of every shape and position, those covering the fewest cells of the -l and
+   --reg labels, then the fewest reversals of direction, then the fewest
+   visible value changes, then the fewest occupied cells (``_busy_tiers``);
+   the first such shape in preference order wins.
+8. It is drawn exactly where it was placed (``borderaxespad=0``).
 
 Font sizes and the pixel distances tied to them (clearance target, frame
 padding, title spacing) are multiplied by ``PlotConfig.font_scale``, so a small
@@ -41,7 +51,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Callable, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -86,8 +96,31 @@ _FONT_SIZE_REDUCTIONS_PT = (0, 2, 4)
 # The legend's background (Terry, 2026-11-03: "it would be better if it were
 # slightly more transparent"; shown a legend over a curve at 0.95, 0.85, 0.75
 # and 0.65, "go with 0.7 ... Will adjust later if it turns out to be too
-# transparent"). It was 0.95.
+# transparent"). A line under it shows through, which is why a little of one
+# may be covered (_MINOR_COVER_CELLS). It was 0.95.
 _LEGEND_FRAME_ALPHA = 0.7
+
+# Where no shape fits free: covering this many occupied cells of the grid
+# (CELL_PX square, a line crossing a cell in about 4 px), and no label, is the
+# "very minor obscuring" Terry accepts under a see-through legend (2026-11-03),
+# and no room is made. Claude's call, by the picture: on 37 charts of every term
+# and rate at four sizes (2026-11-04), three could cover so little, 6, 10 and 12
+# cells, a spike's tip under the legend's edge, and the next covered 13, 23 and
+# 27; the two crowded charts of the regression set needed 179 at least.
+_MINOR_COVER_CELLS = 12
+# Making room. The limits move a percent of the axes' height at a time, the
+# curves keeping at least this share of it, so that a legend too tall for that
+# goes over the curves rather than squeezing them flat (Claude's call, 2026-11-04;
+# the alternative, no limit). The legend is then this far from the lines (at
+# font scale 1), and _FRAME_MARGIN_PX from the frame where it fits. The labels
+# placed again can take room the first look gave the legend, so it is looked
+# for at most this many times.
+_ROOM_STEP = 0.01
+_ROOM_CURVES_KEEP = 0.5
+_ROOM_CLEARANCE_PX = 24.0
+_ROOM_ROUNDS = 3
+_TOP = "top"
+_BOTTOM = "bottom"
 
 # Title block, at font scale 1. The subtitle's top sits this many title font
 # sizes below the title's top (the spacing tuned on the default canvas: 0.027
@@ -199,6 +232,34 @@ class _Placement:
     width: int
 
 
+@dataclass(frozen=True)
+class _Shape:
+    """A shape of the legend measured, which fits inside the axes but only over a line."""
+
+    handles: list[Artist]
+    ncols: int
+    fontsize: float
+    height: int  # in cells
+    width: int
+
+
+@dataclass(frozen=True)
+class _Search:
+    """What trying every shape found: the first that fits free, or those that fit only over a line, and the grid."""
+
+    best: _Placement | None
+    crowded: list[_Shape]
+    grid: OccupancyGrid
+
+
+@dataclass(frozen=True)
+class _Room:
+    """How room can be made for the legend: which limit moves, and what moves it and returns the labels' new extents."""
+
+    side: str  # _TOP or _BOTTOM
+    make: Callable[[float], list[Bbox]]  # given the share of the axes' height
+
+
 def _fits(grid: OccupancyGrid, height: int, width: int, edge_cells: int) -> bool:
     """Whether a ``height × width`` box fits inside the axes at least ``edge_cells`` from the frame."""
     return height + 2 * edge_cells <= grid.rows and width + 2 * edge_cells <= grid.cols
@@ -298,42 +359,128 @@ def _busy_tiers(ax: Axes, grid: OccupancyGrid, obstacles: Sequence[Bbox]) -> lis
 
 
 def _least_busy_position(
-    tiers: Sequence[OccupancyGrid], height: int, width: int, edge_cells: int
-) -> tuple[tuple[int, ...], int, int]:
+    tiers: Sequence[OccupancyGrid], height: int, width: int, edge_cells: int, *, most_cells: int | None = None
+) -> tuple[tuple[int, ...], int, int] | None:
     """Return ``(counts, row, col)`` for the position of a box covering the least of ``tiers``, compared in turn.
 
     ``counts`` is what the box covers of each tier there; of positions alike
-    in all, the first (lowest, then leftmost) is taken.
+    in all, the first (lowest, then leftmost) is taken. With ``most_cells``,
+    only positions covering none of the first tier and at most that many of
+    the last are considered, and None if there is none.
     """
     sums = [_interior(tier.window_sums(height, width, margin=0), edge_cells) for tier in tiers]
     least = np.ones(sums[0].shape, dtype=bool)
+    if most_cells is not None:
+        least = (sums[0] == 0) & (sums[-1] <= most_cells)
+        if not least.any():
+            return None
     for tier_sums in sums:
         least &= tier_sums == tier_sums[least].min()
     r, c = np.unravel_index(least.argmax(), least.shape)
     return tuple(int(tier_sums[r, c]) for tier_sums in sums), int(r) + edge_cells, int(c) + edge_cells
 
 
-def auto_place_legend(
-    ax: Axes, groups: Sequence[Sequence[Artist]], font_scale: float, obstacles: Sequence[Bbox] = ()
-) -> Legend | None:
-    """Place the legend where it obscures the plotted lines (and ``obstacles``, display boxes) least. See module docstring."""
-    figure = ax.figure
-    figure.canvas.draw()  # data→display transforms must be final before sampling
-    renderer = figure.canvas.get_renderer()
+def _minor_cover(tiers: Sequence[OccupancyGrid], crowded: Sequence[_Shape], edge_cells: int) -> _Placement | None:
+    """The first shape, in preference order, with a place covering no label and only ``_MINOR_COVER_CELLS`` of the lines; the least busy such place."""
+    for shape in crowded:
+        found = _least_busy_position(tiers, shape.height, shape.width, edge_cells, most_cells=_MINOR_COVER_CELLS)
+        if found is not None:
+            _counts, row, col = found
+            return _Placement(shape.handles, shape.ncols, shape.fontsize, 0, row, col, shape.height, shape.width)
+    return None
+
+
+def _squeezed(y: np.ndarray | float, box: Bbox, share: float, side: str) -> np.ndarray | float:
+    """Where a display height ``y`` in the axes ``box`` moves to when the limit on ``side`` moves out by ``share`` of the height.
+
+    Every axis moves by the same share of its height, on its own scale, so on
+    the canvas every curve is squeezed alike, towards the frame on the far side.
+    """
+    if side == _TOP:
+        return box.y0 + (y - box.y0) / (1.0 + share)
+    return box.y1 - (box.y1 - y) / (1.0 + share)
+
+
+def _room_share(
+    ax: Axes, crowded: Sequence[_Shape], obstacles: Sequence[Bbox], side: str, font_scale: float, most_freed: float
+) -> float | None:
+    """The least share of the axes' height the limit on ``side`` must move for some shape to fit free; None if none does.
+
+    Measured by squeezing what is drawn, in display coordinates, rather than
+    by drawing it again: the lines and the labels (each label's middle
+    squeezed, its size kept). The shape that needs the least wins, with
+    ``_ROOM_CLEARANCE_PX`` from the lines, and ``_FRAME_MARGIN_PX`` from the
+    frame where it fits that far in, else ``_EDGE_PADDING_PX``. The chart drawn
+    again may differ a little (ticks wider, labels placed anew). Moving by a
+    share frees ``share / (1 + share)`` of the height, at most ``most_freed``.
+    """
+    box = ax.get_window_extent(ax.figure.canvas.get_renderer())
+    samples = collect_display_samples(ax)
+    clearance = math.ceil(_ROOM_CLEARANCE_PX * font_scale / CELL_PX)
+    edge_cells = math.ceil(_EDGE_PADDING_PX * font_scale / CELL_PX)
+    margin_cells = math.ceil(_FRAME_MARGIN_PX * font_scale / CELL_PX)
+    for step in range(1, math.floor(most_freed / _ROOM_STEP + 1e-9) + 1):
+        freed = step * _ROOM_STEP
+        share = freed / (1.0 - freed)
+        points = samples.copy()
+        points[:, 1] = _squeezed(points[:, 1], box, share, side)
+        boxes = []
+        for obstacle in obstacles:
+            shift = float(_squeezed((obstacle.y0 + obstacle.y1) / 2, box, share, side)) - (obstacle.y0 + obstacle.y1) / 2
+            boxes.append(obstacle.translated(0.0, shift))
+        grid = OccupancyGrid.from_axes(ax, points, pad=clearance, boxes=boxes)
+        for shape in crowded:
+            from_frame = margin_cells if _fits(grid, shape.height, shape.width, margin_cells) else edge_cells
+            if _interior(grid.window_sums(shape.height, shape.width, margin=clearance), from_frame).min() == 0:
+                return share
+    return None
+
+
+def _move_limits(figure: Figure, share: float, side: str) -> None:
+    """Move the limit on ``side`` of every axis of ``figure`` out by ``share`` of its height, on its own scale."""
+    for axis in figure.axes:
+        low, high = axis.get_ylim()
+        if axis.get_yscale() == "log":
+            factor = (high / low) ** share
+            axis.set_ylim((low, high * factor) if side == _TOP else (low / factor, high))
+        else:
+            span = (high - low) * share
+            axis.set_ylim((low, high + span) if side == _TOP else (low - span, high))
+
+
+def _side_to_move(config: PlotConfig) -> str | None:
+    """Which limits may move to make room: the upper if all are automatic, else the lower if all are, else None (36.3).
+
+    Terry, 2026-11-03: "if the upper-limits of all the axes on this page are
+    automatic anyway, adjust the upper limit as required ... Do the same on
+    the lower limits, but only if they are all on auto when not all of the
+    upper ones are on auto." A limit counts only on an axis that takes it:
+    the yield axis's Max and Min where it has its own curves, the right
+    axis's Top and Bottom where it has its own. An axis outside them (the
+    price index's, the population's) has no limits to set.
+    """
+    yields, amounts = config.has_left_axis_series, config.has_macro_series
+    if not (yields and config.yield_ymax is not None) and not (amounts and config.macro_top is not None):
+        return _TOP
+    if not (yields and config.yield_ymin is not None) and not (amounts and config.macro_bottom is not None):
+        return _BOTTOM
+    return None
+
+
+def _search_shapes(ax: Axes, groups: Sequence[Sequence[Artist]], font_scale: float, obstacles: Sequence[Bbox]) -> _Search:
+    """Try each shape of the legend in preference order: the first that fits free, and those that fit only over a line."""
+    renderer = ax.figure.canvas.get_renderer()
     target = round(_TARGET_MARGIN_PX * font_scale / CELL_PX)
     grid = OccupancyGrid.from_axes(ax, collect_display_samples(ax), pad=target, boxes=obstacles)
     edge_cells = math.ceil(_EDGE_PADDING_PX * font_scale / CELL_PX)
     margin_cells = math.ceil(_FRAME_MARGIN_PX * font_scale / CELL_PX)
 
-    best: _Placement | None = None
     measured: set[tuple[int, float]] = set()
-    crowded: list[tuple[list[Artist], int, float, int, int]] = []  # shapes that fit only over a line
+    crowded: list[_Shape] = []
     for reduction in _FONT_SIZE_REDUCTIONS_PT:
         fontsize = (LEGEND_FS - reduction) * font_scale
         for requested_cols in _COLUMN_PREFERENCE:
             handles, ncols = arrange_legend_groups(groups, requested_cols)
-            if not handles:
-                return None
             if (ncols, fontsize) in measured:
                 continue  # small legends collapse several requests to the same shape
             measured.add((ncols, fontsize))
@@ -349,24 +496,58 @@ def auto_place_legend(
 
             result = _best_position(grid, height, width, edge_cells, margin_cells, target)
             if result is None:
-                crowded.append((handles, ncols, fontsize, height, width))
+                crowded.append(_Shape(handles, ncols, fontsize, height, width))
                 continue
             clearance, row, col = result
-            best = _Placement(handles, ncols, fontsize, clearance, row, col, height, width)
-            break
-        if best is not None:
-            break
+            return _Search(_Placement(handles, ncols, fontsize, clearance, row, col, height, width), crowded, grid)
+    return _Search(None, crowded, grid)
 
-    if best is None and crowded:
-        # No shape fits without covering a line: the least busy place any
-        # shape can take (decision 55), the earlier shape where two are alike.
+
+def auto_place_legend(
+    ax: Axes, groups: Sequence[Sequence[Artist]], font_scale: float, obstacles: Sequence[Bbox] = (), room: _Room | None = None
+) -> Legend | None:
+    """Place the legend where it obscures the plotted lines (and ``obstacles``, display boxes) least. See module docstring.
+
+    ``room``: how to make room for it, where the limits may move (step 6).
+    """
+    if not arrange_legend_groups(groups, _COLUMN_PREFERENCE[0])[0]:
+        return None
+    figure = ax.figure
+    figure.canvas.draw()  # data→display transforms must be final before sampling
+    edge_cells = math.ceil(_EDGE_PADDING_PX * font_scale / CELL_PX)
+    search = _search_shapes(ax, groups, font_scale, obstacles)
+    best, grid = search.best, search.grid
+
+    if best is None and search.crowded:
+        # No shape fits free: a little of a line under a see-through legend
+        # (step 5); failing that, room, as many times as it takes (step 6).
         tiers = _busy_tiers(ax, grid, obstacles)
-        least: tuple[int, ...] | None = None
-        for handles, ncols, fontsize, height, width in crowded:
-            counts, row, col = _least_busy_position(tiers, height, width, edge_cells)
-            if least is None or counts < least:
-                least = counts
-                best = _Placement(handles, ncols, fontsize, 0, row, col, height, width)
+        best = _minor_cover(tiers, search.crowded, edge_cells)
+        curves_have = 1.0  # the share of the height left to the curves so far
+        for _round in range(_ROOM_ROUNDS if room is not None else 0):
+            if best is not None or not search.crowded:
+                break
+            share = _room_share(ax, search.crowded, obstacles, room.side, font_scale, 1.0 - _ROOM_CURVES_KEEP / curves_have)
+            if share is None:
+                break
+            obstacles = room.make(share)
+            curves_have /= 1.0 + share
+            figure.canvas.draw()
+            search = _search_shapes(ax, groups, font_scale, obstacles)
+            best, grid = search.best, search.grid
+            if best is None and search.crowded:
+                tiers = _busy_tiers(ax, grid, obstacles)
+                best = _minor_cover(tiers, search.crowded, edge_cells)
+
+        # Nothing else served: the least busy place any shape can take
+        # (decision 55), the earlier shape where two are alike.
+        if best is None and search.crowded:
+            least: tuple[int, ...] | None = None
+            for shape in search.crowded:
+                counts, row, col = _least_busy_position(tiers, shape.height, shape.width, edge_cells)
+                if least is None or counts < least:
+                    least = counts
+                    best = _Placement(shape.handles, shape.ncols, shape.fontsize, 0, row, col, shape.height, shape.width)
 
     if best is None:
         # Nothing fits inside the axes at all; fall back to matplotlib's default corner.
@@ -494,6 +675,7 @@ def finish_legend_and_title(
     rate_labels: Sequence[RateLabel] = (),
     quote_zone: str | None = None,
     short_title: str | None = None,
+    place_outer_axis: Callable[[], None] | None = None,
 ) -> None:
     """Add title and date-range subtitle, fix the layout and x-limits, label line ends, then place the legend.
 
@@ -520,7 +702,11 @@ def finish_legend_and_title(
     the -l labels, and the legend avoids them too.
 
     The legend goes last: its position is chosen against the final axes
-    geometry, so nothing may move after it is placed.
+    geometry, so nothing may move after it is placed. Where it must make room
+    for itself (36.3) the limits move first, then the layout is made again,
+    since the tick labels may change, and the labels placed again;
+    ``place_outer_axis`` sets an axis outside the right axis past its tick
+    labels, again, before the layout.
     """
     first, last = data_span if data_span is not None else (config.start, config.end)
     figure = ax.figure
@@ -547,17 +733,39 @@ def finish_legend_and_title(
         style="italic",
     )
     mark_subtitle(figure, subtitle_text)  # the second row of Export chart's data (batch 11.1)
-    figure.tight_layout(rect=[0, 0, 1, 0.99], pad=0.4)
 
-    # tight_layout does not know about suptitle/text, so push the axes top down
-    # to sit a fixed gap below the subtitle's baseline (points → inches → fraction).
-    subtitle_bottom = subtitle_y - subtitle_fs / 72.0 / max(figure_height, 0.1)
-    gap_fraction = _AXES_GAP_BELOW_SUBTITLE_PX * scale / (figure_height * CANVAS_DPI)
-    figure.subplots_adjust(top=subtitle_bottom - gap_fraction)
-    _keep_outer_axis_inside(figure, scale)
-    apply_date_xlim(ax, config)
+    def lay_out() -> None:
+        figure.tight_layout(rect=[0, 0, 1, 0.99], pad=0.4)
 
-    obstacles = add_end_labels(ax, end_labels, config) if end_labels else []
-    if rate_labels:
-        obstacles += add_rate_labels(ax, rate_labels, config, obstacles)
-    auto_place_legend(ax, legend_groups, scale, obstacles)
+        # tight_layout does not know about suptitle/text, so push the axes top down
+        # to sit a fixed gap below the subtitle's baseline (points → inches → fraction).
+        subtitle_bottom = subtitle_y - subtitle_fs / 72.0 / max(figure_height, 0.1)
+        gap_fraction = _AXES_GAP_BELOW_SUBTITLE_PX * scale / (figure_height * CANVAS_DPI)
+        figure.subplots_adjust(top=subtitle_bottom - gap_fraction)
+        _keep_outer_axis_inside(figure, scale)
+        apply_date_xlim(ax, config)
+
+    def place_labels() -> list[Bbox]:
+        obstacles = add_end_labels(ax, end_labels, config) if end_labels else []
+        if rate_labels:
+            obstacles += add_rate_labels(ax, rate_labels, config, obstacles)
+        return obstacles
+
+    lay_out()
+    before_labels = {axis: {*axis.texts, *axis.lines} for axis in figure.axes}
+    obstacles = place_labels()
+
+    def make_room(share: float) -> list[Bbox]:
+        """Move the limits by ``share``, lay the chart out again and place its labels again; return their extents."""
+        for axis, kept in before_labels.items():
+            for artist in [*axis.texts, *axis.lines]:
+                if artist not in kept:
+                    artist.remove()
+        _move_limits(figure, share, side)
+        if place_outer_axis is not None:
+            place_outer_axis()
+        lay_out()
+        return place_labels()
+
+    side = _side_to_move(config)
+    auto_place_legend(ax, legend_groups, scale, obstacles, None if side is None else _Room(side, make_room))

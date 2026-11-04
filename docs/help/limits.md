@@ -1,6 +1,6 @@
 # Axis limits: Min, Max, Top and Bottom
 
-Each chart has two vertical axes: on the left the yields, spreads and rates, in percent; on the right GDP, debt and interest, on a log scale. Min and Max set the bottom and top of the left axis, Bottom and Top those of the right. Left blank, each axis fits the curves drawn on it.
+Each chart has two vertical axes: on the left the yields, spreads and rates, in percent; on the right GDP, debt and interest, on a log scale. Min and Max set the bottom and top of the left axis, Bottom and Top those of the right. Left blank, each axis fits the curves drawn on it, and may go further out where the [legend](?help=layout) has no other place that covers no line; a blank box's grey value is the limit drawn.
 
 ## Min and Max: the left axis
 
