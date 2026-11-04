@@ -33,8 +33,8 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
 
 - **The web page** (`ratesplot/web.py`): open <https://ratesplot.streamlit.app> and choose
   the charts in the panel on the left. Drag a box on a chart to zoom to it, or turn the mouse
-  wheel over it to zoom the dates about the pointer; buttons move the dates and undo a zoom;
-  each date has a calendar; the size keeps its shape when you change one side. Unzoom goes
+  wheel over it to zoom the dates about the pointer, or drag with the right or middle button to
+  move it; buttons move the dates and undo a zoom; each date has a calendar; the size keeps its shape when you change one side. Unzoom goes
   back to the charts before the first zoom or move since the last Reset. The page's
   address holds the chart's settings, so a chart can be bookmarked or
   sent; under the command line its link is in a box with a copy button (the default charts' link
@@ -44,8 +44,8 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   On a narrow screen (under 700 px, a phone) the page draws the chart 800 x 800 px with larger
   text, unless another size is given; its link and command line still draw the full-size chart.
   To run it on your own machine: `streamlit run streamlit_app.py`.
-- **The desktop window** (`ratesplot/gui.py`): `python ratesplot.py`. It adds a
-  right-drag pan, and remembers your last settings: each command window
+- **The desktop window** (`ratesplot/gui.py`): `python ratesplot.py`. It has the page's ways of
+  moving the dates, and remembers your last settings: each command window
   its own, so several windows can be open at once; a window whose monitor has gone comes back
   at its size on another. Untick "Remember my settings" (on the page too) to draw other charts
   without replacing the settings kept; it is ticked again at every start. Under its command line
@@ -57,6 +57,8 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   message log as text (on the page, a button under the log). Its dialog and Export chart's open in
   the folder last saved to, remembered with the settings, and the first time in Documents; never in
   the program's own folder, so nothing saved lands among the repository's files.
+  While a chart is drawn, the page (above the charts) and the window (beside the build line) say
+  how much longer it should take, from what the drawings before it took, and how long it has taken so far.
 - **The command line**: `python ratesplot.py --no-gui [options]`, or any options with the
   window. `python ratesplot.py --help` lists them all; the web page shows the same list.
 

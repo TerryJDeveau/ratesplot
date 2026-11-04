@@ -1408,6 +1408,15 @@ REMEMBER_HELP = (
 # download button is named as the window's button (batch 31.4).
 REFRESH_HELP = "Draw again with the latest data: the intraday quotes of the moment, and anything downloaded over an hour ago."
 RESET_HELP = "Back to the default charts."
+# The date buttons, the page's and the window's alike (35.4, ``date_buttons``):
+# half the window either way, twice the span.
+DATE_STEP_FRACTION = 0.5
+ZOOM_OUT_FACTOR = 2.0
+EARLIER_HELP = "Move the dates back by half the window."
+LATER_HELP = "Move the dates on by half the window, up to today."
+ZOOM_OUT_HELP = "Twice the span of dates, about its middle."
+# Their topic of help (More, the window's ⓘ beside each).
+DATES_TOPIC = "dates"
 BACK_HELP = "Undo the last zoom, move of the dates, Unzoom or Reset."
 UNZOOM_HELP = "Back to the charts before the first zoom or move since the last Reset (Back undoes it)."
 EXPORT_LABEL = "Export chart"
@@ -1685,8 +1694,42 @@ def scale_dates_updates(geometry: ChartGeometry, factor: float, anchor_x: float)
     return _date_range_texts(max(geometry.date_at(new_left), EARLIEST_DATE), geometry.date_at(new_right))
 
 
+@dataclass(frozen=True)
+class DateButton:
+    """One of the date buttons (``date_buttons``): what it does, its tip, and why it is greyed now ("" while it is not)."""
+
+    key: str  # "earlier", "later", "zoom-out": the window's ⓘ's name
+    label: str
+    shift: float
+    scale: float
+    tip: str
+    greyed: str
+    verb: str  # the window's message log says what was done
+
+
+def date_buttons(drawn: PlotConfig | None) -> tuple[DateButton, ...]:
+    """Earlier, Later and Zoom out for the chart drawn (None before one is), the page's and the window's alike (35.4).
+
+    Each is greyed where it would do nothing, for the reason its help says
+    (batch 29.1): Earlier at the earliest date a chart shows, Later at today,
+    Zoom out at both.
+    """
+    at_first = drawn is None or drawn.start <= EARLIEST_DATE
+    at_today = drawn is None or drawn.end >= pd.Timestamp.today().normalize()
+    none = "no chart is drawn yet"
+    first = f"the chart begins at the earliest date a chart shows, {EARLIEST_DATE:%Y-%m-%d}"
+    return (
+        DateButton("earlier", "◀ Earlier", -DATE_STEP_FRACTION, 1.0, EARLIER_HELP, none if drawn is None else first if at_first else "", "Earlier"),
+        DateButton("later", "Later ▶", DATE_STEP_FRACTION, 1.0, LATER_HELP, none if drawn is None else "the chart ends today" if at_today else "", "Later"),
+        DateButton(
+            "zoom-out", "Zoom out", 0.0, ZOOM_OUT_FACTOR, ZOOM_OUT_HELP,
+            none if drawn is None else f"{first}, and ends today" if at_first and at_today else "", "Zoomed out",
+        ),
+    )
+
+
 def move_dates_updates(start: pd.Timestamp, end: pd.Timestamp, *, shift: float = 0.0, scale: float = 1.0) -> dict[str, str]:
-    """Return Start and End texts for the window ``start``..``end`` moved or rescaled (the web page's buttons).
+    """Return Start and End texts for the window ``start``..``end`` moved or rescaled (the date buttons, ``date_buttons``).
 
     ``shift`` moves the window by that fraction of its span (negative:
     earlier); ``scale`` multiplies the span about its middle (2: zoom out).

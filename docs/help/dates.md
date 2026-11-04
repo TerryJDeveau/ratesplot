@@ -26,8 +26,8 @@ In the window and on the page alike:
 
 - **A box dragged over a chart** zooms to it: its width sets Start and End, its height the [axis limits](?help=limits) of that chart.
 - **The wheel over a chart** zooms the dates about the pointer.
-- **In the window**, dragging with the right or middle button moves the dates.
-- **On the page**, "◀ Earlier" and "Later ▶" move the dates by half their span, and "Zoom out" doubles the span about its middle, kept between 1600 and today.
+- **Dragging with the right or middle button** moves the dates and the axes' limits, the chart following the pointer. With a mouse: on a phone a finger drag scrolls the page.
+- **"◀ Earlier" and "Later ▶"** move the dates by half their span, and **"Zoom out"** doubles the span about its middle, kept between 1600 and today. Each is greyed where it would do nothing: Earlier at 1600, Later at today, Zoom out at both.
 - **Back** undoes one zoom, move, Unzoom or Reset; **Unzoom** returns to the dates before the first zoom or move since the last Reset. Each is greyed while it would do nothing.
 
 The dates are shared by every chart, so a zoom on one moves them all; the axis limits are each nation's own.

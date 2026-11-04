@@ -108,9 +108,11 @@ Zoom and dates
     today, keeping the span). "Back" undoes one zoom, move, Unzoom or Reset;
     "Unzoom" returns to the charts before the first zoom or move since the
     last Reset (batch 28.2), as one more step that Back undoes; each is
-    greyed while it would do nothing (as in the window). The axis limits are
-    each nation's own, so zooming one chart's axes leaves the other's; the
-    dates are shared, as on the command line.
+    greyed while it would do nothing (as in the window). A right- or
+    middle-drag on a chart pans it, as in the window (35.4, ``_panned``,
+    ``frontend.pan_updates``), with the mouse only: a finger drag scrolls the
+    page. The axis limits are each nation's own, so zooming one chart's axes
+    leaves the other's; the dates are shared, as on the command line.
 
 Dates
     Beside each date field a 📅 button opens Streamlit's calendar (between
@@ -138,13 +140,11 @@ The hover read-out
     following a line asks nothing of the server. Its box ("Hover read-out")
     changes no chart: unticking it sends the charts without the data, and
     draws nothing again.
-
-Not here (the window has it)
-    The right-drag pan (the buttons move the dates).
 """
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import functools
 import json
@@ -241,7 +241,9 @@ from .frontend import (  # noqa: E402
     level_text,
     limit_copies,
     limit_unit,
+    date_buttons,
     move_dates_updates,
+    pan_updates,
     master_label,
     master_text,
     master_ticked,
@@ -336,17 +338,27 @@ _MARGIN_FIELD_PX = 110
 # (batch 18): narrow enough for the three to share a row in half the sidebar.
 _LIMIT_FIELD_PX = 80
 _DRAWING_LOCK = threading.Lock()
+# What the drawings so far have taught the wait line (batch 35.1, ``wait``): in
+# the server's memory, for every visitor; a Reboot or a sleep starts it again.
+_FIGURES = Figures()
+# How often a waiting drawing looks for its turn, and the script thread for the
+# drawing's end; the line is rewritten when its words change (each second).
+_TURN_POLL_SECONDS = 0.1
+_LINE_POLL_SECONDS = 0.25
+# The drawings asked for and not yet ended, the one drawing first (``_take_turn``).
+_DRAWINGS: list[_Job] = []
+_DRAWINGS_LOCK = threading.Lock()
 # How many zoom and pan steps "Back" can undo (as in the window); the view
 # before the first one is always kept, for Unzoom.
 _HISTORY_LIMIT = 50
-# The buttons move the dates by this fraction of the window, or scale it by this factor.
-_DATE_STEP_FRACTION = 0.5
-_ZOOM_OUT_FACTOR = 2.0
-# The window's words and bars (Terry, 2026-10-08); the page has no pan.
+# The window's words and bars (Terry, 2026-10-08); the pan as in the window since 35.4.
 _ZOOM_HINT = (
     "Drag pointer: zoom to box (its width sets the dates, its height the axes' limits) | "
-    "wheel: zoom dates | buttons: move the dates | Back: undo a zoom"
+    "right/middle click-drag: pan | wheel: zoom dates | buttons: move the dates | Back: undo a zoom"
 )
+# How far a pan may say the pointer moved, in pictures: a drag is held to the
+# screen, so a check on what reaches the server (a phone-sized picture on a wide screen stays within this).
+_PAN_MAX_FRACTION = 20.0
 # The notches a wheel's turn may send, either way: the page's script counts
 # what the browser reports, so a check on what reaches the server. More
 # would ask for a span past all the data, which the zoom cuts anyway.
@@ -752,6 +764,27 @@ export default function (component) {
   };
   const controller = new Controller(show, hide);
 
+  // The pan (35.4), as the window's: a right- or middle-drag with the mouse, the
+  // picture following the pointer until the page draws it again. A finger drag
+  // scrolls the page, as it did. A right click with no drag keeps the browser's
+  // own menu: it comes after the button is let go on Windows, but as it is
+  // pressed elsewhere, where it would stop the drag, so there it is held back.
+  let panFrom = null, panned = false;
+  img.oncontextmenu = (event) => {
+    if (panFrom !== null || panned) event.preventDefault();
+    panned = false;
+  };
+  const panTo = (event) => {
+    const dx = event.clientX - panFrom.x, dy = event.clientY - panFrom.y;
+    img.style.transform = "translate(" + dx + "px, " + dy + "px)";
+    return { dx, dy };
+  };
+  const panEnded = () => {
+    panFrom = null;
+    frame.style.overflow = "";
+    img.style.cursor = "";
+  };
+
   let start = null;
   const point = (event) => {
     const rect = img.getBoundingClientRect();
@@ -771,13 +804,27 @@ export default function (component) {
   };
   img.onpointerdown = (event) => {
     controller.stop();
-    if (event.pointerType === "touch" || event.button !== 0) return;
+    if (event.pointerType === "touch") return;
+    if (event.button === 1 || event.button === 2) {
+      event.preventDefault();  // a middle button would start the browser's own scrolling
+      img.setPointerCapture(event.pointerId);
+      panFrom = { x: event.clientX, y: event.clientY };
+      panned = false;
+      frame.style.overflow = "hidden";
+      img.style.cursor = "grabbing";
+      return;
+    }
+    if (event.button !== 0) return;
     event.preventDefault();
     img.setPointerCapture(event.pointerId);
     start = point(event);
     showBand(start, start);
   };
   img.onpointermove = (event) => {
+    if (panFrom !== null) {
+      panTo(event);
+      return;
+    }
     if (start) {
       showBand(start, point(event));
       return;
@@ -789,6 +836,18 @@ export default function (component) {
   };
   img.onpointerleave = () => controller.moved(null, 0, 0);
   img.onpointerup = (event) => {
+    if (panFrom !== null) {
+      const { dx, dy } = panTo(event);
+      const rect = img.getBoundingClientRect();
+      panEnded();
+      if (Math.abs(dx) < MIN_DRAG && Math.abs(dy) < MIN_DRAG) {
+        img.style.transform = "";
+        return;
+      }
+      panned = true;
+      setTriggerValue("pan", { dx: dx / rect.width, dy: dy / rect.height });
+      return;
+    }
     if (!start) return;
     const a = start;
     const b = point(event);
@@ -805,6 +864,10 @@ export default function (component) {
   img.onpointercancel = () => {
     start = null;
     band.style.display = "none";
+    if (panFrom !== null) {
+      panEnded();
+      img.style.transform = "";
+    }
   };
 
   // A turn begun off the picture scrolls the page, and goes on scrolling it
@@ -824,7 +887,7 @@ export default function (component) {
       return;
     }
     event.preventDefault();
-    if (start) return;  // a box is being dragged
+    if (start || panFrom !== null) return;  // a box is being dragged, or the chart panned
     controller.stop();
     notches -= event.deltaY / (event.deltaMode === 1 ? 3 : event.deltaMode === 2 ? 1 : 100);
     const at = point(event);
@@ -1514,6 +1577,33 @@ def _wheel_turned(key: str) -> None:
     updates = _wheel_zoom(drawing, key, (st.session_state.get(drawing.chart_key(key)) or {}).get("wheel"))
     if updates:
         _apply_view(updates)
+
+
+def _pan_view(drawing: Drawing, key: str, pan: object) -> dict[str, str] | None:
+    """Return the fields' texts for a pan of ``key``'s chart, or None for one that is no pan (35.4, by the window's rule, ``frontend.pan_updates``).
+
+    The page's script sends how far the pointer moved, as fractions of the
+    picture's width and height. They come from the browser, so anything but
+    two finite numbers within about the picture is ignored, as a wheel's turn is.
+    """
+    try:
+        dx, dy = float(pan["dx"]), float(pan["dy"])
+    except (TypeError, KeyError, ValueError):
+        return None
+    if not (math.isfinite(dx) and math.isfinite(dy)) or abs(dx) > _PAN_MAX_FRACTION or abs(dy) > _PAN_MAX_FRACTION:
+        return None
+    width, height = _png_size(drawing.pngs[key])
+    return pan_updates(drawing.geometry[key], drawing.drawn.for_nation(key) if drawing.drawn is not None else None, dx * width, dy * height)
+
+
+def _panned(key: str) -> None:
+    """``key``'s chart was dragged with the right or middle button: pan it, as the window does (35.4)."""
+    drawing: Drawing | None = st.session_state.get(_DRAWING)
+    if drawing is None or drawing.geometry.get(key) is None:
+        return
+    updates = _pan_view(drawing, key, (st.session_state.get(drawing.chart_key(key)) or {}).get("pan"))
+    if updates:
+        _apply_view(updates, key)
 
 
 def _move_dates(shift: float, scale: float) -> None:
@@ -2365,15 +2455,14 @@ def _set_address(tokens: tuple[str, ...]) -> None:
 def _view_buttons(drawing: Drawing) -> None:
     """Back, Unzoom and the date buttons, in one row over the charts, and how to zoom."""
     history = st.session_state.get(_HISTORY, [])
-    drawn = drawing.drawn
-    at_first = drawn is None or drawn.start <= EARLIEST_DATE
-    at_today = drawn is None or drawn.end >= pd.Timestamp.today().normalize()
     buttons = (
         ("◀ Back", _back, (), not history, BACK_HELP),
         ("Unzoom", _unzoom, (), _unzoomed(), UNZOOM_HELP),
-        ("◀ Earlier", _move_dates, (-_DATE_STEP_FRACTION, 1.0), at_first, "Move the dates back by half the window."),
-        ("Later ▶", _move_dates, (_DATE_STEP_FRACTION, 1.0), at_today, "Move the dates on by half the window, up to today."),
-        ("Zoom out", _move_dates, (0.0, _ZOOM_OUT_FACTOR), at_first and at_today, "Twice the span of dates, about its middle."),
+        *(
+            # Why it is greyed under its tip (batch 29.1's rule; 35.4).
+            (each.label, _move_dates, (each.shift, each.scale), bool(each.greyed), "\n\n".join(filter(None, (each.tip, greyed_line(each.greyed)))))
+            for each in date_buttons(drawing.drawn)
+        ),
     )
     # A row that wraps (not st.columns, which a phone stacks one per line,
     # pushing the charts below the screen).
@@ -2481,6 +2570,7 @@ def _show(drawing: Drawing, config: PlotConfig | None = None) -> None:
                     data=_chart_bytes(drawing, key),
                     on_box_change=functools.partial(_box_dragged, key),
                     on_wheel_change=functools.partial(_wheel_turned, key),
+                    on_pan_change=functools.partial(_panned, key),
                 )
                 _export_row(drawing, key)
         narrow = drawing.drawn is not None and drawing.drawn.font_floor > PlotConfig().font_floor

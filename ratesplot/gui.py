@@ -71,6 +71,8 @@ Zoom and pan
     Start/End, its height sets the yield Min/Max and the right-axis Top/Bottom of
     whichever axes are drawn. Right- or middle-drag pans. The wheel zooms the
     dates about the pointer. "Back" undoes one zoom, pan, Unzoom or Reset;
+    "◀ Earlier" and "Later ▶" move the dates by half the window, "Zoom out"
+    doubles their span, as on the page (35.4, ``_move_dates``).
     "Unzoom" returns to the view before the first zoom since the last Reset
     (batch 28.2), as one more step that Back undoes (Terry, 2026-10-08: Back
     after Unzoom did nothing). Each is
@@ -155,6 +157,7 @@ from .frontend import (
     LIMITS,
     MASTER,
     NATION_OPTIONS,
+    DATES_TOPIC,
     REFRESH_HELP,
     REMEMBER_HELP,
     REMEMBER_LABEL,
@@ -205,6 +208,8 @@ from .frontend import (
     nation_of,
     option_help_lines,
     option_of,
+    date_buttons,
+    move_dates_updates,
     pan_updates,
     panel_lists,
     png_bytes,
@@ -1642,8 +1647,22 @@ class RatesPlotApp:
         self.unzoom_button = ttk.Button(preview, text="Unzoom", command=self._unzoom)
         self.unzoom_button.grid(row=1, column=1, sticky="ew", padx=1, pady=1)
         _Tooltip(self.unzoom_button, UNZOOM_HELP)
+        # Earlier, Later and Zoom out, as on the page (35.4; Terry, 2026-11-03):
+        # each one step that Back undoes, its ⓘ beside it, as wide as each other.
+        dates = ttk.Frame(preview)
+        dates.grid(row=2, column=0, columnspan=2, sticky="ew")
+        self.date_widgets: dict[str, ttk.Button] = {}
+        self._date_greyed: dict[str, str] = {}
+        for column, each in enumerate(date_buttons(None)):
+            dates.columnconfigure(2 * column, weight=1, uniform="dates")
+            # A negative width is a smallest one (ttk's): the three may take less than a button's usual, never clipping their words.
+            button = ttk.Button(dates, text=each.label, width=-8, command=lambda shift=each.shift, scale=each.scale, verb=each.verb: self._move_dates(shift, scale, verb))
+            button.grid(row=0, column=2 * column, sticky="ew", padx=1, pady=1)
+            _Tooltip(button, each.tip, info=True)
+            self.date_widgets[each.key] = button
+            self._info_mark(dates, each.key, None, each.tip, title=each.label, topic=DATES_TOPIC).grid(row=0, column=2 * column + 1, padx=(1, 2))
         hint = ttk.Label(preview, text=_ZOOM_HINT, wraplength=_NOTE_WRAP_PX, foreground="#555555")
-        hint.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        hint.grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 0))
         # The note wraps to the column's width, whatever the handle makes it.
         preview.bind("<Configure>", lambda event: hint.configure(wraplength=max(_NOTE_WRAP_PX, event.width - 24)), add="+")
         self._zoom_note = hint
@@ -1898,7 +1917,7 @@ class RatesPlotApp:
         frame = ttk.Frame(panel, padding=10)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text=tip, justify="left", wraplength=_INFO_WRAP_PX).pack(anchor="w")
-        reason = self._info_reason(key) if option is not None else ""
+        reason = self._info_reason(key) if option is not None else greyed_line(self._date_greyed.get(key, ""))
         if reason:
             ttk.Label(frame, text=reason, justify="left", wraplength=_INFO_WRAP_PX).pack(anchor="w", pady=(8, 0))
         buttons = ttk.Frame(frame)
@@ -2769,6 +2788,9 @@ class RatesPlotApp:
         """Grey Back, Unzoom and Reset while they would do nothing (Terry, 2026-10-08; Reset since batch 28.1), as the web page does."""
         self.back_button.state(["!disabled"] if self.history else ["disabled"])
         self.unzoom_button.state(["disabled"] if self._unzoomed() else ["!disabled"])
+        for each in date_buttons(self.drawn_config):
+            self.date_widgets[each.key].state(["disabled"] if each.greyed else ["!disabled"])
+            self._date_greyed[each.key] = each.greyed
         self.reset_button.state(["disabled"] if self._at_reset() else ["!disabled"])
 
     def _at_reset(self) -> bool:
@@ -2778,6 +2800,24 @@ class RatesPlotApp:
             and self.zoom.get() == _DEFAULT_PREVIEW
             and all(editor.keep_ratio.get() for editor in self.size_editors.values())
         )
+
+    def _move_dates(self, shift: float, scale: float, verb: str) -> None:
+        """Earlier, Later or Zoom out (35.4, ``frontend.move_dates_updates``, as on the page): one step that Back undoes.
+
+        From the dates being drawn if a drawing is under way, so a second click
+        moves on from the first, where the chart shown would give the same dates
+        again. Nothing is kept for Back when the fields already say it.
+        """
+        shown = self.drawn_config
+        if shown is None:
+            return
+        being_drawn = (self.pending[0] if self.pending is not None else self.target_config) if self.rendering else shown
+        start = being_drawn.start if being_drawn.start is not None else shown.start
+        updates = move_dates_updates(start, being_drawn.end, shift=shift, scale=scale)
+        payloads = self._snapshot()[0]
+        if all(payloads.get(name, "") == text for name, text in updates.items()):
+            return
+        self._apply_view(updates, verb)
 
     def _back(self) -> None:
         if not self.history:
