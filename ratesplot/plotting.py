@@ -819,6 +819,7 @@ def draw_country(
         rate_labels,
         nation_by_key(metadata.key).market_timezone,
         short_title,
+        (lambda: _place_outside(extra_axis.axes, ax_macro, config)) if extra_axis is not None and extra_axis.axes is not ax_macro else None,
     )
 
 

@@ -326,6 +326,13 @@ CASES: dict[str, list[str]] = {
     "population_r": ["--na:ca,us", "--pop", "-r", "-s:1960"],
     "population_pc": ["--na:ca,us", "--pop", "-p", "--constant", "-s:1960"],
     "population_long": ["--na:gb,ca", "--pop", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "--reg", "-s:1700"],
+    # Batch 36.3: where no shape of the legend fits free. A little of a line
+    # covered (12 cells), no limit moved; room made at the top, where the limits
+    # are blank; at the bottom, Max set; no limit free, the least busy place.
+    "legend_minor": ["-c", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:1280x960", "-s:2000"],
+    "legend_room_top": ["-c", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:1600x1200", "-s:2000"],
+    "legend_room_bottom": ["-u", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015", "--max:7.9"],
+    "legend_room_none": ["-u", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015", "--max:7.9", "--min:-2"],
 }
 
 
