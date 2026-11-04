@@ -423,6 +423,11 @@ def starting_choices(
             elif any(key in cli_payloads for key in keys):
                 flags[all_tick(name)] = False
         flags.update(settled_all_ticks(payloads, flags))
+        # --no-ver (batch 37.2) has no control: carried in the flags for the
+        # window or the page to keep. Only from the command line, never from
+        # what is remembered, since no control could take it off again.
+        if cli_flags.get("version") is False:
+            flags["version"] = False
         return payloads, flags
 
     choices = combine(use_state=bool(state))

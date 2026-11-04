@@ -69,8 +69,9 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
 All three draw the same charts from the same code (`plotting.build_figure`).
 
 The version is shown small at the top left of the window's controls and of the page's sidebar,
-with the commit the program was started from (`v6.5, build: 8c3e41b`); `--version` prints it, and a
-`--save` run, which shows no window, prints it as its first line. It is
+with the commit the program was started from (`v6.5, build: 8c3e41b`); `-v` or `--version` prints it, and a
+`--save` run, which shows no window, prints it as its first line. The data saved end their subtitle
+with it, unless `--no-ver` is given. It is
 major.minor: the major goes up when a batch of the plan adds a new type of series, the minor at
 each push of a build (`ratesplot.__version__`).
 
@@ -78,7 +79,8 @@ Each chart can be kept as a picture or as the data it shows: in the window "Expo
 (Ctrl+S), the type chosen in its dialog; on the page a menu of types beside "Export chart" under
 each chart; on the command line `--save:FILE`. PNG is the chart as drawn; JPG, PDF and SVG the same
 chart in those formats (PDF and SVG stay sharp at any size). XLSX, CSV and TSV hold the data: the
-title and the dates, then a column for each curve as its legend names it, with its unit, and a row
+title, the dates and the version that wrote them (`--no-ver` leaves the version out), then a column
+for each curve as its legend names it, with its unit, and a row
 for each date in the window on which any curve has a point, holding the value each line shows on
 that date (a rate in force, or the straight line between two points, as drawn; blank where the
 chart has no line). The regression segments are fits, not data, and are not written. "XLSX-global"
@@ -248,7 +250,8 @@ python -m pip install -r requirements.txt
 | `--no-projections` | without the projection of each right-axis curve to today; it has its own switch (`--pro`), and `--no-cur` leaves it on |
 | `--save:rates.png` | the charts written to files and no window opened, the format by the extension: `.png`, `.jpg`, `.pdf` or `.svg`, or the data as `.csv` or `.tsv`, a file for each chart (`rates_ca.png` …); `.xlsx`, one workbook with a sheet for each chart (at least `--sa`, since `--s:` is the start) |
 | `--no-hover` | without the read-out by the pointer resting on a line (at least `--no-ho`, since `--h` is `--help`) |
-| `--version` | the version and the commit, printed (at least `--ver`) |
+| `-v`, `--version` | the version and the commit, printed; nothing drawn, unless `--save` is given too, which saves as ever |
+| `--no-ver` | the data saved (`--save`, Export chart) without the version at the end of their subtitle; no control for it: a window or a page started with it keeps it until it closes, in the command line and the address it writes, and it is not remembered |
 | `--au`, `--au:10` | the charts drawn again every 5 minutes (or 10, at least 5) as Refresh draws them, outside market hours only when a quote has changed; with `--save`, the files written again until Ctrl-C |
 
 Each rate on the yield axis is drawn across what it applies to: a central bank's rate or a prime

@@ -1265,16 +1265,24 @@ OPTIONS: tuple[Option, ...] = (
     # Terry, 2026-11-03: "Why is -v not a valid shortcut for --ver?"): more
     # letters are asked for only where two names share a first letter, and no
     # other name begins with v. An option added later whose name does takes the
-    # longer spelling, and -v stays the version.
+    # longer spelling, and -v stays the version. It is also the end of the
+    # subtitle in the data saved, unless --no-ver (batch 37.2; Terry, 2026-11-03:
+    # "too obscure to clutter up the GUI with a control for it"): in_gui=False,
+    # and ``command_line_tokens`` writes it all the same.
     Option(
-        "version", Kind.FLAG, ("version",), "interface", "-v / --ver / --version",
-        "print the program's version and the commit\nit is at, and exit",
+        "version", Kind.FLAG, ("version",), "interface", "-v / --ver / --version / --no-ver",
+        "print the program's version and the commit\nit is at, and exit (with --save, print it\n"
+        "and save). Saved data (.csv .tsv .xlsx) end\ntheir subtitle with it, unless --no-ver",
         names=("version",), shortest=1, in_gui=False,
     ),
     # Baking the historical data into the code is not an option of the program:
     # it is a maintenance step run from tools/bake_archives.py when an
     # extraction changes (Terry, 2026-09-27).
 )
+
+
+# As the window and the page write --no-ver in their command line (``command_line_tokens``).
+NO_VERSION_TOKEN = "--no-version"
 
 
 def options_of(kind: Kind) -> list[Option]:
@@ -2133,6 +2141,10 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
             continue
         if option.in_gui and option.name in flags and flags[option.name] != default_flags[option.name]:
             tokens.append(f"--{option.name}" if flags[option.name] else f"--no-{option.name}")
+    # --no-ver has no control (batch 37.2): the window and the page started
+    # with it keep it in their flags, and write it, so a copy of the line keeps it.
+    if flags.get("version") is False:
+        tokens.append(NO_VERSION_TOKEN)
     return tokens + values
 
 

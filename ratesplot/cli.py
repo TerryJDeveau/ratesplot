@@ -372,8 +372,9 @@ def main(argv: list[str] | None = None) -> None:
 
         # --save shows no window, so its first line says which build wrote
         # the files (Terry, 2026-10-28): "ratesplot v6.21, build: 1a2b3c4".
+        # --ver with --save goes on and saves (batch 37.2; until then it printed and stopped).
         print(f"ratesplot {version_text()}")
-        if config.version:
+        if config.version and config.save is None:
             return
     if config.gui and config.save is None:
         # Imported here so --no-gui runs (and the harnesses) never load tkinter.

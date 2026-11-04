@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import csv
 import datetime
 import hashlib
 import io
@@ -2327,6 +2328,57 @@ def check_batch35(check: Check) -> None:
           "**Dragging with the right or middle button**" in shown and '**"◀ Earlier" and "Later ▶"**' in shown and "**On the page**, " not in shown and "**In the window**, " not in shown, shown[-600:])
 
 
+def saved_subtitles(at: AppTest) -> dict[str, list[str]]:
+    """The second row of each data file the U.S. chart's Export chart gives, by the format's caption: a list, a workbook's one to a sheet."""
+    from openpyxl import load_workbook
+
+    rows: dict[str, list[str]] = {}
+    for caption, extension, _every in web.EXPORT_CHOICES:
+        if extension in web.IMAGE_FORMATS:
+            continue
+        at.selectbox(key="export:us").select(caption).run()
+        _name, _kind, data = clicked_download(at, "download:us")
+        if extension == ".xlsx":
+            rows[caption] = [sheet["A2"].value for sheet in load_workbook(io.BytesIO(data))]
+        else:
+            delimiter = "," if extension == ".csv" else "\t"
+            rows[caption] = list(csv.reader(io.StringIO(data.decode("utf-8-sig")), delimiter=delimiter))[1]
+    return rows
+
+
+def check_batch37(check: Check) -> None:
+    """Batch 37.2: the saved data's subtitle ends with the version; an address with --no-ver leaves it out, writes it back, keeps it through Reset and Back, and never remembers it."""
+    chart = "-u -s:2015 --e:2026-09-01"
+    at = new_page(chart)
+    drawing = at.session_state[web._DRAWING]
+    drawn = getattr(drawing.figures["us"], web.export._SUBTITLE_ATTR).get_text()
+    rows = saved_subtitles(at)
+    check("a plain address: each data file's second row, the subtitle then the version", len(rows) == 4 and all(
+        row == [f"{drawn}; {version_text()}"] for row in rows.values()), rows)
+    check("... and no word of it in the address", web.NO_VERSION_TOKEN not in address(at), address(at))
+    plain_png = drawing.pngs["us"]
+    at = new_page(f"--no-ver {chart}")
+    check("--no-ver in the address: no exception", not at.exception, at.exception)
+    drawing = at.session_state[web._DRAWING]
+    rows = saved_subtitles(at)
+    check("each data file's second row, the subtitle alone", len(rows) == 4 and all(row == [drawn] for row in rows.values()), rows)
+    check("the same chart drawn", drawing.pngs["us"] == plain_png)
+    check("the address and the command line keep it", web.NO_VERSION_TOKEN in address(at).split() and web.NO_VERSION_TOKEN in drawing.tokens, address(at))
+    check("no control for it", not any(box.key == "flag:version" for box in at.checkbox))
+    check("the settings kept have no word of it", web.kept_line(drawing) == " ".join(token for token in drawing.tokens if token != web.NO_VERSION_TOKEN)
+          and web.NO_VERSION_TOKEN not in web.kept_line(drawing), web.kept_line(drawing))
+    button(at, "Reset").click().run()
+    check("Reset keeps it: in the address, and in the data", web.NO_VERSION_TOKEN in address(at).split()
+          and web.NO_VERSION_TOKEN in at.session_state[web._DRAWING].tokens, address(at))
+    check("Reset greyed at the defaults, whatever --no-ver says", button(at, "Reset").disabled, address(at))
+    check("... its data's second row the subtitle alone", all(version_text() not in row[0] for row in saved_subtitles(at).values()))
+    button(at, "◀ Back").click().run()
+    check("Back keeps it", web.NO_VERSION_TOKEN in address(at).split(), address(at))
+    at = new_page(f"--ver {chart}")
+    check("--ver in the address changes nothing: not written back, the version in the data", web.NO_VERSION_TOKEN not in address(at) and "--ver" not in address(at)
+          and all(row == [f"{drawn}; {version_text()}"] for row in saved_subtitles(at).values()), address(at))
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
@@ -2334,7 +2386,7 @@ PAGE_CHECKS = (
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
-    check_batch135, check_batch133, check_batch35,
+    check_batch135, check_batch133, check_batch35, check_batch37,
 )
 
 

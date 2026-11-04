@@ -25,6 +25,10 @@ and an XLSX read back with openpyxl, a sheet per chart named as its tab, the
 dates as dates, each value the chart's; the XLSX saved again by a run of its
 own written as ``rates_1.xlsx``, the first kept (batch 33).
 
+The version (batch 37.2): each chart's second row its subtitle, then
+"; v7.9, build: 1a2b3c4", or the subtitle alone under --no-ver, nothing else
+in the file changed; ``--ver`` alone writes nothing, with ``--save`` it saves.
+
 Usage (from the project root)::
 
     python tools/check_export.py                    # the cases below
@@ -43,6 +47,7 @@ import io
 import math
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +65,7 @@ from ratesplot import cli, export, http  # noqa: E402
 from ratesplot.config import POPULATION_LABEL, PRICE_INDEX_ADJUSTED_LABEL, PRICE_INDEX_BASES, PRICE_INDEX_LABEL, nation_by_key  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
+from ratesplot.version import version_text  # noqa: E402
 
 # The defaults; Canada from 1867 (its monthly yields, then its daily ones) with
 # --reg; -r with --reg on a log axis; levels under -r; per capita; the UK and
@@ -139,6 +145,11 @@ def check_chart(check, label: str, figure, config, key: str) -> None:
     check(f"{label}: every point's value exported on its date", not wrong, wrong[:3])
     check(f"{label}: every date between two points: the step's value, or the line's", not between, between[:3])
     rows = list(csv.reader(io.StringIO(export.delimited_bytes(data, ",").decode("utf-8-sig"))))
+    # Batch 37.2: the subtitle drawn, then the version; alone under --no-ver, the rest of the data as it is.
+    subtitle = getattr(figure, export._SUBTITLE_ATTR).get_text()
+    check(f"{label}: the second row: the subtitle drawn, then the version", rows[1] == [f"{subtitle}; {version_text()}"], rows[1])
+    plain = export.chart_data(figure, replace(config, version=False), key)
+    check(f"{label}: under --no-ver the subtitle alone, the rest the same", plain == replace(data, subtitle=subtitle), plain.subtitle)
     index_unit = f"index, {PRICE_INDEX_BASES[key]}"
     is_index = [name in (PRICE_INDEX_LABEL, PRICE_INDEX_ADJUSTED_LABEL) for name, _axis in pieces]
     if any(is_index):
@@ -213,6 +224,53 @@ def check_save(check, name: str) -> None:
               (header, dates, styled, values, len(rows)))
 
 
+def check_version_saved(check) -> None:
+    """Batch 37.2, from the command line: the saved data with the version, without it under --no-ver; --ver with --save saves, alone it writes nothing."""
+    from openpyxl import load_workbook
+
+    tokens = [PINNED_END, *CASES["default"]]
+    folder = OUT / "version"
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+
+    def saved(name: str, *options: str) -> str:
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            cli.main([*tokens, *options, f"--save:{folder / name}"])
+        return printed.getvalue()
+
+    def second_and_rest(path: Path) -> tuple[str, list[list[str]]]:
+        rows = list(csv.reader(io.StringIO(path.read_bytes().decode("utf-8-sig")), delimiter="\t" if path.suffix == ".tsv" else ","))
+        return rows[1][0], [*rows[:1], *rows[2:]]
+
+    for extension in (".csv", ".tsv"):
+        saved(f"with{extension}")
+        saved(f"plain{extension}", "--no-ver")
+        for code in ("ca", "us"):
+            own, own_rest = second_and_rest(folder / f"with_{code}{extension}")
+            bare, bare_rest = second_and_rest(folder / f"plain_{code}{extension}")
+            check(f"{extension} {code}: the subtitle, '; ' and the version by default, the subtitle alone under --no-ver, the rest the same",
+                  own == f"{bare}; {version_text()}" and own_rest == bare_rest and version_text() not in bare, (own, bare))
+    saved("with.xlsx")
+    saved("plain.xlsx", "--no-ver")
+    own, bare = load_workbook(folder / "with.xlsx"), load_workbook(folder / "plain.xlsx")
+    check("XLSX: each sheet's A2 likewise", own.sheetnames == bare.sheetnames and all(
+        own[name]["A2"].value == f"{bare[name]['A2'].value}; {version_text()}" and version_text() not in bare[name]["A2"].value for name in own.sheetnames),
+        [own[name]["A2"].value for name in own.sheetnames])
+    saved("with.png")
+    saved("plain.png", "--no-ver")
+    check("the images unchanged by --no-ver", all((folder / f"with_{code}.png").read_bytes() == (folder / f"plain_{code}.png").read_bytes() for code in ("ca", "us")))
+    said = saved("ver.csv", "--ver")
+    check("--ver with --save: the version printed first, as --save does, and the files saved",
+          said.startswith(f"ratesplot {version_text()}\n") and (folder / "ver_ca.csv").read_bytes() == (folder / "with_ca.csv").read_bytes(), said[:200])
+    before = sorted(path.name for path in folder.iterdir())
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        cli.main(["--ver"])
+    check("--ver alone: the version printed, nothing else, nothing written",
+          printed.getvalue() == f"ratesplot {version_text()}\n" and sorted(path.name for path in folder.iterdir()) == before, printed.getvalue())
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cases", help=f"comma-separated regression cases (default: {','.join(DEFAULT_CASES)})")
@@ -245,6 +303,9 @@ def main(argv: list[str]) -> int:
     for name in SAVE_CASES if not args.cases else ():
         print(f"-- --save on {name}: {' '.join(CASES[name]) or '(the defaults)'}")
         check_save(check, name)
+    if not args.cases:
+        print("-- the version in the saved data")
+        check_version_saved(check)
     print(f"[export] {sum(results)} of {len(results)} checks passed")
     return 0 if all(results) else 1
 

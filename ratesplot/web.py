@@ -267,6 +267,7 @@ from .frontend import (  # noqa: E402
     zoom_updates,
 )
 from .options import (  # noqa: E402
+    NO_VERSION_TOKEN,
     OPTIONS,
     Kind,
     Option,
@@ -377,6 +378,7 @@ _ADDRESS_PROBLEMS = "address_problems"
 _REMEMBERED_PROBLEMS = "remembered_problems"  # the settings remembered could not be read (batch 24.6)
 _STARTED_FROM = "started_from"  # "address", "remembered" or "defaults": what the visit opened on
 _REMEMBER = "remember"   # the "Remember my settings" box (batch 24.6)
+_NO_VERSION = "no_version"  # this visit started with --no-ver, which no control shows (batch 37.2)
 _READER = "reader"       # the component that reads the cookie back (batch 24.6)
 _HEARD = "heard"         # the cookie's value as its script sent it; absent until it has answered
 _WIDTH = "width"         # the component that says whether the screen is narrow (batch 28.4)
@@ -1191,7 +1193,8 @@ def kept_line(drawing: Drawing | None) -> str | None:
         return None
     if not drawing.config.draws_a_curve:
         return None
-    return " ".join(drawing.tokens)
+    # --no-ver lasts for this visit (batch 37.2): at the next no control could take it off.
+    return " ".join(token for token in drawing.tokens if token != NO_VERSION_TOKEN)
 
 
 def _remember_settings(line: str | None, remember: bool) -> None:
@@ -1381,6 +1384,9 @@ def _snapshot() -> Choices:
     # The "All" ticks, as the window keeps them (batch 18.2): every nation's box shows the one tick.
     for name in LIMITS:
         flags[all_tick(name)] = any(st.session_state.get(_ALL + key, False) for key in _limit_keys(name))
+    # A visit started with --no-ver keeps it, through Reset and Back, in what it draws and writes (batch 37.2).
+    if st.session_state.get(_NO_VERSION):
+        flags["version"] = False
     return payloads, flags
 
 
@@ -2716,6 +2722,7 @@ def main() -> None:
             return
         choices, state[_STARTED_FROM], state[_ADDRESS_PROBLEMS], state[_REMEMBERED_PROBLEMS] = started
         _load_choices(choices)
+        state[_NO_VERSION] = choices[1].get("version") is False
         state[_REMEMBER] = True  # ticked at every visit, its off state never kept (decision 74)
 
     # Judged before the controls are laid out, so a wrong field's label is red (_WRONG).

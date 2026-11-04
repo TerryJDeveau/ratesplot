@@ -2973,6 +2973,45 @@ def check_batch133(check: Check) -> None:
               [text.get_text() for text in w.app.figures["us"][0].texts])
 
 
+def _subtitles(app, key: str) -> tuple[str, str]:
+    """A chart's subtitle as drawn, and as Export chart writes it."""
+    figure, drawn = app.figures[key]
+    return getattr(figure, export._SUBTITLE_ATTR).get_text(), export.chart_data(figure, drawn.for_nation(key), key).subtitle
+
+
+def check_batch37(check: Check) -> None:
+    """Batch 37.2: the saved data's subtitle ends with the version; a window started with --no-ver leaves it out, writes it in its lines, keeps it through Reset and Back, and never remembers it."""
+    with window(f"-u -s:2015 {END}") as w:
+        app = w.app
+        drawn, saved = _subtitles(app, "us")
+        check("a plain start: the subtitle, then the version, and nothing in its lines", saved == f"{drawn}; {version_text()}"
+              and options.NO_VERSION_TOKEN not in w.command_tokens() and options.NO_VERSION_TOKEN not in app.web_address.get(), saved)
+        plain_png = app.pngs["us"]
+    with window(f"--no-ver -u -s:2015 {END}") as w:
+        app = w.app
+        drawn, saved = _subtitles(app, "us")
+        check("started with --no-ver: the subtitle alone", saved == drawn, saved)
+        check("the same chart drawn", app.pngs["us"] == plain_png)
+        check("the command line and the web address keep it", options.NO_VERSION_TOKEN in w.command_tokens() and options.NO_VERSION_TOKEN in app.web_address.get(),
+              (app.command.get(), app.web_address.get()))
+        check("no control for it", "version" not in app.flag_vars)
+        app._reset()
+        w.settle()
+        drawn, saved = _subtitles(app, "us")
+        check("Reset keeps it: in the line, and in the data", options.NO_VERSION_TOKEN in w.command_tokens() and saved == drawn, (app.command.get(), saved))
+        check("Reset greyed at the defaults, whatever --no-ver says", not enabled(app.reset_button), app.command.get())
+        app._back()
+        w.settle()
+        drawn, saved = _subtitles(app, "us")
+        check("Back keeps it", options.NO_VERSION_TOKEN in w.command_tokens() and saved == drawn, (app.command.get(), saved))
+        app._remember()
+        state, _note, _path = frontend.load_state()
+        check("not remembered: the settings file has no word of it", "version" not in state.get("flags", {}) and state.get("flags"), sorted(state.get("flags", {}))[:5])
+        choices, _notes = frontend.starting_choices(cli.parse_args([]), {}, {}, state)
+        check("so the next plain start has the version in its data, and no word of it in its line", "version" not in choices[1]
+              and options.NO_VERSION_TOKEN not in options.command_line_tokens(*choices))
+
+
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
     "reset": check_reset,
@@ -3012,6 +3051,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch133": check_batch133,
     "batch35": check_batch35,
     "batch39": check_batch39,
+    "batch37": check_batch37,
 }
 
 
