@@ -260,7 +260,8 @@ projection of each curve to today are provisional, and drawn as such. The subtit
 used when it is changed (`regress_charts.py`, `verify_cli.py`, `verify_web.py`, `verify_gui.py`, the
 window driven from a script, its charts against the command line's and its controls' behaviour, `check_sources.py`,
 `check_drawn_values.py`, every curve on the yield axis against its sources, `check_reg_labels.py`,
-what the regression segments' labels cover, `check_export.py`, the data Export chart writes
+what the regression segments' labels cover, `check_regression.py`, how the pieces cover a curve,
+`check_legend_fallback.py`, the legend where no shape fits, `check_export.py`, the data Export chart writes
 against the lines drawn, `check_refresh.py`, the automatic refresh's rules and the files `--save`
 writes again, `check_last_good.py`, the charts drawn from the
 last good copies with every source cut off, `check_requests.py`, which failed requests are
