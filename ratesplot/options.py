@@ -1261,12 +1261,15 @@ OPTIONS: tuple[Option, ...] = (
         names=("save",), shortest=2, parse=parse_save_file, in_gui=False,
     ),
     # The version (batch 11.7), printed, nothing drawn. In the table, not
-    # argparse's own, so it is spelled as the others are: at least "ver" (no
-    # other name begins so), never "--v".
+    # argparse's own, so it is spelled as the others are. -v (batch 37.1;
+    # Terry, 2026-11-03: "Why is -v not a valid shortcut for --ver?"): more
+    # letters are asked for only where two names share a first letter, and no
+    # other name begins with v. An option added later whose name does takes the
+    # longer spelling, and -v stays the version.
     Option(
-        "version", Kind.FLAG, ("version",), "interface", "--ver / --version",
+        "version", Kind.FLAG, ("version",), "interface", "-v / --ver / --version",
         "print the program's version and the commit\nit is at, and exit",
-        names=("version",), shortest=3, in_gui=False,
+        names=("version",), shortest=1, in_gui=False,
     ),
     # Baking the historical data into the code is not an option of the program:
     # it is a maintenance step run from tools/bake_archives.py when an
