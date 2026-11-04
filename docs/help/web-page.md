@@ -12,6 +12,8 @@ The same charts, drawn from the sources as they stand when the link is opened. W
 
 The default charts' link ends `?chart=` with nothing after it. The page's address with no `?chart=` at all opens on the settings your browser remembers from your last visit, while "Remember my settings" was ticked, and otherwise on the default charts.
 
+A link draws only the series it names, as a command line does ([Command line](?help=command-line)). One that names a series opens with "Remember my settings" unticked, so that someone else's chart leaves what your browser remembers as it was; reloading a chart of your own keeps the box ticked. `--rem` or `--no-rem` in the link says which, and neither is written in the link the page gives.
+
 The data exported from the page end their subtitle with the version that wrote them; `--no-ver` in the link leaves it out ([Command line](?help=command-line)).
 
 The same charts with the program on your own computer: [Command line](?help=command-line).

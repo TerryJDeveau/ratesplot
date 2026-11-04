@@ -19,4 +19,4 @@ These are the figures Per capita divides by; [its page](?help=per-capita) gives 
 
 ## On the command line
 
-`--population`, at least `--pop` (`--po` is the policy rate). `--no-population` takes it off.
+`--population`, at least `--pop` (`--po` is the policy rate). `--no-population` takes it off. As a series, `--population` alone draws the population alone: [Command line](?help=command-line).

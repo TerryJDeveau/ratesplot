@@ -134,42 +134,42 @@ MONTHLY_CARRY_DAYS = 62
 # recent windows with every term, mortgage, both policy terms and the
 # default spreads.
 CASES: dict[str, list[str]] = {
-    "ca_1960": ["-c", "-s:1960", "--e:1985", "--policy", "--mo:5"],
-    "ca_1995": ["-c", "-s:1995", "--e:2005", "--po:target,market", "--mo:5,3,1,prime"],
-    "ca_2015": ["-c", "-s:2015", "--po:target,market", "--mo:5,3,1,5v,prime", "--sp"],
+    "ca_1960": ["--gdp", "--debt", "--interest", "--yield", "-c", "-s:1960", "--e:1985", "--policy", "--mo:5"],
+    "ca_1995": ["--gdp", "--debt", "--interest", "--yield", "-c", "-s:1995", "--e:2005", "--po:target,market", "--mo:5,3,1,prime"],
+    "ca_2015": ["--gdp", "--debt", "--interest", "--yield", "-c", "-s:2015", "--po:target,market", "--mo:5,3,1,5v,prime", "--sp"],
     # Batch 9.3: every Canadian term across the start of the five new ones
     # (2001-01-02), and spreads of them.
-    "ca_terms": ["-c", "-s:2000-06-01", "--y:1m,3m,6m,1,2,3,5,7,10,30", "--sp:7y-1m,3y-6m"],
-    "us_1985": ["-u", "-s:1985", "--e:1995", "--y:3m,6m,1,2,5,7,10,20,30", "--policy", "--mo:30,15"],
-    "us_2000": ["-u", "-s:2000", "--e:2008", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--sp:30y-10y,30y-2y"],
-    "us_2015": ["-u", "-s:2015", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--po:target,market", "--mo:30,15", "--sp"],
+    "ca_terms": ["--gdp", "--debt", "--interest", "-c", "-s:2000-06-01", "--y:1m,3m,6m,1,2,3,5,7,10,30", "--sp:7y-1m,3y-6m"],
+    "us_1985": ["--gdp", "--debt", "--interest", "-u", "-s:1985", "--e:1995", "--y:3m,6m,1,2,5,7,10,20,30", "--policy", "--mo:30,15"],
+    "us_2000": ["--gdp", "--debt", "--interest", "-u", "-s:2000", "--e:2008", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--sp:30y-10y,30y-2y"],
+    "us_2015": ["--gdp", "--debt", "--interest", "-u", "-s:2015", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--po:target,market", "--mo:30,15", "--sp"],
     # Batch 13.6: the U.S. 3-year (FRED DGS3) and a spread of it.
-    "us_3y": ["-u", "-s:2015", "--y:2,3,5", "--sp:5y-3y"],
+    "us_3y": ["--gdp", "--debt", "--interest", "-u", "-s:2015", "--y:2,3,5", "--sp:5y-3y"],
     # Batch 9.1: the U.S. target across its three parts, and the market rate.
-    "us_policy": ["-u", "-s:1978", "--no-yield", "--po:target,market"],
+    "us_policy": ["--gdp", "--debt", "--interest", "-u", "-s:1978", "--no-yield", "--po:target,market"],
     # Batch 9.4: the prime rates plus a margin, each nation's own (the U.S.'
     # from FRED DPRIME, daily from 1955-08; Canada's below its prime).
-    "prime_margin": ["-s:2005", "--mo:5v,30,prime", "--us:prime:0.5", "--cdn:prime:-0.25"],
-    "uk_1970": ["--na:gb", "-s:1970", "--e:1990", "--policy", "--mo:svr"],
-    "uk_2015": ["--na:gb", "-s:2015", "--po:target,market", "--mo:2f,3f,5f,svr", "--sp"],
+    "prime_margin": ["--gdp", "--debt", "--interest", "--yield", "-s:2005", "--mo:5v,30,prime", "--us:prime:0.5", "--cdn:prime:-0.25"],
+    "uk_1970": ["--gdp", "--debt", "--interest", "--yield", "--na:gb", "-s:1970", "--e:1990", "--policy", "--mo:svr"],
+    "uk_2015": ["--gdp", "--debt", "--interest", "--yield", "--na:gb", "-s:2015", "--po:target,market", "--mo:2f,3f,5f,svr", "--sp"],
     # Batch 9.5: the UK tracker, Bank Rate plus its margin, from where it begins (1997-01).
-    "uk_tracker": ["--na:gb", "-s:1996-06-01", "--policy", "--mo:svr,tracker", "--uk:tracker:1.25"],
+    "uk_tracker": ["--gdp", "--debt", "--interest", "--yield", "--na:gb", "-s:1996-06-01", "--policy", "--mo:svr,tracker", "--uk:tracker:1.25"],
     "de_1965": ["--na:de", "-s:1965", "--e:1980"],
     # Batch 9.6: the Bundesbank's discount rate, then the ECB's rate from 1999.
-    "de_policy": ["--na:de", "-s:1985", "--e:2004", "--policy", "--no-yield"],
-    "de_1998": ["--na:de", "-s:1998", "--e:2010", "--po:target,market", "--mo:1-5,5-10,over10"],
-    "de_2015": ["--na:de", "-s:2015", "--y:1,2,5,7,10,20,30", "--po:target,market", "--mo:1-5,5-10,over10", "--sp"],
+    "de_policy": ["--gdp", "--debt", "--interest", "--na:de", "-s:1985", "--e:2004", "--policy", "--no-yield"],
+    "de_1998": ["--gdp", "--debt", "--interest", "--yield", "--na:de", "-s:1998", "--e:2010", "--po:target,market", "--mo:1-5,5-10,over10"],
+    "de_2015": ["--gdp", "--debt", "--interest", "--na:de", "-s:2015", "--y:1,2,5,7,10,20,30", "--po:target,market", "--mo:1-5,5-10,over10", "--sp"],
     # Batch 30: the master currency, its charts' right axes against the same
     # charts without it: U.S. dollars on all four, the yields unchanged; per
     # capita in Canadian dollars; euros in 1970, at the older rates through
     # the pound (M14 over M15) for the Canadian dollar and the mark.
-    "master_usd": ["--na:ca,us,gb,de", "-s:2010", "--master:usd", "--po"],
+    "master_usd": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us,gb,de", "-s:2010", "--master:usd", "--po"],
     "master_cad_p": ["--na:ca,us,gb", "-s:1990", "-p", "--master:cad"],
     "master_eur_1970": ["--na:ca,de", "-s:1955", "--e:1970", "--master:eur"],
     # Batch 13.1: the inflation curve, each month's rise worked out here from
     # its index (the UK's: the millennium index, then the ONS's own rate from
     # 1989), across the U.S.' missing 2025-10 and the UK's join.
-    "inflation": ["--na:ca,us,gb,de", "-s:1985", "--inf", "--no-yield"],
+    "inflation": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:1985", "--inf", "--no-yield"],
     # Batch 13.2: the amounts at constant prices against the same charts in
     # current prices, the index worked out here: from 1910 (each nation's
     # index beginning inside the window, the UK's join in 1988), per capita
@@ -182,9 +182,9 @@ CASES: dict[str, list[str]] = {
     # inside the window, the UK's join in 1988), and seasonally adjusted on its
     # own axis outside the amounts per capita (the UK's unadjusted, named so).
     "cpi": ["--na:ca,us,gb,de", "-s:1910", "--cpi", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
-    "cpi_sa": ["--na:ca,us,gb,de", "-s:1945", "--cpi:sa", "-p", "--no-yield"],
+    "cpi_sa": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:1945", "--cpi:sa", "-p", "--no-yield"],
     "population": ["--na:ca,us,gb,de", "-s:1700", "--population", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
-    "population_pc": ["--na:ca,us,gb,de", "-s:1960", "--pop", "-p", "--no-yield"],
+    "population_pc": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:1960", "--pop", "-p", "--no-yield"],
     # Batch 13.3: the real yields, each nation's every one; Canada's monthly from 1991, then daily; the UK's
     # 20-year with its gaps; Germany's worked out here again, from each bond's own answer; and a spread of two.
     "real_yields": ["--na:ca,us,gb,de", "-s:1985", "--y:r5,r7,r10,r20,r30", "--no-gdp", "--no-debt", "--no-interest"],

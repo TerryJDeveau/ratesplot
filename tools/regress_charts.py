@@ -131,49 +131,49 @@ CASES: dict[str, list[str]] = {
     "c_reg_tol05": ["-c", "--reg:0.5", "-s:1990"],
     # --yields:LIST / --no-yields:LIST: all ten U.S. terms (the five new ones in
     # colours of their own), defaults dropped, and a term Canada does not have.
-    "u_y_all_l": ["-u", "--yields:1m,3m,6m,1,2,5,7,10,20,30", "-l", "-s:2001"],
+    "u_y_all_l": ["--gdp", "--debt", "--interest", "-u", "--yields:1m,3m,6m,1,2,5,7,10,20,30", "-l", "-s:2001"],
     "u_noy": ["-u", "--no-y:30,3m", "--yield", "-s:2019"],
-    "y7_10": ["--yields:7,10", "-l"],
+    "y7_10": ["--gdp", "--debt", "--interest", "--yields:7,10", "-l"],
     # --policy: with the default curves and -l; alone over its whole span (the
     # Bank Rate from 1935, CORRA from 1997); the U.S. one with the yields.
-    "policy_l": ["--policy", "-l"],
+    "policy_l": ["--gdp", "--debt", "--interest", "--yield", "--policy", "-l"],
     "c_policy_only": ["-c", "--policy", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-s:1935", "-l"],
     "u_policy_y1990": ["-u", "--policy", "--yield", "-s:1990"],
     # --mortgages[:LIST]: the default terms with -l; every Canadian term over the
     # posted rates' span; the U.S. terms with their yields chosen; and the
     # automatic start set by a mortgage rate alone (the 15-year, 1991).
-    "mo_l": ["--mo", "-l"],
+    "mo_l": ["--gdp", "--debt", "--interest", "--yield", "--mo", "-l"],
     "c_mo_all": ["-c", "--mo:5,3,1,5v", "--yield", "-s:1975", "-l"],
-    "u_mo_y": ["-u", "--mo:30,15", "--yields:10,30", "-s:1971"],
+    "u_mo_y": ["--gdp", "--debt", "--interest", "-u", "--mo:30,15", "--yields:10,30", "-s:1971"],
     "u_mo_auto": ["-u", "--mo:15", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "--e:1999"],
     # --spreads[:LIST]: the default pairs with -l; spreads alone, their terms
     # fetched though not drawn; Canada across 2001 (monthly steps, then daily);
     # with -r, where the right axis is a percentage too.
-    "sp_l": ["--sp", "-l"],
+    "sp_l": ["--gdp", "--debt", "--interest", "--yield", "--sp", "-l"],
     "u_sp_only": ["-u", "--sp:10-2,10-3m", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-s:1976", "-l"],
-    "c_sp1990_05": ["-c", "--sp", "-s:1990", "--e:2005"],
-    "u_sp_r": ["-u", "--sp", "-r"],
+    "c_sp1990_05": ["--gdp", "--debt", "--interest", "--yield", "-c", "--sp", "-s:1990", "--e:2005"],
+    "u_sp_r": ["--gdp", "--debt", "--interest", "--yield", "-u", "--sp", "-r"],
     # All three together on both charts.
-    "all_rates": ["--policy", "--mo", "--sp:10-2", "-l", "-s:2015"],
+    "all_rates": ["--gdp", "--debt", "--interest", "--yield", "--policy", "--mo", "--sp:10-2", "-l", "-s:2015"],
     # Batch 2: values for one nation's chart (--us:..., --cdn:...).
     "nat_limits": ["--us:top:40t", "--us:bottom:5t", "--cdn:max:12", "--min:0", "-s:2010"],
     # Canada's chart of terms both charts were given, with one Canada has had
     # only since 2001 (batch 9.3; before it, only the U.S. had it): coloured
     # by term, as chosen terms are, though the 7-year draws nothing before 2001.
-    "c_y_us_terms": ["-c", "--y:3m,2,5,7,10,30", "-s:1936", "--e:1948"],
+    "c_y_us_terms": ["--gdp", "--debt", "--interest", "-c", "--y:3m,2,5,7,10,30", "-s:1936", "--e:1948"],
     # Canada's chart of spreads given for both charts: the 7y-1m (only the
     # U.S. had both terms until batch 9.3) and the 10y-2y, coloured by place.
     "c_sp_us_pair": ["-c", "--sp:7-1m,10-2", "-s:2015", "--no-gdp", "--no-debt", "--no-interest", "--no-yield"],
     # The prime rate (batch 2), with the variable mortgage it prices and the policy rate.
-    "c_prime": ["-c", "--mo:5,5v,prime", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:2005", "-l"],
+    "c_prime": ["--yield", "-c", "--mo:5,5v,prime", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:2005", "-l"],
     # Batch 9.4: each nation's prime rate plus its own margin (the margin in
     # the legend and in the -l labels), and the U.S. prime rate from 1955
     # with the policy rate it is set from.
     "prime_margin": [
-        "--mo:5v,30,prime", "--us:prime:0.5", "--cdn:prime:-0.25", "--no-gdp", "--no-debt", "--no-interest", "-s:2015", "-l",
+        "--yield", "--mo:5v,30,prime", "--us:prime:0.5", "--cdn:prime:-0.25", "--no-gdp", "--no-debt", "--no-interest", "-s:2015", "-l",
     ],
-    "u_prime": ["-u", "--mo:30,prime", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1955", "--e:1990"],
-    "nat_terms": ["--us:y:7,20", "--cdn:y:2,10", "--us:sp:10-2", "--cdn:sp:30-10", "--cdn:mo:5,3", "-s:2015", "-l"],
+    "u_prime": ["--yield", "-u", "--mo:30,prime", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1955", "--e:1990"],
+    "nat_terms": ["--gdp", "--debt", "--interest", "--us:y:7,20", "--cdn:y:2,10", "--us:sp:10-2", "--cdn:sp:30-10", "--cdn:mo:5,3", "-s:2015", "-l"],
     # Batch 9.3: every Canadian term (the 1- and 6-month, 1-, 3- and 7-year from 2001).
     "c_all_terms": ["-c", "--y:1m,3m,6m,1,2,3,5,7,10,30", "--no-gdp", "--no-debt", "--no-interest", "-s:2001"],
     # Batch 3: the UK. Its defaults (the automatic start; its own yield terms);
@@ -184,15 +184,15 @@ CASES: dict[str, list[str]] = {
     # --reg; all three nations; values for the UK alone; before 1867.
     "uk_default": ["--na:gb"],
     "uk1935_l": ["--na:gb", "-s:1935", "-l"],
-    "uk_rates": ["--na:gb", "--policy", "--mo", "--sp", "-l", "-s:2015"],
-    "uk_mo_all": ["--na:gb", "--mo:2f,3f,5f,svr", "--no-gdp", "--no-debt", "--no-interest", "-s:1990"],
+    "uk_rates": ["--gdp", "--debt", "--interest", "--yield", "--na:gb", "--policy", "--mo", "--sp", "-l", "-s:2015"],
+    "uk_mo_all": ["--yield", "--na:gb", "--mo:2f,3f,5f,svr", "--no-gdp", "--no-debt", "--no-interest", "-s:1990"],
     "uk_svr1939": ["--na:gb", "--mo:svr", "--policy", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-s:1939", "-l"],
     "uk_r1900": ["--na:gb", "-r", "-s:1900"],
     "uk_p1950": ["--na:gb", "-p", "-s:1950"],
     "uk_lv": ["--na:gb", "--d:fnpm", "-i", "-s:1990", "-l"],
     "uk_reg1946": ["--na:gb", "--reg", "-s:1946"],
     "all3": ["--na:ca,us,gb", "-s:2010"],
-    "uk_nat": ["--na:gb", "--uk:y:10,20", "--uk:max:9", "--uk:top:5t", "--uk:sp:20-5", "-s:2005"],
+    "uk_nat": ["--gdp", "--debt", "--interest", "--na:gb", "--uk:y:10,20", "--uk:max:9", "--uk:top:5t", "--uk:sp:20-5", "-s:2005"],
     "uk1700_1900": ["--na:gb", "--no-yield", "-s:1700", "--e:1900"],
     # Batch 4: Germany. Its defaults (the automatic start; its own terms); the
     # 10-year from 1956 (the public debt yield, then the fitted end-of-month
@@ -203,7 +203,7 @@ CASES: dict[str, list[str]] = {
     # Germany alone, by its prefix --ger: and from --nations:de.
     "de_default": ["--na:de"],
     "de1956_l": ["--na:de", "-s:1956", "-l"],
-    "de_rates": ["--na:de", "--policy", "--mo", "--sp", "-l", "-s:2015"],
+    "de_rates": ["--gdp", "--debt", "--interest", "--yield", "--na:de", "--policy", "--mo", "--sp", "-l", "-s:2015"],
     "de_all_terms": ["--na:de", "--y:1,2,5,7,10,20,30", "--mo:1-5,5-10,over10", "--no-gdp", "--no-debt", "--no-interest", "-s:1995"],
     "de_policy1999": ["--na:de", "--policy", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-s:1999", "-l"],
     "de_r1991": ["--na:de", "-r", "-s:1991"],
@@ -211,18 +211,18 @@ CASES: dict[str, list[str]] = {
     "de_lv": ["--na:de", "--d:fnpm", "-i", "-s:2000", "-l"],
     "de_reg1995": ["--na:de", "--reg", "-s:1995"],
     "all4": ["--na:ca,us,gb,de", "-s:2010"],
-    "de_nat": ["--na:de", "--ger:y:10,30", "--ger:max:6", "--ger:top:4t", "--ger:sp:30-2", "-s:2005"],
+    "de_nat": ["--gdp", "--debt", "--interest", "--na:de", "--ger:y:10,30", "--ger:max:6", "--ger:top:4t", "--ger:sp:30-2", "-s:2005"],
     # Batch 6: the U.S. 20-year was not published 1987-1993, a gap in its line
     # (drawn flat at its last value until 2026-10-13; tools/check_drawn_values.py).
-    "u_20y_gap": ["-u", "-s:1984", "--e:1996", "--y:2,10,20,30", "--policy"],
+    "u_20y_gap": ["--gdp", "--debt", "--interest", "-u", "-s:1984", "--e:1996", "--y:2,10,20,30", "--policy"],
     # Batch 8: Terry's charts of 2026-10-10 (us_rates_1950-01-01_2026-10-10a, b
     # and c.png), where the rate labels crowded, and his UK chart of 2026-10-13,
     # where monthly debt broke into pieces of a few months; the tolerance there
     # given, so the case stays as it is when the default changes.
-    "u_reg_rates1950": ["-u", "-l", "--reg", "--policy", "--mo", "--sp", "-dim:4096x2048", "-s:1950"],
+    "u_reg_rates1950": ["--gdp", "--debt", "--interest", "--yield", "-u", "-l", "--reg", "--policy", "--mo", "--sp", "-dim:4096x2048", "-s:1950"],
     "u_reg_fed1950": ["-u", "-l", "--reg", "--y", "--gdp", "--d:f", "-i", "-s:1950"],
     "u_reg_lv1950": ["-u", "-l", "--reg", "--y", "--gdp", "--d:fnpm", "-i", "-dim:4096x3072", "-s:1950"],
-    "uk_reg_tol03": ["--na:gb", "-l", "--reg:.3", "--policy", "--mo:2f,3f,5f,svr", "-dim:2048x1950", "-s:1990"],
+    "uk_reg_tol03": ["--gdp", "--debt", "--interest", "--yield", "--na:gb", "-l", "--reg:.3", "--policy", "--mo:2f,3f,5f,svr", "-dim:2048x1950", "-s:1990"],
     # Batch 9.1: both policy terms on every nation's chart, across every join
     # (the U.S. target in 1982 and its range in 2008, Canada's target in 1996
     # and CORRA in 1997, SONIA in 1997, EONIA in 1999 and €STR in 2019); and
@@ -232,16 +232,16 @@ CASES: dict[str, list[str]] = {
     # Batch 9.5: the UK tracker, Bank Rate plus its margin (in the legend and
     # the -l label), with Bank Rate and the SVR, from before it begins (1997-01).
     "uk_tracker": [
-        "--na:gb", "--mo:svr,tracker", "--uk:tracker:1.25", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1995", "-l",
+        "--yield", "--na:gb", "--mo:svr,tracker", "--uk:tracker:1.25", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1995", "-l",
     ],
     # Batch 9.6: Germany's policy line, the Bundesbank's discount rate from
     # 1948 (baked), then the ECB's rate from 1999, with the yields.
-    "de_policy1960": ["--na:de", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1960", "--e:2005", "-l"],
+    "de_policy1960": ["--yield", "--na:de", "--policy", "--no-gdp", "--no-debt", "--no-interest", "-s:1960", "--e:2005", "-l"],
     # Batch 10.4: the UK's net debt alone (its title phrase names the
     # nation), with -l; and net debt asked for every chart, which Canada,
     # having gross debt alone, answers with its gross debt and a note.
-    "uk_net_only": ["--na:gb", "--uk:agg:net", "-s:1990", "-l"],
-    "ca_uk_agg_net": ["--na:ca,gb", "--agg:net", "--no-yield", "-s:2000"],
+    "uk_net_only": ["--gdp", "--interest", "--yield", "--na:gb", "--uk:agg:net", "-s:1990", "-l"],
+    "ca_uk_agg_net": ["--gdp", "--interest", "--na:ca,gb", "--agg:net", "--no-yield", "-s:2000"],
     # Batch 10.5: each nation's own levels (the U.S.' none: its aggregates);
     # the UK's "n", its local government, drawn as "m" is; and the UK given
     # none of its levels, which draws its aggregate lines (nothing before).
@@ -283,10 +283,10 @@ CASES: dict[str, list[str]] = {
     # covering a line (the only two of the measured cases, 2026-10-27), so
     # the legend takes the fallback: the least busy stretch it can cover.
     "crowd_u800": [
-        "-u", "--yields:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015",
+        "--gdp", "--debt", "--interest", "-u", "--yields:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015",
     ],
     "crowd_c800": [
-        "-c", "--yields:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015",
+        "--gdp", "--debt", "--interest", "-c", "--yields:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015",
     ],
     # Batch 13.6: the U.S. 3-year (FRED DGS3) between the 2- and 5-year, with
     # its end label, and Canada's beside it on the same command line.
@@ -295,12 +295,12 @@ CASES: dict[str, list[str]] = {
     # breaks showing and each title saying so; beside the amounts under -r; a spread of the nominal less the real.
     "real_four": ["--na:ca,us,gb,de", "--y:10,r5,r10,r30", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1985"],
     "real_alone": ["--na:ca,us,gb,de", "--y:r5,r7,r10,r20,r30", "--no-gdp", "--no-debt", "--no-interest", "-s:1985"],
-    "real_amounts": ["--na:gb,de", "--y:r10", "-r", "-s:2012"],
-    "real_breakeven": ["--na:us,gb", "--y:10,r10", "--sp:10y-r10", "-s:2010"],
+    "real_amounts": ["--gdp", "--debt", "--interest", "--na:gb,de", "--y:r10", "-r", "-s:2012"],
+    "real_breakeven": ["--gdp", "--debt", "--interest", "--na:us,gb", "--y:10,r10", "--sp:10y-r10", "-s:2010"],
     # Batch 13.1: the inflation curve, beside each nation's yields with its end
     # label, and alone from 1910 (each nation from its first month: the U.S.
     # 1914, Canada 1915, the UK 1915-07, Germany 1992).
-    "inflation": ["--na:ca,us,gb,de", "--inf", "-l", "-s:2018"],
+    "inflation": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us,gb,de", "--inf", "-l", "-s:2018"],
     "inflation_long": ["--na:ca,us,gb,de", "--inf", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1910"],
     # Batch 13.2: the amounts at constant prices, with the regression's real
     # growth; per person as well, from 1950; in the master currency; and
@@ -313,26 +313,32 @@ CASES: dict[str, list[str]] = {
     # amounts, with the regression and the end labels; seasonally adjusted,
     # alone on the right axis beside the yields (the UK's unadjusted, named so);
     # per capita at constant prices (the index undivided); alone, from 1913.
-    "cpi": ["--na:ca,us,gb,de", "--cpi", "-l", "--reg", "-s:1990"],
+    "cpi": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us,gb,de", "--cpi", "-l", "--reg", "-s:1990"],
     "cpi_sa": ["--na:ca,us,gb,de", "--cpi:sa", "--yield", "-l", "--reg", "-s:2000"],
-    "cpi_pc": ["--na:ca,us", "--cpi", "-p", "--constant", "-s:1960"],
+    "cpi_pc": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us", "--cpi", "-p", "--constant", "-s:1960"],
     "cpi_long": ["--na:us,gb", "--cpi", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1913"],
     # Batch 13.5: the population on the same axis: the four nations outside the
     # amounts, with -l and --reg; the amounts on both sides (its outer axis's
     # labels the widest); the same under -r, and under -p with --constant; alone
     # over the UK's and Canada's whole span, on the right axis.
-    "population": ["--na:ca,us,gb,de", "--population", "-l", "--reg", "-s:1990"],
-    "population_amounts": ["--na:de", "--pop", "--no-yield", "-l", "--reg", "-s:1990"],
-    "population_r": ["--na:ca,us", "--pop", "-r", "-s:1960"],
-    "population_pc": ["--na:ca,us", "--pop", "-p", "--constant", "-s:1960"],
+    "population": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us,gb,de", "--population", "-l", "--reg", "-s:1990"],
+    "population_amounts": ["--gdp", "--debt", "--interest", "--na:de", "--pop", "--no-yield", "-l", "--reg", "-s:1990"],
+    "population_r": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us", "--pop", "-r", "-s:1960"],
+    "population_pc": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us", "--pop", "-p", "--constant", "-s:1960"],
     "population_long": ["--na:gb,ca", "--pop", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "--reg", "-s:1700"],
     # Batch 36.3: where no shape of the legend fits free. A little of a line
     # covered (12 cells), no limit moved; room made at the top, where the limits
     # are blank; at the bottom, Max set; no limit free, the least busy place.
-    "legend_minor": ["-c", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:1280x960", "-s:2000"],
-    "legend_room_top": ["-c", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:1600x1200", "-s:2000"],
-    "legend_room_bottom": ["-u", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015", "--max:7.9"],
-    "legend_room_none": ["-u", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015", "--max:7.9", "--min:-2"],
+    "legend_minor": ["--gdp", "--debt", "--interest", "-c", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:1280x960", "-s:2000"],
+    "legend_room_top": ["--gdp", "--debt", "--interest", "-c", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:1600x1200", "-s:2000"],
+    "legend_room_bottom": ["--gdp", "--debt", "--interest", "-u", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015", "--max:7.9"],
+    "legend_room_none": ["--gdp", "--debt", "--interest", "-u", "--y:1m,3m,6m,1,2,5,7,10,20,30", "--policy:target,market", "--mo", "--sp", "-l", "-dim:800x800", "-s:2015", "--max:7.9", "--min:-2"],
+    # Batch 38.2: a series named draws alone; every line above that means more
+    # names the rest. alone_policy draws what c_policy_only does.
+    "alone_policy": ["-c", "--policy", "-s:1935", "-l"],
+    "alone_yields": ["-c", "--y:2,10", "-s:2000", "-l"],
+    "alone_cpi": ["-u", "--cpi", "-s:1990", "-l"],
+    "gdp_policy": ["-u", "--gdp", "--policy", "-s:2000", "-l"],
 }
 
 

@@ -96,6 +96,7 @@ from .options import (
     options_of,
     parse_master_currency,
     per_nation,
+    series_named,
     switch_of,
     unticked,
 )
@@ -334,12 +335,24 @@ def starting_choices(
     ``state`` was read from (``load_state``). If the combination is not valid
     (e.g. a remembered start date after a new command-line end date), the
     remembered choices are dropped and the reason logged.
+
+    A command line naming a series starts from Reset's values, not what is
+    remembered (batch 38.3; Terry, 2026-11-03: "if any single series switches
+    are set, the default nations should reset to -c and -u; if other nations are
+    also wanted, they must be explicitly set. All other defaults should also
+    revert to their 'Reset' values"). The rest of the state, the window's size
+    and place, is kept, and so is the file: "Remember my settings" then starts
+    unticked (``remember_at_start``).
     """
     notes: list[str] = []
     cli_config_payloads, cli_config_flags = choices_from_config(config)
     if state.get("payloads", {}).get("start") == _FORMER_DEFAULT_START:
         state = {**state, "payloads": {**state["payloads"], "start": ""}}
         notes.append(f"The remembered Start {_FORMER_DEFAULT_START} was the former default: now blank, the automatic start.")
+    series_given = series_named(cli_payloads, cli_flags)
+    if series_given and state:
+        notes.append(f"A series is named, so the window starts from Reset's values, not the settings remembered in {remembered_in or state_path()}.")
+        state = {}
 
     def combine(use_state: bool) -> Choices:
         payloads, flags = choices_from_config(PlotConfig())
@@ -355,14 +368,6 @@ def starting_choices(
         for name, text in cli_payloads.items():
             if name in payloads:
                 payloads[name] = text
-        # The levels (--debt:LETTERS, --interest:LETTERS, for every chart or
-        # for one nation) name their curves, as --debt would; each nation's
-        # one control (the debt one) is set below with the other nations' own.
-        levels_given = any(
-            name in cli_payloads or nation_choice(nation, by_name(name)) in cli_payloads
-            for name in ("debt-parts", "interest-parts")
-            for nation in NATIONS
-        )
         # A list taken out of a field (--no-yields:30y) has no control of its
         # own: the field's control shows what the command line left.
         for option in options_of(Kind.VALUE):
@@ -382,12 +387,13 @@ def starting_choices(
                 if any(other.name in cli_payloads or nation_choice(nation, other) in cli_payloads for other in given):
                     payloads[key] = cli_config_payloads[key]
         # Curves, and countries, are overridden as a group: on the command line
-        # "--gdp" means "GDP only", which the resolved config already reflects.
+        # "--gdp" means "GDP only", which the resolved config already reflects,
+        # and so does any series named (--policy, --yields:2,10, --debt:fp).
         # The measure as given: -r without debt or interest has no effect
         # (``options.idle_options``), and stays ticked, greyed, as in the window.
         for group_name in GROUPS_CHOSEN_TOGETHER:
             group = [option.name for option in options_in(group_name) if option.name in flags]
-            if any(name in cli_flags for name in group) or (group_name == "curves" and levels_given):
+            if any(name in cli_flags for name in group) or (group_name == "curves" and series_given):
                 for name in group:
                     flags[name] = bool(cli_flags.get(name, False)) if group_name == "units" else cli_config_flags[name]
         for option in OPTIONS:
@@ -439,6 +445,33 @@ def starting_choices(
             notes.append(f"Remembered settings not used ({exc}); starting from the command line and defaults.")
             choices = combine(use_state=False)
     return choices, notes
+
+
+def remember_at_start(cli_payloads: Mapping[str, str], cli_flags: Mapping[str, bool]) -> bool:
+    """Return whether "Remember my settings" starts ticked: as --rem or --no-rem says, else ticked unless a series is named.
+
+    Batch 38.1 and 38.3 (Terry, 2026-11-03: "--no-rem is the default in this
+    case, normally --rem is the default"): a one-off view leaves the settings
+    remembered as they were.
+    """
+    return cli_flags.get("remember", not series_named(cli_payloads, cli_flags))
+
+
+def remember_from_command_line(config: PlotConfig, cli_payloads: dict[str, str], cli_flags: dict[str, bool]) -> str | None:
+    """Write what a run with no window draws to the settings the window would read (--rem with --save or --no-gui, batch 38.1); return an error message or None.
+
+    Terry, 2026-11-03: "Useful to allow re-setting the settings stored on a
+    --sav run". The choices are the run's own, the defaults with what it names
+    laid over them, not what was remembered; the file's other settings, the
+    window's size and place above all, are kept. A chart with no curve is never
+    remembered, the window's rule and the page's (``web.kept_line``).
+    """
+    if not config.draws_a_curve:
+        return None
+    state, _note, _path = load_state()
+    (payloads, flags), _notes = starting_choices(config, cli_payloads, cli_flags, {})
+    flags.pop("version", None)  # --no-ver lasts for its run (batch 37.2)
+    return save_state({**state, "version": STATE_VERSION, "payloads": payloads, "flags": flags})
 
 
 # ---------------------------------------------------------------------------
@@ -1361,7 +1394,8 @@ def save_dialog_folder(remembered: str | None) -> str:
 
 # The "Remember my settings" box, in the window and on the page (batch 24.6;
 # Terry, decisions 60, 69 and 74): for charts that should leave the settings
-# kept alone. Ticked at every start or visit, its off state never saved.
+# kept alone. Ticked at a start or a visit unless its line names a series or says
+# --no-rem (batch 38, ``remember_at_start``), its off state never saved.
 # Batch 34.2 (Terry, decision 93): the box as the window closes or the page
 # is left decides; the last closed with it ticked wins. The settings shown
 # are written while it is ticked (the window after each drawing, the page
@@ -1373,7 +1407,8 @@ def save_dialog_folder(remembered: str | None) -> str:
 REMEMBER_LABEL = "Remember my settings"
 REMEMBER_HELP = (
     "Ticked as you leave (the window closed, or the page's tab closed or left), the settings shown are kept for next time. "
-    "Unticked then, the settings kept before are left as they were, whatever was drawn meanwhile. Ticked at every start."
+    "Unticked then, the settings kept before are left as they were, whatever was drawn meanwhile. "
+    "Ticked at the start, unless the command line or the address names a series or says --no-rem."
 )
 
 # The buttons the window and the page both have, and their tips, from one

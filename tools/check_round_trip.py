@@ -110,6 +110,15 @@ VALUES = (
     "--sp:10y-r10", "--y:10,r10 --sp:10y-r10", "--y:10,r10 --no-y:r10", "--y:r30 --mo --po",
     # --no-ver (batch 37.2): no control, but kept in the written line and the address; --ver changes neither.
     "--no-ver", "--no-ver --mo --us:y:2,10", "--ver",
+    # Batch 38.2, the series rule: the whole set beside a rate or a list, a curve off with its list kept, the levels
+    # beside the other curves, a list that is none, which names nothing; 38.1: --rem and --no-rem, written nowhere.
+    "--gdp --debt --interest --yield --po", "--gdp --debt --interest --y:2,10", "--gdp --debt --interest --no-yield --y:2,10",
+    "--gdp --no-yield --y:2,10 --po", "--gdp --no-debt --agg:net", "--gdp --debt --interest --yield --agg:net",
+    "--gdp --interest --yield --d:fp", "--no-debt --i:fp --yield", "--gdp --debt --interest --yield --mo --sp --inf",
+    "--gdp --debt --interest --yield --cpi", "--gdp --debt --interest --yield --pop", "--gdp --debt --interest --yield --cpi:sa",
+    "--no-gdp --no-debt --no-interest --no-yield --us:po:none", "--gdp --debt --interest --yield --us:po:none",
+    "--gdp --debt --interest --yield --prime:0.5", "--gdp --debt --interest --yield --uk:tracker:2",
+    "--rem", "--no-rem", "--rem --po", "--no-rem --gdp --y:2,10",
 )
 
 
@@ -195,7 +204,8 @@ def _drawn(config, key: str):
         hidden["auto_refresh_minutes"] = None  # greyed, its minutes left off the written line (batch 11.3)
     if drawn.version is True:
         hidden["version"] = None  # --ver draws what no option draws, and is not written back (batch 37.2); --no-ver must be
-    return replace(drawn, **hidden) if hidden else drawn
+    hidden["remember"] = None  # --rem and --no-rem draw nothing, and are never written back (batch 38.1)
+    return replace(drawn, **hidden)
 
 
 def main() -> int:

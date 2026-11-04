@@ -42,7 +42,8 @@ Remembered settings
     As the window remembers its settings, the page keeps the last chart's
     command line, as the address holds it, in a cookie in the visitor's
     browser (batch 24.6, ``_remember_settings``), behind a "Remember my
-    settings" box, ticked at every visit, with one line saying what is
+    settings" box, ticked at a visit's start unless its address names a series
+    (batch 38, ``_box_at_start``), with one line saying what is
     kept. A visit opens on the address's chart if it has one, else on the
     settings remembered, else on the defaults; so a shared link draws what
     it says. The page's own script writes the cookie, and reads it back at
@@ -156,7 +157,7 @@ import threading
 import time
 import urllib.parse
 import zlib
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field, replace
 
 import matplotlib
@@ -254,6 +255,7 @@ from .frontend import (  # noqa: E402
     png_bytes,
     problem_text,
     reset_changes_nothing,
+    remember_at_start,
     reset_choices,
     saved_export_name,
     saved_log_name,
@@ -273,6 +275,7 @@ from .options import (  # noqa: E402
     Option,
     by_name,
     command_line_tokens,
+    curves_under_former_rule,
     config_from_choices,
     excluded_curves,
     excluded_measures,
@@ -313,6 +316,8 @@ REMEMBER_COOKIE = "ratesplot_settings"
 # makes up for each visit, so a tab unticked as it is left puts back the
 # settings from before its own write only (``_MEMORY_JS``).
 REMEMBER_BY_COOKIE = "ratesplot_settings_by"
+# In front of a line kept since batch 38, whose series rule is today's (``remembered_line``).
+_KEPT_LINE_MARK = "r38 "
 _REMEMBER_DAYS = 365
 # The one line under the box, saying what is kept (Terry, decision 60).
 _REMEMBER_LINE = (
@@ -1017,7 +1022,8 @@ export default function (component) {
 
 
 # The settings remembered, read back (batch 24.6): at the start of a visit
-# whose address names no chart it can draw, the page lays out this component
+# whose address names no chart it can draw, or one naming a series (to tell a
+# reload from a link, ``_box_at_start``), the page lays out this component
 # alone, and its script sends the cookie's value as it is ("" for none, or
 # where the browser refuses cookies to scripts) once; the page then starts
 # from it. One round trip, and nothing drawn before the answer. Its script
@@ -1154,9 +1160,17 @@ def for_screen(config: PlotConfig, narrow: bool) -> PlotConfig:
 def remembered_line(value: object) -> str:
     """The command line in the cookie's value as the page's script sent it (batch 24.6), decoded as ``_MEMORY_JS`` encoded it.
 
-    "" for anything but text.
+    "" for anything but text. A line kept before batch 38 has no mark
+    (``_KEPT_LINE_MARK``) and drew what the series rule then said: --policy, its
+    rate added to the four curves, which it no longer means. So its curves are
+    written out, and the settings a visitor had kept go on drawing the same
+    chart; the next line kept has the mark.
     """
-    return urllib.parse.unquote(value) if isinstance(value, str) else ""
+    line = urllib.parse.unquote(value) if isinstance(value, str) else ""
+    if not line or line.startswith(_KEPT_LINE_MARK):
+        return line.removeprefix(_KEPT_LINE_MARK)
+    payloads, flags, _unmatched, _misspelled = sort_tokens(line.split())
+    return " ".join([*line.split(), *curves_under_former_rule(payloads, flags)])
 
 
 def _remembered_line() -> str | None:
@@ -1194,7 +1208,13 @@ def kept_line(drawing: Drawing | None) -> str | None:
     if not drawing.config.draws_a_curve:
         return None
     # --no-ver lasts for this visit (batch 37.2): at the next no control could take it off.
-    return " ".join(token for token in drawing.tokens if token != NO_VERSION_TOKEN)
+    line = _without_no_version(drawing.tokens)
+    return _KEPT_LINE_MARK + line if line else line
+
+
+def _without_no_version(tokens: Iterable[str]) -> str:
+    """A line as the cookie would keep it, --no-ver left out (``kept_line``)."""
+    return " ".join(token for token in tokens if token != NO_VERSION_TOKEN)
 
 
 def _remember_settings(line: str | None, remember: bool) -> None:
@@ -1297,8 +1317,27 @@ def _choices_from_line(text: str) -> tuple[Choices | None, list[str]]:
     return starting_choices(config, payloads, flags, {})[0], []
 
 
-def _starting_choices() -> tuple[Choices, str, list[str], list[str]] | None:
-    """Return a visit's starting choices, what they came from, and any problems with the address and with the settings remembered.
+def _box_at_start(address: str) -> bool | None:
+    """Return whether "Remember my settings" starts ticked for a visit starting from this address; None until the settings remembered are known.
+
+    As the window's (batch 38, ``frontend.remember_at_start``): a link naming a
+    series is a one-off view, which leaves what this browser remembers as it was.
+    But the page writes each chart into its own address (``_set_address``), so a
+    reload gives such an address too, and the box would untick itself under a
+    visitor who had left it ticked, whose later choices would then be lost. Their
+    reload's line is the one just kept as the tab was left (``_MEMORY_JS``): an
+    address the same as the line this browser remembers is theirs, and ticks it.
+    """
+    payloads, flags, _unmatched, _misspelled = sort_tokens(address.split())
+    box = remember_at_start(payloads, flags)
+    if box or "remember" in flags:
+        return box
+    remembered = _remembered_line()
+    return None if remembered is None else remembered == _without_no_version(address.split())
+
+
+def _starting_choices() -> tuple[Choices, str, list[str], list[str], bool] | None:
+    """Return a visit's starting choices, what they came from, any problems with the address and with the settings remembered, and whether "Remember my settings" starts ticked.
 
     The address's chart, so a shared link draws what it says; else, or if
     it cannot be read, the settings remembered in this browser (batch 24.6);
@@ -1311,11 +1350,12 @@ def _starting_choices() -> tuple[Choices, str, list[str], list[str]] | None:
     if address is not None and address.strip():
         choices, address_problems = _choices_from_line(address)
         if choices is not None:
-            return choices, "address", [], []
+            box = _box_at_start(address)
+            return None if box is None else (choices, "address", [], [], box)
     if address is not None and not address_problems:
         # "?chart=" with nothing after it: a link to the defaults (batch 28.5).
         defaults, _notes = starting_choices(PlotConfig(), {}, {}, {})
-        return defaults, "address", [], []
+        return defaults, "address", [], [], True
     remembered_problems: list[str] = []
     remembered = _remembered_line()
     if remembered is None:
@@ -1323,9 +1363,9 @@ def _starting_choices() -> tuple[Choices, str, list[str], list[str]] | None:
     if remembered.strip():
         choices, remembered_problems = _choices_from_line(remembered)
         if choices is not None:
-            return choices, "remembered", address_problems, []
+            return choices, "remembered", address_problems, [], True
     defaults, _notes = starting_choices(PlotConfig(), {}, {}, {})
-    return defaults, "defaults", address_problems, remembered_problems
+    return defaults, "defaults", address_problems, remembered_problems, True
 
 
 def _load_choices(choices: Choices) -> None:
@@ -2720,10 +2760,10 @@ def main() -> None:
         if started is None:
             _read_remembered()  # its answer runs the page again
             return
-        choices, state[_STARTED_FROM], state[_ADDRESS_PROBLEMS], state[_REMEMBERED_PROBLEMS] = started
+        choices, state[_STARTED_FROM], state[_ADDRESS_PROBLEMS], state[_REMEMBERED_PROBLEMS], box = started
         _load_choices(choices)
         state[_NO_VERSION] = choices[1].get("version") is False
-        state[_REMEMBER] = True  # ticked at every visit, its off state never kept (decision 74)
+        state[_REMEMBER] = box  # as the address leaves it (batch 38), its off state never kept (decision 74)
 
     # Judged before the controls are laid out, so a wrong field's label is red (_WRONG).
     choices = _snapshot()

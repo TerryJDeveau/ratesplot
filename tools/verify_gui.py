@@ -956,7 +956,7 @@ def check_levels(check: Check) -> None:
         tick("cdn", "f", True)
         tick("cdn", "p", True)
         w.settle()
-        check("Canada's federal and provincial: --cdn:debt:fp", "--cdn:debt:fp" in tokens() and "--debt" in tokens(), tokens())
+        check("Canada's federal and provincial: --cdn:debt:fp", "--cdn:debt:fp" in tokens(), tokens())
         for key in ("us", "de"):
             tick(key, "f", True)
             tick(key, "p", True)
@@ -2753,7 +2753,7 @@ def check_batch134(check: Check) -> None:
         w.settle()
         check("“Price index (CPI)” unticked: “Seas. adj.” greyed, neither written", not enabled(box)
               and not any(t.startswith("--cpi") for t in w.command_tokens()), w.command_tokens())
-    with window(f"--na:gb --cpi:sa -s:2015 {END}") as w:
+    with window(f"--gdp --debt --interest --yield --na:gb --cpi:sa -s:2015 {END}") as w:
         app, root = w.app, w.root
         editor = app.choice_editors["cpi-adjustment"]
         check("the UK alone: “Seas. adj.” greyed, ticked, left off the command line", not enabled(editor.widgets[0])
@@ -3012,6 +3012,128 @@ def check_batch37(check: Check) -> None:
               and options.NO_VERSION_TOKEN not in options.command_line_tokens(*choices))
 
 
+def check_batch38(check: Check) -> None:
+    """Batch 38: what a command line starts from: the settings remembered, or Reset's values with the box unticked once it names a series; --rem and --no-rem; --save --rem."""
+    folder_root = tempfile.mkdtemp(prefix="ratesplot_verify_gui_b38_")
+    appdata = os.environ["APPDATA"]
+    os.environ["APPDATA"] = folder_root
+
+    def kept() -> dict:
+        state, _note, _path = frontend.load_state()
+        return state
+
+    def started(line: str) -> "Window":
+        """A window started as ``run_gui`` starts one from this command line, from what is in the settings file."""
+        payloads, flags, _parser = cli.parse_choices([*line.split(), "--no-gui"])
+        flags.pop("gui")
+        config = cli.parse_args([*line.split(), "--no-gui"])
+        state, _note, remembered_in = frontend.load_state()
+        choices, notes = frontend.starting_choices(config, payloads, flags, state, remembered_in)
+        root = new_root(SIZE)
+        opened = Window.__new__(Window)
+        opened.root, opened.app = root, gui.RatesPlotApp(root, choices, notes, state, normal_geometry=SIZE, **gui.line_start(payloads, flags))
+        opened.settle()
+        return opened
+
+    def nations(app) -> list[str]:
+        return [name for name in frontend.nation_boxes() if app.flag_vars[name].get()]
+
+    defaults_payloads, defaults_flags = options.choices_from_config(cli.parse_args([]))
+    remembered = {
+        "version": frontend.STATE_VERSION,
+        "payloads": {**defaults_payloads, "start": "2005", "end": END.split(":")[1]},
+        "flags": {**defaults_flags, "policy": True, "regression": True, "uk": True},
+        "zoom": "actual",
+        "geometry": SIZE,
+        "save_folder": folder_root,
+    }
+    try:
+        frontend.save_state(remembered)
+        w = started("-c")
+        app = w.app
+        check("a line naming no series: from the settings remembered, the box ticked", w.text("start") == "2005" and app.flag_vars["policy"].get()
+              and app.flag_vars["regression"].get() and app.zoom.get() == "actual" and app.remember.get() is True, app.command.get())
+        check("... with what it names laid over them", nations(app) == ["cdn"], nations(app))
+        w.close()
+        frontend.save_state(remembered)
+        w = started("--no-rem -c")
+        app = w.app
+        check("--no-rem: the same settings, the box unticked", w.text("start") == "2005" and app.flag_vars["policy"].get() and app.remember.get() is False, app.command.get())
+        check("... and written in no line", not any("rem" in token for token in w.command_tokens()) and "rem" not in app.web_address.get().split("?")[-1], app.web_address.get())
+        w.close()
+        check("... closing leaves the settings as they were", kept()["payloads"]["start"] == "2005", kept()["payloads"]["start"])
+
+        frontend.save_state(remembered)
+        w = started(f"--gdp -s:2015 {END}")
+        app = w.app
+        check("a line naming a series: GDP alone, nothing remembered: no policy rate, no regression segments", app.flag_vars["gdp"].get()
+              and not any(app.flag_vars[name].get() for name in ("debt", "interest", "yield", "policy", "regression")), app.command.get())
+        check("... Canada and the U.S., the UK remembered not", nations(app) == ["cdn", "us"], nations(app))
+        check("... the start named, and every other field at Reset's", w.text("start") == "2015", w.text("start"))
+        check("... the preview as Reset sets it", app.zoom.get() == "fit", app.zoom.get())
+        check("... the box unticked", app.remember.get() is False)
+        check("... and said in the log", "starts from Reset's values" in app.log.get("1.0", "end"), app.log.get("1.0", "end")[-200:])
+        check("... the command line says only what it drew", w.command_tokens() == ["--gdp", "--start:2015", "--end:" + END.split(":")[1]], w.command_tokens())
+        w.close()
+        after = kept()
+        check("closed with the box unticked: the settings remembered as they were", after["payloads"]["start"] == "2005" and after["flags"]["policy"] and after["zoom"] == "actual",
+              (after["payloads"]["start"], after["flags"]["policy"], after["zoom"]))
+        check("... the window's place and the save folder kept", after["geometry"] and after["save_folder"] == folder_root, after.get("save_folder"))
+
+        frontend.save_state(remembered)
+        w = started(f"--policy -c -s:2015 {END}")
+        app = w.app
+        check("--policy: the policy rate alone, no yields, no right axis", app.flag_vars["policy"].get()
+              and not any(app.flag_vars[name].get() for name in ("gdp", "debt", "interest", "yield")) and app.remember.get() is False, app.command.get())
+        app.remember.set(True)
+        app._remember()
+        check("the box ticked by hand: this chart kept", kept()["payloads"]["start"] == "2015" and kept()["flags"]["policy"] and not kept()["flags"]["gdp"], kept()["payloads"]["start"])
+        w.close()
+
+        frontend.save_state(remembered)
+        w = started(f"--rem --gdp --yield -s:2016 {END}")
+        app = w.app
+        check("--rem with series named: from Reset's values, the box ticked", app.remember.get() is True and w.text("start") == "2016"
+              and app.flag_vars["gdp"].get() and app.flag_vars["yield"].get() and not app.flag_vars["debt"].get(), app.command.get())
+        check("... written in no line", not any("rem" in token for token in w.command_tokens()), w.command_tokens())
+        w.close()
+        check("... so this chart is kept", kept()["payloads"]["start"] == "2016" and not kept()["flags"]["policy"], kept()["payloads"]["start"])
+
+        # --no-gdp names nothing: the remembered policy rate stays (today's rule).
+        frontend.save_state(remembered)
+        w = started("--no-gdp")
+        app = w.app
+        check("--no-gdp names nothing: the settings remembered, GDP off, the box ticked", w.text("start") == "2005" and app.flag_vars["policy"].get()
+              and not app.flag_vars["gdp"].get() and app.remember.get() is True, app.command.get())
+        w.close()
+
+        # A run with no window (38.1).
+        frontend.save_state(remembered)
+        saved = Path(folder_root) / "b38.csv"
+        with contextlib.redirect_stdout(io.StringIO()):
+            cli.main([f"--save:{saved}", "-c", "-s:2017", END])
+        check("--save alone: the settings remembered as they were", kept()["payloads"]["start"] == "2005", kept()["payloads"]["start"])
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            cli.main([f"--save:{saved}", "-c", "-s:2017", END, "--rem"])
+        after = kept()
+        check("--save --rem: the run's choices written, Canada's, from the defaults", after["payloads"]["start"] == "2017" and after["flags"]["cdn"] and not after["flags"]["us"]
+              and not after["flags"]["policy"], (after["payloads"]["start"], after["flags"]["us"]))
+        check("... the window's place and the save folder kept, and it says where", after["geometry"] == SIZE and after["save_folder"] == folder_root
+              and str(frontend.state_path()) in printed.getvalue(), printed.getvalue()[-200:])
+        check("... no flag of its own among them", "remember" not in after["flags"], sorted(after["flags"])[:4])
+        w = started("")
+        check("... and the next window starts from them", w.text("start") == "2017" and nations(w.app) == ["cdn"], w.text("start"))
+        w.close()
+        frontend.save_state(remembered)
+        line = ["--no-gdp", "--no-debt", "--no-interest", "--no-yield", "--rem"]
+        payloads, flags, _parser = cli.parse_choices(line)
+        check("--rem with no curve: nothing written, the windows' rule", frontend.remember_from_command_line(cli.parse_args(line), payloads, flags) is None
+              and kept()["payloads"]["start"] == "2005", kept()["payloads"]["start"])
+    finally:
+        os.environ["APPDATA"] = appdata
+
+
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
     "reset": check_reset,
@@ -3052,6 +3174,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch35": check_batch35,
     "batch39": check_batch39,
     "batch37": check_batch37,
+    "batch38": check_batch38,
 }
 
 

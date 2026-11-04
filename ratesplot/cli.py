@@ -382,6 +382,13 @@ def main(argv: list[str] | None = None) -> None:
 
         run_gui(config, payloads, flags)
         return
+    # --rem on a run with no window (batch 38.1): before the drawing, which a
+    # plain window or --auto-refresh holds until it is closed or stopped.
+    if config.remember:
+        from .frontend import remember_from_command_line, state_path
+
+        error = remember_from_command_line(config, payloads, flags)
+        print(error or f"Settings remembered in {state_path()}.")
 
     # Each download's last good copy kept, and drawn when its source fails,
     # with a warning at the end of the run (batch 20). The harnesses replace

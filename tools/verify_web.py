@@ -640,7 +640,7 @@ def check_choice_boxes(check: Check) -> None:
         prefix = f"choice:{name}:"
         return [box.key[len(prefix):] for box in at.checkbox if box.key and box.key.startswith(prefix) and box.value]
 
-    page = new_page("-u --e:2026-09-01 --no-y:30 --mo:15 --sp:10-2,7-1m")
+    page = new_page("--gdp --debt --interest --yield -u --e:2026-09-01 --no-y:30 --mo:15 --sp:10-2,7-1m")
     check(
         "the address's lists ticked; a pair not offered gets its own box",
         ticked(page, "us:yields") == ["3m", "2y", "5y", "10y"]
@@ -671,7 +671,7 @@ def check_choice_boxes(check: Check) -> None:
 
 def check_nation_sections(check: Check) -> None:
     """Batch 2: each nation's own section: only its terms, its own limits, and the address they write."""
-    page = new_page("--e:2026-09-01 --us:max:9 --cdn:y:2,10 --mo")
+    page = new_page("--gdp --debt --interest --e:2026-09-01 --us:max:9 --cdn:y:2,10 --mo")
     check("no exception", not page.exception, page.exception)
     keys = {box.key for box in page.checkbox if box.key}
     check(
@@ -687,7 +687,7 @@ def check_nation_sections(check: Check) -> None:
         and page.checkbox(key="choice:us:yields:30y").value,
         (page.text_input(key="value:us:max").value, page.text_input(key="value:cdn:max").value),
     )
-    check("address kept", address(page) == "--mortgages --cdn:yields:2y,10y --end:2026-09-01 --us:max:9", address(page))
+    check("address kept", address(page) == "--gdp --debt --interest --mortgages --cdn:yields:2y,10y --end:2026-09-01 --us:max:9", address(page))
     page.text_input(key="value:cdn:max").input("9")
     page.run()
     check("the same value for both is written once", "--max:9" in address(page) and "--us:max" not in address(page), address(page))
@@ -726,7 +726,7 @@ def check_uk(check: Check) -> None:
 
 def check_de(check: Check) -> None:
     """Batch 4: Germany's chart from the address (by --nations:de); its section; its values written with --ger:, never --de:."""
-    page = new_page("--na:de --e:2026-09-01 --ger:max:6 --mo")
+    page = new_page("--gdp --debt --interest --yield --na:de --e:2026-09-01 --ger:max:6 --mo")
     check("no exception", not page.exception, page.exception)
     f = flags(page)
     check("address: Germany only", f["germany"] and not f["cdn"] and not f["us"] and not f["uk"], f)
@@ -747,7 +747,7 @@ def check_de(check: Check) -> None:
     )
     check("its value in its own field", page.text_input(key="value:de:max").value == "6", page.text_input(key="value:de:max").value)
     check("address written with --ger:, not --de: (which is --debt:)",
-          address(page) == "--nations:de --mortgages --end:2026-09-01 --ger:max:6", address(page))
+          address(page) == "--nations:de --gdp --debt --interest --yield --mortgages --end:2026-09-01 --ger:max:6", address(page))
     page.checkbox(key="choice:de:mortgage-terms:1-5").uncheck()
     page.run()
     tokens = address(page).split()
@@ -766,11 +766,11 @@ def check_none_lists(check: Check) -> None:
         return [box.key[len(prefix):] for box in at.checkbox if box.key and box.key.startswith(prefix) and box.value]
 
     # Canada lacks only the 20-year since batch 9.3 (until then, -c --y:7,20).
-    page = new_page("-c --y:20 --e:2026-09-01")
+    page = new_page("--gdp --debt --interest -c --y:20 --e:2026-09-01")
     check("no exception", not page.exception, page.exception)
     check("Canada's yield boxes all unticked (it has no 20y)", ticked(page, "cdn:yields") == [], ticked(page, "cdn:yields"))
     check("no box 'none'", "choice:cdn:yields:none" not in {box.key for box in page.checkbox}, "")
-    check("address kept", address(page) == "--C --yields:20y --end:2026-09-01", address(page))
+    check("address kept", address(page) == "--C --gdp --debt --interest --yields:20y --end:2026-09-01", address(page))
     check("one chart drawn", charts_shown(page) == 1, charts_shown(page))
     warned = [line.strip() for c in page.code for line in c.value.splitlines() if "Warning: no yield" in line]
     check("the warning in the log", any("on the Canadian chart" in line for line in warned), warned)
@@ -1003,7 +1003,7 @@ def check_batch94(check: Check) -> None:
     check("prime unticked: the margin greyed, kept, out of the address",
           greyed(at) == {"cdn", "us"} and at.text_input(key="value:cdn:prime-margin").value == "-0.25" and "prime" not in address(at),
           (greyed(at), address(at)))
-    page = new_page("--prime:0.5 --e:2026-09-01")
+    page = new_page("--gdp --debt --interest --yield --prime:0.5 --e:2026-09-01")
     ticked = {key for key in boxes if page.checkbox(key=key).value}
     texts = {key: page.text_input(key=key).value for key in sorted(fields)}
     check("--prime:0.5: both prime boxes ticked, both fields 0.5",
@@ -1069,7 +1069,7 @@ def check_batch91(check: Check) -> None:
           at.checkbox(key="choice:cdn:policy-terms:target").value
           and any("untick “Policy rate”" in str(item.value) for item in list(at.info) + list(at.warning)), address(at))
     check("no exception, one drawing per chart", not at.exception and charts_shown(at) == 4, at.exception)
-    page = new_page("--po:market --na:ca,us,gb,de --e:2026-09-01")
+    page = new_page("--gdp --debt --interest --yield --po:market --na:ca,us,gb,de --e:2026-09-01")
     markets = {f"choice:{key}:policy-terms:market" for key in NATION_KEYS}
     check("--po:market: the market ticked in every section, the target not",
           {key for key in wanted if page.checkbox(key=key).value} == markets and flags(page)["policy"],
@@ -1116,7 +1116,7 @@ def check_batch104(check: Check) -> None:
     check("the level unticked: active again, net alone again",
           not at.checkbox(key=net).disabled and drawn(at) == ("net",), (address(at), drawn(at)))
     check("no exception, two charts", not at.exception and charts_shown(at) == 2, (at.exception, charts_shown(at)))
-    page = new_page("--nations:gb --agg:gross,net --e:2026-09-01")
+    page = new_page("--gdp --interest --yield --nations:gb --agg:gross,net --e:2026-09-01")
     check("--agg:gross,net from the address: both ticked",
           page.checkbox(key=gross).value and page.checkbox(key=net).value, address(page))
 
@@ -1519,8 +1519,8 @@ def check_batch246(check: Check) -> None:
     year = 365 * 86400
 
     def told(line: str, remember: bool) -> dict:
-        """What the cookie's keeper is given on every run (batch 34.2): the last good line and the box; it writes as the visit ends."""
-        return {"name": web.REMEMBER_COOKIE, "by": web.REMEMBER_BY_COOKIE, "line": line, "remember": remember, "seconds": year}
+        """What the cookie's keeper is given on every run (batch 34.2): the last good line, marked as today's rule's (batch 38), and the box; it writes as the visit ends."""
+        return {"name": web.REMEMBER_COOKIE, "by": web.REMEMBER_BY_COOKIE, "line": web._KEPT_LINE_MARK + line if line else line, "remember": remember, "seconds": year}
 
     at = new_page("-c -s:2015 --e:2026-09-01", heard=None)
     check("no exception", not at.exception, at.exception)
@@ -1547,7 +1547,7 @@ def check_batch246(check: Check) -> None:
     check("the reader sends the cookie's value once, \"\" for none or where cookies are refused",
           'setTriggerValue("line", value)' in reader and "catch (error)" in reader and reader.count("setTriggerValue(") == 1)
     check("a value sent decoded as the writer encoded it (spaces, colons, commas, %)",
-          web.remembered_line("--C%20--top%3A150%25%20--cdn%3Ayields%3A3m%2C10y") == "--C --top:150% --cdn:yields:3m,10y")
+          web.remembered_line(urllib.parse.quote(web._KEPT_LINE_MARK) + "--C%20--top%3A150%25%20--cdn%3Ayields%3A3m%2C10y") == "--C --top:150% --cdn:yields:3m,10y")
     check("anything but text sent: nothing remembered", [web.remembered_line(sent) for sent in (None, 7, {"line": "-u"}, ["-u"])] == [""] * 4)
     waiting = new_page(heard=None)
     check("no address, the reader not yet answered: it alone is laid out, nothing drawn",
@@ -1570,7 +1570,7 @@ def check_batch246(check: Check) -> None:
           (address(bare), [w.value for w in bare.warning]))
     shared = new_page("-c -s:2015 --e:2026-09-01", heard=kept_line)
     check("an address with a chart wins over them, so a shared link draws what it says",
-          address(shared) == "--C --start:2015 --end:2026-09-01" and (memory(shared) or {}).get("line") == address(shared), address(shared))
+          address(shared) == "--C --start:2015 --end:2026-09-01" and (memory(shared) or {}).get("line") == web._KEPT_LINE_MARK + address(shared), address(shared))
     bad = new_page("pizza", heard=kept_line)
     warnings = [w.value for w in bad.warning]
     check("an address that cannot be read: reported, and the settings remembered drawn",
@@ -1935,7 +1935,7 @@ def check_batch324(check: Check) -> None:
     real = plotting.policy_target_last
     try:
         plotting.policy_target_last = lambda _key: later  # a change announced to take effect in two days
-        at = new_page("-c --policy -s:2026-06-01")
+        at = new_page("--gdp --debt --interest --yield -c --policy -s:2026-06-01")
         drawn = at.session_state[web._DRAWING].drawn
         end = at.text_input(key="value:end")
         check("a blank End, Canada's target drawn: the chart ends on the target's last day, two days ahead",
@@ -1975,7 +1975,7 @@ def check_batch34(check: Check) -> None:
     at.text_input(key="value:start").input("nonsense").run()
     kept = memory(at)
     check("34.2: a field that stops the drawing: the keeper still given the last good chart's line",
-          not at.exception and at.error and kept is not None and kept["line"] == good and kept["remember"] is True, kept)
+          not at.exception and at.error and kept is not None and kept["line"] == web._KEPT_LINE_MARK + good and kept["remember"] is True, kept)
     real = web._draw
     try:
         web._draw = lambda config, tokens, job=None: replace(real(config, tokens, job), error="a drawing made to fail")
@@ -1992,7 +1992,7 @@ def check_batch34(check: Check) -> None:
           not at.exception and empty.error is None and "--no-yield" in address(at) and (memory(at) or {}).get("line", "x") is None
           and web.kept_line(empty) is None, (address(at), memory(at)))
     at.checkbox(key="flag:debt").check().run()
-    check("… and a curve ticked again: its line given", (memory(at) or {}).get("line") == address(at) and "--no-debt" not in address(at),
+    check("… and a curve ticked again: its line given", (memory(at) or {}).get("line") == web._KEPT_LINE_MARK + address(at) and "--no-debt" not in address(at),
           memory(at))
     script = web._MEMORY_JS
     check("the script acts when the page is hidden or left, never on a run", 'addEventListener("pagehide", memory.leave)' in script
@@ -2166,7 +2166,7 @@ def check_batch134(check: Check) -> None:
     check("“Price index (CPI)” unticked: “Seas. adj.” greyed, the index not drawn, neither in the address", not at.exception
           and state(at)[0] is False and state(at)[2] and drawn(at) == (False, False) and "--cpi" not in address(at), (address(at), state(at)))
 
-    at = new_page("--na:gb --cpi:sa -s:2015 --e:2019")
+    at = new_page("--gdp --debt --interest --yield --na:gb --cpi:sa -s:2015 --e:2019")
     box = at.checkbox(key=sa)
     check("the UK alone: “Seas. adj.” greyed, left off the address, why in its tip", not at.exception and state(at)[0] and state(at)[2]
           and "--cpi:sa" not in address(at) and "the ONS publishes no seasonally adjusted price index" in box.help,
@@ -2212,7 +2212,7 @@ def check_batch135(check: Check) -> None:
           and ticked(at) == (False, True) and drawn(at) == (False, True) and "--cpi" not in address(at)
           and at.checkbox(key="choice:cpi-adjustment:sa").disabled, (address(at), ticked(at)))
 
-    at = new_page("-c --pop --no-gdp --no-debt --no-interest -s:2015 --e:2019")
+    at = new_page("--yield -c --pop --no-gdp --no-debt --no-interest -s:2015 --e:2019")
     check("alone on the right axis: the regression segments not greyed; per capita, Top and Bottom are", not at.exception
           and not at.checkbox(key="flag:regression").disabled and at.checkbox(key="flag:per-capita").disabled
           and at.text_input(key="value:cdn:top").disabled, at.checkbox(key="flag:regression").disabled)
@@ -2254,10 +2254,10 @@ def check_batch133(check: Check) -> None:
     check("r10 ticked for the U.S.: in the address, drawn with its defaults, the others' charts unchanged",
           not at.exception and drawn_config(config, "us").yield_terms == ("3m", "2y", "5y", "10y", "30y", "r10")
           and "r10" not in drawn_config(config, "cdn").yield_terms, address(at))
-    at = new_page("-u --y:r10 --e:2026-09-01")
+    at = new_page("--gdp --debt --interest -u --y:r10 --e:2026-09-01")
     check("an address of a real yield alone: its box ticked, the others not, and it draws",
           not at.exception and at.checkbox(key="choice:us:yields:r10").value and not at.checkbox(key="choice:us:yields:10y").value)
-    at = new_page("-u --y:10,r10 --sp:10y-r10 --e:2026-09-01")
+    at = new_page("--gdp --debt --interest -u --y:10,r10 --sp:10y-r10 --e:2026-09-01")
     spread = [box for box in at.checkbox if box.key and box.key.startswith("choice:us:spread-pairs:") and "r10" in box.key]
     check("a spread of nominal less real: a box of its own, ticked", not at.exception and len(spread) == 1 and spread[0].value, [box.key for box in spread])
     view = new_page("--e:2026-09-01")
@@ -2346,6 +2346,81 @@ def saved_subtitles(at: AppTest) -> dict[str, list[str]]:
     return rows
 
 
+def check_batch38(check: Check) -> None:
+    """Batch 38: an address names its series alone; the box at a visit's start; a reload told from a link; a cookie kept under the former rule."""
+    chart = "-c -s:2015 --e:2026-09-01"
+
+    def box(at: AppTest) -> bool:
+        return at.checkbox(key="remember").value
+
+    def curves(at: AppTest) -> list[str]:
+        return [name for name in ("gdp", "debt", "interest", "yield", "policy") if at.checkbox(key=f"flag:{name}").value]
+
+    at = new_page(chart)
+    check("an address naming no series: the box ticked, the cookie not asked for, the four curves", not at.exception and box(at) and curves(at) == ["gdp", "debt", "interest", "yield"]
+          and not reader_asked(at), (curves(at), address(at)))
+    at = new_page(f"--no-rem {chart}")
+    check("--no-rem: the box unticked, the same chart, no word of it in the address", not at.exception and not box(at) and curves(at) == ["gdp", "debt", "interest", "yield"]
+          and "rem" not in address(at) and memory(at)["remember"] is False, address(at))
+
+    named = f"--policy {chart}"
+    at = new_page(named)
+    check("an address naming a series, nothing remembered here: the policy rate alone, the box unticked", not at.exception and curves(at) == ["policy"] and not box(at)
+          and charts_shown(at) == 1 and memory(at)["remember"] is False, (curves(at), box(at)))
+    written = address(at)
+    check("... the address writes it short", written == "--C --policy --start:2015 --end:2026-09-01", written)
+    at = new_page(named, heard=None)
+    check("... which waits to hear the settings remembered, and draws nothing yet", not at.exception and reader_asked(at) and charts_shown(at) == 0)
+    at = new_page(f"--rem {named}", heard=None)
+    check("--rem: the box ticked, asking for nothing", not at.exception and box(at) and charts_shown(at) == 1 and not reader_asked(at) and "rem" not in address(at), address(at))
+    at = new_page(f"--no-rem {named}", heard=None)
+    check("--no-rem: the box unticked, asking for nothing", not at.exception and not box(at) and charts_shown(at) == 1 and not reader_asked(at), address(at))
+    other = urllib.parse.quote(web._KEPT_LINE_MARK + "--U --start:2001")
+    at = new_page(named, heard=other)
+    check("a link, this browser remembering something else: unticked", not at.exception and not box(at) and curves(at) == ["policy"] and address(at) == written, address(at))
+    own = urllib.parse.quote(web._KEPT_LINE_MARK + written)
+    at = new_page(written, heard=own)
+    check("a reload, the address the line this browser just kept: the box stays ticked", not at.exception and box(at) and curves(at) == ["policy"]
+          and memory(at)["remember"] is True, (box(at), address(at)))
+    at = new_page(f"{web.NO_VERSION_TOKEN} {written}", heard=own)
+    check("... and with --no-ver in the address, which the cookie never keeps", not at.exception and box(at) and web.NO_VERSION_TOKEN in address(at), address(at))
+
+    # A series named by a value: the same; a removal names nothing.
+    at = new_page(f"--yields:2,10 {chart}")
+    check("--yields:2,10: the yield curve alone, the box unticked", not at.exception and curves(at) == ["yield"] and not box(at), curves(at))
+    at = new_page(f"--no-yields:30 {chart}")
+    check("--no-yields:30 names nothing: the four curves, the box ticked", not at.exception and curves(at) == ["gdp", "debt", "interest", "yield"] and box(at), curves(at))
+
+    # Writing the four with a rate: ticking one on the page, reading the address back.
+    at = new_page(chart)
+    at.checkbox(key="flag:policy").check().run()
+    written = address(at)
+    check("the policy rate ticked on the page beside the four: the address names all five", not at.exception
+          and written == "--C --gdp --debt --interest --yield --policy --start:2015 --end:2026-09-01", written)
+    check("... and the keeper keeps it, marked", memory(at)["line"] == web._KEPT_LINE_MARK + written, memory(at))
+    again = new_page(written)
+    check("... which draws the same five", not again.exception and curves(again) == ["gdp", "debt", "interest", "yield", "policy"], curves(again))
+
+    # The cookie: a line kept by 7.9 or before goes on drawing what it drew.
+    for kept, drawn_then in (
+        ("--C --policy --start:2015 --end:2026-09-01", ["gdp", "debt", "interest", "yield", "policy"]),
+        ("--C --no-gdp --policy --start:2015 --end:2026-09-01", ["debt", "interest", "yield", "policy"]),
+        ("--C --gdp --policy --start:2015 --end:2026-09-01", ["gdp", "policy"]),
+        ("--C --yields:2y,10y --start:2015 --end:2026-09-01", ["gdp", "debt", "interest", "yield"]),
+        ("--C --gdp --yields:2y,10y --start:2015 --end:2026-09-01", ["gdp"]),
+        ("--C --gdp --debt --interest --yield --debt:fp --start:2015 --end:2026-09-01", ["gdp", "debt", "interest", "yield"]),
+        ("--C --debt:fp --start:2015 --end:2026-09-01", ["debt"]),
+        ("--C --no-interest --no-yield --debt:fp --start:2015 --end:2026-09-01", ["debt"]),
+    ):
+        at = new_page(None, heard=urllib.parse.quote(kept))
+        check(f"a cookie from before batch 38, {kept[:40]}: draws what it drew, the box ticked", not at.exception and curves(at) == drawn_then and box(at) and charts_shown(at) == 1,
+              (curves(at), [warning.value for warning in at.warning]))
+        check("... and the next line kept has the mark", memory(at)["line"].startswith(web._KEPT_LINE_MARK), memory(at)["line"])
+    at = new_page(None, heard=urllib.parse.quote(web._KEPT_LINE_MARK + "--C --policy --start:2015 --end:2026-09-01"))
+    check("a cookie since: as it says, the policy rate alone, the box ticked", not at.exception and curves(at) == ["policy"] and box(at), curves(at))
+    check("remembered_line: nothing is nothing; what is not text is nothing", web.remembered_line("") == "" and web.remembered_line(None) == "")
+
+
 def check_batch37(check: Check) -> None:
     """Batch 37.2: the saved data's subtitle ends with the version; an address with --no-ver leaves it out, writes it back, keeps it through Reset and Back, and never remembers it."""
     chart = "-u -s:2015 --e:2026-09-01"
@@ -2365,7 +2440,7 @@ def check_batch37(check: Check) -> None:
     check("the same chart drawn", drawing.pngs["us"] == plain_png)
     check("the address and the command line keep it", web.NO_VERSION_TOKEN in address(at).split() and web.NO_VERSION_TOKEN in drawing.tokens, address(at))
     check("no control for it", not any(box.key == "flag:version" for box in at.checkbox))
-    check("the settings kept have no word of it", web.kept_line(drawing) == " ".join(token for token in drawing.tokens if token != web.NO_VERSION_TOKEN)
+    check("the settings kept have no word of it", web.kept_line(drawing) == web._KEPT_LINE_MARK + " ".join(token for token in drawing.tokens if token != web.NO_VERSION_TOKEN)
           and web.NO_VERSION_TOKEN not in web.kept_line(drawing), web.kept_line(drawing))
     button(at, "Reset").click().run()
     check("Reset keeps it: in the address, and in the data", web.NO_VERSION_TOKEN in address(at).split()
@@ -2386,7 +2461,7 @@ PAGE_CHECKS = (
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
-    check_batch135, check_batch133, check_batch35, check_batch37,
+    check_batch135, check_batch133, check_batch35, check_batch37, check_batch38,
 )
 
 
