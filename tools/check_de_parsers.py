@@ -237,6 +237,34 @@ def check_west_population() -> None:
           and people.index[-1] == pd.Timestamp("1959-07-01") and len(people) == 10, people.iloc[-1])
 
 
+def check_older_mortgages() -> None:
+    """Batch 16: the Bundesbank's older mortgage rates, as saved 2026-11-04, their bake, and what was measured against the ECB's bands."""
+    series = bake.DE_MORTGAGE_HISTORY_SERIES
+    five_series, ten_series = series["EMBEDDED_DE_MORTGAGE_5Y_HISTORY"], series["EMBEDDED_DE_MORTGAGE_10Y_HISTORY"]
+    five = bake.parse_german_mortgage_history(text("bbib1_HYP_F05J.csv"), five_series)
+    ten = bake.parse_german_mortgage_history(text("bbib1_HYP_F10J.csv"), ten_series)
+    check("BBIB1: 253 months, 1982-06 to 2003-06, dated by each first day; 5-year 10.07 to 4.06, 10-year 10.07 to 4.77",
+          len(five) == len(ten) == 253 and five.index[0] == ten.index[0] == pd.Timestamp("1982-06-01") and five.index[-1] == pd.Timestamp("2003-06-01")
+          and five.iloc[0] == 10.07 and five.iloc[-1] == 4.06 and ten.iloc[0] == 10.07 and ten.iloc[-1] == 4.77, (len(five), len(ten)))
+    for name, values in (("EMBEDDED_DE_MORTGAGE_5Y_HISTORY", five), ("EMBEDDED_DE_MORTGAGE_10Y_HISTORY", ten)):
+        rows = getattr(de_archive_data, name)
+        baked_values = pd.Series({pd.Timestamp(date): value for date, value in rows}, dtype=float)
+        check(f"bake: {name} holds the download, every month", baked_values.equals(values.rename(None).rename_axis(None)), len(baked_values))
+    check("BBIB1: another series' answer is refused", raises(bake.parse_german_mortgage_history, text("bbib1_HYP_F05J.csv"), ten_series) is not None)
+    check("BBIB1: a month gone is refused", raises(bake.parse_german_mortgage_history, text("bbib1_HYP_F05J.csv").replace("1990-02,", "1990-02-gone,"), five_series) is not None)
+    check("BBIB1: a value after 2003-06 is refused", raises(bake.parse_german_mortgage_history, text("bbib1_HYP_F05J.csv").rstrip() + "\n2003-07,4.00,\n", five_series) is not None)
+    # What the join rests on: the ECB's own flag on each month, and how its over-10 estimates were made.
+    flags = pd.read_csv(io.StringIO(text("ecb_mir_house_1_5.csv")), usecols=["TIME_PERIOD", "OBS_STATUS"]).set_index("TIME_PERIOD")["OBS_STATUS"]
+    check("ECB: every month of 2000-01 to 2002-12 flagged an estimate (E), 2003-01 on not",
+          (flags.loc["2000-01":"2002-12"] == "E").all() and len(flags.loc["2000-01":"2002-12"]) == 36 and flags.loc["2003-01"] == "A", flags.loc["2002-11":"2003-02"].to_dict())
+    over10 = de_data.parse_ecb_csv(text("ecb_mir_house_10plus.csv"), "MIR.M.DE.B.A2C.P.R.A.2250.EUR.N", "PCPA")
+    over10 = over10.set_axis(over10.index.to_period("M").start_time)
+    gaps = (over10.loc["2000-01-01":"2002-12-01"] - ten.loc["2000-01-01":"2002-12-01"]).round(2)
+    check("ECB: the over-10 estimates of those 36 months are the Bundesbank's 10-year plus 0.02", len(gaps) == 36 and (gaps == 0.02).all(), gaps.value_counts().to_dict())
+    check("join: the Bundesbank's before it, 2003-01; the bands the 5- and 10-year go under named; none for over 10",
+          rates.DE_MORTGAGE_JOIN == pd.Timestamp("2003-01-01") and set(rates.DE_MORTGAGE_HISTORY) == {"1-5", "5-10"}, sorted(rates.DE_MORTGAGE_HISTORY))
+
+
 def check_ecb() -> None:
     parse = de_data.parse_ecb_csv
     fixed = parse(text("ecb_mro_fixed.csv"), "FM.B.U2.EUR.4F.KR.MRR_FR.LEV", "PCPA")
@@ -341,10 +369,17 @@ def check_fetchers() -> None:
               policy.loc["2026-09-30"] == 2.65 and policy.index[-1] >= pd.Timestamp("2026-10-07") and policy.loc["2025-01-01"] == 3.15)
         mortgage = rates.mortgage_rate("5-10")
         check("mortgages: the 5-10 year band dated by each month's first day (3.81 for 2026-08), in the 10-year's colour",
-              mortgage.values.loc["2026-08-01"] == 3.81 and mortgage.values.index[0] == pd.Timestamp("2000-01-01")
-              and mortgage.color_of == "10-Year", mortgage.label)
-        check("mortgages: the over-10 band and the 1-5 band answer",
-              rates.mortgage_rate("over10") is not None and rates.mortgage_rate("1-5") is not None)
+              mortgage.values.loc["2026-08-01"] == 3.81 and mortgage.color_of == "10-Year", mortgage.label)
+        check("mortgages: the 5-10 year band from 1982-06, the Bundesbank's 10-year to 2002-12 (5.52), then the ECB's (5.39 for 2003-01)",
+              mortgage.values.index[0] == pd.Timestamp("1982-06-01") and mortgage.values.loc["2002-12-01"] == 5.52 and mortgage.values.loc["2003-01-01"] == 5.39
+              and mortgage.values.index.is_monotonic_increasing and not mortgage.values.index.has_duplicates, mortgage.values.loc["2002-11-01":"2003-02-01"].to_dict())
+        shorter = rates.mortgage_rate("1-5")
+        check("mortgages: the 1-5 year band from 1982-06, the Bundesbank's 5-year to 2002-12 (4.96), then the ECB's (4.94 for 2003-01), each month once",
+              shorter.values.index[0] == pd.Timestamp("1982-06-01") and shorter.values.loc["2002-12-01"] == 4.96 and shorter.values.loc["2003-01-01"] == 4.94
+              and not shorter.values.index.has_duplicates, shorter.values.loc["2002-11-01":"2003-02-01"].to_dict())
+        longest = rates.mortgage_rate("over10")
+        check("mortgages: the over-10 band still the ECB's alone, from 2000-01 (5.54 for 2002-12)",
+              longest.values.index[0] == pd.Timestamp("2000-01-01") and longest.values.loc["2002-12-01"] == 5.54, longest.values.iloc[:2].to_dict())
     finally:
         de_data.de_get = real_get
         baked.DATA_FOLDER = real_folder
@@ -421,7 +456,7 @@ def check_cnbc() -> None:
 
 
 def main() -> int:
-    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
+    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_older_mortgages, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
         group()
     passed = sum(RESULTS)
     print(f"[de parsers] {passed} of {len(RESULTS)} checks passed")

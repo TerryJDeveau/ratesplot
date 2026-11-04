@@ -46,7 +46,7 @@ from .config import (
     PlotConfig,
     nation_by_key,
 )
-from .de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES
+from .de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES, EMBEDDED_DE_MORTGAGE_5Y_HISTORY, EMBEDDED_DE_MORTGAGE_10Y_HISTORY
 from .de_data import ecb_series
 from .de_data import YIELD_HISTORY_ATTR as DE_YIELD_HISTORY_ATTR
 from .http import downloads_of
@@ -162,7 +162,8 @@ UK_TRACKER_FROM = pd.Timestamp("1997-01-01")
 # (batch 9.6, baked: ``de_archive_data``). Mortgages:
 # the MFI interest rates on new housing loans to households in Germany, by
 # initial rate fixation, monthly from 2000 (2000-2002 the ECB's estimates;
-# reported from 2003), dated by each month's first day as the UK's are.
+# reported from 2003), dated by each month's first day as the UK's are; before
+# ``DE_MORTGAGE_JOIN``, the Bundesbank's older rates (batch 16).
 DE_POLICY_FIXED = ("FM", "B.U2.EUR.4F.KR.MRR_FR.LEV", "PCPA")
 DE_POLICY_MINIMUM_BID = ("FM", "B.U2.EUR.4F.KR.MRR_MBR.LEV", "PCPA")
 DE_MINIMUM_BID_ENDED = pd.Timestamp("2008-10-08")  # stopped (batch 19.3: see US_TARGET_ENDED)
@@ -178,6 +179,18 @@ DE_MORTGAGE_SERIES = {"1-5": "M.DE.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.DE.B.A2C.
 # rates are given in (a rate per year), for every band of DE_MORTGAGE_SERIES.
 DE_MORTGAGE_FLOW = "MIR"
 DE_MORTGAGE_UNIT = "PCPA"
+# Before the ECB's reported rates (batch 16): the Bundesbank's effective rate on
+# new mortgages fixed for 5 years under the band ending at 5 years, and for 10
+# under the band ending at 10, each band drawn in the colour of the yield at its
+# top (``config.MORTGAGE_TERMS``), monthly from 1982-06. The ECB flags 2000-01 to
+# 2002-12 as its estimates (OBS_STATUS "E", all three bands) and its figures as
+# reported from 2003-01 ("A"), so the join is there, where the plan put it. The
+# step left at the join, beyond the Bundesbank's own move that month: 0.21 and
+# 0.03 points; at 2000-01 it would be 0.29 and 0.36 (measured 2026-11-04). None
+# for the over-10 band: its estimates of 2000-2002 are the Bundesbank's 10-year
+# plus 0.02 in all 36 months, the only source it has, and it begins with them.
+DE_MORTGAGE_JOIN = pd.Timestamp("2003-01-01")
+DE_MORTGAGE_HISTORY = {"1-5": EMBEDDED_DE_MORTGAGE_5Y_HISTORY, "5-10": EMBEDDED_DE_MORTGAGE_10Y_HISTORY}
 # Batch 19.2 (de_data.ecb_series, each call says which): the ECB's key rates
 # are announced and EONIA and €STR observed, so a drawing asks for their last
 # two months (since 19.3 not EONIA's or the minimum bid rate's: they have
@@ -709,9 +722,18 @@ def de_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
 
 
 def _de_mortgage(term: str) -> pd.Series:
-    """Return one German mortgage band's monthly rate, dated by each month's first day."""
+    """Return one German mortgage band's monthly rate, dated by each month's first day; the Bundesbank's before ``DE_MORTGAGE_JOIN``, where the band has them.
+
+    Its label says nothing of the join, as the UK's standard variable rate's
+    does not (``_uk_mortgage``); the help page says where it joins. Rates laid
+    end to end, as published, unscaled: a rate has no level to carry.
+    """
     monthly = ecb_series(DE_MORTGAGE_FLOW, DE_MORTGAGE_SERIES[term], DE_MORTGAGE_UNIT, revised=True)
-    return _clean(monthly.set_axis(monthly.index.to_period("M").start_time))
+    values = _clean(monthly.set_axis(monthly.index.to_period("M").start_time))
+    if term not in DE_MORTGAGE_HISTORY:
+        return values
+    history = _baked(DE_MORTGAGE_HISTORY[term])
+    return pd.concat([history.loc[history.index < DE_MORTGAGE_JOIN], values.loc[values.index >= DE_MORTGAGE_JOIN]])
 
 
 def cdn_mortgage_history() -> pd.Series:

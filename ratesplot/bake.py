@@ -1806,17 +1806,49 @@ def _west_german_population(saved: Path | None) -> tuple[pd.Series, str]:
     return population.loc[population.index.year <= _DE_WEST_POPULATION_LAST_YEAR], source_name
 
 
+# Germany's mortgage rates before the ECB's reported ones begin (batch 16). The
+# Bundesbank's older lending rate statistics, flow BBIB1, terminated: the effective
+# rate on new mortgages secured by residential property with the rate fixed for 5
+# and for 10 years, an average of what the banks reported in the two middle weeks
+# of each month, 1982-06 to 2003-06, 253 months (measured 2026-11-04), so baked.
+# The banks of the new Länder from 1991-01. Kept whole; ``rates`` chooses where they
+# join the ECB's (``rates.DE_MORTGAGE_JOIN``). Each name's series, in percent a year:
+DE_MORTGAGE_HISTORY_SERIES = {
+    "EMBEDDED_DE_MORTGAGE_5Y_HISTORY": ("BBIB1", "M.DE.B.S.DNB.HYP.F05J.A.E1.11A"),
+    "EMBEDDED_DE_MORTGAGE_10Y_HISTORY": ("BBIB1", "M.DE.B.S.DNB.HYP.F10J.A.E1.11A"),
+}
+_DE_MORTGAGE_YEARS = {"EMBEDDED_DE_MORTGAGE_5Y_HISTORY": 5, "EMBEDDED_DE_MORTGAGE_10Y_HISTORY": 10}
+_DE_MORTGAGE_HISTORY_MONTHS = pd.date_range("1982-06-01", "2003-06-01", freq="MS")
+
+
+def parse_german_mortgage_history(text: str, series: tuple[str, str]) -> pd.Series:
+    """Return one of BBIB1's mortgage rates from its download, each month dated by its first day.
+
+    Raises if the answer is another series, or holds other months than those
+    measured, so a changed series cannot shift a curve.
+    """
+    values = parse_bundesbank_csv(text)
+    if values.name != ".".join(series):
+        raise RuntimeError(f"expected {'.'.join(series)}, read {values.name}; data module not modified.")
+    monthly = values.set_axis(pd.DatetimeIndex(values.index.to_period("M").start_time, name=DATE_COLUMN))
+    if not monthly.index.equals(_DE_MORTGAGE_HISTORY_MONTHS):
+        raise RuntimeError(f"{values.name}: {len(monthly)} months, {monthly.index[0]:%Y-%m} to {monthly.index[-1]:%Y-%m}, not every month as measured; data module not modified.")
+    return monthly
+
+
 def bake_german_archives(
     source_path: Path | None = None,
     saved_csv: Path | None = None,
     saved_discount_csv: Path | None = None,
     saved_cpi_workbook: Path | None = None,
     saved_population_text: Path | None = None,
+    saved_mortgage_csvs: dict[str, Path] | None = None,
 ) -> None:
-    """Extract the Bundesbank's yield on public debt securities and its discount rate, and West Germany's consumer prices and population, and embed them into ``ratesplot/de_archive_data.py``.
+    """Extract the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, and West Germany's consumer prices and population, and embed them into ``ratesplot/de_archive_data.py``.
 
-    ``saved_csv``, ``saved_discount_csv``, ``saved_cpi_workbook`` and
-    ``saved_population_text`` read the downloads already on disk (as saved in
+    ``saved_csv``, ``saved_discount_csv``, ``saved_cpi_workbook``,
+    ``saved_population_text`` and ``saved_mortgage_csvs`` (each name of
+    ``DE_MORTGAGE_HISTORY_SERIES`` -> its file) read the downloads already on disk (as saved in
     ``tools/de_fixtures``) instead of fetching them. The yield is a monthly average, so each month is dated by
     its first day; every value the series has is kept (to 2020-04), and
     ``de_data`` uses the months before the term structure begins. The discount
@@ -1861,13 +1893,20 @@ def bake_german_archives(
     west_four = _require_rows(west_prices["four_person"].rename("value").to_frame(), "West German prices, four-person households")
     west_people, west_people_name = _west_german_population(saved_population_text)
     west_population = _require_rows(west_people.rename("value").to_frame(), "West Germany's population")
+    mortgages: dict[str, pd.DataFrame] = {}
+    mortgage_names: list[str] = []
+    for name, series in DE_MORTGAGE_HISTORY_SERIES.items():
+        mortgage_text, mortgage_name = _bundesbank_text(series, (saved_mortgage_csvs or {}).get(name))
+        mortgage_names.append(mortgage_name)
+        mortgages[name] = _require_rows(parse_german_mortgage_history(mortgage_text, series).rename("value").to_frame(), ".".join(series))
     block = (
         f"{DE_ARCHIVE_BEGIN_MARKER}\n"
         f"# Generated on {dt.date.today():%Y-%m-%d} from the Deutsche Bundesbank and the Federal Statistical Office, read from:\n# {source_name}\n"
         f"# {discount_name}\n"
         f"# {west_prices_name}\n"
         f"# {west_people_name}\n"
-        "# Historical observations in the source's own terms; de_data and rates join\n"
+        + "".join(f"# {name}\n" for name in mortgage_names)
+        + "# Historical observations in the source's own terms; de_data and rates join\n"
         "# them to the live series at run time.\n\n"
         + _embedded_list("EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY", comment, data, "value")
         + "\n"
@@ -1897,15 +1936,29 @@ def bake_german_archives(
             west_population,
             "value",
         )
+        + "\n"
+        + "\n".join(
+            _embedded_list(
+                name,
+                f"{'.'.join(series)}: the effective rate on new mortgages fixed for {_DE_MORTGAGE_YEARS[name]} years, percent\n"
+                "a year, an average of what the banks reported in the two middle weeks of the month, each\n"
+                "month dated by its first day; the banks of the new Länder from 1991-01.",
+                mortgages[name],
+                "value",
+            )
+            for name, series in DE_MORTGAGE_HISTORY_SERIES.items()
+        )
         + f"{DE_ARCHIVE_END_MARKER}"
     )
     _replace_generated_block(source_path, DE_ARCHIVE_BEGIN_MARKER, DE_ARCHIVE_END_MARKER, block)
-    print(f"Embedded the Bundesbank's yield on public debt securities and its discount rate, and West Germany's consumer prices and population, into {source_path}")
+    print(f"Embedded the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, and West Germany's consumer prices and population, into {source_path}")
     print(f"  EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY {len(data):5,} values, {data.index[0]:%Y-%m-%d} to {data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_DISCOUNT_RATE_CHANGES     {len(discount_data):5,} changes, {discount_data.index[0]:%Y-%m-%d} to {discount_data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS   {len(west_all):5,} months, {west_all.index[0]:%Y-%m-%d} to {west_all.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_WEST_CPI_FOUR_PERSON      {len(west_four):5,} months, {west_four.index[0]:%Y-%m-%d} to {west_four.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_WEST_POPULATION           {len(west_population):5,} years, {west_population.index[0]:%Y-%m-%d} to {west_population.index[-1]:%Y-%m-%d}")
+    for name, frame in mortgages.items():
+        print(f"  {name:37} {len(frame):5,} months, {frame.index[0]:%Y-%m-%d} to {frame.index[-1]:%Y-%m-%d}")
 
 
 # ---------------------------------------------------------------------------
