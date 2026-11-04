@@ -108,7 +108,7 @@ from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E
 # both policy terms, each nation's own levels, Top and Bottom in a currency.
 CHART_CASES = (
     "default", "c2015", "u_reg_r", "c_lv_r", "uk_rates", "de_rates", "all4", "policy_both", "nat_levels", "nat_fx", "inflation",
-    "constant_pc", "cpi_sa", "population",
+    "constant_pc", "cpi_sa", "population", "real_four",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -2743,6 +2743,39 @@ def check_batch135(check: Check) -> None:
         check("unticked: the regression segments greyed", not enabled(app.flag_boxes["regression"]))
 
 
+def check_batch133(check: Check) -> None:
+    """Batch 13.3: the real yields as terms of their own: each panel offers its nation's, none ticked; a box ticked is written and drawn, dashed, in its nominal term's colour; a real yield alone."""
+    with window(f"--na:ca,us,gb,de -s:2015 --no-gdp --no-debt --no-interest {END}") as w:
+        app = w.app
+
+        def editor(nation: str):
+            return app.choice_editors[f"{nation}:yields"]
+
+        real = {n: [value for value in editor(n).boxes if value.startswith("r")] for n in NATION_KEYS}
+        check("each panel offers its nation's real terms", real == {
+            "cdn": ["r30"], "us": ["r5", "r7", "r10", "r20", "r30"], "uk": ["r5", "r7", "r10", "r20", "r30"], "de": ["r5", "r7", "r10"],
+        }, real)
+        check("none ticked at the start", not any(editor(n).boxes[value].get() for n in NATION_KEYS for value in real[n]))
+        check("a box's caption is its term", str(editor("us").widgets[list(editor("us").boxes).index("r10")].cget("text")) == "r10")
+        check("the row captioned “real:” in each panel", all(
+            any(widget.winfo_class() == "TLabel" and str(widget.cget("text")) == "real:" for widget in all_widgets(editor(n).frame)) for n in NATION_KEYS
+        ))
+        editor("us").boxes["r10"].set(True)
+        editor("us").box_changed("r10")
+        w.settle()
+        config = options.drawn_config(cli.parse_args(["--no-gui", *w.command_tokens()]), "us")
+        check("r10 ticked for the U.S.: written, and drawn with its defaults", config.yield_terms == ("3m", "2y", "5y", "10y", "30y", "r10"), w.command_tokens())
+        check("the others' charts unchanged", "r10" not in options.drawn_config(cli.parse_args(["--no-gui", *w.command_tokens()]), "cdn").yield_terms)
+        lines = {line.get_label(): line for axis in app.figures["us"][0].axes for line in axis.get_lines()}
+        check("drawn dashed, in the nominal 10-year's colour", "10-Year Real Yield" in lines and lines["10-Year Real Yield"].get_linestyle() != "-"
+              and lines["10-Year Real Yield"].get_color() == lines["10-Year Yield"].get_color(), sorted(lines))
+        check("its charts the written line's", w.written_draws_the_same(), w.command_tokens())
+    with window(f"-u --y:r10 -s:2015 --no-gdp --no-debt --no-interest {END}") as w:
+        check("a real yield alone: its box the one ticked", [value for value, variable in w.app.choice_editors["us:yields"].boxes.items() if variable.get()] == ["r10"])
+        check("the title says so", "U.S. Treasury Real Yields" in w.app.figures["us"][0].texts[0].get_text() if w.app.figures["us"][0].texts else False,
+              [text.get_text() for text in w.app.figures["us"][0].texts])
+
+
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
     "reset": check_reset,
@@ -2779,6 +2812,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch132": check_batch132,
     "batch134": check_batch134,
     "batch135": check_batch135,
+    "batch133": check_batch133,
 }
 
 

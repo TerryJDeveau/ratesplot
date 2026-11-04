@@ -86,6 +86,7 @@ from ratesplot.cdn_hist_yields import build_cdn_hist_yields  # noqa: E402
 from ratesplot.de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES  # noqa: E402
 from ratesplot.cdn_archive_data import EMBEDDED_CDN_POPULATION_HISTORY  # noqa: E402
 from ratesplot.config import (  # noqa: E402
+    BOC_FINANCIAL_MARKET_TABLE,
     POPULATION_LABEL,
     PRICE_INDEX_ADJUSTED_LABEL,
     PRICE_INDEX_LABEL,
@@ -94,6 +95,7 @@ from ratesplot.config import (  # noqa: E402
     STATCAN_CDN_CPI_SA_VECTOR,
     STATCAN_CDN_POPULATION_TABLE,
     STATCAN_CDN_POPULATION_VECTOR,
+    YIELD_TERMS,
     nation_by_key,
 )
 from ratesplot.console import this_thread_output_to  # noqa: E402
@@ -183,6 +185,10 @@ CASES: dict[str, list[str]] = {
     "cpi_sa": ["--na:ca,us,gb,de", "-s:1945", "--cpi:sa", "-p", "--no-yield"],
     "population": ["--na:ca,us,gb,de", "-s:1700", "--population", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
     "population_pc": ["--na:ca,us,gb,de", "-s:1960", "--pop", "-p", "--no-yield"],
+    # Batch 13.3: the real yields, each nation's every one; Canada's monthly from 1991, then daily; the UK's
+    # 20-year with its gaps; Germany's worked out here again, from each bond's own answer; and a spread of two.
+    "real_yields": ["--na:ca,us,gb,de", "-s:1985", "--y:r5,r7,r10,r20,r30", "--no-gdp", "--no-debt", "--no-interest"],
+    "real_breakeven": ["--na:us,gb,de", "-s:2012", "--y:10,r10", "--sp:10y-r10", "--no-gdp", "--no-debt", "--no-interest"],
 }
 
 
@@ -267,11 +273,51 @@ def built_in_cdn_yield(column: str) -> Source:
     )
 
 
+def uk_real_curve(column: str) -> Source:
+    """A real yield of the Bank of England's spot curve, from its two files whole, not its bake and recent part (``uk_data.real_spot_series``)."""
+
+    def read() -> pd.Series:
+        return _clean(pd.concat([uk_data.real_curve_archive(), uk_data.real_curve_latest()]).sort_index()[column])
+
+    return Source(f"Bank of England real spot curve, {uk_data.UK_REAL_TERMS[column]} years", read)
+
+
+def de_real_term(column: str) -> Source:
+    """A German real yield worked out here again, a day at a time, from each bond's whole answer: the same rule, not ``de_data.real_yield_at``."""
+    years = de_data.DE_REAL_TERMS[column]
+
+    def read() -> pd.Series:
+        bonds = {isin: _clean(de_data.bundesbank_download(de_data.DE_LINKED_BOND_FLOW, de_data.linked_bond_key(isin))) for isin in de_data.DE_LINKED_BONDS}
+        table = pd.DataFrame(bonds).sort_index().ffill(limit=3)
+        values: dict[pd.Timestamp, float] = {}
+        for day, row in table.iterrows():
+            points = sorted(
+                ((de_data.DE_LINKED_BONDS[isin].redeemed - day).days / 365.25, value)
+                for isin, value in row.items() if pd.notna(value) and (de_data.DE_LINKED_BONDS[isin].redeemed - day).days / 365.25 >= 1.0
+            )
+            below = [point for point in points if point[0] <= years]
+            above = [point for point in points if point[0] >= years]
+            if below and above:
+                (low, first), (high, second) = below[-1], above[0]
+                values[day] = first if high == low else first + (second - first) * (years - low) / (high - low)
+        return pd.Series(values, dtype=float)
+
+    return Source(f"between the inflation-linked bonds, {years:g} years", read)
+
+
 def yield_sources(nation: str, column: str) -> list[Source]:
     """The sources of one nation's yield term, newest first."""
     if nation == "us":
         return [fred(us_data.US_YIELD_SERIES[column])]
     if nation == "cdn":
+        if column == cdn_data.BOC_REAL_RETURN_COLUMN:
+            # The monthly table to 2000 (dated the month's first day, as the Bank of Canada's PDF tables are), then Valet's.
+            monthly = within(
+                statcan(BOC_FINANCIAL_MARKET_TABLE, cdn_data.CDN_REAL_RETURN_VECTOR, "Real Return Bonds", carry_days=MONTHLY_CARRY_DAYS),
+                "StatCan 10-10-0122 (Real Return Bonds) to 2000", end=pd.Timestamp("2001-01-01"),
+            )
+            code = next(code for code, name in cdn_data.BOC_BENCHMARK_COLUMNS.items() if name == column)
+            return [valet_group(cdn_data.BOC_BENCHMARK_GROUP, code), monthly]
         if column == "3-Month":
             live = [valet(cdn_data.BOC_3M_TBILL_SERIES), valet(cdn_data.BOC_3M_AUCTION_SERIES)]
         elif column in cdn_data.BOC_BILL_SERIES:
@@ -284,10 +330,14 @@ def yield_sources(nation: str, column: str) -> list[Source]:
             sources.append(built_in(f"{column} stand-in (term-band average)", cdn_data._YIELD_STAND_INS[column], carry_days=MONTHLY_CARRY_DAYS))
         return sources
     if nation == "uk":
+        if column in uk_data.UK_REAL_TERMS:
+            return [uk_real_curve(column)]
         sources = [iadb(uk_data.UK_YIELD_SERIES[column])]
         if column in uk_data._YIELD_HISTORY:
             sources.append(built_in(f"{column} monthly history", uk_data._YIELD_HISTORY[column], carry_days=MONTHLY_CARRY_DAYS))
         return sources
+    if column in de_data.DE_REAL_TERMS:
+        return [de_real_term(column)]
     sources = [bundesbank(column, "D"), bundesbank(column, "M", carry_days=MONTHLY_CARRY_DAYS)]
     if column in de_data._YIELD_HISTORY:
         sources.append(built_in("yield on public debt securities 1956-2020", de_data._YIELD_HISTORY[column], carry_days=MONTHLY_CARRY_DAYS))
@@ -801,9 +851,8 @@ def _each_point_is(key: str, line: Drawn, expected: pd.Series, config, what: str
 
 
 def _column_of(term: str) -> str:
-    """A spread's term ("10y", "3m") as its yield column ("10-Year", "3-Month")."""
-    number, unit = term[:-1], term[-1]
-    return f"{number}-{'Year' if unit == 'y' else 'Month'}"
+    """A spread's term ("10y", "3m", "r10") as its yield column ("10-Year", "3-Month", "10-Year Real")."""
+    return YIELD_TERMS[term]
 
 
 def main(argv: list[str]) -> int:

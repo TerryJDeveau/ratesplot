@@ -287,6 +287,11 @@ CASES: list[list[str]] = [
     ["--us:population"], ["--popx"], ["--pop", "--cpi"], ["--cpi", "--pop"], ["--pop", "--cpi:sa"], ["--pop", "--cpi", "--no-cpi"],
     ["--pop", "--cpi:sa", "--no-cpi"], ["--cpi", "--pop", "--no-pop"], ["--pop", "--yield"],
     ["--pop", "--reg", "--no-gdp", "--no-debt", "--no-interest"], ["--pop", "-r"], ["--pop", "-p", "--con"],
+    # Batch 13.3: the real yields: r10 and r10y, in any case; each nation's own, a term it lacks refused or left
+    # off; no real term in months or at a term no nation has; a spread of nominal less real; taken out again.
+    ["--y:r10"], ["--y:r10y"], ["--y:R10"], ["--y:10,r10"], ["--y:r5,r7,r10,r20,r30"], ["--y:r3"], ["--y:r3m"], ["--y:r"], ["--y:rr10"],
+    ["--us:y:r5,r30"], ["--cdn:y:r30"], ["--cdn:y:r10"], ["--uk:y:r20"], ["--ger:y:r10", "--na:de"], ["--ger:y:r30", "--na:de"],
+    ["--sp:10y-r10"], ["--us:sp:10-r10"], ["--cdn:sp:30-r30"], ["--y:10,r10", "--no-y:r10"], ["--no-y:r10"],
 ]
 
 
