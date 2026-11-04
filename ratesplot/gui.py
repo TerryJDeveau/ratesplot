@@ -124,6 +124,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 import weakref
 import webbrowser
@@ -241,6 +242,7 @@ from .options import (
 )
 from .plotting import COUNTRIES, Country, build_figure, resolve_start
 from .refresh import Ticker
+from .wait import Figures, Wait
 
 WINDOW_TITLE = "Rates plot: yields, public debt, GDP & interest"
 _SCRIPT_NAME = "ratesplot.py"
@@ -294,6 +296,15 @@ _CELL_GAP_PX = 12
 _TWO_COLUMN_BLOCKS = ("country", "rates", "dates", "canvas", "units", "regression")
 # A date field's width in characters: room for YYYY-MM-DD.
 _DATE_ENTRY_CHARS = 11
+# What the drawings have taught the wait line (batch 35.1), in the settings file.
+WAIT_FIGURES_KEY = "wait_figures"
+# The wait line (batch 35.3): its icon's size and how often it turns; the line
+# is written again each second; the gap between it and the build line.
+_WAIT_ARC_PX = 14
+_WAIT_ARC_MS = 80
+_WAIT_ARC_STEP_DEGREES = 30
+_WAIT_TICK_MS = 1000
+_WAIT_GAP_PX = 10
 # The Preview's note wraps at the column's width, never narrower than this.
 _NOTE_WRAP_PX = 150
 # Terry's wording, 2026-10-08: "Drag pointer", "right/middle click", bars between.
@@ -1042,6 +1053,14 @@ class RatesPlotApp:
         self._hover_key: str | None = None
         self.hover = hover.Controller(self.root.after, self.root.after_cancel, self._show_reading, self._hide_reading)
 
+        # The wait line (batch 35.1, 35.3): what the drawings have taught it, kept
+        # in the settings file; the wait under way; its timers; the icon's angle.
+        self._wait_figures = Figures(state.get(WAIT_FIGURES_KEY))
+        self._wait: Wait | None = None
+        self._wait_after: str | None = None
+        self._arc_after: str | None = None
+        self._arc_angle = 90
+
         # Drawing state.
         self.rendering = False
         self.pending: tuple[PlotConfig, Choices] | None = None
@@ -1137,9 +1156,13 @@ class RatesPlotApp:
         )
         self.paned.grid(row=0, column=0, sticky="nsew")
         self.column, top, panel, pinned = self._build_control_column(self.paned)
-        # The version, small and grey at the column's top left (batch 11.7).
-        self.version_label = ttk.Label(top, text=version_text(), foreground=_VERSION_FOREGROUND, font=("TkDefaultFont", 8))
-        self.version_label.pack(anchor="w", pady=(0, 2))
+        # The version, small and grey at the column's top left (batch 11.7);
+        # right of it, or under it where the column is too narrow, the wait line while a chart is drawn (batch 35.3).
+        head = ttk.Frame(top)
+        head.pack(fill="x", pady=(0, 2))
+        self.version_label = ttk.Label(head, text=version_text(), foreground=_VERSION_FOREGROUND, font=("TkDefaultFont", 8))
+        self.version_label.grid(row=0, column=0, sticky="w")
+        self._build_wait_line(head, background)
         self._build_option_controls(panel)
         self._build_actions(top, panel, pinned)
         self._build_log(panel)
@@ -1582,6 +1605,26 @@ class RatesPlotApp:
         if self.paned.winfo_ismapped():
             self._column_width = self.paned.sash_coord(0)[0]
         return self._column_width
+
+    def _build_wait_line(self, head: ttk.Frame, background: str | None) -> None:
+        """The wait line, not yet shown: a small arc turning beside the words (Terry, 2026-11-03: "some type of 'in progress' spinning icon").
+
+        Tk has no spinner, so the arc is drawn on a canvas and turned by a timer
+        (``_turn_arc``). Tk's labels do not flow either, so where the line goes is
+        worked out again as the column's width and the words change (``_arrange_wait``).
+        """
+        self.wait_row = ttk.Frame(head)
+        self.wait_arc = tk.Canvas(
+            self.wait_row, width=_WAIT_ARC_PX, height=_WAIT_ARC_PX, highlightthickness=0, borderwidth=0, background=background
+        )
+        self.wait_arc.pack(side="left")
+        self._wait_arc_item = self.wait_arc.create_arc(
+            2, 2, _WAIT_ARC_PX - 2, _WAIT_ARC_PX - 2, start=self._arc_angle, extent=270, style="arc", width=2, outline=_VERSION_FOREGROUND
+        )
+        self.wait_text = tk.StringVar()
+        self.wait_label = ttk.Label(self.wait_row, textvariable=self.wait_text, font=("TkDefaultFont", 8))
+        self.wait_label.pack(side="left", padx=(3, 0))
+        head.bind("<Configure>", lambda _event: self._arrange_wait(), add="+")
 
     def _build_actions(self, top: ttk.Frame, panel: ttk.Frame, pinned: ttk.Frame) -> None:
         """Refresh, Reset and "Remember my settings" in the ``top`` bar; the Preview panel in the column; Export chart and Save log file in the ``pinned`` bar."""
@@ -2210,17 +2253,27 @@ class RatesPlotApp:
             # be using the downloads it dropped.
             if config.same_chart(self.target_config) and not force and not self._pending_forced:
                 self.pending = None
+                if self._wait is not None:
+                    self._wait.then = None
                 return
             self.pending = (config, snapshot)
             self._pending_forced = self._pending_forced or force
             self.status.set("Will redraw with the new settings when the current drawing finishes …")
+            if self._wait is not None:  # the drawing queued is part of the wait (batch 35.3)
+                self._wait.then = Wait.of_config(self._wait_figures, config, self._nations_of(config)).whole
             return
         # The hover read-out's box alone draws nothing (batch 11.2, ``PlotConfig.same_chart``).
         if config.same_chart(self.shown_config):
             return
         self._start_render(config, snapshot)
 
-    def _start_render(self, config: PlotConfig, choices: Choices) -> None:
+    @staticmethod
+    def _nations_of(config: PlotConfig) -> list[str]:
+        """The charts ``config`` shows, by key."""
+        return [country.key for country in COUNTRIES if getattr(config, country.show_field)]
+
+    def _start_render(self, config: PlotConfig, choices: Choices, waiting_since: float | None = None) -> None:
+        """Begin drawing ``config`` on a worker thread. ``waiting_since``: a drawing queued, whose wait began with the one before it."""
         self.rendering = True
         self.target_config = config
         self.rendering_choices = choices
@@ -2233,14 +2286,60 @@ class RatesPlotApp:
         key = current_tab([country.key for country in countries], current)
         if key is not None and key != self._current_tab_key():
             self.notebook.select(self.tabs[key])
-        self.status.set("Drawing …")
+        wait = Wait.of_config(self._wait_figures, config, [country.key for country in countries], began=waiting_since)
         # What is really downloaded is logged line by line, and what is
         # reused counted at the end (http.drawing_downloads).
         start = "the automatic start" if config.start is None else f"{config.start:%Y-%m-%d}"
         self._append_log(f"--- drawing {config.width_px}x{config.height_px}, {start} to {config.end:%Y-%m-%d}\n")
-        threading.Thread(target=self._render_worker, args=(config, countries), daemon=True).start()
+        if waiting_since is not None and time.monotonic() - waiting_since >= 1.0:  # as the page's log says it
+            self._append_log(f"Waited {time.monotonic() - waiting_since:.0f} s for an earlier drawing.\n")
+        self._show_wait(wait)
+        threading.Thread(target=self._render_worker, args=(config, countries, wait), daemon=True).start()
 
-    def _render_worker(self, config: PlotConfig, countries: list[Country]) -> None:
+    # -- the wait line (batch 35.3) -------------------------------------------
+
+    def _show_wait(self, wait: Wait) -> None:
+        """Show ``wait``'s line and start its timers (or carry on with them, a queued drawing following the one before)."""
+        self._wait = wait
+        if self._wait_after is None:
+            self._tick_wait()
+        if self._arc_after is None:
+            self._turn_arc()
+
+    def _tick_wait(self) -> None:
+        """Write the line, each second; ``wait.Wait.line`` holds its figure steady."""
+        self._wait_after = None
+        if self._wait is None:
+            return
+        self.wait_text.set(self._wait.line())
+        self._arrange_wait()
+        self._wait_after = self.root.after(_WAIT_TICK_MS, self._tick_wait)
+
+    def _turn_arc(self) -> None:
+        """Turn the icon one step (a canvas's arc: Tk has no spinner)."""
+        self._arc_angle = (self._arc_angle - _WAIT_ARC_STEP_DEGREES) % 360
+        self.wait_arc.itemconfigure(self._wait_arc_item, start=self._arc_angle)
+        self._arc_after = self.root.after(_WAIT_ARC_MS, self._turn_arc)
+
+    def _end_wait(self) -> None:
+        """Take the line away: the drawing has ended and nothing is queued."""
+        self._wait = None
+        for after_id in (self._wait_after, self._arc_after):
+            if after_id is not None:
+                self.root.after_cancel(after_id)
+        self._wait_after = self._arc_after = None
+        self.wait_row.grid_remove()
+
+    def _arrange_wait(self) -> None:
+        """Put the line right of the build line, or under it where the column is too narrow (Terry: "wrapping down to the line under if the panel is narrow")."""
+        if self._wait is None:
+            return
+        head = self.wait_row.master
+        fits = self.version_label.winfo_reqwidth() + _WAIT_GAP_PX + self.wait_row.winfo_reqwidth() <= head.winfo_width()
+        place = {"row": 0, "column": 1, "padx": (_WAIT_GAP_PX, 0)} if fits else {"row": 1, "column": 0, "padx": (0, 0)}
+        self.wait_row.grid(sticky="w", **place)
+
+    def _render_worker(self, config: PlotConfig, countries: list[Country], wait: Wait) -> None:
         """Worker thread: draw each country to PNG bytes and post them. Never touches Tk.
 
         A blank Start is found first, once for all the charts (``resolve_start``).
@@ -2252,17 +2351,21 @@ class RatesPlotApp:
         the status line, once the drawing's log has its warning.
         """
         with this_thread_output_to(lambda text: self.messages.put(("log", text))), http.drawing_downloads() as downloads:
+            wait.began_work(downloads)
             try:
                 drawn = resolve_start(config)
             except Exception as exc:  # reported in the window and log, never swallowed
                 why, trace = http.not_drawn(exc)
                 self.messages.put(("failed", config, why, trace, http.not_drawn_line("the charts", why)))
                 return
+            wait.start_ended()
             not_drawn: dict[str, str] = {}
             for country in countries:
+                wait.chart_begun(country.key)
                 try:
                     figure = build_figure(country, drawn)
                 except Exception as exc:  # that chart alone; reported in the window and log
+                    wait.chart_ended(False)
                     # One line for a source not answering; the traceback too for anything else (batch 19.4).
                     why, trace = http.not_drawn(exc)
                     not_drawn[country.key] = why
@@ -2273,8 +2376,10 @@ class RatesPlotApp:
                 # Measured after savefig, so the axes positions are the final rendered ones.
                 geometry = ChartGeometry.from_figure(figure, drawn)
                 lines = hover.chart_lines(figure)  # where the lines run, for the hover read-out (batch 11.2)
+                wait.chart_ended(True)
                 # The figure goes too, for Export chart; this thread does not touch it again.
                 self.messages.put(("chart", country.key, png, geometry, figure, drawn, lines))
+        wait.finished()
         self.messages.put(("done", config, drawn, not_drawn, downloads.copies_used()))
 
     def _poll(self) -> None:
@@ -2368,10 +2473,13 @@ class RatesPlotApp:
         else:
             self.status.set(f"Drawing failed: {error} (details in the message log)")
             self.status_label.configure(foreground=_ERROR_FOREGROUND)
+        self._update_view_buttons()  # the date buttons go by the chart drawn (35.4)
         pending, self.pending = self.pending, None
         forced, self._pending_forced = self._pending_forced, False
         if pending is not None and (not pending[0].same_chart(self.shown_config) or forced):
-            self._start_render(*pending)
+            self._start_render(*pending, waiting_since=self._wait.began if self._wait is not None else None)
+        else:
+            self._end_wait()
 
     # -- preview ------------------------------------------------------------
 
@@ -3015,6 +3123,8 @@ class RatesPlotApp:
                 "monitor": _window_monitor(geometry),
                 # Where the save dialogs open next (batch 11.5; frontend.save_dialog_folder).
                 "save_folder": self._save_folder,
+                # What the drawings have taught the wait line (batch 35.1), kept whatever the box says, as the layout is.
+                WAIT_FIGURES_KEY: self._wait_figures.to_saved(),
             }
         )
         if error is not None:
@@ -3025,7 +3135,7 @@ class RatesPlotApp:
         # Every callback still waiting, or it fires after the window is gone
         # ("invalid command name ..."): the poll, and a view refresh after a
         # resize, a redraw after typing, or a zoom after the wheel stops.
-        pending = [self._poll_id, self._text_after_id, self._auto_after_id, *self._resize_after_ids.values()]
+        pending = [self._wait_after, self._arc_after, self._poll_id, self._text_after_id, self._auto_after_id, *self._resize_after_ids.values()]
         if self._wheel is not None:
             pending.append(self._wheel["after"])
         for after_id in pending:
