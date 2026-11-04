@@ -341,8 +341,13 @@ def _cell(value: object) -> object:
 def xlsx_bytes(sheets: Sequence[tuple[str, ChartData]]) -> bytes:
     """A workbook with a sheet for each ``(sheet name, data)``: dates as dates shown YYYY-MM-DD, numbers as numbers."""
     from openpyxl import Workbook  # only when a workbook is written: the page installs it, the rest need not
-    from openpyxl.styles import Font
+    from openpyxl.styles import Alignment, Font
 
+    # Rows 3 and 4, the columns' names and units, right-justified over the dates
+    # and numbers Excel puts on the right (Terry, 2026-11-03, 37.3). Wrapped: a
+    # text wider than its column (the widths stop at 40 characters) with a
+    # neighbour beside it would otherwise lose its start.
+    heads = Alignment(horizontal="right", wrap_text=True)
     book = Workbook()
     book.remove(book.active)
     for sheet_name, data in sheets:
@@ -350,9 +355,12 @@ def xlsx_bytes(sheets: Sequence[tuple[str, ChartData]]) -> bytes:
         for row in _table(data):
             sheet.append([_cell(value) for value in row])
         sheet["A1"].font = Font(bold=True)
+        for row in sheet.iter_rows(min_row=3, max_row=4):
+            for cell in row:
+                cell.alignment = heads
         for cell in sheet["A"][4:]:
             cell.number_format = "yyyy-mm-dd"
-        sheet.column_dimensions["A"].width = 13
+        sheet.column_dimensions["A"].width = 15  # 13 made Excel wrap "(YYYY-MM-DD)", row 4 opening twice as high
         for column in range(2, len(data.names) + 2):
             sheet.column_dimensions[sheet.cell(row=3, column=column).column_letter].width = max(12, min(40, len(data.names[column - 2]) + 2))
         sheet.freeze_panes = "B5"

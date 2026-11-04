@@ -214,6 +214,13 @@ def check_save(check, name: str) -> None:
         header = rows[0][0] == data.title and rows[2][1:] == data.names and rows[3][0] == "(YYYY-MM-DD)"
         dates = [row[0] for row in rows[4:]] == [date.to_pydatetime() for date in data.dates]
         styled = all(cell.number_format == "yyyy-mm-dd" for cell in sheet["A"][4:])
+        # Batch 37.3: rows 3 and 4 right-justified, wrapped so a long name keeps its start; rows 1 and 2 and the values as they were.
+        heads = [cell for row in sheet.iter_rows(min_row=3, max_row=4) for cell in row]
+        check(f"{name}: sheet {title}: each of the {len(heads)} cells of rows 3 and 4 right-justified and wrapped, rows 1 and 2 not",
+              len(heads) == 2 * (1 + len(data.names)) and all(cell.alignment.horizontal == "right" and cell.alignment.wrap_text for cell in heads)
+              and all(sheet[cell].alignment.horizontal is None for cell in ("A1", "A2", "A5", "B5"))
+              and sheet.column_dimensions["A"].width >= 15,  # at 13 Excel wrapped "(YYYY-MM-DD)" (seen in Excel, 2026-11-04)
+              [(cell.coordinate, cell.alignment.horizontal, cell.alignment.wrap_text) for cell in heads][:4])
         # Each number to the CSV's 15 digits, exactly (export._cell).
         values = all(
             tuple(row[1:1 + len(data.names)]) == tuple(None if v is None else float(format(v, f".{DIGITS}g")) for v in values)
