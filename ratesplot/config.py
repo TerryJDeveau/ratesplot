@@ -394,6 +394,13 @@ BUNDESBANK_DATA_URL = "https://api.statistiken.bundesbank.de/rest/data/{flow}/{k
 # The Bundesbank's old download, where the series of its former database
 # (BBK01) that were never moved to the new one are kept, frozen at 2020-04.
 BUNDESBANK_OLD_SERIES_URL = "https://www.bundesbank.de/statistic-rmi/StatisticDownload"
+# The Federal Statistical Office's long series of consumer prices from 1948,
+# its last edition (December 2022), read by the German bake alone (batch 16).
+# Its robots.txt asks for 30 s between requests; the bake asks once.
+DESTATIS_CPI_LONG_SERIES_URL = (
+    "https://www.destatis.de/DE/Themen/Wirtschaft/Preise/Verbraucherpreisindex/Publikationen/"
+    "Downloads-Verbraucherpreise/verbraucherpreisindex-lange-reihen-xlsx-5611103.xlsx?__blob=publicationFile"
+)
 ECB_SERIES_URL = "https://data-api.ecb.europa.eu/service/data/{flow}/{key}"
 EUROSTAT_DATASET_URL = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/{dataset}"
 DE_ARCHIVE_BEGIN_MARKER = "# BEGIN AUTO-GENERATED GERMAN ARCHIVE DATA"

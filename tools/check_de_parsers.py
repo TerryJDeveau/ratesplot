@@ -50,6 +50,8 @@ import tempfile
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
+import numpy as np
+import openpyxl
 import pandas as pd
 import requests
 
@@ -159,6 +161,50 @@ def check_discount_rate() -> None:
     altered = text("bbin1_BBKDIS.csv").replace("Comment on 1995-08: From 25 August 3.50%", "Comment on 1995-08: From 25 August 3.75%")
     check("discount rate: a comment that disagrees with the month-end values is refused",
           raises(bake.parse_bundesbank_change_days, altered) is not None)
+
+
+def check_west_prices() -> None:
+    """Batch 16: West Germany's consumer prices, read from the Federal Statistical Office's workbook (saved 2026-11-04), and the joins."""
+    workbook = openpyxl.load_workbook(RAW / "destatis_vpi_lange_reihen.xlsx", read_only=True, data_only=True)
+    read = bake.parse_west_german_prices(workbook)
+    west, four = read["all_households"], read["four_person"]
+    check("West prices: all private households 1962-01 to 1991-01, every month, 32.7 and 87.3",
+          len(west) == 349 and west.index[0] == pd.Timestamp("1962-01-01") and west.iloc[0] == 32.7
+          and west.index[-1] == pd.Timestamp("1991-01-01") and west.iloc[-1] == 87.3, (len(west), west.iloc[0], west.iloc[-1]))
+    check("West prices: four-person households 1948-06 to 1962-01, every month, 25.8 and 33.1",
+          len(four) == 164 and four.index[0] == pd.Timestamp("1948-06-01") and four.iloc[0] == 25.8
+          and four.index[-1] == pd.Timestamp("1962-01-01") and four.iloc[-1] == 33.1, (len(four), four.iloc[0], four.iloc[-1]))
+    for name, values, rows in (("all private households", west, de_archive_data.EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS),
+                               ("four-person households", four, de_archive_data.EMBEDDED_DE_WEST_CPI_FOUR_PERSON)):
+        baked_values = pd.Series({pd.Timestamp(date): value for date, value in rows})
+        check(f"bake: the baked {name} are the workbook's", baked_values.equals(values.rename(None)), (len(baked_values), len(values)))
+    moved = dict(bake._DE_WEST_CPI_COLUMNS)
+    with_moved_column = {**moved, "all_households": (5, *moved["all_households"][1:])}
+    bake._DE_WEST_CPI_COLUMNS = with_moved_column
+    check("West prices: a column whose heading is not the one measured is refused", raises(bake.parse_west_german_prices, workbook) is not None)
+    bake._DE_WEST_CPI_COLUMNS = moved
+    begins_elsewhere = {**moved, "four_person": (*moved["four_person"][:2], pd.Timestamp("1948-07-01"), moved["four_person"][3])}
+    bake._DE_WEST_CPI_COLUMNS = begins_elsewhere
+    check("West prices: an index beginning elsewhere than measured is refused", raises(bake.parse_west_german_prices, workbook) is not None)
+    bake._DE_WEST_CPI_COLUMNS = moved
+    workbook.close()
+    # The joins, on a made-up index for all of Germany from 1991-01 at twice the source's 87.3.
+    months = pd.date_range("1991-01-31", periods=24, freq="ME")
+    unified = pd.Series(np.arange(174.6, 174.6 + 24), index=months, name="made up")
+    joined = de_data.with_west_germany(unified)
+    check("join: the index for all of Germany is unchanged from its first month", joined.loc[months].equals(unified), joined.loc[months].head(2).to_dict())
+    check("join: West Germany's keeps its own rise across 1990-12 to 1991-01 (87.3 over 86.7)",
+          abs(joined.loc["1991-01-31"] / joined.loc["1990-12-31"] - 87.3 / 86.7) < 1e-12, joined.loc["1990-12-31"])
+    check("join: all private households scaled by the one factor, 2 in this case", abs(joined.loc["1962-01-31"] - 2 * 32.7) < 1e-9, joined.loc["1962-01-31"])
+    check("join: the four-person households keep their own rise to 1962-01 (33.1 over 32.9 in 1961-12)",
+          abs(joined.loc["1962-01-31"] / joined.loc["1961-12-31"] - 33.1 / four.loc["1961-12-01"]) < 1e-12, joined.loc["1961-12-31"])
+    check("join: every month from 1948-06, none twice",
+          joined.index.equals(pd.date_range("1948-06-30", months[-1], freq="ME")), (joined.index[0], len(joined)))
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        alone = de_data.with_west_germany(pd.Series([1.0], index=pd.DatetimeIndex(["1999-01-31"]), name="made up"))
+    check("join: an index beginning where West Germany's is not kept is returned alone, with a warning",
+          len(alone) == 1 and "where West Germany's are not kept" in printed.getvalue(), (len(alone), printed.getvalue()))
 
 
 def check_ecb() -> None:
@@ -345,7 +391,7 @@ def check_cnbc() -> None:
 
 
 def main() -> int:
-    for group in (check_bundesbank, check_discount_rate, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
+    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
         group()
     passed = sum(RESULTS)
     print(f"[de parsers] {passed} of {len(RESULTS)} checks passed")
