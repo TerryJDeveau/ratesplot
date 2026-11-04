@@ -72,6 +72,8 @@ options           the option table, value parsers/formatters, choices <-> PlotCo
 frontend          what the window and the web page share without a GUI toolkit: starting
                   choices, remembered settings, each nation's own controls, option
                   help, PNG bytes and file names
+monitors          a window kept on its monitor (batch 39): the monitors, the corner that
+                  suits, the factor that fits; no tkinter (the window is handed in)
 gui               the interactive window (default; --no-gui for plain matplotlib windows)
 web               the web page (Streamlit; streamlit_app.py): the same charts in a browser
 cli               argument parsing (driven by the options table) and main()
@@ -90,7 +92,7 @@ plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
 regression -> occupancy; options -> config; {plotting, legend, options, cli,
 gui, web} -> export -> config; {plotting, gui, web} -> hover -> {export, legend};
-{plotting, cli, gui, web} -> refresh -> {latest, http, config}. Data modules never import
+{plotting, cli, gui, web} -> refresh -> {latest, http, config}; {plotting, gui} -> monitors. Data modules never import
 plotting. Nothing imports web or gui, and cli imports gui only when the
 window is opened, so --no-gui and the web page never load tkinter.
 """
@@ -100,4 +102,4 @@ window is opened, so --no-gui and the web page never load tkinter.
 # build, in a commit of its own made before the push (the daily data job's commits leave it). It counts from 0 at
 # the first work on batch 11: its four pushes of 2026-10-27 made 6.4. Shown with the commit the program was
 # started from (frontend.version_text).
-__version__ = "7.7"
+__version__ = "7.8"

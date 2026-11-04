@@ -46,8 +46,10 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   To run it on your own machine: `streamlit run streamlit_app.py`.
 - **The desktop window** (`ratesplot/gui.py`): `python ratesplot.py`. It has the page's ways of
   moving the dates, and remembers your last settings: each command window
-  its own, so several windows can be open at once; a window whose monitor has gone comes back
-  at its size on another. Untick "Remember my settings" (on the page too) to draw other charts
+  its own, so several windows can be open at once. While the monitors are those it was saved with,
+  it comes back as you left it, across several if it was stretched so; when they have changed, one
+  that no longer fits is moved to the corner that suits and shrunk, keeping its shape, only if it
+  cannot fit there at all, and one whose monitor has gone goes to the nearest. Untick "Remember my settings" (on the page too) to draw other charts
   without replacing the settings kept; it is ticked again at every start. Under its command line
   is the same chart's address on the web page, each with its own Copy, and Go opens it in the
   browser. As it opens, the window gives the keyboard back to the window it was started from; a
@@ -60,7 +62,9 @@ to a pull request from the branch `rebake-review`, and merging it accepts the ch
   While a chart is drawn, the page (above the charts) and the window (beside the build line) say
   how much longer it should take, from what the drawings before it took, and how long it has taken so far.
 - **The command line**: `python ratesplot.py --no-gui [options]`, or any options with the
-  window. `python ratesplot.py --help` lists them all; the web page shows the same list.
+  window. `python ratesplot.py --help` lists them all; the web page shows the same list. A plain
+  window at the default size too large for its monitor is moved to the corner that suits, and its
+  chart drawn at the size that fits; a size given with `--dim` is kept.
 
 All three draw the same charts from the same code (`plotting.build_figure`).
 
@@ -266,7 +270,7 @@ against the lines drawn, `check_refresh.py`, the automatic refresh's rules and t
 writes again, `check_last_good.py`, the charts drawn from the
 last good copies with every source cut off, `check_requests.py`, which failed requests are
 asked again and when a source is asked nothing more, against a server on the same machine,
-`check_help.py`, the help beside each control: its texts, its topics' files, and a reason given
+`check_monitors.py`, a window kept on its monitor, `check_help.py`, the help beside each control: its texts, its topics' files, and a reason given
 exactly where a control is greyed, and
 `check_baked.py`, the built-in history's files and how a drawing joins them to what it asks for)
 and the bake of the historical data (`bake_archives.py`), which also writes `ratesplot/data/`:

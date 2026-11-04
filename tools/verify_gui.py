@@ -98,7 +98,7 @@ import synthetic_sources  # noqa: E402
 from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
 
 import ratesplot  # noqa: E402
-from ratesplot import cli, export, frontend, gui, hover, http, options, wait  # noqa: E402
+from ratesplot import cli, export, frontend, gui, hover, http, monitors, options, wait  # noqa: E402
 from ratesplot.axes import format_yield  # noqa: E402
 from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
@@ -2451,10 +2451,10 @@ def check_batch31(check: Check) -> None:
         root.update()
         topic = app.topic_windows["debt"]
         outer = gui._outer_rect(topic.winfo_width(), topic.winfo_height(), topic.winfo_x(), topic.winfo_y(), gui._window_frame())
-        real = gui._monitor_work_areas()
-        mine = gui._monitor_of(gui._outer_rect(*map(int, gui._GEOMETRY_PATTERN.match(root.geometry()).groups()),
+        real = monitors.monitor_work_areas()
+        mine = monitors.monitor_of(gui._outer_rect(*map(int, gui._GEOMETRY_PATTERN.match(root.geometry()).groups()),
                                                 gui._window_frame()), real) if real else None
-        check("More's window opened on the window's monitor", mine is None or gui._monitor_of(outer, real) == mine, (outer, mine))
+        check("More's window opened on the window's monitor", mine is None or monitors.monitor_of(outer, real) == mine, (outer, mine))
         topic.destroy()
 
     with window(f"-c -s:2001 {END}", size=placed("1728x640")) as w:
@@ -2594,11 +2594,11 @@ def check_batch30(check: Check) -> None:
         check("its ⓘ: the tip, why it is greyed, and More", key == "cdn:master" and "Master currency:" in tip
               and reason == "Greyed because % of GDP is in effect, and a share of GDP is in no currency.", app.info_shown)
         # Found 2026-10-29 by Terry: on a monitor above the primary the panel came up on the primary's top edge.
-        areas = gui._monitor_work_areas()
+        areas = monitors.monitor_work_areas()
         panel = app.info_panel
         panel_rect = (panel.winfo_rootx(), panel.winfo_rooty(), panel.winfo_rootx() + panel.winfo_width(), panel.winfo_rooty() + panel.winfo_height())
         root_rect = (root.winfo_rootx(), root.winfo_rooty(), root.winfo_rootx() + root.winfo_width(), root.winfo_rooty() + root.winfo_height())
-        check("the ⓘ's panel on the window's own monitor", not areas or gui._monitor_of(panel_rect, areas) == gui._monitor_of(root_rect, areas),
+        check("the ⓘ's panel on the window's own monitor", not areas or monitors.monitor_of(panel_rect, areas) == monitors.monitor_of(root_rect, areas),
               (panel_rect, root_rect))
         more = next(widget for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton" and widget.cget("text") == "More")
         more.invoke()
@@ -2619,6 +2619,72 @@ def check_batch30(check: Check) -> None:
         w.settle()
         check("Reset: no master, none ticked", not any(ticked for ticked, _greyed in ticks().values())
               and not any(t.startswith("--master") for t in w.command_tokens()), ticks())
+
+
+def check_batch39(check: Check) -> None:
+    """Batch 39: a window opened from what is remembered, on the real monitors: as it was while they are the same; moved and shrunk when not."""
+    real_areas, real_bounds = monitors.monitor_work_areas(), monitors.monitor_bounds()
+    if not real_areas:
+        check("no monitors known (not Windows): nothing to check", True)
+        return
+    frame = gui._window_frame()
+    home = monitors.monitor_of((PLACE[0], PLACE[1], PLACE[0] + 100, PLACE[1] + 100), real_areas)
+
+    def opened(state: dict) -> tuple[str, str, tuple[int, int, int, int]]:
+        """The geometry a real window is given from ``state``, what it reads back, and its real rectangle by its frame."""
+        root = tk.Tk()
+        try:
+            geometry = gui._initial_geometry(root, state)
+            root.geometry(geometry)
+            for _ in range(10):
+                root.update()
+            match = gui._GEOMETRY_PATTERN.match(root.geometry())
+            return geometry, root.geometry(), gui._outer_rect(*map(int, match.groups()), frame)
+        finally:
+            root.destroy()
+
+    # The monitors unchanged: a window across the edge of the monitor stays as it was (the ruling of 2026-10-12).
+    wide = f"{home[2] - home[0] + 400}x700+{home[0] + 100}+{home[1] + 100}"
+    same = {"geometry": wide, "monitor": list(home), "monitors": [list(rect) for rect in real_bounds]}
+    geometry, shown, _outer = opened(same)
+    check("the monitors unchanged: a window wider than its monitor opens as it was", geometry == wide and shown == wide, (wide, geometry, shown))
+    geometry, shown, _outer = opened({"geometry": wide, "monitor": list(home)})
+    check("settings of before batch 39, its monitor there: as it was", geometry == wide and shown == wide, (wide, geometry, shown))
+
+    # The monitors said to be others: moved, then shrunk, on the monitor holding most of it, the real window where it is told.
+    changed = {**same, "monitors": [[0, 0, 640, 480]]}
+    geometry, shown, outer = opened(changed)
+    check("the monitors changed: the window told is the window shown", geometry == shown, (geometry, shown))
+    check("... all of it on its monitor", outer[0] >= home[0] and outer[1] >= home[1] and outer[2] <= home[2] and outer[3] <= home[3], (outer, home))
+    width, height = map(int, gui._GEOMETRY_PATTERN.match(shown).groups()[:2])
+    check("... its shape kept, within a pixel", abs(width / height - (home[2] - home[0] + 400) / 700) < 2 * width / height / height, shown)
+    check("... shrunk only as far as that: its width fills the monitor", outer[2] - outer[0] >= home[2] - home[0] - 1, (outer, home))
+
+    # A window that fits, the monitors changed: left as it is.
+    fits = f"800x600+{home[0] + 100}+{home[1] + 100}"
+    geometry, shown, _outer = opened({"geometry": fits, "monitor": list(home), "monitors": [[0, 0, 640, 480]]})
+    check("the monitors changed, a window that fits: as it was", geometry == fits and shown == fits, (fits, geometry, shown))
+
+    # What the window saves, read back: the monitors, and so the same window at the next start.
+    with window("-c -s:2020", placed("900x600")) as w:
+        w.app.remember.set(True)
+        w.app._remember()
+        state, _note, _path = frontend.load_state()
+    check("the settings hold every monitor", sorted(tuple(rect) for rect in state.get("monitors", [])) == sorted(real_bounds), state.get("monitors"))
+    check("... and the window's own, as before", state.get("monitor") == list(home), state.get("monitor"))
+    geometry, shown, _outer = opened(state)
+    check("the next start from them: the same size and place", geometry == placed("900x600") and shown == geometry, (geometry, shown))
+    # Maximized, the monitors changed: its normal size and place are the ones fitted (run_gui zooms it on that monitor).
+    root = tk.Tk()
+    try:
+        root.geometry(gui._initial_geometry(root, changed))
+        root.state("zoomed")
+        for _ in range(10):
+            root.update()
+        check("maximized from the moved window: on that monitor", monitors.monitor_of((root.winfo_rootx(), root.winfo_rooty(), root.winfo_rootx() + 100, root.winfo_rooty() + 100), real_areas) == home,
+              root.geometry())
+    finally:
+        root.destroy()
 
 
 # The groups in the order they run; --group picks some by these names.
@@ -2944,6 +3010,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch135": check_batch135,
     "batch133": check_batch133,
     "batch35": check_batch35,
+    "batch39": check_batch39,
 }
 
 

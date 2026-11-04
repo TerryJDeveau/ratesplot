@@ -66,6 +66,7 @@ from .config import (
     DATE_COLUMN,
     DEFAULT_START_FLOOR,
     DAILY_YIELD_GAP,
+    DEFAULT_CANVAS_PX,
     DEFAULT_YIELD_TERMS,
     EARLIEST_DATA_START,
     MACRO_PLOT_STYLES,
@@ -111,6 +112,7 @@ from .endlabels import ValueFormatter
 from .export import INDEX_AXIS, MACRO_AXIS, POPULATION_AXIS, YIELD_AXIS, mark_amounts_currency, mark_price_base, mark_series
 from .frames import filter_to_date_range
 from .fx import Rate, rate
+from . import monitors
 from .hover import attach as attach_hover
 from .hover import detach as detach_hover
 from .hover import mark as mark_reading
@@ -838,6 +840,37 @@ def _place_outside(ax_extra: Axes, ax_macro: Axes, config: PlotConfig) -> None:
     ax_extra.spines["right"].set_position(("outward", max(width_pt, 0.0) + EXTRA_AXIS_GAP_PT * config.font_scale))
 
 
+def _kept_on_its_monitor(figure: Figure, config: PlotConfig) -> PlotConfig:
+    """Show a plain window at the default size on its monitor; return the config to draw its chart with (batch 39).
+
+    Terry, 2026-11-03, of NG_analysis's charts, "as ratesplot, but shrink any
+    dimension (preserving aspect) that would blow past the monitor edge, after
+    moving to the optimum corner first. Probably should ask for this change in
+    ratesplot too." The default canvas on a monitor of 2160 px at 125 % needs
+    2560 px (matplotlib scales the figure by the monitor's). A plain window is
+    never remembered, so only its default size is in question.
+
+    The window is shown before its chart is drawn, to see where it opens and at
+    what scale, and a chart too large is drawn at the size that fits rather than
+    the window made smaller afterwards: a layout is made once, for one size (in
+    NG_analysis the axis label was clipped). A size given with ``-dim`` is kept as
+    asked for; ``-dim`` naming the default size itself cannot be told from it.
+    Only Tk's windows, this program's own default: another backend's, or Agg's
+    none, is left as it comes.
+    """
+    manager = figure.canvas.manager
+    window = getattr(manager, "window", None)
+    if (config.width_px, config.height_px) != DEFAULT_CANVAS_PX or not hasattr(window, "winfo_rootx"):
+        return config
+    manager.show()
+    scale = monitors.fit_window(window, figure.canvas.get_tk_widget())
+    if scale >= 1.0:
+        return config
+    config = replace(config, width_px=round(config.width_px * scale), height_px=round(config.height_px * scale))
+    figure.set_size_inches(*config.figsize_inches, forward=True)
+    return config
+
+
 def plot_country(
     yields: pd.DataFrame,
     macro: pd.DataFrame,
@@ -854,6 +887,7 @@ def plot_country(
     prepared again (``refresh.attach``), until the window is closed.
     """
     figure, ax_yield = plt.subplots(figsize=config.figsize_inches)
+    config = _kept_on_its_monitor(figure, config)
     draw_country(ax_yield, yields, macro, rates, config, metadata, draw_yield_lines)
     if config.hover:
         attach_hover(figure)
@@ -861,7 +895,9 @@ def plot_country(
     def draw_again(prepared: Prepared) -> None:
         detach_hover(figure)
         figure.clear()
-        draw_country(figure.subplots(), *prepared, metadata, draw_yield_lines)
+        # At the size this window's chart was drawn at (_kept_on_its_monitor): the config comes from the command line again.
+        drawn = replace(prepared[3], width_px=config.width_px, height_px=config.height_px)
+        draw_country(figure.subplots(), *prepared[:3], drawn, metadata, draw_yield_lines)
         if prepared[3].hover:
             attach_hover(figure)
         figure.canvas.draw_idle()
