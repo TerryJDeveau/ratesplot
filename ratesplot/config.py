@@ -1670,6 +1670,11 @@ class PlotConfig:
     # neither given, has it there. The window and the page keep False, having no
     # control for it, and write it in their command line and address (Terry, 2026-11-03).
     version: bool | None = None
+    # --rem and --no-rem (batch 38.1; Terry, 2026-11-03): "Remember my settings"
+    # at the start of the window or a visit (frontend.remember_at_start), and,
+    # True on a run with no window, the choices written to the settings the
+    # window would read (cli.main). None, neither given. No chart reads it.
+    remember: bool | None = None
     # Open the interactive window (ratesplot.gui) rather than plain matplotlib windows.
     gui: bool = True
     # --save:FILE (batch 11.1): write the charts to FILE, the format by its

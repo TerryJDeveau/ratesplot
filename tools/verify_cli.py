@@ -296,6 +296,10 @@ CASES: list[list[str]] = [
     ["-v"], ["v"], ["-V"], ["-v:1"], ["-v", "-c"], ["--no-v"], ["--no-ver"], ["--no-version"], ["--NO-VER"], ["--no-ver:1"],
     ["-v", "--save:r.png"], ["--ver", "--save:r.csv"], ["--no-ver", "--save:r.xlsx"], ["--no-ver", "-v"], ["-v", "--no-ver"],
     ["--us:v"], ["--us:no-ver"],
+    # Batch 38.1: --rem, at least "rem" ("--re" stays -r, "--reg" the regression segments), a flag, so no value and
+    # no nation's own; the last given winning; nothing drawn differently.
+    ["--rem"], ["rem"], ["--remember"], ["--REM"], ["--no-rem"], ["--no-remember"], ["--re"], ["--rem:1"], ["--remx"],
+    ["--rem", "--no-rem"], ["--no-rem", "--rem"], ["--rem", "--save:r.png"], ["--no-rem", "--no-gui"], ["--us:rem"],
     # Batch 38.2, the series rule: every switch and every value naming one, beside another; what names nothing.
     ["--gdp", "--policy"], ["--debt", "--mo:5"], ["--interest", "--sp"], ["--yield", "--inf"], ["--gdp", "--cpi"], ["--gdp", "--pop"],
     ["--gdp", "--y:2,10"], ["--gdp", "--agg:net"], ["--gdp", "--prime:0.5"], ["--gdp", "--tracker:2"], ["--gdp", "--cpi:sa"], ["--gdp", "--d:fp"],

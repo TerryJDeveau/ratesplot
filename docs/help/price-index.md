@@ -28,4 +28,4 @@ Each source's figures are kept in the program as the source published them. A jo
 
 ## On the command line
 
-`--cpi`, at least `--cp`, the index not seasonally adjusted; `--cpi:sa` the adjusted one, which turns `--cpi` on. `--no-cpi` takes it off. `--cpi` and `--population` together are refused.
+`--cpi`, at least `--cp`, the index not seasonally adjusted; `--cpi:sa` the adjusted one, which turns `--cpi` on. `--no-cpi` takes it off. `--cpi` and `--population` together are refused. As a series, `--cpi` alone draws the index alone: [Command line](?help=command-line).

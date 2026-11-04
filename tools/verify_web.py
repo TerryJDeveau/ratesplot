@@ -2346,6 +2346,81 @@ def saved_subtitles(at: AppTest) -> dict[str, list[str]]:
     return rows
 
 
+def check_batch38(check: Check) -> None:
+    """Batch 38: an address names its series alone; the box at a visit's start; a reload told from a link; a cookie kept under the former rule."""
+    chart = "-c -s:2015 --e:2026-09-01"
+
+    def box(at: AppTest) -> bool:
+        return at.checkbox(key="remember").value
+
+    def curves(at: AppTest) -> list[str]:
+        return [name for name in ("gdp", "debt", "interest", "yield", "policy") if at.checkbox(key=f"flag:{name}").value]
+
+    at = new_page(chart)
+    check("an address naming no series: the box ticked, the cookie not asked for, the four curves", not at.exception and box(at) and curves(at) == ["gdp", "debt", "interest", "yield"]
+          and not reader_asked(at), (curves(at), address(at)))
+    at = new_page(f"--no-rem {chart}")
+    check("--no-rem: the box unticked, the same chart, no word of it in the address", not at.exception and not box(at) and curves(at) == ["gdp", "debt", "interest", "yield"]
+          and "rem" not in address(at) and memory(at)["remember"] is False, address(at))
+
+    named = f"--policy {chart}"
+    at = new_page(named)
+    check("an address naming a series, nothing remembered here: the policy rate alone, the box unticked", not at.exception and curves(at) == ["policy"] and not box(at)
+          and charts_shown(at) == 1 and memory(at)["remember"] is False, (curves(at), box(at)))
+    written = address(at)
+    check("... the address writes it short", written == "--C --policy --start:2015 --end:2026-09-01", written)
+    at = new_page(named, heard=None)
+    check("... which waits to hear the settings remembered, and draws nothing yet", not at.exception and reader_asked(at) and charts_shown(at) == 0)
+    at = new_page(f"--rem {named}", heard=None)
+    check("--rem: the box ticked, asking for nothing", not at.exception and box(at) and charts_shown(at) == 1 and not reader_asked(at) and "rem" not in address(at), address(at))
+    at = new_page(f"--no-rem {named}", heard=None)
+    check("--no-rem: the box unticked, asking for nothing", not at.exception and not box(at) and charts_shown(at) == 1 and not reader_asked(at), address(at))
+    other = urllib.parse.quote(web._KEPT_LINE_MARK + "--U --start:2001")
+    at = new_page(named, heard=other)
+    check("a link, this browser remembering something else: unticked", not at.exception and not box(at) and curves(at) == ["policy"] and address(at) == written, address(at))
+    own = urllib.parse.quote(web._KEPT_LINE_MARK + written)
+    at = new_page(written, heard=own)
+    check("a reload, the address the line this browser just kept: the box stays ticked", not at.exception and box(at) and curves(at) == ["policy"]
+          and memory(at)["remember"] is True, (box(at), address(at)))
+    at = new_page(f"{web.NO_VERSION_TOKEN} {written}", heard=own)
+    check("... and with --no-ver in the address, which the cookie never keeps", not at.exception and box(at) and web.NO_VERSION_TOKEN in address(at), address(at))
+
+    # A series named by a value: the same; a removal names nothing.
+    at = new_page(f"--yields:2,10 {chart}")
+    check("--yields:2,10: the yield curve alone, the box unticked", not at.exception and curves(at) == ["yield"] and not box(at), curves(at))
+    at = new_page(f"--no-yields:30 {chart}")
+    check("--no-yields:30 names nothing: the four curves, the box ticked", not at.exception and curves(at) == ["gdp", "debt", "interest", "yield"] and box(at), curves(at))
+
+    # Writing the four with a rate: ticking one on the page, reading the address back.
+    at = new_page(chart)
+    at.checkbox(key="flag:policy").check().run()
+    written = address(at)
+    check("the policy rate ticked on the page beside the four: the address names all five", not at.exception
+          and written == "--C --gdp --debt --interest --yield --policy --start:2015 --end:2026-09-01", written)
+    check("... and the keeper keeps it, marked", memory(at)["line"] == web._KEPT_LINE_MARK + written, memory(at))
+    again = new_page(written)
+    check("... which draws the same five", not again.exception and curves(again) == ["gdp", "debt", "interest", "yield", "policy"], curves(again))
+
+    # The cookie: a line kept by 7.9 or before goes on drawing what it drew.
+    for kept, drawn_then in (
+        ("--C --policy --start:2015 --end:2026-09-01", ["gdp", "debt", "interest", "yield", "policy"]),
+        ("--C --no-gdp --policy --start:2015 --end:2026-09-01", ["debt", "interest", "yield", "policy"]),
+        ("--C --gdp --policy --start:2015 --end:2026-09-01", ["gdp", "policy"]),
+        ("--C --yields:2y,10y --start:2015 --end:2026-09-01", ["gdp", "debt", "interest", "yield"]),
+        ("--C --gdp --yields:2y,10y --start:2015 --end:2026-09-01", ["gdp"]),
+        ("--C --gdp --debt --interest --yield --debt:fp --start:2015 --end:2026-09-01", ["gdp", "debt", "interest", "yield"]),
+        ("--C --debt:fp --start:2015 --end:2026-09-01", ["debt"]),
+        ("--C --no-interest --no-yield --debt:fp --start:2015 --end:2026-09-01", ["debt"]),
+    ):
+        at = new_page(None, heard=urllib.parse.quote(kept))
+        check(f"a cookie from before batch 38, {kept[:40]}: draws what it drew, the box ticked", not at.exception and curves(at) == drawn_then and box(at) and charts_shown(at) == 1,
+              (curves(at), [warning.value for warning in at.warning]))
+        check("... and the next line kept has the mark", memory(at)["line"].startswith(web._KEPT_LINE_MARK), memory(at)["line"])
+    at = new_page(None, heard=urllib.parse.quote(web._KEPT_LINE_MARK + "--C --policy --start:2015 --end:2026-09-01"))
+    check("a cookie since: as it says, the policy rate alone, the box ticked", not at.exception and curves(at) == ["policy"] and box(at), curves(at))
+    check("remembered_line: nothing is nothing; what is not text is nothing", web.remembered_line("") == "" and web.remembered_line(None) == "")
+
+
 def check_batch37(check: Check) -> None:
     """Batch 37.2: the saved data's subtitle ends with the version; an address with --no-ver leaves it out, writes it back, keeps it through Reset and Back, and never remembers it."""
     chart = "-u -s:2015 --e:2026-09-01"
@@ -2386,7 +2461,7 @@ PAGE_CHECKS = (
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
-    check_batch135, check_batch133, check_batch35, check_batch37,
+    check_batch135, check_batch133, check_batch35, check_batch37, check_batch38,
 )
 
 

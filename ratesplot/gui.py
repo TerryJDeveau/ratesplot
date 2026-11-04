@@ -58,7 +58,8 @@ Remembered settings
     they name: a value option individually; the curves, the countries or the
     measure each as a group, because naming one curve on the command line
     means "only this one". "Remember my settings" under Reset (batch 24.6),
-    ticked at every start: unticked, the choices, the preview mode, the tab
+    ticked at the start unless the command line names a series or says
+    --no-rem (batch 38): unticked, the choices, the preview mode, the tab
     and the column's width (batch 31.1) read at the start are saved, so the
     box unticked as the window closes leaves what was remembered as it was,
     whatever was saved while it was ticked (batch 34.2); the window's size
@@ -215,6 +216,7 @@ from .frontend import (
     png_bytes,
     problem_text,
     reset_changes_nothing,
+    remember_at_start,
     reset_choices,
     save_state,
     saved_export_name,
@@ -244,6 +246,7 @@ from .options import (
     options_in,
     parse_auto_refresh_minutes,
     parse_date_spec,
+    series_named,
 )
 from .plotting import COUNTRIES, Country, build_figure, resolve_start
 from .refresh import Ticker
@@ -976,6 +979,8 @@ class RatesPlotApp:
         notes: list[str] | None = None,
         state: dict | None = None,
         normal_geometry: str | None = None,
+        remember: bool = True,
+        from_reset: bool = False,
     ) -> None:
         self.root = root
         self.messages: queue.Queue = queue.Queue()
@@ -1046,10 +1051,11 @@ class RatesPlotApp:
         # Started with --no-ver (batch 37.2), which no control shows: kept to the
         # window's closing, through Reset and Back, in what it draws and writes.
         self._no_version = choices[1].get("version") is False
-        # "Remember my settings" (batch 24.6): ticked at every start, its off
-        # state never saved; and the settings read at the start, which the box
+        # "Remember my settings" (batch 24.6): as the command line leaves it at
+        # the start (batch 38, ``frontend.remember_at_start``), its off state
+        # never saved; and the settings read at the start, which the box
         # unticked puts back (``_remember``, batch 34.2).
-        self.remember = tk.BooleanVar(self.root, value=True)
+        self.remember = tk.BooleanVar(self.root, value=remember)
         self._settings_at_start = {key: state[key] for key in _SETTINGS_KEYS if key in state}
         self.images: dict[str, Image.Image] = {}
         self.photos: dict[str, ImageTk.PhotoImage] = {}  # Tk shows an image only while a reference exists
@@ -1106,7 +1112,9 @@ class RatesPlotApp:
         self._drag: dict | None = None
         self._wheel: dict | None = None
 
-        self.zoom = tk.StringVar(value=state.get("zoom") if state.get("zoom") in ("fit", "actual") else _DEFAULT_PREVIEW)
+        # From Reset's values (a series named, batch 38.3), the preview's too, as Reset sets them (``_reset``).
+        zoom = None if from_reset else state.get("zoom")
+        self.zoom = tk.StringVar(value=zoom if zoom in ("fit", "actual") else _DEFAULT_PREVIEW)
         self.command = tk.StringVar()
         self.web_address = tk.StringVar()  # the same chart on the web page (batch 31.3)
         self.status = tk.StringVar(value="Starting …")
@@ -1127,7 +1135,7 @@ class RatesPlotApp:
         hover_box.trace_add("write", lambda *_args: _Tooltip.show_info(hover_box.get()))
         self._load_choices(choices)
         _Tooltip.show_info(hover_box.get())
-        for name, keep in state.get("keep_ratio", {}).items():
+        for name, keep in ({} if from_reset else state.get("keep_ratio", {})).items():
             if name in self.size_editors and isinstance(keep, bool):
                 self.size_editors[name].keep_ratio.set(keep)
         # Reset is greyed at the defaults, the preview's two settings among
@@ -3397,6 +3405,11 @@ def _initial_geometry(root: tk.Tk, state: dict) -> str:
     return f"{round(screen_width * _SCREEN_FRACTION)}x{round(screen_height * _SCREEN_FRACTION)}+20+20"
 
 
+def line_start(cli_payloads: dict[str, str], cli_flags: dict[str, bool]) -> dict[str, bool]:
+    """What a command line says of the window's start beyond its choices (batch 38): the box, and whether the preview starts at Reset's settings."""
+    return {"remember": remember_at_start(cli_payloads, cli_flags), "from_reset": bool(series_named(cli_payloads, cli_flags))}
+
+
 def run_gui(
     config: PlotConfig, cli_payloads: dict[str, str] | None = None, cli_flags: dict[str, bool] | None = None
 ) -> None:
@@ -3409,8 +3422,9 @@ def run_gui(
     _enable_windows_dpi_awareness()
     http.enable_download_cache()
     http.enable_last_good_copies()  # batch 20: drawn from when a source fails
+    cli_payloads, cli_flags = cli_payloads or {}, cli_flags or {}
     state, note, remembered_in = load_state()
-    choices, notes = starting_choices(config, cli_payloads or {}, cli_flags or {}, state, remembered_in)
+    choices, notes = starting_choices(config, cli_payloads, cli_flags, state, remembered_in)
     if note:
         notes.insert(0, note)
     previous = _foreground_window()  # the window with the keyboard before this one opens: usually the command window
@@ -3421,7 +3435,7 @@ def run_gui(
     if state.get("maximized") is True:
         # Maximized on the monitor its remembered size and place are on.
         root.state("zoomed")
-    app = RatesPlotApp(root, choices, notes, state, normal_geometry=geometry)
+    app = RatesPlotApp(root, choices, notes, state, normal_geometry=geometry, **line_start(cli_payloads, cli_flags))
     app.wheel_takes_keyboard = True
     # Once it is shown (the first idle maps it), the keyboard goes back (batch 31.9).
     root.after_idle(lambda: root.after(_HAND_BACK_MS, lambda: _hand_keyboard_back(root, previous)))

@@ -1277,6 +1277,20 @@ OPTIONS: tuple[Option, ...] = (
         "and save). Saved data (.csv .tsv .xlsx) end\ntheir subtitle with it, unless --no-ver",
         names=("version",), shortest=1, in_gui=False,
     ),
+    # "Remember my settings" at the start (batch 38.1; Terry, 2026-11-03: "A new
+    # switch for --rem[ember] and --no-rem to set the default for the 'Remember
+    # settings' tick box in the GUI (in principle, even if the GUI not literally
+    # flashed-up)"). At least "rem": "--re" is -r, "--reg" the regression
+    # segments. No control of its own, the box being the control, and written in
+    # no line the window or the page shows: whether a visitor's settings are kept
+    # should not travel in a link (``frontend.remember_at_start``).
+    Option(
+        "remember", Kind.FLAG, ("remember",), "interface", "--rem / --remember / --no-rem",
+        "\"Remember my settings\" ticked or unticked\nat the start; ticked, unless a series is\n"
+        "named. With --save or --no-gui, --rem also\nwrites the choices to the settings the\n"
+        "window remembers",
+        names=("remember",), shortest=3, in_gui=False,
+    ),
     # Baking the historical data into the code is not an option of the program:
     # it is a maintenance step run from tools/bake_archives.py when an
     # extraction changes (Terry, 2026-09-27).
@@ -1396,8 +1410,8 @@ def series_named(payloads: Mapping[str, str], flags: Mapping[str, bool]) -> froz
     for one nation's. Not by a value that takes items out (--no-yields:30), nor
     one that names none (--cdn:yields:none), nor one whose switch is given off
     (--no-yield --yields:2,10, as the window writes a list it keeps). Both uses
-    of the choices follow this: ``config_from_choices``, and the window's start
-    (``frontend.starting_choices``).
+    of the choices follow this: ``config_from_choices``, and the window starting
+    from Reset's values (``frontend.starting_choices``; batch 38.3).
     """
     named = {option.name for option in series_switches() if flags.get(option.name) is True}
     for option in options_of(Kind.VALUE):
@@ -2254,7 +2268,10 @@ option that takes a value is written NAME:VALUE, and one that takes none must
 not be given one (-r:1 is an error).
 
 Naming a series (--gdp, --policy, --yields:2,10, --mo:5) draws only the series
-named.
+named, and the window then starts from Reset's values rather than the settings
+it remembers, for Canada and the U.S. unless others are named, with "Remember my
+settings" unticked unless --rem is given. A line naming no series starts from
+the settings remembered, with the options named laid over them.
 
 {per_nation}
 """
