@@ -364,6 +364,12 @@ BOE_IADB_URL = "https://www.bankofengland.co.uk/boeapps/database/_iadb-fromshowc
 # redirects to its error page 905 instead (measured 2026-10-06). No series
 # read from it begins before 1975.
 BOE_IADB_FROM = "01/Jan/1975"
+# The Bank's yield-curve files (batch 13.3, the real spot curve), on its
+# Yield curves page, not in the database. Measured 2026-11-04: the archive
+# (25 MB, a workbook per span, 1985 on) holds the months finished; the
+# current month's days are only in the other (191 KB).
+BOE_REAL_CURVE_ARCHIVE_URL = "https://www.bankofengland.co.uk/-/media/boe/files/statistics/yield-curves/glcrealddata.zip"
+BOE_LATEST_CURVES_URL = "https://www.bankofengland.co.uk/-/media/boe/files/statistics/yield-curves/latest-yield-curve-data.zip"
 ONS_TIMESERIES_URL = "https://www.ons.gov.uk{path}/data"
 UK_MILLENNIUM_URL = (
     "https://www.bankofengland.co.uk/-/media/boe/files/statistics/research-datasets/"
@@ -489,7 +495,14 @@ YIELD_COLUMNS = ("3-Month", "2-Year", "5-Year", "10-Year", "30-Year")
 # history before 2001. Canada has all but the 20-year (batch 9.3: the 1- and
 # 6-month, 1-, 3- and 7-year from 2001; see cdn_data.CDN_YIELD_COLUMNS); the
 # U.S. all of them, the 3-year since batch 13.6 (FRED's DGS series; see
-# us_data.US_YIELD_SERIES).
+# us_data.US_YIELD_SERIES). Then the market's real yields (batch 13.3; Terry,
+# 2026-11-04: terms of their own, a row of boxes among the terms, written r10;
+# no inflation switch on the nominal yields, plan 13.3), each from the
+# inflation-linked bonds of its term: the U.S. all five (FRED's DFII series),
+# the UK all five (the Bank of England's real spot curve), Germany r5 r7 r10
+# (between its inflation-linked bonds, de_data.DE_REAL_TERMS), Canada r30
+# alone, its Real Return Bond's long-term yield, as its long benchmark is the
+# 30-year.
 YIELD_TERMS = {
     "1m": "1-Month",
     "3m": "3-Month",
@@ -502,8 +515,15 @@ YIELD_TERMS = {
     "10y": "10-Year",
     "20y": "20-Year",
     "30y": "30-Year",
+    "r5": "5-Year Real",
+    "r7": "7-Year Real",
+    "r10": "10-Year Real",
+    "r20": "20-Year Real",
+    "r30": "30-Year Real",
 }
 DEFAULT_YIELD_TERMS = ("3m", "2y", "5y", "10y", "30y")
+REAL_YIELD_TERMS = ("r5", "r7", "r10", "r20", "r30")
+NOMINAL_YIELD_TERMS = tuple(term for term in YIELD_TERMS if term not in REAL_YIELD_TERMS)
 
 GDP_COLUMN = "TTM Nominal GDP ($)"
 CDN_DEBT_COLUMN = "Total Canadian Debt ($)"
@@ -537,6 +557,14 @@ DE_INTEREST_COLUMN = "TTM German Interest Paid (€)"
 # ---------------------------------------------------------------------------
 
 YIELD_LINE_STYLE = {"linewidth": 1.2, "alpha": 0.9}
+# A longer gap than this between a daily yield's values is drawn as a break in
+# its line (plotting._broken_at_gaps): longer than any weekend with holidays
+# (FRED's and Valet's largest are 4 and 5 days, measured 2026-11-04).
+DAILY_YIELD_GAP = pd.Timedelta(days=10)
+# A real yield (batch 13.3): its nominal term's colour (TERM_COLORS), so the
+# real 10-year reads beside the nominal one, in long dashes; shorter dashes
+# of the same colours are the mortgages'.
+REAL_YIELD_STYLE = {"linestyle": (0, (6, 2))}
 # The left axis's label (PlotConfig.left_axis_label): with the yields drawn,
 # or else with only other rates on it (--policy, --mortgages).
 YIELD_AXIS_LABEL = "Bond Yield (%)"
@@ -865,9 +893,10 @@ class Nation:
 # database's Europe/Berlin).
 NATIONS: tuple[Nation, ...] = (
     # Canada: all terms but the 20-year (the Bank of Canada has none); the
-    # U.S.: all of them (the 3-year, FRED's DGS3, since batch 13.6).
+    # U.S.: all of them (the 3-year, FRED's DGS3, since batch 13.6). Their real
+    # yields (batch 13.3): Canada's one Real Return Bond yield, the U.S.' five.
     Nation(
-        "cdn", "Canada", ("ca", "cdn"), tuple(term for term in YIELD_TERMS if term != "20y"), "Canadian",
+        "cdn", "Canada", ("ca", "cdn"), (*(term for term in NOMINAL_YIELD_TERMS if term != "20y"), "r30"), "Canadian",
         market_timezone="America/Toronto", currency="CAD", overnight_rate="CORRA",
         level_boxes=(("f", "Federal"), ("p", "Provincial"), ("m", "Municipal"), ("n", "Non-federal")),
     ),
@@ -885,7 +914,7 @@ NATIONS: tuple[Nation, ...] = (
     # with them since batch 9.5, as the plan said: "five UK mortgage lines
     # when mortgages are ticked"), the 10y-5y and 20y-10y spreads.
     Nation(
-        "uk", "United Kingdom", ("gb", "uk"), ("5y", "10y", "20y"), "UK", shown_by_default=False,
+        "uk", "United Kingdom", ("gb", "uk"), ("5y", "10y", "20y", *REAL_YIELD_TERMS), "UK", shown_by_default=False,
         market_timezone="Europe/London", currency="GBP", debt_aggregates=DEBT_AGGREGATES, overnight_rate="SONIA",
         # Central and local government: the devolved governments are inside
         # central government in its accounts (CountryMetadata UK, uk_data).
@@ -905,7 +934,7 @@ NATIONS: tuple[Nation, ...] = (
     # and all three fixation bands as its mortgage rates (batch 10.2, as the
     # UK's; its usual fixation, 5 to 10 years, alone before).
     Nation(
-        "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "5y", "7y", "10y", "20y", "30y"), "German",
+        "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "5y", "7y", "10y", "20y", "30y", "r5", "r7", "r10"), "German",
         shown_by_default=False, list_only_codes=("de",), market_timezone="Europe/Berlin", currency="EUR",
         overnight_rate="€STR",
         level_boxes=(("f", "Federal"), ("p", "Länder"), ("m", "Local"), ("n", "Länder & Local")),
@@ -969,6 +998,12 @@ TERM_COLORS = {
     # The 11th term (batch 9.3), past the palette's ten: dark slate, which the
     # 3-year mortgages had as their own colour before (MORTGAGE_TERMS).
     "3y": "#2f4f4f",
+    # The real yields (batch 13.3): their nominal terms' colours, in REAL_YIELD_STYLE's dashes.
+    "r5": "#2ca02c",
+    "r7": "#bcbd22",
+    "r10": "#d62728",
+    "r20": "#17becf",
+    "r30": "#9467bd",
 }
 
 # The same three semantic macro curves are drawn on both country charts, plus
@@ -1256,7 +1291,18 @@ class CountryMetadata:
         ("CDN Benchmark Yields"), the form drawn only where the adjective
         would shrink the title a lot (batch 22, decision 50). A nation with
         no short form, or a title beginning "Canada: ", is the same either way.
+
+        With a real yield drawn (batch 13.3) the yields' phrase leaves off what
+        it says of the nominal ones' source ("(Svensson fitted)"), which is not
+        so of the real ones, and with only real yields drawn it says so: "German
+        Federal Real Yields".
         """
+        yield_phrase = self.yield_title
+        real_drawn = [term for term in config.yield_terms if term in REAL_YIELD_TERMS]
+        if real_drawn:
+            yield_phrase = yield_phrase.split(" (")[0]
+            if len(real_drawn) == len(config.yield_terms):
+                yield_phrase = yield_phrase.replace(" Yields", " Real Yields")
         drawn = set(macro_keys_drawn)
         if "debt" in drawn:
             drawn.discard("federal_debt")
@@ -1284,7 +1330,7 @@ class CountryMetadata:
         names = {kind: "" if by_level else self.level_name(levels[kind][0]) for kind in split}
         templates = {"debt": self.component_debt_title, "interest": self.component_interest_title}
         # The phrases that name the nation: the yields' and the debt's.
-        naming = {self.yield_title, self.debt_title, self.federal_debt_title} | ({self.net_debt_alone_title} - {""})
+        naming = {yield_phrase, self.debt_title, self.federal_debt_title} | ({self.net_debt_alone_title} - {""})
         if len(split) == 2 and names["debt"] == names["interest"]:
             both = templates["debt"].format(names["debt"]).strip() + " and " + templates["interest"].format("").strip()
             naming.add(both)
@@ -1296,7 +1342,7 @@ class CountryMetadata:
             naming.add(macro_titles["debt"])
             macro_parts = [macro_titles[key] for key in macro_titles if key in drawn]
         levels_suffix = LEVELS_TITLE_SUFFIX if by_level else ""
-        yield_parts = ([self.yield_title] if yields_drawn else []) + list(dict.fromkeys(rate_titles))
+        yield_parts = ([yield_phrase] if yields_drawn else []) + list(dict.fromkeys(rate_titles))
         index_parts = [extra_title] if extra_title else []
         parts = yield_parts + macro_parts + index_parts
         if not parts:

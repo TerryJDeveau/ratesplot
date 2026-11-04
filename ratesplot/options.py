@@ -76,8 +76,10 @@ from .config import (
     MORTGAGE_MARGINS,
     MORTGAGE_TERMS,
     NATIONS,
+    NOMINAL_YIELD_TERMS,
     PER_NATION_FIELDS,
     POLICY_TERMS,
+    REAL_YIELD_TERMS,
     QUOTE_MAX_AGE_DAYS,
     SEASONALLY_ADJUSTED_NATIONS,
     YIELD_TERMS,
@@ -247,16 +249,20 @@ parse_prime_margin = partial(parse_margin, spelling="--prime", base="the prime r
 parse_tracker_margin = partial(parse_margin, spelling="--tracker", base="Bank Rate", examples=("1.75", "1"))
 
 
-_TERM_SPEC = re.compile(r"^(\d+)\s*([my]?)$")
+_TERM_SPEC = re.compile(r"^(r?)(\d+)\s*([my]?)$")
 
 
 def parse_term(spec: str, *, kind: str) -> str:
-    """Parse one yield term, ``3m``, ``2``, ``5y`` or ``10``, to its key in ``YIELD_TERMS`` ("3m", "2y" …).
+    """Parse one yield term, ``3m``, ``2``, ``5y``, ``10`` or a real yield's ``r10``, to its key in ``YIELD_TERMS`` ("3m", "2y", "r10" …).
 
-    Years unless ``m`` (months) is given. ``kind`` names the option in messages.
+    Years unless ``m`` (months) is given; a real yield is in years only, its
+    ``y`` left off its key. ``kind`` names the option in messages.
     """
     match = _TERM_SPEC.match(spec.strip().lower())
-    key = f"{int(match.group(1))}{match.group(2) or 'y'}" if match else None
+    key = None
+    if match:
+        real, count, unit = match.groups()
+        key = f"{int(count)}{unit or 'y'}" if not real else f"r{int(count)}" if unit != "m" else None
     if key not in YIELD_TERMS:
         terms = ", ".join(YIELD_TERMS)
         raise ValueError(f"invalid {kind} term {spec.strip()!r}: use {terms} (y may be left out)")
@@ -772,7 +778,8 @@ class Option:
 # named on the command line gets a box of its own.
 _YIELD_CHOICES = (
     ("", tuple((term, term) for term in DEFAULT_YIELD_TERMS)),
-    ("more", tuple((term, term) for term in YIELD_TERMS if term not in DEFAULT_YIELD_TERMS)),
+    ("more", tuple((term, term) for term in NOMINAL_YIELD_TERMS if term not in DEFAULT_YIELD_TERMS)),
+    ("real", tuple((term, term) for term in REAL_YIELD_TERMS)),
 )
 _MORTGAGE_CHOICES = (
     ("U.S.", (("30", "30y"), ("15", "15y"))),
@@ -964,8 +971,9 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "yields", Kind.VALUE, ("yield_terms",), "curves", "--yields:LIST / --y:LIST",
         "the yield terms drawn: 1m 3m 6m 1 2 3 5\n7 10 20 30 (years unless m; default\n"
-        f"{','.join(DEFAULT_YIELD_TERMS)}); Canada has all but 20\n(1m 6m 1 3 7 from 2001), the U.S. all but\n3, "
-        "the UK 5 10 20 (its default),\nGermany 1 2 5 7 10 20 30 (its default\n2 5 10 30)",
+        f"{','.join(DEFAULT_YIELD_TERMS)}); Canada has all but 20\n(1m 6m 1 3 7 from 2001), the U.S. all, "
+        "the\nUK 5 10 20 (its default), Germany 1 2 5 7\n10 20 30 (its default 2 5 10 30); real\n"
+        "yields: r5 r7 r10 r20 r30, the U.S. and\nthe UK all, Germany r5 r7 r10, Canada r30",
         names=("yields",), parse=partial(parse_terms, kind="--yields"), label="Yield terms", format=format_terms,
         editor="choices", choices=_YIELD_CHOICES, topic="yields",
     ),

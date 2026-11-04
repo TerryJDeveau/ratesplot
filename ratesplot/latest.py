@@ -93,6 +93,14 @@ _TREASURY_COLUMNS = {
     "1-Month": "1 Mo", "3-Month": "3 Mo", "6-Month": "6 Mo", "1-Year": "1 Yr", "2-Year": "2 Yr",
     "3-Year": "3 Yr", "5-Year": "5 Yr", "7-Year": "7 Yr", "10-Year": "10 Yr", "20-Year": "20 Yr", "30-Year": "30 Yr",
 }
+# The same of its real yield curve (batch 13.3; its 2026 file read 2026-11-04,
+# its columns in capitals), the source of FRED's DFII series. The feed quotes
+# no real yield, so a real yield's line goes no further than this.
+_TREASURY_REAL_COLUMNS = {
+    "5-Year Real": "5 YR", "7-Year Real": "7 YR", "10-Year Real": "10 YR", "20-Year Real": "20 YR", "30-Year Real": "30 YR",
+}
+# Each of the Treasury's curves, as its files' ``type`` names it, with its columns.
+_TREASURY_CURVES = (("daily_treasury_yield_curve", _TREASURY_COLUMNS), ("daily_treasury_real_yield_curve", _TREASURY_REAL_COLUMNS))
 # A quoted yield outside this range (percent) is a bad print and is left out.
 _PLAUSIBLE_YIELD = (-5.0, 50.0)
 # From this hour (market time) the feed's U.S. quotes are the next day's session:
@@ -282,22 +290,32 @@ def treasury_yields_after(
 ) -> pd.DataFrame:
     """Return the Treasury's daily par yields after ``last``, up to ``config.end``, as a ``DATE``-column frame.
 
-    The Treasury publishes one CSV per calendar year, newest day first.
-    ``columns`` are the chart columns wanted (the drawn yields).
+    The Treasury publishes one CSV per calendar year, newest day first, for
+    each of its curves, nominal and real; only a curve with a chart column
+    wanted is asked for. ``columns`` are the chart columns wanted (the drawn
+    yields). A day one curve has and the other not yet has a row, its other
+    columns blank.
     """
-    wanted = {column: _TREASURY_COLUMNS[column] for column in columns}
-    frames = []
-    for year in range(last.year, config.end.year + 1):
-        params = {"type": "daily_treasury_yield_curve", "field_tdr_date_value": year, "_format": "csv"}
-        table = pd.read_csv(io.StringIO(latest_get(TREASURY_YIELD_CURVE_URL.format(year=year), params).text))
-        missing = {"Date", *wanted.values()} - set(table.columns)
-        if missing:
-            raise ValueError(f"the {year} yield-curve file has no column {sorted(missing)}")
-        frame = pd.DataFrame({DATE_COLUMN: pd.to_datetime(table["Date"], format="%m/%d/%Y")})
-        for column, source in wanted.items():
-            frame[column] = pd.to_numeric(table[source], errors="coerce")
-        frames.append(frame)
-    data = pd.concat(frames).sort_values(DATE_COLUMN)
+    columns = list(columns)
+    data: pd.DataFrame | None = None
+    for curve, names in _TREASURY_CURVES:
+        wanted = {column: names[column] for column in columns if column in names}
+        if not wanted:
+            continue
+        frames = []
+        for year in range(last.year, config.end.year + 1):
+            params = {"type": curve, "field_tdr_date_value": year, "_format": "csv"}
+            table = pd.read_csv(io.StringIO(latest_get(TREASURY_YIELD_CURVE_URL.format(year=year), params).text))
+            missing = {"Date", *wanted.values()} - set(table.columns)
+            if missing:
+                raise ValueError(f"the {year} yield-curve file has no column {sorted(missing)}")
+            frame = pd.DataFrame({DATE_COLUMN: pd.to_datetime(table["Date"], format="%m/%d/%Y")})
+            for column, source in wanted.items():
+                frame[column] = pd.to_numeric(table[source], errors="coerce")
+            frames.append(frame)
+        whole = pd.concat(frames)
+        data = whole if data is None else data.merge(whole, on=DATE_COLUMN, how="outer")
+    data = data.sort_values(DATE_COLUMN)
     return data.loc[(data[DATE_COLUMN] > last) & (data[DATE_COLUMN] <= config.end)].reset_index(drop=True)
 
 

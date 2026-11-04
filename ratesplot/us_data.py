@@ -57,6 +57,14 @@ US_YIELD_SERIES = {
     "10-Year": "DGS10",
     "20-Year": "DGS20",
     "30-Year": "DGS30",
+    # The real yields (batch 13.3): the Treasury's inflation-indexed securities
+    # at a constant maturity, daily, FRED's copy of its real yield curve;
+    # measured 2026-11-04, each with a row on the same days as the DGS series.
+    "5-Year Real": "DFII5",
+    "7-Year Real": "DFII7",
+    "10-Year Real": "DFII10",
+    "20-Year Real": "DFII20",
+    "30-Year Real": "DFII30",
 }
 US_YIELD_EARLIEST = {
     "1-Month": pd.Timestamp("2001-07-31"),
@@ -70,6 +78,11 @@ US_YIELD_EARLIEST = {
     "10-Year": pd.Timestamp("1962-01-02"),
     "20-Year": pd.Timestamp("1962-01-02"),
     "30-Year": pd.Timestamp("1977-02-15"),
+    "5-Year Real": pd.Timestamp("2003-01-02"),
+    "7-Year Real": pd.Timestamp("2003-01-02"),
+    "10-Year Real": pd.Timestamp("2003-01-02"),
+    "20-Year Real": pd.Timestamp("2004-07-27"),
+    "30-Year Real": pd.Timestamp("2010-02-22"),
 }
 
 # FRED's daily yields have a row for every business day, empty on holidays,

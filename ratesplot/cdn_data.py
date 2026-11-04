@@ -51,9 +51,10 @@ from .cdn_archive_data import (
     EMBEDDED_CDN_INTEREST_HISTORY_BY_LEVEL,
     EMBEDDED_CDN_POPULATION_HISTORY,
 )
-from .baked import frame_with_recent_part, with_recent_part
+from .baked import frame_with_recent_part, read_series, with_recent_part
 from .cdn_hist_yields import build_cdn_hist_yields
 from .config import (
+    BOC_FINANCIAL_MARKET_TABLE,
     BOC_GROUP_URL,
     BOC_SERIES_URL,
     BOC_START_DATE,
@@ -105,8 +106,11 @@ BOC_VALET_FROM = "1900-01-01"
 # Bank of Canada Valet series codes -> chart column names. The 3-month T-bill
 # is not part of the benchmark group, so it is fetched as a separate series.
 # The group's 3- and 7-year (batch 9.3) begin on 2001-01-02, as the others'
-# daily values do; the group's real return bond is not a yield term.
+# daily values do; so does its Real Return Bonds' long-term yield (batch 13.3,
+# measured 2026-11-04), a term of its own, drawn as the real 30-year as the
+# long benchmark is the 30-year.
 BOC_BENCHMARK_GROUP = "bond_yields_benchmark"
+BOC_REAL_RETURN_COLUMN = "30-Year Real"
 BOC_BENCHMARK_COLUMNS = {
     "BD.CDN.2YR.DQ.YLD": "2-Year",
     "BD.CDN.3YR.DQ.YLD": "3-Year",
@@ -114,6 +118,7 @@ BOC_BENCHMARK_COLUMNS = {
     "BD.CDN.7YR.DQ.YLD": "7-Year",
     "BD.CDN.10YR.DQ.YLD": "10-Year",
     "BD.CDN.LONG.DQ.YLD": "30-Year",
+    "BD.CDN.RRB.DQ.YLD": BOC_REAL_RETURN_COLUMN,
 }
 # A Valet group -> the series of it the program reads, baked one file each
 # (batch 19.2); the group is still asked for in one request.
@@ -133,6 +138,12 @@ BOC_BILL_SERIES = {
 # Where the terms with no history before the daily series begin (the PDF
 # tables of 1919-2000 have the five of YIELD_COLUMNS only).
 CDN_NEW_TERMS_START = pd.Timestamp("2001-01-02")
+# The Real Return Bonds' long-term yield before Valet's daily one (batch 13.3):
+# Statistics Canada's table 10-10-0122, monthly, the last Wednesday of each
+# month, from 1991-11 (measured 2026-11-04: to 2026-10, each month with a
+# value). Drawn to 2000 as the history of the other terms is, then the daily.
+CDN_REAL_RETURN_VECTOR = "v122553"
+CDN_REAL_RETURN_START = pd.Timestamp("1991-11-01")
 # The 3-month after the PDF history (batch 9.2): the daily mid-market yield
 # of the 3-month treasury bill, from 2001-01-02, as the benchmarks are. It
 # replaces the bi-weekly auction average, which is kept only before the
@@ -180,8 +191,10 @@ def cdn_series_earliest(config: PlotConfig) -> dict[str, pd.Timestamp]:
     newer = {
         f"{column} Yield (Bank of Canada, daily)": CDN_NEW_TERMS_START
         for term, column in YIELD_TERMS.items()
-        if term in terms and column in CDN_YIELD_COLUMNS and column not in YIELD_COLUMNS
+        if term in terms and column in CDN_YIELD_COLUMNS and column not in YIELD_COLUMNS and column != BOC_REAL_RETURN_COLUMN
     }
+    if BOC_REAL_RETURN_COLUMN in (YIELD_TERMS[term] for term in terms):
+        newer[f"{BOC_REAL_RETURN_COLUMN} Yield (Statistics Canada, monthly to 2000)"] = CDN_REAL_RETURN_START
     return {**CANADIAN_SERIES_EARLIEST, **newer}
 
 
@@ -326,6 +339,10 @@ def _all_items_rows(table: pd.DataFrame) -> pd.Series:
     return table["GEO"].eq("Canada") & table["Products and product groups"].eq("All-items")
 
 
+def _real_return_rows(table: pd.DataFrame) -> pd.Series:
+    return table["Rates"].eq("Real return bonds, long-term")
+
+
 @dataclass(frozen=True)
 class StatcanRead:
     """What the program reads of one live Statistics Canada table (``STATCAN_SERIES_READ``).
@@ -346,7 +363,9 @@ class StatcanRead:
 # period, every period with a value, in the unit and scale given here. They
 # are baked (batch 19.2) under ``ratesplot/data/statcan/``
 # (``tools/bake_archives.py --only statcan``), a file per vector, named by it;
-# one request answers every vector of a table (``statcan_table``).
+# one request answers every vector of a table (``statcan_table``). The Real
+# Return Bonds' yield (batch 13.3) is its bake alone, asked nothing in a
+# drawing: only its months to 2000 are drawn (``fetch_cdn_yields``).
 STATCAN_SERIES_READ = {
     STATCAN_CDN_DEBT_TABLE: StatcanRead("Dollars", 6, {STATCAN_CDN_DEBT_VECTOR: _debt_rows}),
     STATCAN_CDN_GDP_TABLE: StatcanRead("Dollars", 6, {STATCAN_CDN_GDP_VECTOR: _gdp_rows}),
@@ -357,6 +376,7 @@ STATCAN_SERIES_READ = {
     CDN_MORTGAGE_HISTORY_TABLE: StatcanRead("Percent", 0, {CDN_MORTGAGE_HISTORY_VECTOR: _canada_rows}),
     STATCAN_CDN_CPI_TABLE: StatcanRead("2002=100", 0, {STATCAN_CDN_CPI_VECTOR: _all_items_rows}),
     STATCAN_CDN_CPI_SA_TABLE: StatcanRead("2002=100", 0, {STATCAN_CDN_CPI_SA_VECTOR: _all_items_rows}),
+    BOC_FINANCIAL_MARKET_TABLE: StatcanRead("Percent", 0, {CDN_REAL_RETURN_VECTOR: _real_return_rows}),
 }
 STATCAN_BAKED_SOURCE = "statcan"
 
@@ -593,7 +613,8 @@ def fetch_cdn_yields(config: PlotConfig) -> pd.DataFrame:
     yield columns (``config.yield_columns``) that Canada has
     (``CDN_YIELD_COLUMNS``), and those the spreads are taken from
     (``config.fetched_yield_columns``), trimmed to the configured window.
-    The terms outside the default five begin in 2001 (batch 9.3). A chosen
+    The terms outside the default five begin in 2001 (batch 9.3), but for the
+    Real Return Bonds' yield, monthly from 1991-11 (batch 13.3). A chosen
     term it does not have (--yields:20) is named, and the chart drawn
     without it.
     """
@@ -616,11 +637,17 @@ def fetch_cdn_yields(config: PlotConfig) -> pd.DataFrame:
             except Exception as exc:
                 print(f"  Warning: Bank of Canada {column} T-bill yield ({code}) unavailable ({exc}); drawn without it.")
 
-    available = [column for column in CDN_YIELD_COLUMNS if column in yields.columns]
+    # The real yield only when chosen: a chart of the others has the rows it always had.
+    available = [
+        column for column in CDN_YIELD_COLUMNS if column in yields.columns and (column != BOC_REAL_RETURN_COLUMN or column in chosen)
+    ]
     # Short forward-fill bridges holidays and single missing prints only.
     yields = yields[available].dropna(how="all").ffill(limit=3)
 
     historical = with_yield_stand_ins(build_cdn_hist_yields())
+    if BOC_REAL_RETURN_COLUMN in chosen:
+        months = read_series(STATCAN_BAKED_SOURCE, CDN_REAL_RETURN_VECTOR)
+        historical = historical.join(months.dropna().rename(BOC_REAL_RETURN_COLUMN))
     live_part = yields[yields.index > historical.index.max()]
     all_yields = pd.concat([historical, live_part]).sort_index().ffill(limit=3)
     return all_yields.loc[config.start : config.end, [column for column in all_yields.columns if column in chosen]]
