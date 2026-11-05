@@ -1,6 +1,6 @@
 # Inflation adjusted (--constant)
 
-GDP, debt and interest at constant prices: each amount divided by its nation's consumer price index for the month it is dated in, and multiplied by the index for one month, the last the index has on or before the chart's End. The amounts are then in that month's prices. The right axis reads "Real Units at 2026-09 Prices (CAD – Log Scale)", the title ends "at 2026-09 Prices", and GDP's name in the legend drops "Nominal". Each curve ends where it does in current prices, and its history is raised by the rise in prices since, so a curve's slope is its growth beyond inflation, and the [regression segments](?help=regression) give that real growth in %/yr.
+GDP, debt and interest at constant prices: each amount divided by its nation's consumer price index for the month it is dated in, and multiplied by the index for one month, the last the index has on or before the chart's End. The amounts are then in that month's prices. The right axis reads "Inf. Adj. CAD at 2026-09 Prices (Log Scale)", the title ends "at 2026-09 Prices", and GDP's name in the legend drops "Nominal". Each curve ends where it does in current prices, and its history is raised by the rise in prices since, so a curve's slope is its growth beyond inflation, and the [regression segments](?help=regression) give that real growth in %/yr.
 
 ## How the division is made
 
@@ -10,7 +10,7 @@ Debt, counted on a date, is divided by the index of that date's month. GDP and i
 
 Before an index begins there is no price to divide by, and nothing is drawn: before 1914 in Canada, 1914-07 in the UK and 1948-06 in Germany (the U.S. index, from 1913, is older than any U.S. curve). On a chart ending before its index begins, the amounts are drawn in current prices, with a warning.
 
-Inflation adjusted combines with per capita, for real amounts per person ("Real Units per Capita at 2026-09 Prices"). It can't be combined with [As % of GDP](?help=percent-of-gdp): a share of GDP is free of inflation already, and in the window and on the page ticking that box unticks this one. In the [master currency](?help=master-currency) each chart's amounts are put at its own nation's prices first, then converted at the rate of its End date. Without [GDP](?help=gdp), [debt](?help=debt) or [interest](?help=interest) ticked it has no effect, and its box is greyed.
+Inflation adjusted combines with per capita, for real amounts per person ("Inf. Adj. CAD per Capita at 2026-09 Prices"). It can't be combined with [As % of GDP](?help=percent-of-gdp): a share of GDP is free of inflation already, and in the window and on the page ticking that box unticks this one. In the [master currency](?help=master-currency) each chart's amounts are put at its own nation's prices first, then converted at the rate of its End date. Without [GDP](?help=gdp), [debt](?help=debt) or [interest](?help=interest) ticked it has no effect, and its box is greyed.
 
 ## Where each index comes from
 

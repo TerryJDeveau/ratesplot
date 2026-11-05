@@ -12,7 +12,7 @@ The box is greyed, keeping its tick, while fewer than two nations are ticked, wh
 
 The master's own chart is drawn as it always is. Every other chart converts its amounts at one rate, the master's against its nation's currency on its End date, the latest on or before it, the same rates as for [a limit in another currency](?help=limits) (FRED's daily rates from 1971, the older ones before). One rate for the whole chart multiplies every amount by the same number, so on the log axis each curve keeps its shape and its place: only the axis's ticks and label, the [end labels](?help=end-labels), the [hover read-out](?help=hover) and Export chart's data change. The [regression segments](?help=regression) keep their rates of growth, which no currency changes.
 
-The right axis names the master and the rate: "Nominal Units (USD at 0.71932 per CAD, 2026-09-01 – Log Scale)", and the log gives the rate's source. A chart converted to U.S. dollars writes them US$, since $ alone on the Canadian chart would read as Canadian dollars; the U.S. chart keeps its $. A chart that ends today converts at FRED's latest rate, which can be a week or more old.
+The right axis names the master and the rate: "Nominal USD (at 0.71932 per CAD, 2026-09-01 – Log Scale)", and the log gives the rate's source. A chart converted to U.S. dollars writes them US$, since $ alone on the Canadian chart would read as Canadian dollars; the U.S. chart keeps its $. A chart that ends today converts at FRED's latest rate, which can be a week or more old.
 
 Where there is no rate by the End date (the pound before 1791, the Canadian dollar before 1858, the euro before 1948-06-21), that chart is drawn in its own currency, with a warning in the log.
 

@@ -2578,7 +2578,7 @@ def check_batch30(check: Check) -> None:
         check("the U.S.' ticked: --master:USD, the others unticked", "--master:USD" in w.command_tokens()
               and ticks() == {"cdn": (False, False), "us": (True, False), "uk": (False, False), "de": (False, False)}, ticks())
         figure = app.figures["cdn"][0]
-        check("the Canadian chart drawn in U.S. dollars, the rate on its axis", "USD at" in figure.axes[1].get_ylabel()
+        check("the Canadian chart drawn in U.S. dollars, the rate on its axis", figure.axes[1].get_ylabel().startswith("Nominal USD (at ")
               and any(label.get_text().startswith("US$") for label in figure.axes[1].get_yticklabels()), figure.axes[1].get_ylabel())
         check("its charts the written line's", w.written_draws_the_same(("cdn", "us")))
         tick("cdn", True)
@@ -2832,6 +2832,8 @@ def check_batch35(check: Check) -> None:
             root.update()
             time.sleep(0.01)
         root.update()
+        check("the line and its arc in fuchsia (40.2)", str(app.wait_label.cget("foreground")) == "#FF00FF" and app.wait_arc.itemcget(app._wait_arc_item, "outline") == "#FF00FF",
+              (str(app.wait_label.cget("foreground")), app.wait_arc.itemcget(app._wait_arc_item, "outline")))
         check("a drawing under way: the line shown", app.rendering and app.wait_row.winfo_manager() == "grid" and app.wait_text.get().startswith("Please wait"), app.wait_text.get())
         check("… in Terry's words, the time still expected and the time so far", re.fullmatch(r"Please wait(, nearly done| about \d+ (s|min)) \(\d+ s so far\)", app.wait_text.get()), app.wait_text.get())
         check("… right of the build line, the column being wide enough", app.wait_row.grid_info()["row"] == 0 and app.wait_row.grid_info()["column"] == 1, app.wait_row.grid_info())

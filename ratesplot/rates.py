@@ -444,7 +444,7 @@ def _fred(series_id: str, stopped: pd.Timestamp | None = None) -> pd.Series:
 # (``prices.inflation``), one label for every nation; the help page names
 # each nation's sources and the UK's join.
 INFLATION_KEY = "inflation"
-INFLATION_LABEL = "Inflation (CPI, 12-month)"
+INFLATION_LABEL = "Inflation (CPI, 12-month Δ%)"  # Δ% at Terry's word, 2026-11-05 (batch 40.4)
 
 
 def inflation_rate(country: str) -> RateCurve | None:

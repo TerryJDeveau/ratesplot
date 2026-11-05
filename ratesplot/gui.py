@@ -251,7 +251,7 @@ from .options import (
 from .plotting import COUNTRIES, Country, build_figure, resolve_start
 from .refresh import Ticker
 from .version import version_text
-from .wait import Figures, Wait
+from .wait import WAIT_COLOUR, Figures, Wait
 
 WINDOW_TITLE = "Rates plot: yields, public debt, GDP & interest"
 _SCRIPT_NAME = "ratesplot.py"
@@ -1636,10 +1636,10 @@ class RatesPlotApp:
         )
         self.wait_arc.pack(side="left")
         self._wait_arc_item = self.wait_arc.create_arc(
-            2, 2, _WAIT_ARC_PX - 2, _WAIT_ARC_PX - 2, start=self._arc_angle, extent=270, style="arc", width=2, outline=_VERSION_FOREGROUND
+            2, 2, _WAIT_ARC_PX - 2, _WAIT_ARC_PX - 2, start=self._arc_angle, extent=270, style="arc", width=2, outline=WAIT_COLOUR
         )
         self.wait_text = tk.StringVar()
-        self.wait_label = ttk.Label(self.wait_row, textvariable=self.wait_text, font=("TkDefaultFont", 8))
+        self.wait_label = ttk.Label(self.wait_row, textvariable=self.wait_text, foreground=WAIT_COLOUR, font=("TkDefaultFont", 8))
         self.wait_label.pack(side="left", padx=(3, 0))
         head.bind("<Configure>", lambda _event: self._arrange_wait(), add="+")
 

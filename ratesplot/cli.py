@@ -24,6 +24,7 @@ import pandas as pd
 
 from . import export
 from .config import NATIONS, Nation, PlotConfig, nation_by_code, nation_by_key
+from .console import tolerant_output
 from .options import (
     OPTIONS,
     Kind,
@@ -361,6 +362,7 @@ def keep_saving(again: Callable[[], PlotConfig], files: export.SavedFiles, not_d
 
 def main(argv: list[str] | None = None) -> None:
     """Parse the command line, then write the charts to a file, or open the GUI, or draw them in matplotlib windows."""
+    tolerant_output()
     payloads, flags, parser = parse_choices(argv)
     try:
         config = config_from_choices(payloads, flags)

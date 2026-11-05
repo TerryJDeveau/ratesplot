@@ -39,6 +39,7 @@ from matplotlib.patches import Rectangle
 from .axes import (
     ExtraAxis,
     apply_axes_formatting,
+    colour_axis,
     format_currency,
     format_index,
     format_index_tick,
@@ -131,7 +132,7 @@ from .latest import (
 )
 from .legend import finish_legend_and_title
 from .measures import PRICE_BASE_ATTR, OwnPopulation, express
-from .prices import consumer_prices
+from .prices import consumer_prices, no_index_note
 from .rates import (
     INFLATION_KEY,
     RateCurve,
@@ -755,11 +756,29 @@ def draw_country(
         elif ax_extra is not ax_macro:
             ax_extra.remove()  # nothing of the curve in the window
 
+    # A break in the inflation curve says why, in the message log (batch 40.3).
+    index_note = no_index_note(
+        metadata.key,
+        config.start,
+        config.end,
+        next((curve.values for curve in rates if curve.key == INFLATION_KEY), None),
+        extra.values if extra_line is not None and config.draws_price_index else None,
+    )
+    if index_note is not None:
+        print(f"  Note: {index_note}.")
+
     # The left axis says "Spread" when one is drawn.
     left_label = SPREAD_AXIS_LABEL if any(curve.spread for _line, curve in rate_lines) else None
     apply_axes_formatting(ax_yield, ax_macro, config, metadata, left_label, extra_axis)
     if extra_axis is not None and extra_axis.axes is not ax_macro:
         _place_outside(extra_axis.axes, ax_macro, config)
+    extra_lines = [] if extra_line is None else [extra_line]
+    on_its_own_axis = extra_axis is not None and extra_axis.axes is not ax_macro
+    _colour_lone_axes(
+        [(ax_macro, macro_lines + ([] if on_its_own_axis else extra_lines))] + ([(extra_axis.axes, extra_lines)] if on_its_own_axis else []),
+        len(yield_lines) + len(rate_lines) + len(macro_lines) + len(extra_lines),
+        None if config.has_left_axis_series else ax_yield,
+    )
     warn_macro_limits_coverage(macro_in_range, macro_columns_drawn, config)
     # --reg: each right-axis curve fitted by straight pieces on its log axis,
     # drawn now that the axis limits (which set the tolerance) are known; their
@@ -824,6 +843,24 @@ def draw_country(
         short_title,
         (lambda: _place_outside(extra_axis.axes, ax_macro, config)) if extra_axis is not None and extra_axis.axes is not ax_macro else None,
     )
+
+
+def _colour_lone_axes(right_axes: list[tuple[Axes, list[Line2D]]], curves_drawn: int, mirror: Axes | None) -> None:
+    """A right axis holding one series takes that series' colour, unless it is the only series on the chart (batch 40.1).
+
+    Terry, 2026-11-05. A series is a curve as it was drawn: its projected
+    stretch and its --reg pieces are the same series, each level of government
+    is one, and a curve with nothing in the chart's dates is not drawn. Debt is
+    black, so an axis with debt alone looks as it did. ``mirror``: the left axis
+    where it repeats the first of ``right_axes`` (nothing on the left), which
+    goes with it.
+    """
+    if curves_drawn > 1:
+        for position, (axes, lines) in enumerate(right_axes):
+            if len(lines) == 1:
+                colour_axis(axes, lines[0].get_color())
+                if position == 0 and mirror is not None:
+                    colour_axis(mirror, lines[0].get_color(), left=True)
 
 
 def _place_outside(ax_extra: Axes, ax_macro: Axes, config: PlotConfig) -> None:

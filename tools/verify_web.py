@@ -2089,8 +2089,8 @@ def check_batch30(check: Check) -> None:
     data = web.export.chart_data(drawing.figures["cdn"], drawing.drawn.for_nation("cdn"), "cdn")
     us_data = web.export.chart_data(drawing.figures["us"], drawing.drawn.for_nation("us"), "us")
     check("the Canadian chart in US$: its axis, its exported data's unit; the U.S. chart's as before",
-          "USD at" in drawing.figures["cdn"].axes[1].get_ylabel() and "US$" in data.units and "C$" not in data.units
-          and drawing.figures["us"].axes[1].get_ylabel() == "Nominal Units (USD – Log Scale)" and "US$" in us_data.units,
+          drawing.figures["cdn"].axes[1].get_ylabel().startswith("Nominal USD (at ") and "US$" in data.units and "C$" not in data.units
+          and drawing.figures["us"].axes[1].get_ylabel() == "Nominal USD (Log Scale)" and "US$" in us_data.units,
           (drawing.figures["cdn"].axes[1].get_ylabel(), data.units))
     geometry = drawing.geometry["cdn"]
     _left, top, _right, bottom = geometry.box
@@ -2266,6 +2266,12 @@ def check_batch133(check: Check) -> None:
     shown = "\n".join(block.value for block in view.markdown)
     check("?help=yields: its section on the real yields, each nation's source",
           not view.exception and "## Real yields" in shown and all(word in shown for word in ("DFII10", "Real Return Bonds", "real spot curve", "inflation-linked")), shown[:60])
+
+
+def check_wait_colour(check: Check) -> None:
+    """The wait line and its icon in fuchsia (batch 40.2; a drawing's line is seen only in a browser, so its colour live too)."""
+    check("the wait line's colour is fuchsia", web.WAIT_COLOUR == "#FF00FF", web.WAIT_COLOUR)
+    check("the wait icon is drawn in it", "color: #FF00FF" in web._WAIT_ICON, web._WAIT_ICON)
 
 
 def check_batch35(check: Check) -> None:
@@ -2461,7 +2467,7 @@ PAGE_CHECKS = (
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
-    check_batch135, check_batch133, check_batch35, check_batch37, check_batch38,
+    check_batch135, check_batch133, check_batch35, check_wait_colour, check_batch37, check_batch38,
 )
 
 

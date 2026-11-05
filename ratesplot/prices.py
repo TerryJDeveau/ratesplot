@@ -52,11 +52,48 @@ from .config import (
     STATCAN_CDN_CPI_SA_VECTOR,
     STATCAN_CDN_CPI_TABLE,
     STATCAN_CDN_CPI_VECTOR,
+    nation_by_key,
 )
 from .de_data import fetch_de_consumer_prices
 from .uk_archive_data import EMBEDDED_UK_CPI_HISTORY
 from .uk_data import UK_CPI_SERIES, UK_INFLATION_SERIES, ons_series
 from .us_data import US_CPI_SA_SERIES_ID, US_CPI_SERIES_ID, fred_series
+
+
+# A month a nation's index has no value, and why (batch 40.3; Terry, 2026-11-05, on the U.S.' 2025-10: "Surely this is
+# some kind of error?"). It is the source's: the Bureau collected no prices from 2025-10-01 to 2025-11-12, published no
+# index for October, and says it won't publish a 12-month change for 2026-10 where it needs one
+# (https://www.bls.gov/cpi/additional-resources/2025-federal-government-shutdown-impact-cpi-faq.htm). FRED's row is empty.
+MONTH_WITHOUT_INDEX = {"us": (pd.Timestamp("2025-10-01"), "the Bureau of Labor Statistics collected no prices in the 2025 shutdown")}
+
+
+def no_index_note(country: str, start: pd.Timestamp, end: pd.Timestamp, rises: pd.Series | None, index: pd.Series | None) -> str | None:
+    """What a chart from ``start`` to ``end`` says of a month ``country``'s index has no value, or None if it shows none (batch 40.3).
+
+    ``rises`` and ``index`` are the inflation curve and the price index, each
+    None if the chart doesn't draw it. Each is asked whether it lacks the
+    month, so a value the source later published would end the note. The rise
+    is missing for the month and for the month a year on; the index's line
+    holds the month before across it.
+    """
+    known = MONTH_WITHOUT_INDEX.get(country)
+    if known is None:
+        return None
+    month, why = known
+    year_on = month + pd.DateOffset(years=1)
+
+    def lacks(values: pd.Series | None, when: pd.Timestamp) -> bool:
+        return values is not None and start < when + pd.DateOffset(months=1) and when <= end and pd.isna(values.get(when))
+
+    no_rise, no_index = lacks(rises, month) or lacks(rises, year_on), lacks(index, month)
+    if not (no_rise or no_index):
+        return None
+    note = f"no {nation_by_key(country).adjective} consumer price index for {month:%Y-%m}: {why}"
+    if no_rise:
+        note += f", so no 12-month rise for {month:%Y-%m} or {year_on:%Y-%m}"
+    if no_index:
+        note += f"; the index's line holds {month - pd.DateOffset(months=1):%Y-%m}'s across the month"
+    return note
 
 
 def _by_month(values: pd.Series) -> pd.Series:
