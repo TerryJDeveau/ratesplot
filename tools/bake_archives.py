@@ -29,7 +29,7 @@ the BEGIN/END markers of
   ``openpyxl``). ``--de-csv FILE``, ``--de-discount-csv FILE``,
   ``--de-cpi-workbook FILE``, ``--de-population-text FILE``,
   ``--de-mortgage-5y-csv FILE``, ``--de-mortgage-10y-csv FILE``,
-  ``--de-gdp-annual-csv FILE`` and ``--de-gdp-quarterly-csv FILE`` read the
+  ``--de-gdp-annual-csv FILE``, ``--de-gdp-quarterly-csv FILE`` and ``--de-debt-csv FILE`` read the
   downloads, or the extracts of them, already saved (tools/de_fixtures).
 * ``ratesplot/data/boe/``: the Bank of England database's series, every value
   of each, one file per series (batch 19.2: the live sources' history, of
@@ -71,7 +71,7 @@ Usage (from the project root)::
     python tools/bake_archives.py            # every nation, and boe, boc, fred, ecb, eurostat, ons, bbk and statcan
     python tools/bake_archives.py --only us  # or cdn, uk, de, boe, boc, fred, ecb, eurostat, ons, bbk, statcan
     python tools/bake_archives.py --only uk --uk-workbook a-millennium-of-macroeconomic-data-for-the-uk.xlsx
-    python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv --de-cpi-workbook tools/de_fixtures/raw/destatis_vpi_lange_reihen.xlsx --de-population-text tools/de_fixtures/raw/bbk_lange_zeitreihen_V1.txt --de-mortgage-5y-csv tools/de_fixtures/raw/bbib1_HYP_F05J.csv --de-mortgage-10y-csv tools/de_fixtures/raw/bbib1_HYP_F10J.csv --de-gdp-annual-csv tools/de_fixtures/raw/destatis_81000_117_gdp.csv --de-gdp-quarterly-csv tools/de_fixtures/raw/destatis_fs18_s27_gdp_q.csv
+    python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv --de-cpi-workbook tools/de_fixtures/raw/destatis_vpi_lange_reihen.xlsx --de-population-text tools/de_fixtures/raw/bbk_lange_zeitreihen_V1.txt --de-mortgage-5y-csv tools/de_fixtures/raw/bbib1_HYP_F05J.csv --de-mortgage-10y-csv tools/de_fixtures/raw/bbib1_HYP_F10J.csv --de-gdp-annual-csv tools/de_fixtures/raw/destatis_81000_117_gdp.csv --de-gdp-quarterly-csv tools/de_fixtures/raw/destatis_fs18_s27_gdp_q.csv --de-debt-csv tools/de_fixtures/raw/destatis_fs14_r5_debt.csv
 """
 
 from __future__ import annotations
@@ -127,6 +127,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--de-mortgage-10y-csv", type=Path, help="the Bundesbank's older 10-year mortgage rate (BBIB1) already on disk")
     parser.add_argument("--de-gdp-annual-csv", type=Path, help="the extract of West Germany's yearly GDP from table 81000-117 already on disk")
     parser.add_argument("--de-gdp-quarterly-csv", type=Path, help="the extract of West Germany's quarterly GDP, 1970 to 1991, already on disk")
+    parser.add_argument("--de-debt-csv", type=Path, help="the extract of Germany's debt by level, Fachserie 14 Reihe 5, already on disk")
     args = parser.parse_args(argv)
     all_baked = True
     # One pass, as a drawing: a source that does not answer is asked nothing more in it (batch 19.3).
@@ -144,6 +145,7 @@ def main(argv: list[str]) -> int:
                         saved_mortgage_csvs={"EMBEDDED_DE_MORTGAGE_5Y_HISTORY": args.de_mortgage_5y_csv, "EMBEDDED_DE_MORTGAGE_10Y_HISTORY": args.de_mortgage_10y_csv},
                         saved_gdp_annual_csv=args.de_gdp_annual_csv,
                         saved_gdp_quarterly_csv=args.de_gdp_quarterly_csv,
+                        saved_debt_csv=args.de_debt_csv,
                     )
                 else:
                     # The archives raise when they cannot be baked; a live source's

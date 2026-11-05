@@ -58,6 +58,7 @@ sources served on 2026-10-06 evening (Toronto).
     `bake.parse_long_series_population`.)*
   - *(Added 2026-11-05, batch 16: two extracts of the Federal Statistical Office's workbooks, by
     `G:\Research\Claude\ratesplot_measurements_2026-11-04_b16\extract_gdp.py`, not as served.
+    `destatis_fs14_r5_debt.csv`: sheet `1.1.1` of `config.DESTATIS_PUBLIC_DEBT_URL`, its first nine columns to the row of 2000-12-31, read by `bake.parse_german_debt`.
     `destatis_81000_117_gdp.csv`: sheet `csv-81000-117` of `config.DESTATIS_NATIONAL_ACCOUNTS_URL`
     (50 MB), the rows of GDP at current prices and per person, 1950 to 1991, read and baked by
     `bake.parse_west_german_gdp`. `destatis_fs18_s27_gdp_q.csv`: sheet `1.1` of
