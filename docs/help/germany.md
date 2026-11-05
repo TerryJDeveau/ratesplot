@@ -1,12 +1,12 @@
 # Germany
 
-Germany's chart is drawn only when it is asked for: while its box is ticked, or when the command line names it, `--nations:de` (or `ger`, `deu`) alone or with others, as in `--nations:ca,us,de`. Its amounts are in euros (€), its rates in percent a year. Figures before 1999 are Deutsche Marks converted to euros at 1.95583, as the ECB and Eurostat publish them. Germany's GDP, debt and interest begin with unification; West Germany's, from 1950, are planned. This page says what the chart holds for Germany; the page of each curve, linked below, gives its sources in full.
+Germany's chart is drawn only when it is asked for: while its box is ticked, or when the command line names it, `--nations:de` (or `ger`, `deu`) alone or with others, as in `--nations:ca,us,de`. Its amounts are in euros (€), its rates in percent a year. Figures before 1999 are Deutsche Marks converted to euros at 1.95583, as the ECB and Eurostat publish them. Germany's GDP is West Germany's from 1950 until unification; its debt and interest begin with unification, and West Germany's are planned. This page says what the chart holds for Germany; the page of each curve, linked below, gives its sources in full.
 
 ## What the chart draws
 
 At the start it draws GDP, debt and interest on the right axis, and the 2-, 5-, 10- and 30-year bond yields on the left; the policy rate, inflation, mortgage rates, yield spreads, the price index or the population when they are ticked.
 
-- [TTM nominal GDP](?help=gdp), from 1991: Eurostat's quarterly national accounts.
+- [TTM nominal GDP](?help=gdp), from 1950: West Germany's from the Federal Statistical Office, yearly to 1969 and its quarters from 1970, then Eurostat's quarterly national accounts for all of Germany from the end of 1991.
 - [Aggregate public debt](?help=debt), from 1991: general government consolidated gross debt, the ECB's year ends to 1999, Eurostat's quarters from 2000.
 - [TTM interest outlays](?help=interest), from 1995: general government interest payable, Eurostat's years to 2001, its quarters from 2002.
 - [By level](?help=levels): the debt and interest of the federal government, the Länder or local government, or of the Länder and local government together, instead of the total, from Eurostat's figures by subsector.
@@ -15,7 +15,7 @@ At the start it draws GDP, debt and interest on the right axis, and the 2-, 5-, 
 - [Policy rates](?help=policy-rates): the Bundesbank's discount rate from 1948-07 (the Bank deutscher Länder's until 1957), then the ECB's main refinancing rate from 1999-01-01; the overnight market's rate, EONIA from 1999-01-04, €STR from 2019-10-01. From 1999 the rates are the euro area's.
 - [Inflation](?help=inflation), from 1949-06: the 12-month rise of the Federal Statistical Office's consumer price index: West Germany's to 1990, then the index for all of Germany, from the Bundesbank.
 - [Mortgage rates](?help=mortgages), monthly: the ECB's rates on new loans to households in Germany for house purchase, fixed for over 1 to 5, over 5 to 10 and over 10 years, from 2003-01. Before it, the Bundesbank's older rates on new mortgages fixed for 5 and for 10 years, drawn as the first two, from 1982-06; the third from 2000-01, on the ECB's estimates. All three are ticked at the start.
-- [Per capita](?help=per-capita): divided by Eurostat's population, quarterly from 1991.
+- [Per capita](?help=per-capita): divided by the population the Population box draws, but for West Germany's GDP before 1960 and through 1990 and 1991, where the two cover different territories and it has a population of its own.
 - [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the Federal Statistical Office's index, West Germany's before 1991.
 - [Price index (CPI)](?help=price-index): the Federal Statistical Office's consumer price index from 1948-06, 2020 = 100: West Germany's to 1990, scaled to the index for all of Germany, from the Bundesbank; calendar and seasonally adjusted from 1991-01.
 - [Population](?help=population): the Bundesbank's yearly averages from 1950, Eurostat's counts on 1 January from 1960, West Germany's until 1990, its quarterly figures from 1991.

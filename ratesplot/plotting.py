@@ -130,7 +130,7 @@ from .latest import (
     project_to_now,
 )
 from .legend import finish_legend_and_title
-from .measures import PRICE_BASE_ATTR, express
+from .measures import PRICE_BASE_ATTR, OwnPopulation, express
 from .prices import consumer_prices
 from .rates import (
     INFLATION_KEY,
@@ -156,6 +156,7 @@ from .de_data import (
     fetch_de_population,
     fetch_de_yields,
     de_series_earliest,
+    west_german_gdp_population,
 )
 from .uk_data import (
     YIELD_HISTORY_ATTR,
@@ -1161,7 +1162,9 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     projected = macro.attrs.get(PROJECTION_ATTR, {})
     population = fetch_de_population() if config.per_capita or config.population else None
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
-    expressed = express(macro, config, DE, population, _consumer_prices("de", config))
+    # West Germany's GDP and the population drawn cover other territories before 1960 and at unification (batch 16).
+    gdp_population = OwnPopulation(DE.gdp_column, west_german_gdp_population()) if config.per_capita else None
+    expressed = express(macro, config, DE, population, _consumer_prices("de", config), gdp_population)
     expressed.attrs[PROJECTION_ATTR] = projected
     expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("de", config, population)
     return yields, expressed, rates

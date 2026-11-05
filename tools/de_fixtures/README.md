@@ -56,6 +56,13 @@ sources served on 2026-10-06 evening (Toronto).
     Zeitreihen" of 2020-09-01 (`config.BUNDESBANK_LONG_SERIES_PDF_URL`, 5.6 MB), part V table 1, as
     `pdftotext -layout -enc UTF-8 -f 29 -l 29` gives it; read and baked by
     `bake.parse_long_series_population`.)*
+  - *(Added 2026-11-05, batch 16: two extracts of the Federal Statistical Office's workbooks, by
+    `G:\Research\Claude\ratesplot_measurements_2026-11-04_b16\extract_gdp.py`, not as served.
+    `destatis_81000_117_gdp.csv`: sheet `csv-81000-117` of `config.DESTATIS_NATIONAL_ACCOUNTS_URL`
+    (50 MB), the rows of GDP at current prices and per person, 1950 to 1991, read and baked by
+    `bake.parse_west_german_gdp`. `destatis_fs18_s27_gdp_q.csv`: sheet `1.1` of
+    `config.DESTATIS_REVISED_QUARTERS_URL`, its first three columns, read and baked by
+    `bake.parse_west_german_quarterly_gdp`.)*
 
 ### ECB Data Portal (`https://data-api.ecb.europa.eu/service/data/{flow}/{key}?format=csvdata`)
 

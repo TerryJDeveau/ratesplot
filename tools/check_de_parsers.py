@@ -43,6 +43,7 @@ Exit code 1 if any check fails.
 from __future__ import annotations
 
 import contextlib
+import csv
 import io
 import json
 import sys
@@ -58,8 +59,8 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, baked, de_archive_data, de_data, latest, rates  # noqa: E402
-from ratesplot.config import CNBC_QUOTE_URL, PlotConfig, component_column  # noqa: E402
+from ratesplot import bake, baked, de_archive_data, de_data, latest, measures, rates  # noqa: E402
+from ratesplot.config import CNBC_QUOTE_URL, DE, GDP_COLUMN, PlotConfig, component_column  # noqa: E402
 from ratesplot.http import BotCheck  # noqa: E402
 
 RAW = ROOT / "tools" / "de_fixtures" / "raw"
@@ -237,6 +238,91 @@ def check_west_population() -> None:
           and people.index[-1] == pd.Timestamp("1959-07-01") and len(people) == 10, people.iloc[-1])
 
 
+def csv_rows(name: str) -> list[list[str]]:
+    return list(csv.reader(io.StringIO(text(name))))
+
+
+def check_west_gdp() -> None:
+    """Batch 16: West Germany's GDP, read from the extracts of the Federal Statistical Office's tables (saved 2026-11-05), its bake, its joins and its population."""
+    annual_rows, quarter_rows = csv_rows("destatis_81000_117_gdp.csv"), csv_rows("destatis_fs18_s27_gdp_q.csv")
+    read = bake.parse_west_german_gdp(annual_rows)
+    narrow, each, old_basis = read["narrow"], read["per_person"], read["old_basis"]
+    check("West GDP: without the Saarland and West Berlin 1950 to 1959, 49.69 and 130.31, each year's 31 December",
+          len(narrow) == 10 and narrow.iloc[0] == 49.69 and narrow.loc["1951-12-31"] == 61 and narrow.index[-1] == pd.Timestamp("1959-12-31") and narrow.iloc[-1] == 130.31, narrow.to_dict())
+    check("West GDP: per person 1950 to 1959, 1059 and 2524", len(each) == 10 and each.iloc[0] == 1059 and each.iloc[-1] == 2524, each.to_dict())
+    check("West GDP: the whole territory on the old basis 1960 to 1970, 154.77, 305.22 and 345.28",
+          len(old_basis) == 11 and old_basis.iloc[0] == 154.77 and old_basis.loc["1969-12-31"] == 305.22 and old_basis.iloc[-1] == 345.28, old_basis.to_dict())
+    quarters = bake.parse_west_german_quarterly_gdp(quarter_rows)
+    check("West GDP: 88 quarters 1970 to 1991, 80.2 and 374.67, each dated by its last day",
+          len(quarters) == 88 and quarters.index[0] == pd.Timestamp("1970-03-31") and quarters.iloc[0] == 80.2 and quarters.index[-1] == pd.Timestamp("1991-12-31") and quarters.iloc[-1] == 374.67, len(quarters))
+    for name, values in (("NARROW", narrow), ("PER_PERSON", each), ("OLD_BASIS", old_basis), ("QUARTERS", quarters)):
+        baked_values = pd.Series({pd.Timestamp(date): value for date, value in getattr(de_archive_data, f"EMBEDDED_DE_WEST_GDP_{name}")}, dtype=float)
+        check(f"bake: EMBEDDED_DE_WEST_GDP_{name} holds the extract", baked_values.equals(values.rename(None).rename_axis(None)), len(baked_values))
+    # The table's own revised years, which the quarters must add up to, and the two figures for 1960, 1970 and 1991.
+    table = {(row[1], row[2], row[4], int(row[6])): float(row[7]) for row in annual_rows[1:]}
+    revised = {year: value for (where, _span, kind, year), value in table.items() if where.endswith("(Ergebnisse der VGR-Revision 2005)") and kind == "in jeweiligen Preisen"}
+    sums = quarters.groupby(quarters.index.year).sum()
+    gaps = {year: abs(sums.loc[year] - value) for year, value in revised.items()}
+    check("West GDP: the quarters add up to the table's revised year in all 22 years, within 0.03, and exactly at 1970, 1980, 1990, 1991",
+          len(gaps) == 22 and max(gaps.values()) < 0.03 and all(gaps[year] < 1e-6 for year in (1970, 1980, 1990, 1991)), max(gaps.values()))
+    whole, without = table[("Früheres Bundesgebiet", "1960-1970", "in jeweiligen Preisen", 1960)], table[("Früheres Bundesgebiet (ohne Berlin-West und Saarland)", "1950-1960", "in jeweiligen Preisen", 1960)]
+    check("West GDP: 1960's two rows differ by the territory, 6.0 %", (whole, without) == (154.77, 146.04) and abs(whole / without - 1.0598) < 0.0001, whole / without)
+    # Refusals: a table that moved a territory or a unit, lost a year or a quarter, or changed its columns.
+    renamed = [[cell.replace("ohne Berlin-West und Saarland", "mit Berlin-West und Saarland") for cell in row] for row in annual_rows]
+    check("West GDP: another territory named for 1950 to 1960 is refused", raises(bake.parse_west_german_gdp, renamed) is not None)
+    respanned = [[cell.replace("1960-1970", "1960-1969") for cell in row] for row in annual_rows]
+    check("West GDP: another span for the whole territory is refused", raises(bake.parse_west_german_gdp, respanned) is not None)
+    check("West GDP: a year gone is refused", raises(bake.parse_west_german_gdp, [row for row in annual_rows if not (row[6] == "1955" and row[4] == "in jeweiligen Preisen")]) is not None)
+    check("West GDP: another unit is refused", raises(bake.parse_west_german_gdp, [[("Mio. EUR" if cell == "Mrd. EUR" else cell) for cell in row] for row in annual_rows]) is not None)
+    check("West GDP: columns moved are refused", raises(bake.parse_west_german_gdp, [annual_rows[0][::-1], *annual_rows[1:]]) is not None)
+    check("West GDP: a quarter gone is refused", raises(bake.parse_west_german_quarterly_gdp, [row for row in quarter_rows if row[2] != "80.2"]) is not None)
+    check("West GDP: another column of the quarters is refused", raises(bake.parse_west_german_quarterly_gdp, [[("Mrd. DM" if cell == "Mrd. EUR" else cell) for cell in row] for row in quarter_rows]) is not None)
+    # The joins.
+    west = de_data.west_german_gdp() / 1e9
+    check("join: 105 figures, from 1950-12-31 to West Germany's own 1991-12-31", len(west) == 105 and west.index[0] == pd.Timestamp("1950-12-31") and west.index[-1] == pd.Timestamp("1991-12-31"), len(west))
+    check("join: the step at 1960 kept (130.31, then 154.77); 1960 to 1965 as published", west.loc["1959-12-31"] == 130.31 and abs(west.loc["1960-12-31"] - 154.77) < 1e-9 and abs(west.loc["1965-12-31"] - 234.77) < 1e-9, west.loc["1959":"1961"].to_dict())
+    check("join: 1969 raised 4.437 % to 318.76, so 1970's growth stays the old basis's, 13.12 %",
+          abs(west.loc["1969-12-31"] / 305.22 - 360.60 / 345.28) < 1e-9 and abs(west.loc["1970-12-31"] / west.loc["1969-12-31"] - 345.28 / 305.22) < 1e-9, west.loc["1969-12-31"])
+    check("join: the ramp is geometric over 1965 to 1969", abs(west.loc["1967-12-31"] / 252.76 - (360.60 / 345.28) ** 0.5) < 1e-9, west.loc["1967-12-31"])
+    check("join: four-quarter sums from 1970-12-31 (360.60), 1991-09-30 1391.36, the quarters of 1970 not summed before it",
+          abs(west.loc["1970-12-31"] - 360.60) < 1e-9 and abs(west.loc["1991-09-30"] - 1391.36) < 1e-9 and pd.Timestamp("1970-09-30") not in west.index, west.loc["1991-09-30"])
+    # The population behind it, and what it gives per person.
+    people = de_data.west_german_gdp_population()
+    check("population: GDP's own 46,922 thousand in 1950, 51,628 in 1959 (GDP over its figure per person)",
+          round(people.loc["1950-12-31"] / 1e3) == 46_922 and round(people.loc["1959-12-31"] / 1e3) == 51_628, people.loc["1959-12-31"])
+    check("population: the population drawn from 1960-12-31 and from 1991-12-31", pd.isna(people.loc["1960-12-31"]) and pd.isna(people.loc["1991-12-31"]) and people.notna().sum() == 18, people.notna().sum())
+    check("population: West Germany's at unification, from 1990-01-01, 64,074 thousand held from 1991-07-01; every West German figure of the span has its own",
+          people.index[11] == pd.Timestamp("1990-01-01") and 62_000_000 < people.iloc[11] < 63_000_000 and np.isclose(people.loc["1991-09-30"], 64_074_000)
+          and all(date in people.index for date in pd.date_range("1990-03-31", "1991-09-30", freq="QE")), people.iloc[11])
+    dates = pd.to_datetime(["1959-12-31", "1960-01-01", "1960-12-31", "1989-12-31", "1990-12-31", "1991-09-30", "1991-12-31"])
+    gdp = [130.31e9, 130.31e9, 154.77e9, 1000e9, 1306.68e9, 1391.36e9, 1590e9]
+    frame = pd.DataFrame({"DATE": dates, GDP_COLUMN: [np.nan, gdp[1], gdp[2], gdp[3], gdp[4], gdp[5], gdp[6]]})
+    drawn = pd.Series([50e6, 80e6], index=pd.to_datetime(["1960-01-01", "1991-12-31"]))
+    per_person = measures.per_person(frame, DE, drawn, measures.OwnPopulation(GDP_COLUMN, people))[GDP_COLUMN]
+    check("per person: 1959's figure showing on 1960-01-01 comes back as published, 2524", abs(per_person.iloc[1] - 2524) < 1e-6, per_person.iloc[1])
+    check("per person: 1960's and 1989's by the population drawn", abs(per_person.iloc[2] - gdp[2] / measures.population_on(frame["DATE"], drawn).iloc[2]) < 1e-6
+          and abs(per_person.iloc[3] - gdp[3] / measures.population_on(frame["DATE"], drawn).iloc[3]) < 1e-6, per_person.iloc[2])
+    check("per person: 1990's and 1991's West German figures by West Germany's, whatever the population drawn says", abs(per_person.iloc[4] - gdp[4] / people.loc["1990-12-31"]) < 1e-6
+          and np.isclose(per_person.iloc[5], 1391.36e9 / 64_074_000), per_person.iloc[4])
+    check("per person: all of Germany's from 1991-12-31 by the population drawn", abs(per_person.iloc[6] - 1590e9 / 80e6) < 1e-6, per_person.iloc[6])
+    # Eurostat down: West Germany's alone, said so; its figures unchanged.
+    printed = io.StringIO()
+
+    def down(*_args, **_kwargs):
+        raise OSError("down")
+
+    real_series, de_data.eurostat_series = de_data.eurostat_series, down
+    try:
+        with contextlib.redirect_stdout(printed):
+            alone = de_data.fetch_de_gdp(PlotConfig(start=pd.Timestamp("1950-01-01"), end=pd.Timestamp("2026-10-07")))
+            relative = de_data.fetch_de_gdp(PlotConfig(start=pd.Timestamp("1950-01-01"), end=pd.Timestamp("2026-10-07"), relative=True))
+    finally:
+        de_data.eurostat_series = real_series
+    check("Eurostat down: West Germany's alone, to 1991-12-31, with a warning", alone is not None and alone[GDP_COLUMN].index[-1] == pd.Timestamp("1991-12-31")
+          and "West Germany's alone" in printed.getvalue(), printed.getvalue())
+    check("Eurostat down, under -r: none, with a warning, or all of Germany's debt would be divided by West Germany's GDP", relative is None and "not drawn" in printed.getvalue(), printed.getvalue())
+
+
 def check_older_mortgages() -> None:
     """Batch 16: the Bundesbank's older mortgage rates, as saved 2026-11-04, their bake, and what was measured against the ECB's bands."""
     series = bake.DE_MORTGAGE_HISTORY_SERIES
@@ -345,8 +431,12 @@ def check_fetchers() -> None:
         check("interest: annual 1995-2001, then four-quarter sums from 2002 Q4",
               interest.index[0] == pd.Timestamp("1995-12-31") and interest.loc["2001-12-31"] > 0
               and interest.index[interest.index > pd.Timestamp("2001-12-31")][0] == pd.Timestamp("2002-12-31"))
-        gdp = de_data.fetch_de_gdp(config)["TTM Nominal GDP ($)"]
-        check("GDP: four-quarter sums from 1991 Q4", gdp.index[0] == pd.Timestamp("1991-12-31"))
+        gdp = de_data.fetch_de_gdp(config)[GDP_COLUMN]
+        unified = de_data.ttm_sum(de_data.parse_jsonstat(jsonstat("est_gdp_q"), "CP_MEUR")) * 1e6
+        check("GDP: West Germany's from 1950-12-31 to 1991-09-30, then Eurostat's four-quarter sums from 1991 Q4",
+              gdp.index[0] == pd.Timestamp("1950-12-31") and gdp.index[gdp.index < unified.index[0]][-1] == pd.Timestamp("1991-09-30")
+              and unified.index[0] == pd.Timestamp("1991-12-31") and np.isclose(gdp.loc["1991-12-31"], unified.iloc[0])
+              and np.isclose(gdp.iloc[-1], unified.iloc[-1]), unified.iloc[0])
         people = de_data.fetch_de_population()
         check("population: annual averages 1950 to 1959, then 1 January from 1960 (1991's the first unified), then mid-quarters (79,777 thousand on 1991-02-15)",
               people.index[0] == pd.Timestamp("1950-07-01") and people.loc["1959-07-01"] == 54_876_000 and people.loc["1960-01-01"] == 55_257_088
@@ -456,7 +546,7 @@ def check_cnbc() -> None:
 
 
 def main() -> int:
-    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_older_mortgages, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
+    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_west_gdp, check_older_mortgages, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
         group()
     passed = sum(RESULTS)
     print(f"[de parsers] {passed} of {len(RESULTS)} checks passed")

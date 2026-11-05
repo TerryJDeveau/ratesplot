@@ -45,6 +45,7 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
+import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -101,6 +102,8 @@ from .config import (
     DE_ARCHIVE_BEGIN_MARKER,
     DE_ARCHIVE_END_MARKER,
     DESTATIS_CPI_LONG_SERIES_URL,
+    DESTATIS_NATIONAL_ACCOUNTS_URL,
+    DESTATIS_REVISED_QUARTERS_URL,
     DATE_COLUMN,
     GDP_COLUMN,
     HISTORICAL_CDN_GDP_ANNUAL_TABLE,
@@ -1725,13 +1728,29 @@ def parse_west_german_prices(workbook) -> dict[str, pd.Series]:
     return found
 
 
+# www.destatis.de's robots.txt asks for 30 s between requests (measured 2026-11-04),
+# and a bake asking for everything makes three.
+_DESTATIS_CRAWL_DELAY_SECONDS = 30
+_destatis_last_request: float | None = None
+
+
+def _destatis_content(url: str) -> bytes:
+    """Return what the Federal Statistical Office serves at ``url``, its robots.txt's delay kept since the last request of this bake."""
+    global _destatis_last_request
+    if _destatis_last_request is not None:
+        time.sleep(max(0.0, _destatis_last_request + _DESTATIS_CRAWL_DELAY_SECONDS - time.monotonic()))
+    content = de_get(url).content
+    _destatis_last_request = time.monotonic()
+    return content
+
+
 def _west_german_prices(saved: Path | None) -> tuple[dict[str, pd.Series], str]:
     """Return ``(West Germany's two indexes, where they were read from)``: from the Federal Statistical Office, or the copy ``saved``."""
     import openpyxl  # the bake's own dependency, as the UK's: the program does not need it for this
 
     if saved is None:
         print("Downloading the Federal Statistical Office's long series of consumer prices …")
-        content, source_name = de_get(DESTATIS_CPI_LONG_SERIES_URL).content, DESTATIS_CPI_LONG_SERIES_URL
+        content, source_name = _destatis_content(DESTATIS_CPI_LONG_SERIES_URL), DESTATIS_CPI_LONG_SERIES_URL
     else:
         content, source_name = Path(saved).read_bytes(), f"{Path(saved).name} (saved from {DESTATIS_CPI_LONG_SERIES_URL})"
     workbook = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
@@ -1754,6 +1773,9 @@ _DE_LONG_SERIES_POPULATION_PAGE = 29
 _DE_LONG_SERIES_POPULATION_YEARS = (1950, 2019)
 _DE_LONG_SERIES_FIRST_UNIFIED_YEAR = 1992
 _DE_WEST_POPULATION_LAST_YEAR = 1959
+# Its last years for West Germany alone, which West Germany's GDP is divided by while
+# the population drawn has reached all of Germany's (``de_data.west_german_gdp_population``).
+_DE_WEST_POPULATION_AT_UNIFICATION_YEARS = (1989, 1990, 1991)
 _DE_LONG_SERIES_POPULATION_HEADINGS = (
     "1. Bevölkerung und Arbeitsmarkt",
     "Jahresdurchschnitte",
@@ -1786,8 +1808,8 @@ def parse_long_series_population(text: str) -> pd.Series:
     return population
 
 
-def _west_german_population(saved: Path | None) -> tuple[pd.Series, str]:
-    """Return ``(West Germany's population 1950 to 1959, where it was read from)``: from the Bundesbank's PDF, through pdftotext, or the page's text ``saved``."""
+def _west_german_population(saved: Path | None) -> tuple[pd.Series, pd.Series, str]:
+    """Return ``(West Germany's population 1950 to 1959, and at unification, where it was read from)``: from the Bundesbank's PDF, through pdftotext, or the page's text ``saved``."""
     if saved is not None:
         text = Path(saved).read_text(encoding="utf-8")
         source_name = f"{Path(saved).name} (page {_DE_LONG_SERIES_POPULATION_PAGE}, by pdftotext -layout, of {BUNDESBANK_LONG_SERIES_PDF_URL})"
@@ -1803,7 +1825,8 @@ def _west_german_population(saved: Path | None) -> tuple[pd.Series, str]:
             text = subprocess.run([reader, "-layout", "-enc", "UTF-8", "-f", page, "-l", page, str(pdf), "-"], capture_output=True, check=True).stdout.decode("utf-8")
         source_name = BUNDESBANK_LONG_SERIES_PDF_URL
     population = parse_long_series_population(text)
-    return population.loc[population.index.year <= _DE_WEST_POPULATION_LAST_YEAR], source_name
+    at_unification = population.loc[population.index.year.isin(_DE_WEST_POPULATION_AT_UNIFICATION_YEARS)]
+    return population.loc[population.index.year <= _DE_WEST_POPULATION_LAST_YEAR], at_unification, source_name
 
 
 # Germany's mortgage rates before the ECB's reported ones begin (batch 16). The
@@ -1836,6 +1859,115 @@ def parse_german_mortgage_history(text: str, series: tuple[str, str]) -> pd.Seri
     return monthly
 
 
+# West Germany's GDP before Eurostat's unified sums begin (batch 16). The Federal
+# Statistical Office's table 81000-117, in the long form of its "Statistischer
+# Bericht" on the national accounts, each row naming its territory and span, in
+# billions of euros at 1.95583 and in euros per person: 1950 to 1960 without West
+# Berlin and the Saarland, 1960 to 1970 the whole former territory, 1970 to 1991
+# after the revision of 2005. West Germany's own figures stop at 1991, so baked.
+# Kept here: the narrow years to 1959 and what they were per person, and the whole
+# territory on the old basis to 1970, whose last figure is only for the ratio to the
+# revised one (``de_data.west_german_gdp``). A territory is read by its name, so a
+# table that moved one would be refused. Each name: its territory, its span's label,
+# the measure and unit, the years kept.
+DE_WEST_GDP_SHEET = "csv-81000-117"
+_DE_WEST_GDP_HEADING = ("Statistik", "Gebiet1", "Gebiet2", "Merkmal1", "Merkmal2", "Masseinheit", "Jahr", "Wert")
+_DE_WEST_GDP_MEASURE = "Bruttoinlandsprodukt"
+_DE_WEST_GDP_TOTAL = ("in jeweiligen Preisen", "Mrd. EUR")
+_DE_WEST_GDP_EACH = ("in jeweiligen Preisen je Einwohner", "EUR")
+_DE_WEST_GDP_NARROW_TERRITORY = ("Früheres Bundesgebiet (ohne Berlin-West und Saarland)", "1950-1960")
+_DE_WEST_GDP_TABLES = {
+    "narrow": (*_DE_WEST_GDP_NARROW_TERRITORY, _DE_WEST_GDP_TOTAL, 1950, 1959),
+    "per_person": (*_DE_WEST_GDP_NARROW_TERRITORY, _DE_WEST_GDP_EACH, 1950, 1959),
+    "old_basis": ("Früheres Bundesgebiet", "1960-1970", _DE_WEST_GDP_TOTAL, 1960, 1970),
+}
+# The quarters, Fachserie 18 Reihe S.27, sheet 1.1, its third column: the unadjusted
+# values ("Ursprungswerte"), billions of euros, 88 quarters. Their four-quarter sums
+# equal table 81000-117's revised years (``check_de_parsers``).
+DE_WEST_GDP_QUARTERS_SHEET = "1.1"
+_DE_WEST_GDP_QUARTERS_HEADINGS = ["Früheres Bundesgebiet", "1.1 Bruttoinlandsprodukt", "In jeweiligen Preisen", "Ursprungswerte", "Mrd. EUR"]
+_DE_WEST_GDP_QUARTERS = pd.date_range("1970-03-31", "1991-12-31", freq="QE")
+
+
+def parse_west_german_gdp(rows) -> dict[str, pd.Series]:
+    """Return West Germany's yearly GDP from table 81000-117's long form (its rows, the heading first), keyed as ``_DE_WEST_GDP_TABLES``, each year dated by 31 December.
+
+    Raises if the heading has moved, a measure is in another unit, or a span
+    named by its territory lacks a year, so a changed table cannot shift a curve.
+    """
+    rows = iter(rows)
+    heading = tuple(next(rows))
+    if heading != _DE_WEST_GDP_HEADING:
+        raise RuntimeError(f"West German GDP: the columns are now {heading}; data module not modified.")
+    table = [tuple(row) for row in rows]
+    found: dict[str, pd.Series] = {}
+    for name, (territory, span, (kind, unit), first, last) in _DE_WEST_GDP_TABLES.items():
+        values: dict[pd.Timestamp, float] = {}
+        for _statistic, where, when, measure, what, in_unit, year, value in table:
+            if (where, when, measure, what) == (territory, span, _DE_WEST_GDP_MEASURE, kind) and first <= int(year) <= last:
+                if in_unit != unit:
+                    raise RuntimeError(f"West German GDP, {name}: {year} is in {in_unit}, not {unit}; data module not modified.")
+                values[pd.Timestamp(int(year), 12, 31)] = round(float(value), 2)
+        series = pd.Series(values, dtype=float).sort_index().rename_axis(DATE_COLUMN)
+        if list(series.index.year) != list(range(first, last + 1)):
+            raise RuntimeError(f"West German GDP, {name}: not every year from {first} to {last} under {territory!r}, {span}; data module not modified.")
+        found[name] = series
+    return found
+
+
+def parse_west_german_quarterly_gdp(rows) -> pd.Series:
+    """Return West Germany's quarterly GDP, 1970 to 1991, in billions of euros, each quarter dated by its last day, from the rows of Fachserie 18 Reihe S.27's sheet 1.1.
+
+    Raises if a heading has moved or a quarter is missing or added, so a changed
+    table cannot shift a curve.
+    """
+    table = [cells for cells in ([_workbook_heading(cell) for cell in row[:3]] for row in rows) if any(cells)]
+    headings = [table[0][0], table[2][0], table[3][2], table[4][2], table[6][2]]
+    if headings != _DE_WEST_GDP_QUARTERS_HEADINGS:
+        raise RuntimeError(f"West German quarterly GDP: the headings are now {headings}; data module not modified.")
+    year = None
+    values: dict[pd.Timestamp, float] = {}
+    for label, quarter, value in table[7:]:
+        year = int(label) if re.fullmatch(r"\d{4}", label) else year
+        number = re.fullmatch(r"([1-4])\.\s*Vj", quarter)
+        if year is not None and number:
+            values[pd.Period(f"{year}Q{number.group(1)}").end_time.normalize()] = round(float(value), 2)
+    series = pd.Series(values, dtype=float).sort_index().rename_axis(DATE_COLUMN)
+    if not series.index.equals(_DE_WEST_GDP_QUARTERS):
+        raise RuntimeError(f"West German quarterly GDP: {len(series)} quarters, not every quarter of 1970 to 1991; data module not modified.")
+    return series
+
+
+def _rows_of_sheet(content: bytes, sheet: str) -> list[tuple]:
+    """Return one sheet's rows of a workbook served as ``content``."""
+    import openpyxl  # the bake's own dependency, as the UK's: the program does not need it for this
+
+    workbook = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    try:
+        return list(workbook[sheet].iter_rows(values_only=True))
+    finally:
+        workbook.close()
+
+
+def _west_german_gdp(saved_annual: Path | None, saved_quarterly: Path | None) -> tuple[dict[str, pd.Series], pd.Series, list[str]]:
+    """Return ``(West Germany's years, its quarters, where each was read from)``: from the Federal Statistical Office, or the extracts ``saved``."""
+    if saved_annual is None:
+        print("Downloading the Federal Statistical Office's national accounts (50 MB) …")
+        annual_rows, annual_name = _rows_of_sheet(_destatis_content(DESTATIS_NATIONAL_ACCOUNTS_URL), DE_WEST_GDP_SHEET), DESTATIS_NATIONAL_ACCOUNTS_URL
+    else:
+        with Path(saved_annual).open(encoding="utf-8", newline="") as file:
+            annual_rows = list(csv.reader(file))
+        annual_name = f"{Path(saved_annual).name} (extracted from sheet {DE_WEST_GDP_SHEET} of {DESTATIS_NATIONAL_ACCOUNTS_URL})"
+    if saved_quarterly is None:
+        print("Downloading the Federal Statistical Office's revised quarters of 1970 to 1991 …")
+        quarter_rows, quarter_name = _rows_of_sheet(_destatis_content(DESTATIS_REVISED_QUARTERS_URL), DE_WEST_GDP_QUARTERS_SHEET), DESTATIS_REVISED_QUARTERS_URL
+    else:
+        with Path(saved_quarterly).open(encoding="utf-8", newline="") as file:
+            quarter_rows = list(csv.reader(file))
+        quarter_name = f"{Path(saved_quarterly).name} (extracted from sheet {DE_WEST_GDP_QUARTERS_SHEET} of {DESTATIS_REVISED_QUARTERS_URL})"
+    return parse_west_german_gdp(annual_rows), parse_west_german_quarterly_gdp(quarter_rows), [annual_name, quarter_name]
+
+
 def bake_german_archives(
     source_path: Path | None = None,
     saved_csv: Path | None = None,
@@ -1843,12 +1975,15 @@ def bake_german_archives(
     saved_cpi_workbook: Path | None = None,
     saved_population_text: Path | None = None,
     saved_mortgage_csvs: dict[str, Path] | None = None,
+    saved_gdp_annual_csv: Path | None = None,
+    saved_gdp_quarterly_csv: Path | None = None,
 ) -> None:
-    """Extract the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, and West Germany's consumer prices and population, and embed them into ``ratesplot/de_archive_data.py``.
+    """Extract the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, and West Germany's consumer prices, population and GDP, and embed them into ``ratesplot/de_archive_data.py``.
 
     ``saved_csv``, ``saved_discount_csv``, ``saved_cpi_workbook``,
-    ``saved_population_text`` and ``saved_mortgage_csvs`` (each name of
-    ``DE_MORTGAGE_HISTORY_SERIES`` -> its file) read the downloads already on disk (as saved in
+    ``saved_population_text``, ``saved_mortgage_csvs`` (each name of
+    ``DE_MORTGAGE_HISTORY_SERIES`` -> its file), ``saved_gdp_annual_csv`` and
+    ``saved_gdp_quarterly_csv`` read the downloads already on disk (as saved in
     ``tools/de_fixtures``) instead of fetching them. The yield is a monthly average, so each month is dated by
     its first day; every value the series has is kept (to 2020-04), and
     ``de_data`` uses the months before the term structure begins. The discount
@@ -1857,6 +1992,9 @@ def bake_german_archives(
     (batch 16) are in the source's 1995 = 100, each index to the month it is
     joined at; ``de_data`` scales them when it joins them. The population (batch
     16) is the Bundesbank's annual averages to 1959, in thousands, dated 1 July.
+    The GDP (batch 16) is in the source's billions of euros and euros per person,
+    each year dated by 31 December and each quarter by its last day; ``de_data``
+    sums and joins it.
     """
     source_path = source_path or Path(__file__).resolve().with_name("de_archive_data.py")
     if saved_csv is None:
@@ -1891,14 +2029,20 @@ def bake_german_archives(
     west_prices, west_prices_name = _west_german_prices(saved_cpi_workbook)
     west_all = _require_rows(west_prices["all_households"].rename("value").to_frame(), "West German prices, all private households")
     west_four = _require_rows(west_prices["four_person"].rename("value").to_frame(), "West German prices, four-person households")
-    west_people, west_people_name = _west_german_population(saved_population_text)
+    west_people, west_people_unification, west_people_name = _west_german_population(saved_population_text)
     west_population = _require_rows(west_people.rename("value").to_frame(), "West Germany's population")
+    west_population_unification = _require_rows(west_people_unification.rename("value").to_frame(), "West Germany's population at unification")
     mortgages: dict[str, pd.DataFrame] = {}
     mortgage_names: list[str] = []
     for name, series in DE_MORTGAGE_HISTORY_SERIES.items():
         mortgage_text, mortgage_name = _bundesbank_text(series, (saved_mortgage_csvs or {}).get(name))
         mortgage_names.append(mortgage_name)
         mortgages[name] = _require_rows(parse_german_mortgage_history(mortgage_text, series).rename("value").to_frame(), ".".join(series))
+    west_years, west_quarters, west_gdp_names = _west_german_gdp(saved_gdp_annual_csv, saved_gdp_quarterly_csv)
+    west_narrow = _require_rows(west_years["narrow"].rename("value").to_frame(), "West Germany's GDP without the Saarland and West Berlin")
+    west_each = _require_rows(west_years["per_person"].rename("value").to_frame(), "West Germany's GDP per person")
+    west_old_basis = _require_rows(west_years["old_basis"].rename("value").to_frame(), "West Germany's GDP on the old basis")
+    west_gdp_quarters = _require_rows(west_quarters.rename("value").to_frame(), "West Germany's quarterly GDP")
     block = (
         f"{DE_ARCHIVE_BEGIN_MARKER}\n"
         f"# Generated on {dt.date.today():%Y-%m-%d} from the Deutsche Bundesbank and the Federal Statistical Office, read from:\n# {source_name}\n"
@@ -1906,6 +2050,7 @@ def bake_german_archives(
         f"# {west_prices_name}\n"
         f"# {west_people_name}\n"
         + "".join(f"# {name}\n" for name in mortgage_names)
+        + "".join(f"# {name}\n" for name in west_gdp_names)
         + "# Historical observations in the source's own terms; de_data and rates join\n"
         "# them to the live series at run time.\n\n"
         + _embedded_list("EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY", comment, data, "value")
@@ -1937,6 +2082,13 @@ def bake_german_archives(
             "value",
         )
         + "\n"
+        + _embedded_list(
+            "EMBEDDED_DE_WEST_POPULATION_AT_UNIFICATION",
+            "The same column's last years for West Germany alone, for its GDP's figures per person.",
+            west_population_unification,
+            "value",
+        )
+        + "\n"
         + "\n".join(
             _embedded_list(
                 name,
@@ -1948,17 +2100,57 @@ def bake_german_archives(
             )
             for name, series in DE_MORTGAGE_HISTORY_SERIES.items()
         )
+        + "\n"
+        + _embedded_list(
+            "EMBEDDED_DE_WEST_GDP_NARROW",
+            "West Germany's GDP at current prices without the Saarland and West Berlin, billions of euros\n"
+            "at 1.95583, each year dated by 31 December.",
+            west_narrow,
+            "value",
+        )
+        + "\n"
+        + _embedded_list(
+            "EMBEDDED_DE_WEST_GDP_PER_PERSON",
+            "The same territory's GDP per person, as published, in euros, each year dated by 31 December.",
+            west_each,
+            "value",
+        )
+        + "\n"
+        + _embedded_list(
+            "EMBEDDED_DE_WEST_GDP_OLD_BASIS",
+            "West Germany's GDP at current prices, the whole former territory, before the revision of\n"
+            "2005, billions of euros, each year dated by 31 December; its last year only for the ratio to\n"
+            "the revised figure.",
+            west_old_basis,
+            "value",
+        )
+        + "\n"
+        + _embedded_list(
+            "EMBEDDED_DE_WEST_GDP_QUARTERS",
+            "West Germany's GDP at current prices, the whole former territory, after the revision of 2005,\n"
+            "not seasonally adjusted, billions of euros, each quarter dated by its last day.",
+            west_gdp_quarters,
+            "value",
+        )
         + f"{DE_ARCHIVE_END_MARKER}"
     )
     _replace_generated_block(source_path, DE_ARCHIVE_BEGIN_MARKER, DE_ARCHIVE_END_MARKER, block)
-    print(f"Embedded the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, and West Germany's consumer prices and population, into {source_path}")
+    print(f"Embedded the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, and West Germany's consumer prices, population and GDP, into {source_path}")
     print(f"  EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY {len(data):5,} values, {data.index[0]:%Y-%m-%d} to {data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_DISCOUNT_RATE_CHANGES     {len(discount_data):5,} changes, {discount_data.index[0]:%Y-%m-%d} to {discount_data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS   {len(west_all):5,} months, {west_all.index[0]:%Y-%m-%d} to {west_all.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_WEST_CPI_FOUR_PERSON      {len(west_four):5,} months, {west_four.index[0]:%Y-%m-%d} to {west_four.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_WEST_POPULATION           {len(west_population):5,} years, {west_population.index[0]:%Y-%m-%d} to {west_population.index[-1]:%Y-%m-%d}")
+    print(f"  EMBEDDED_DE_WEST_POPULATION_AT_UNIFICATION {len(west_population_unification):3,} years, {west_population_unification.index[0]:%Y-%m-%d} to {west_population_unification.index[-1]:%Y-%m-%d}")
     for name, frame in mortgages.items():
         print(f"  {name:37} {len(frame):5,} months, {frame.index[0]:%Y-%m-%d} to {frame.index[-1]:%Y-%m-%d}")
+    for name, what, frame in (
+        ("EMBEDDED_DE_WEST_GDP_NARROW", "years", west_narrow),
+        ("EMBEDDED_DE_WEST_GDP_PER_PERSON", "years", west_each),
+        ("EMBEDDED_DE_WEST_GDP_OLD_BASIS", "years", west_old_basis),
+        ("EMBEDDED_DE_WEST_GDP_QUARTERS", "quarters", west_gdp_quarters),
+    ):
+        print(f"  {name:37} {len(frame):5,} {what}, {frame.index[0]:%Y-%m-%d} to {frame.index[-1]:%Y-%m-%d}")
 
 
 # ---------------------------------------------------------------------------
