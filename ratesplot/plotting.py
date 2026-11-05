@@ -132,7 +132,7 @@ from .latest import (
 )
 from .legend import finish_legend_and_title
 from .measures import PRICE_BASE_ATTR, OwnPopulation, express
-from .prices import consumer_prices
+from .prices import consumer_prices, no_index_note
 from .rates import (
     INFLATION_KEY,
     RateCurve,
@@ -755,6 +755,17 @@ def draw_country(
             extra_axis = ExtraAxis(ax_extra, extra.axis_label, extra.tick_format)
         elif ax_extra is not ax_macro:
             ax_extra.remove()  # nothing of the curve in the window
+
+    # A break in the inflation curve says why, in the message log (batch 40.3).
+    index_note = no_index_note(
+        metadata.key,
+        config.start,
+        config.end,
+        next((curve.values for curve in rates if curve.key == INFLATION_KEY), None),
+        extra.values if extra_line is not None and config.draws_price_index else None,
+    )
+    if index_note is not None:
+        print(f"  Note: {index_note}.")
 
     # The left axis says "Spread" when one is drawn.
     left_label = SPREAD_AXIS_LABEL if any(curve.spread for _line, curve in rate_lines) else None

@@ -10,7 +10,7 @@ The index is the all-items consumer price index, not seasonally adjusted, the on
 
 ## The United States
 
-- **From 1914-01: the CPI for all urban consumers.** All items in U.S. city average, monthly from 1913-01, 1982–84 = 100, from the Bureau of Labor Statistics through FRED ([CPIAUCNS](https://fred.stlouisfed.org/series/CPIAUCNS)). The Bureau collected no prices in October 2025, during the federal shutdown, so the index has no value for that month, and the line has no rise for 2025-10 or for 2026-10, a year later.
+- **From 1914-01: the CPI for all urban consumers.** All items in U.S. city average, monthly from 1913-01, 1982–84 = 100, from the Bureau of Labor Statistics through FRED ([CPIAUCNS](https://fred.stlouisfed.org/series/CPIAUCNS)). The Bureau collected no prices in October 2025, during the federal shutdown, so the index has no value for that month, and the line has no rise for 2025-10 or for 2026-10, a year later. A chart that takes in either month says so in its message log.
 
 ## The United Kingdom
 
