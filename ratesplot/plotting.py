@@ -39,6 +39,7 @@ from matplotlib.patches import Rectangle
 from .axes import (
     ExtraAxis,
     apply_axes_formatting,
+    colour_axis,
     format_currency,
     format_index,
     format_index_tick,
@@ -760,6 +761,12 @@ def draw_country(
     apply_axes_formatting(ax_yield, ax_macro, config, metadata, left_label, extra_axis)
     if extra_axis is not None and extra_axis.axes is not ax_macro:
         _place_outside(extra_axis.axes, ax_macro, config)
+    extra_lines = [] if extra_line is None else [extra_line]
+    on_its_own_axis = extra_axis is not None and extra_axis.axes is not ax_macro
+    _colour_lone_axes(
+        [(ax_macro, macro_lines + ([] if on_its_own_axis else extra_lines))] + ([(extra_axis.axes, extra_lines)] if on_its_own_axis else []),
+        len(yield_lines) + len(rate_lines) + len(macro_lines) + len(extra_lines),
+    )
     warn_macro_limits_coverage(macro_in_range, macro_columns_drawn, config)
     # --reg: each right-axis curve fitted by straight pieces on its log axis,
     # drawn now that the axis limits (which set the tolerance) are known; their
@@ -824,6 +831,20 @@ def draw_country(
         short_title,
         (lambda: _place_outside(extra_axis.axes, ax_macro, config)) if extra_axis is not None and extra_axis.axes is not ax_macro else None,
     )
+
+
+def _colour_lone_axes(right_axes: list[tuple[Axes, list[Line2D]]], curves_drawn: int) -> None:
+    """A right axis holding one series takes that series' colour, unless it is the only series on the chart (batch 40.1).
+
+    Terry, 2026-11-05. A series is a curve as it was drawn: its projected
+    stretch and its --reg pieces are the same series, each level of government
+    is one, and a curve with nothing in the chart's dates is not drawn. Debt is
+    black, so an axis with debt alone looks as it did.
+    """
+    if curves_drawn > 1:
+        for axes, lines in right_axes:
+            if len(lines) == 1:
+                colour_axis(axes, lines[0].get_color())
 
 
 def _place_outside(ax_extra: Axes, ax_macro: Axes, config: PlotConfig) -> None:

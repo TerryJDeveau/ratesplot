@@ -331,6 +331,13 @@ def configure_extra_axis(ax: Axes, config: PlotConfig, extra: ExtraAxis) -> None
     ax.tick_params(axis="y", which="both", labelsize=tick_fs)
 
 
+def colour_axis(ax: Axes, colour: str) -> None:
+    """Draw a right axis in ``colour``: its title, its tick labels and marks, major and minor, and its spine (batch 40.1)."""
+    ax.yaxis.label.set_color(colour)
+    ax.tick_params(axis="y", which="both", colors=colour)
+    ax.spines["right"].set_color(colour)
+
+
 def set_extra_ylim(ax: Axes) -> None:
     """Pad the extra curve's range logarithmically, as the macro axis's (batch 13.4); Top and Bottom are the macro axis's alone."""
     limits = _log_padded_limits(ax)
