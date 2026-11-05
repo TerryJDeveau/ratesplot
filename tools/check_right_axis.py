@@ -4,7 +4,7 @@ Each chart is drawn through ``plotting.build_figure`` from the regression set's 
 
 * 40.1: which right axis is coloured, on the title, tick labels, tick marks and spine alike, and which stays black: one
   series with others on the chart, the only series on it, two on the axis, a level, the index on the right axis and
-  outside it, the population, --reg's pieces not counted;
+  outside it, the population, --reg's pieces not counted; the left axis where it mirrors the right, and otherwise as it was;
 * 40.5: the right axis's title under each measure, its currency named once and first, the axes not in a currency as they
   were;
 * 40.4: the inflation curve's name in the legend, and a character the output's encoding lacks not stopping the program;
@@ -61,6 +61,9 @@ COLOURS: dict[str, tuple[list[str], str, str | None]] = {
     "debt, and the population outside": (["-u", "--debt", "--population"], BLACK, POPULATION),
 }
 
+# The charts whose left axis repeats a coloured right axis, having nothing of its own, and that colour.
+MIRRORS = {"GDP, and the index outside": GDP}
+
 # The command line, then the right axis's title.
 TITLES: dict[str, tuple[list[str], str]] = {
     "U.S.": (["-u", "--debt"], "Nominal USD (Log Scale)"),
@@ -115,6 +118,18 @@ def axis_colours(axes) -> set[str]:
     }
 
 
+def left_colours(figure) -> set[str]:
+    """Every colour the left axis is drawn in: its title, tick labels, tick marks and the spine each twin draws there."""
+    axes = figure.axes[0]
+    ticks = [*axes.yaxis.get_major_ticks(), *axes.yaxis.get_minor_ticks()]
+    return {
+        to_hex(axes.yaxis.label.get_color()),
+        *(to_hex(twin.spines["left"].get_edgecolor()) for twin in figure.axes),
+        *(to_hex(tick.label1.get_color()) for tick in ticks),
+        *(to_hex(tick.tick1line.get_color()) for tick in ticks),
+    }
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cache", type=Path, help="download cache folder (default out/download_cache)")
@@ -138,7 +153,8 @@ def main(argv: list[str]) -> int:
             check(f"{name}: no axis outside it", len(figure.axes) == 2, len(figure.axes))
         else:
             check(f"{name}: the axis outside it", len(figure.axes) == 3 and axis_colours(figure.axes[2]) == {outer}, axis_colours(figure.axes[-1]))
-        check(f"{name}: the left axis as it was", to_hex(figure.axes[0].yaxis.label.get_color()) == BLACK, figure.axes[0].yaxis.label.get_color())
+        left = MIRRORS.get(name, BLACK)
+        check(f"{name}: the left axis {'mirrors it' if name in MIRRORS else 'as it was'}", left_colours(figure) == {left}, left_colours(figure))
 
     print("40.5: the right axis's title")
     for name, (tokens, title) in TITLES.items():

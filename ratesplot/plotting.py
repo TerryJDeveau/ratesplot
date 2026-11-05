@@ -777,6 +777,7 @@ def draw_country(
     _colour_lone_axes(
         [(ax_macro, macro_lines + ([] if on_its_own_axis else extra_lines))] + ([(extra_axis.axes, extra_lines)] if on_its_own_axis else []),
         len(yield_lines) + len(rate_lines) + len(macro_lines) + len(extra_lines),
+        None if config.has_left_axis_series else ax_yield,
     )
     warn_macro_limits_coverage(macro_in_range, macro_columns_drawn, config)
     # --reg: each right-axis curve fitted by straight pieces on its log axis,
@@ -844,18 +845,22 @@ def draw_country(
     )
 
 
-def _colour_lone_axes(right_axes: list[tuple[Axes, list[Line2D]]], curves_drawn: int) -> None:
+def _colour_lone_axes(right_axes: list[tuple[Axes, list[Line2D]]], curves_drawn: int, mirror: Axes | None) -> None:
     """A right axis holding one series takes that series' colour, unless it is the only series on the chart (batch 40.1).
 
     Terry, 2026-11-05. A series is a curve as it was drawn: its projected
     stretch and its --reg pieces are the same series, each level of government
     is one, and a curve with nothing in the chart's dates is not drawn. Debt is
-    black, so an axis with debt alone looks as it did.
+    black, so an axis with debt alone looks as it did. ``mirror``: the left axis
+    where it repeats the first of ``right_axes`` (nothing on the left), which
+    goes with it.
     """
     if curves_drawn > 1:
-        for axes, lines in right_axes:
+        for position, (axes, lines) in enumerate(right_axes):
             if len(lines) == 1:
                 colour_axis(axes, lines[0].get_color())
+                if position == 0 and mirror is not None:
+                    colour_axis(mirror, lines[0].get_color(), left=True)
 
 
 def _place_outside(ax_extra: Axes, ax_macro: Axes, config: PlotConfig) -> None:

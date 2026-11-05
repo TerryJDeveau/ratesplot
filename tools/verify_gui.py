@@ -2578,7 +2578,7 @@ def check_batch30(check: Check) -> None:
         check("the U.S.' ticked: --master:USD, the others unticked", "--master:USD" in w.command_tokens()
               and ticks() == {"cdn": (False, False), "us": (True, False), "uk": (False, False), "de": (False, False)}, ticks())
         figure = app.figures["cdn"][0]
-        check("the Canadian chart drawn in U.S. dollars, the rate on its axis", "USD at" in figure.axes[1].get_ylabel()
+        check("the Canadian chart drawn in U.S. dollars, the rate on its axis", figure.axes[1].get_ylabel().startswith("Nominal USD (at ")
               and any(label.get_text().startswith("US$") for label in figure.axes[1].get_yticklabels()), figure.axes[1].get_ylabel())
         check("its charts the written line's", w.written_draws_the_same(("cdn", "us")))
         tick("cdn", True)

@@ -331,11 +331,16 @@ def configure_extra_axis(ax: Axes, config: PlotConfig, extra: ExtraAxis) -> None
     ax.tick_params(axis="y", which="both", labelsize=tick_fs)
 
 
-def colour_axis(ax: Axes, colour: str) -> None:
-    """Draw a right axis in ``colour``: its title, its tick labels and marks, major and minor, and its spine (batch 40.1)."""
+def colour_axis(ax: Axes, colour: str, *, left: bool = False) -> None:
+    """Draw an axis in ``colour``: its title, its tick labels and marks, major and minor, and its spine (batch 40.1).
+
+    ``left``: the left axis mirroring the right one. Every twin draws a frame
+    there, the last on top, so each one's spine takes the colour.
+    """
     ax.yaxis.label.set_color(colour)
     ax.tick_params(axis="y", which="both", colors=colour)
-    ax.spines["right"].set_color(colour)
+    for spine in [twin.spines["left"] for twin in ax.figure.axes] if left else [ax.spines["right"]]:
+        spine.set_color(colour)
 
 
 def set_extra_ylim(ax: Axes) -> None:
