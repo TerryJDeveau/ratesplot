@@ -1661,7 +1661,12 @@ def check_wheel(check: Check) -> None:
         # The middle of the column's visible part: whichever control is there.
         top = column.get()
         wheel_over(w, column_canvas, -1)
-        check("over the column's controls, a notch towards you: the column scrolls down", column.get()[0] > top[0], (top, column.get()))
+        # The column's wheel asks winfo_containing what is under the pointer. This failed through 2026-11-05 02:30 to 03:05 local,
+        # main as well, with the column reading (0.0, 0.328) rather than (0.0, 0.424), and has not failed since: the widget and the
+        # fraction say what a failure met.
+        middle = (column_canvas.winfo_rootx() + column_canvas.winfo_width() // 2, column_canvas.winfo_rooty() + column_canvas.winfo_height() // 2)
+        check("over the column's controls, a notch towards you: the column scrolls down", column.get()[0] > top[0],
+              (top, column.get(), "at", middle, "under the pointer:", w.root.winfo_containing(*middle)))
         wheel_over(w, column_canvas, 1)
         check("and away: back up", column.get() == top, column.get())
 

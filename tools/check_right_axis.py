@@ -8,7 +8,9 @@ Each chart is drawn through ``plotting.build_figure`` from the regression set's 
 * 40.5: the right axis's title under each measure, its currency named once and first, the axes not in a currency as they
   were;
 * 40.4: the inflation curve's name in the legend, and a character the output's encoding lacks not stopping the program;
-* 40.3: the note on a month with no index, on the charts that show one and no others.
+* 40.3: the note on a month with no index, on the charts that show one and no others;
+* seen with batch 40: every y axis inside the picture on the charts that ran past it; the price index's last figure held across
+  its month, or to the End if that comes first, and the population's line not held.
 
     python tools/check_right_axis.py [--cache out/cache_b24s2]
 """
@@ -20,6 +22,7 @@ import sys
 from pathlib import Path
 
 from matplotlib.colors import to_hex
+from matplotlib.dates import num2date
 from matplotlib.legend import Legend
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -84,6 +87,16 @@ MASTER_TITLES: dict[str, tuple[list[str], str, str]] = {
 RISE_NOTE = ("  Note: no U.S. consumer price index for 2025-10: the Bureau of Labor Statistics collected no prices in the 2025 "
              "shutdown, so no 12-month rise for 2025-10 or 2026-10")
 HOLD = "; the index's line holds 2025-09's across the month"
+# Charts whose left or right axis ran past the picture's edge before 7.16, and two that never did.
+INSIDE: dict[str, list[str]] = {
+    "a mirrored left axis, per person": ["--na:de", "--gdp", "-p", "-l", "-s:1950"],
+    "a mirrored left axis beside the index": ["-u", "--gdp", "--cpi", "-s:2010"],
+    "a mirrored left axis, to 1996": ["--na:de", "--gdp", "--debt", "-s:1985", "--e:1996"],
+    "the index on its own axis": ["--gdp", "--debt", "--na:us", "--cpi", "-l", "--reg", "-s:1990"],
+    "the population on its own axis": ["--gdp", "--debt", "--na:ca", "--population", "-l", "-s:1990"],
+    "the defaults": ["-u"],
+}
+
 # The command line, then the note expected in full (None: no note).
 NOTES: dict[str, tuple[list[str], str | None]] = {
     "the inflation curve over the month": (["-u", "--inflation", "-s:2025-01-01"], RISE_NOTE + "."),
@@ -189,6 +202,31 @@ def main(argv: list[str]) -> int:
     for name, (tokens, note) in NOTES.items():
         lines = [line for line in drawn(tokens)[1] if "consumer price index for" in line]
         check(name, lines == ([] if note is None else [note]), lines)
+
+    print("Every y axis inside the picture")
+    for name, tokens in INSIDE.items():
+        figure = next(iter(drawn(tokens)[0].values()))
+        figure.canvas.draw()
+        boxes = [axis.yaxis.get_tightbbox(figure.canvas.get_renderer()) for axis in figure.axes]
+        left, right = min(box.x0 for box in boxes if box is not None), max(box.x1 for box in boxes if box is not None)
+        check(name, left >= 0 and right <= figure.bbox.width, (round(left, 1), round(right, 1), figure.bbox.width))
+
+    print("The price index's last month")
+    index_axis = "-u --cpi --yields:10"
+    def last_two(end: str) -> tuple[tuple[str, str], bool]:
+        """The chart's last two points on the index's line, and whether they hold one value."""
+        line = next(line for line in drawn([*index_axis.split(), end])[0]["us"].axes[1].get_lines() if not line.get_label().startswith("_"))
+        days, values = num2date(line.get_xdata(orig=False)[-2:]), line.get_ydata()[-2:]
+        return (f"{days[0]:%Y-%m-%d}", f"{days[1]:%Y-%m-%d}"), bool(values[0] == values[1])
+
+    ends, held = last_two("--e:2026-06-20")
+    check("held to an End inside the month", ends == ("2026-06-01", "2026-06-20") and held, (ends, held))
+    ends, held = last_two("--e:2026-06-01")
+    check("an End on the month's first day: nothing to hold", ends == ("2026-05-01", "2026-06-01") and not held, (ends, held))
+    ends, held = last_two("--e:2030-01-01")
+    check("an End far off: across its own month and no further", held and ends[0].endswith("-01") and ends[1].endswith("-01") and ends[1] < "2027", (ends, held))
+    population = [line for line in drawn(["-u", "--population", "--yields:10"])[0]["us"].axes[1].get_lines() if not line.get_label().startswith("_")][0].get_ydata()
+    check("the population's line not held", population[-1] != population[-2], population[-2:])
 
     print(f"[right axis] {total - len(failed)} of {total} checks passed")
     return 1 if failed else 0
