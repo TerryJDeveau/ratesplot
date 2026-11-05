@@ -2268,6 +2268,12 @@ def check_batch133(check: Check) -> None:
           not view.exception and "## Real yields" in shown and all(word in shown for word in ("DFII10", "Real Return Bonds", "real spot curve", "inflation-linked")), shown[:60])
 
 
+def check_wait_colour(check: Check) -> None:
+    """The wait line and its icon in fuchsia (batch 40.2; a drawing's line is seen only in a browser, so its colour live too)."""
+    check("the wait line's colour is fuchsia", web.WAIT_COLOUR == "#FF00FF", web.WAIT_COLOUR)
+    check("the wait icon is drawn in it", "color: #FF00FF" in web._WAIT_ICON, web._WAIT_ICON)
+
+
 def check_batch35(check: Check) -> None:
     """Batch 35: the drawing on a worker, the wait line gone once it is drawn; a run going back to it, or stopping it; the date buttons' reasons; the right-drag."""
     at = new_page("-c -s:2001 --e:2019")
@@ -2461,7 +2467,7 @@ PAGE_CHECKS = (
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
-    check_batch135, check_batch133, check_batch35, check_batch37, check_batch38,
+    check_batch135, check_batch133, check_batch35, check_wait_colour, check_batch37, check_batch38,
 )
 
 

@@ -268,6 +268,10 @@ def taken_text(seconds: float) -> str:
     return f"{whole} s" if whole < _SECONDS_UP_TO else f"{whole // 60} min {whole % 60} s"
 
 
+# The line's colour in both front ends, its spinner's too (batch 40.2; Terry, 2026-11-05: "drawn in fuchsia, not black").
+WAIT_COLOUR = "#FF00FF"
+
+
 def wait_text(left: float, taken: float) -> str:
     """The line itself: "Please wait about 12 s (5 s so far)", or "nearly done" once the time expected has run out."""
     if left < _NEARLY_DONE_SECONDS:

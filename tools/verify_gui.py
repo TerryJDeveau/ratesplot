@@ -2832,6 +2832,8 @@ def check_batch35(check: Check) -> None:
             root.update()
             time.sleep(0.01)
         root.update()
+        check("the line and its arc in fuchsia (40.2)", str(app.wait_label.cget("foreground")) == "#FF00FF" and app.wait_arc.itemcget(app._wait_arc_item, "outline") == "#FF00FF",
+              (str(app.wait_label.cget("foreground")), app.wait_arc.itemcget(app._wait_arc_item, "outline")))
         check("a drawing under way: the line shown", app.rendering and app.wait_row.winfo_manager() == "grid" and app.wait_text.get().startswith("Please wait"), app.wait_text.get())
         check("… in Terry's words, the time still expected and the time so far", re.fullmatch(r"Please wait(, nearly done| about \d+ (s|min)) \(\d+ s so far\)", app.wait_text.get()), app.wait_text.get())
         check("… right of the build line, the column being wide enough", app.wait_row.grid_info()["row"] == 0 and app.wait_row.grid_info()["column"] == 1, app.wait_row.grid_info())

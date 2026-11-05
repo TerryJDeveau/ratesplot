@@ -289,7 +289,7 @@ from .options import (  # noqa: E402
 from .plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 from .refresh import Ticker  # noqa: E402
 from .version import version_text  # noqa: E402
-from .wait import Figures, Wait  # noqa: E402
+from .wait import WAIT_COLOUR, Figures, Wait  # noqa: E402
 
 PAGE_TITLE = "Bond Yields and Public Debt"
 PAGE_SUMMARY = (
@@ -2479,7 +2479,8 @@ def _await_drawing(job: _Job, slot: DeltaGenerator) -> None:
             line = row.empty()
         text = job.wait.line()
         if text != shown:
-            line.markdown(text, width="content")
+            # The words are the program's own (``wait.wait_text``), so nothing a visitor typed reaches the HTML.
+            line.markdown(f'<span style="color: {WAIT_COLOUR}">{text}</span>', width="content", unsafe_allow_html=True)
             shown = text
     if line is not None:
         slot.empty()
@@ -2724,7 +2725,7 @@ _INFO_ICON_STYLE = """<style>
 }
 @keyframes ratesplot-wait-turn { to { transform: rotate(360deg); } }
 </style>"""
-_WAIT_ICON = '<div class="ratesplot-wait-icon"></div>'
+_WAIT_ICON = f'<div class="ratesplot-wait-icon" style="color: {WAIT_COLOUR}"></div>'
 
 
 def _show_help(topic: str) -> None:
