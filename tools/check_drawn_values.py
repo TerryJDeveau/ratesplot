@@ -68,6 +68,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -208,6 +209,15 @@ CASES: dict[str, list[str]] = {
     # 20-year with its gaps; Germany's worked out here again, from each bond's own answer; and a spread of two.
     "real_yields": ["--na:ca,us,gb,de", "-s:1985", "--y:r5,r7,r10,r20,r30", "--no-gdp", "--no-debt", "--no-interest"],
     "real_breakeven": ["--na:us,gb,de", "-s:2012", "--y:10,r10", "--sp:10y-r10", "--no-gdp", "--no-debt", "--no-interest"],
+    # Batch 16: Germany's debt from 1950, in total and by level, each figure worked out here across every join (1991 or
+    # 2000), in euros, per person (the published figures to 1959; West Germany's population at 1990) and over GDP; and
+    # per person beside a yield, where a figure first shows on a later chart date (1960's on 1961-01-01).
+    "de_debt_1950": ["--na:de", "-s:1950", "--e:2003", "--debt"],
+    "de_debt_1950_pc": ["--na:de", "-s:1950", "--e:2003", "--debt", "-p"],
+    "de_debt_1950_r": ["--na:de", "-s:1950", "--e:2003", "--debt", "-r"],
+    "de_debt_1950_pc_yield": ["--na:de", "-s:1950", "--e:2003", "--debt", "-p", "--y:10"],
+    "de_debt_levels": ["--na:de", "-s:1950", "--e:2003", "--debt:fpm"],
+    "de_debt_levels_pc": ["--na:de", "-s:1950", "--e:2003", "--debt:fpm", "-p"],
 }
 
 
@@ -658,6 +668,8 @@ def check_case(name: str, tokens: list[str]) -> bool:
                     passed &= check_population(key, line, config)
                 elif name.startswith("de_gdp_") and axis is figure.axes[1] and "GDP" in line.label:
                     passed &= check_german_gdp(key, line, config)
+                elif name.startswith("de_debt_") and axis is figure.axes[1] and "Debt" in line.label:
+                    passed &= check_german_debt(key, line, config)
                 elif axis is figure.axes[1] and not line.values.empty and config.master_currency is None and not config.constant_prices:
                     print(f"  {key:4} {line.label[:44]:44} right axis, derived (not compared): {span(list(line.values.index))}")
         if config.master_currency is not None:
@@ -908,6 +920,93 @@ def german_gdp() -> tuple[pd.Series, pd.Series, pd.Series]:
     joined = pd.concat([west.loc[west.index < unified.index[0]], unified])
     averages = pd.Series({pd.Timestamp(date): value * 1000.0 for date, value in EMBEDDED_DE_WEST_POPULATION_AT_UNIFICATION})
     return joined, at_year_ends(each), averages
+
+
+def german_debts() -> tuple[dict[str, pd.Series], pd.Series]:
+    """Germany's debt worked out here on its own (batch 16), in euros, by the date each describes: the total and each level, keyed by the word in its curve's name; with the people the Office's figure per person implies, to 1959
+
+    From the saved extract of the Federal Statistical Office's table, read by this
+    tool and not by the bake, and the ECB's and Eurostat's whole series. The total: the
+    table's, raised by the ratio at 1991 in equal steps of the logarithm over 1986 to
+    1990; the ECB's year ends; Eurostat's quarters. A level: the table's, raised by the
+    ratio at the end of 2000 over 1995 to 1999; Eurostat's quarters.
+    """
+    with (ROOT / "tools" / "de_fixtures" / "raw" / "destatis_fs14_r5_debt.csv").open(encoding="utf-8", newline="") as file:
+        lines = [line for line in csv.reader(file) if re.match(r"\d{4}-\d\d-\d\d|\d\d\.\d\d\.\d{4}", line[0])]
+    years = [int(re.search(r"\d{4}", line[0]).group()) for line in lines]
+    assert years == [*range(1950, 1960), *range(1960, 2001)]
+    dates = pd.DatetimeIndex([pd.Timestamp(year, 3 if year < 1960 else 12, 31) for year in years])
+
+    def table(column: int, places: int = 2) -> pd.Series:
+        return pd.Series([round(float(line[column]), places) for line in lines], index=dates)
+
+    def raised(office: pd.Series, ratio: float, ramp_from: int) -> pd.Series:
+        return office * ratio ** np.clip((office.index.year.to_numpy() - ramp_from) / 4, 0, 1)
+
+    total = table(1) * 1e6
+    annual = de_data.ecb_series(*de_data.ECB_ANNUAL_DEBT, revised=True)
+    quarters = de_data.eurostat_series("gov_10q_ggdebt", sector="S13")
+    older = raised(total.loc[:"1990-12-31"], annual.loc["1991-12-31"] / total.loc["1991-12-31"], 1986)
+    debts = {"General Government": pd.concat([older, annual.loc[annual.index < quarters.index[0]], quarters])}
+    for word, column, sector in (("Federal", 3, "S1311"), ("Länder", 5, "S1312"), ("Local", 7, "S1313")):
+        office = table(column) * 1e6
+        live = de_data.eurostat_series("gov_10q_ggdebt", sector=sector)
+        debts[word] = pd.concat([raised(office.loc[office.index < live.index[0]], live.loc["2000-12-31"] / office.loc["2000-12-31"], 1995), live])
+    return debts, total.loc[:"1959-03-31"] / table(2, 4).loc[:"1959-03-31"]
+
+
+def check_german_debt(key: str, line: Drawn, config) -> bool:
+    """Germany's debt or a level's drawn from 1950 (batch 16), each point the latest figure on or before it, in euros, per person or over GDP; True if every point is, and every figure in the window drawn.
+
+    Per person, worked out here on its own: over the people the Office's figure
+    implies to 1959; 1990's figure over West Germany's annual averages, log-linear
+    between their middles, on its own date; any other over the population on the
+    chart date it first shows on. Over GDP: over the GDP on that chart date.
+    """
+    with this_thread_output_to(None):
+        debts, office_people = german_debts()
+        gdp, _each, averages = german_gdp()
+        people = population("de")
+    word = next((word for word in debts if word in line.label), None)
+    if word is None:
+        print(f"  {key:4} {line.label[:44]:44} FAIL  no such debt among those worked out here")
+        return False
+    figures = debts[word]
+    figures = figures.loc[(figures.index >= pd.Timestamp(config.start)) & (figures.index <= pd.Timestamp(config.end))]
+    if config.relative:  # no GDP before the first: no ratio there
+        figures = figures.loc[figures.index >= gdp.index[0]]
+    drawn_dates = line.values.index
+    failures: list[str] = []
+    missing = [when for when in figures.index if when <= drawn_dates[-1] and not ((drawn_dates >= when) & (drawn_dates < when + pd.Timedelta(days=62))).any()]
+    failures += [f"{when:%Y-%m-%d}: a figure, {figures[when]:g}, not drawn" for when in missing[:3]]
+    if len(drawn_dates) and drawn_dates[0] < figures.index[0]:
+        failures.append(f"{drawn_dates[0]:%Y-%m-%d}: drawn before the first figure, {figures.index[0]:%Y-%m-%d}")
+
+    def log_linear(when: pd.Timestamp, estimates: pd.Series) -> float:
+        return float(np.exp(np.interp(when.value, pd.DatetimeIndex(estimates.index).as_unit("ns").asi8, np.log(estimates.to_numpy(dtype=float)))))
+
+    expected: dict[pd.Timestamp, float] = {}
+    for when in drawn_dates:
+        figure = figures.index[figures.index <= when][-1]
+        shown = drawn_dates[drawn_dates >= figure][0]
+        if config.relative:
+            expected[when] = figures[figure] / gdp[gdp.index[gdp.index <= shown][-1]] * 100.0
+        elif not config.per_capita:
+            expected[when] = figures[figure]
+        elif figure.year < 1960:
+            expected[when] = figures[figure] / office_people[figure]
+        elif pd.Timestamp("1990-01-01") < figure < pd.Timestamp("1991-12-31"):
+            expected[when] = figures[figure] / log_linear(figure, averages)
+        else:
+            expected[when] = figures[figure] / log_linear(shown, people.sort_index())
+    want = pd.Series(expected, dtype=float)
+    wrong = want.index[~np.isclose(line.values.to_numpy(), want.to_numpy(), rtol=1e-9, atol=0)]
+    failures += [f"{when:%Y-%m-%d} {line.values[when]:g}: expected {want[when]:g}" for when in wrong[:5]]
+    ok = not failures
+    print(f"  {key:4} {line.label[:44]:44} {'OK' if ok else 'FAIL':5} {len(line.values):,} points, each the latest of {len(figures)} figures worked out here; {span(list(drawn_dates))}")
+    for failure in failures:
+        print(f"         {failure}")
+    return ok
 
 
 def check_german_gdp(key: str, line: Drawn, config) -> bool:

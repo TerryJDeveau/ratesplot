@@ -413,6 +413,12 @@ DESTATIS_REVISED_QUARTERS_URL = (
     "https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/"
     "Downloads-Inlandsprodukt/inlandsprodukt-revidiert-vierteljahr-2189027919005.xlsx?__blob=publicationFile"
 )
+# Germany's public debt by level (batch 16), read by the German bake alone: Fachserie 14
+# Reihe 5, 2021, sheet 1.1.1, West Germany's from 1950, all of Germany's from 1991.
+DESTATIS_PUBLIC_DEBT_URL = (
+    "https://www.destatis.de/DE/Themen/Staat/Oeffentliche-Finanzen/Schulden-Finanzvermoegen/Publikationen/"
+    "Downloads-Schulden/schulden-oeffentlicher-haushalte-2140500217005.xlsx?__blob=publicationFile"
+)
 # The Bundesbank's "Lange Zeitreihen" of 2020-09-01, a PDF with data to 2019,
 # read by the German bake alone, for West Germany's population before Eurostat's
 # begins (batch 16).

@@ -60,7 +60,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from ratesplot import bake, baked, de_archive_data, de_data, latest, measures, rates  # noqa: E402
-from ratesplot.config import CNBC_QUOTE_URL, DE, GDP_COLUMN, PlotConfig, component_column  # noqa: E402
+from ratesplot.config import CNBC_QUOTE_URL, COMPONENT_LETTERS, DE, DE_DEBT_COLUMN, DE_INTEREST_COLUMN, GDP_COLUMN, PlotConfig, component_column  # noqa: E402
 from ratesplot.http import BotCheck  # noqa: E402
 
 RAW = ROOT / "tools" / "de_fixtures" / "raw"
@@ -242,6 +242,104 @@ def csv_rows(name: str) -> list[list[str]]:
     return list(csv.reader(io.StringIO(text(name))))
 
 
+def check_german_debt() -> None:
+    """Batch 16: Germany's debt in total and by level, read from the extract of Fachserie 14 Reihe 5 (saved 2026-11-05), its bake, its joins and its population."""
+    rows = csv_rows("destatis_fs14_r5_debt.csv")
+    read = bake.parse_german_debt(rows)
+    total, each = read["total"], read["per_person"]
+    check("debt: the total, 42 dates from 1950-03-31 to 1991-12-31, 9,573.94 and 599,511.2",
+          len(total) == 42 and total.index[0] == pd.Timestamp("1950-03-31") and total.iloc[0] == 9573.94 and total.index[-1] == pd.Timestamp("1991-12-31") and total.iloc[-1] == 599511.2, len(total))
+    check("debt: 31 March to 1959, 31 December from 1960, nothing between", total.index[9] == pd.Timestamp("1959-03-31") and total.index[10] == pd.Timestamp("1960-12-31"), total.index[10])
+    check("debt: a date written with its footnote is read: 31.03.1952, 31.03.1958, 31.12.1960", total.loc["1952-03-31"] == 12276.12 and total.loc["1958-03-31"] == 23991.35 and total.loc["1960-12-31"] == 28998.43, total.loc["1952-03-31"])
+    check("debt: per person to 1959, 190.2003 and 461.9329", len(each) == 10 and each.iloc[0] == 190.2003 and each.iloc[-1] == 461.9329, each.iloc[-1])
+    check("debt: each level on 51 dates to 2000, 1990's 306,315.48, 168,001.82, 64,016.81",
+          all(len(read[name]) == 51 and read[name].index[-1] == pd.Timestamp("2000-12-31") for name in ("federal", "states", "local"))
+          and (read["federal"].loc["1990-12-31"], read["states"].loc["1990-12-31"], read["local"].loc["1990-12-31"]) == (306315.48, 168001.82, 64016.81), read["federal"].loc["1990-12-31"])
+    for name, values in read.items():
+        baked_values = pd.Series({pd.Timestamp(date): value for date, value in getattr(de_archive_data, f"EMBEDDED_DE_DEBT_{name.upper()}")}, dtype=float)
+        check(f"bake: EMBEDDED_DE_DEBT_{name.upper()} holds the extract", baked_values.equals(values.rename(None).rename_axis(None)), len(baked_values))
+    # Refusals: a table that moved a column or a unit, lost a date, or whose levels no longer add up.
+    title_at = next(number for number, row in enumerate(rows) if row[0].startswith("1.1.1"))
+    heading_at = next(number for number, row in enumerate(rows) if row[0] == "Stichtag")
+    units_at = next(number for number, row in enumerate(rows) if "Mill. EUR" in row[1])
+    first_at = next(number for number, row in enumerate(rows) if row[0].startswith("1950-03-31"))
+    changed = lambda at, row: [*rows[:at], row, *rows[at + 1 :]]  # noqa: E731
+    check("debt: another title is refused", raises(bake.parse_german_debt, changed(title_at, ["1.1.1 Schulden insgesamt", *rows[title_at][1:]])) is not None)
+    check("debt: columns swapped are refused", raises(bake.parse_german_debt, changed(heading_at, [rows[heading_at][0], rows[heading_at][3], "", rows[heading_at][1], *rows[heading_at][4:]])) is not None)
+    check("debt: another unit is refused", raises(bake.parse_german_debt, [[cell.replace("Mill. EUR", "Mill. DM") for cell in row] if number == units_at else row for number, row in enumerate(rows)]) is not None)
+    check("debt: a date gone is refused", raises(bake.parse_german_debt, [row for row in rows if not row[0].startswith("1975-12-31")]) is not None)
+    check("debt: a level a million off is not, three million off is",
+          raises(bake.parse_german_debt, changed(first_at, [rows[first_at][0], str(float(rows[first_at][1]) + 1), *rows[first_at][2:]])) is None
+          and raises(bake.parse_german_debt, changed(first_at, [rows[first_at][0], str(float(rows[first_at][1]) + 3.5), *rows[first_at][2:]])) is not None)
+    # The joins, on made-up live series: the total to the ECB's first year end, a level to Eurostat's quarters.
+    office = de_data._debt_in_euros(de_archive_data.EMBEDDED_DE_DEBT_TOTAL)
+    live = pd.Series([618_218e6, 705_567e6], index=pd.to_datetime(["1991-12-31", "1992-12-31"]))
+    joined = de_data._with_older_debt(office, live)
+    ratio = 618_218 / 599_511.2
+    check("join: the total's first figure and the live figures stay, its own 1991 gone", joined.index[0] == pd.Timestamp("1950-03-31") and joined.loc["1991-12-31"] == 618_218e6 and joined.loc["1992-12-31"] == 705_567e6 and len(joined) == 43, len(joined))
+    check("join: 1986 and all before it as published, the steps at 1952 and 1960 kept", joined.loc[:"1986-12-31"].equals(office.loc[:"1986-12-31"]), joined.loc["1986-12-31"])
+    check("join: 1990 raised 3.12 %, to 555.13 billion; 1991's rise the table's own", abs(joined.loc["1990-12-31"] / office.loc["1990-12-31"] - ratio) < 1e-9 and abs(joined.loc["1990-12-31"] / 1e9 - 555.13) < 0.01
+          and abs(joined.loc["1991-12-31"] / joined.loc["1990-12-31"] - office.loc["1991-12-31"] / office.loc["1990-12-31"]) < 1e-9, joined.loc["1990-12-31"])
+    check("join: the ramp is geometric over 1986 to 1990", abs(joined.loc["1988-12-31"] / office.loc["1988-12-31"] - ratio ** 0.5) < 1e-9, joined.loc["1988-12-31"])
+    quarters = pd.date_range("2000-03-31", "2001-03-31", freq="QE")
+    made_up = {
+        ("S1311",): pd.Series([820e9, 821e9, 822e9, 814_963e6, 815e9], index=quarters),
+        ("S1312",): pd.Series([345e9, 346e9, 347e9, 354_552e6, 355e9], index=quarters),
+        ("S1313",): pd.Series([114e9, 114e9, 114e9, 109_615e6, 110e9], index=quarters),
+        (de_data.GENERAL_GOVERNMENT,): pd.Series([1265e9, 1264e9, 1274e9, 1262e9, 1263e9], index=quarters),
+    }
+
+    def down(*_args, **_named):
+        raise RuntimeError("down")
+
+    real_quarterly, real_ecb = de_data._quarterly_debt, de_data.ecb_series
+    config = PlotConfig(start=pd.Timestamp("1950-01-01"), end=pd.Timestamp("2005-01-01"))
+    said = io.StringIO()
+    try:
+        de_data._quarterly_debt = made_up.__getitem__
+        federal, states, local, together = (de_data._debt_of_level(sectors) for sectors in (("S1311",), ("S1312",), ("S1313",), ("S1312", "S1313")))
+        with contextlib.redirect_stdout(said):
+            de_data.ecb_series = down
+            no_ecb = de_data.fetch_de_debt(config)[DE_DEBT_COLUMN]
+            de_data.ecb_series = lambda *_args, **_named: live
+            de_data._quarterly_debt = down
+            no_eurostat = de_data.fetch_de_debt(config)[DE_DEBT_COLUMN]
+    finally:
+        de_data._quarterly_debt, de_data.ecb_series = real_quarterly, real_ecb
+    check("down: the ECB gone, Eurostat's quarters alone, said so: West Germany's would be drawn straight across to them", no_ecb.index[0] == pd.Timestamp("2000-03-31") and "drawn from 2000" in said.getvalue(), no_ecb.index[0])
+    check("down: Eurostat gone, West Germany's and the ECB's, said so", no_eurostat.index[0] == pd.Timestamp("1950-03-31") and no_eurostat.loc["1992-12-31"] == 705_567e6 and "year-end figures alone" in said.getvalue(), no_eurostat.index[-1])
+    office_federal = de_data._debt_in_euros(de_archive_data.EMBEDDED_DE_DEBT_FEDERAL)
+    office_states = de_data._debt_in_euros(de_archive_data.EMBEDDED_DE_DEBT_STATES)
+    office_local = de_data._debt_in_euros(de_archive_data.EMBEDDED_DE_DEBT_LOCAL)
+    check("join: a level as published to 1995, raised at 1999 by Eurostat's ratio at 2000's end, 5.18 %, then Eurostat's alone",
+          federal.loc[:"1995-12-31"].equals(office_federal.loc[:"1995-12-31"]) and abs(federal.loc["1999-12-31"] / office_federal.loc["1999-12-31"] - 814_963e6 / office_federal.loc["2000-12-31"]) < 1e-9
+          and federal.loc["2000-03-31"] == 820e9 and pd.Timestamp("2000-12-31") in federal.index and federal.loc["2000-12-31"] == 814_963e6, federal.loc["1999-12-31"])
+    check("join: Länder and local together: the two tables' sum in 1980, and exactly the two joined lines added up on every date, the ramps included",
+          abs(together.loc["1980-12-31"] - office_states.loc["1980-12-31"] - office_local.loc["1980-12-31"]) < 1e-3 and together.equals((states + local).dropna().rename(together.name)), together.loc["1999-12-31"])
+    # The population behind it.
+    people = de_data.west_german_debt_population()
+    check("population: to 1959 the debt over its figure per person: 50,336 and 55,124 thousand, 1951's rounded figure kept",
+          round(people.loc["1950-03-31"] / 1e3) == 50_336 and round(people.loc["1959-03-31"] / 1e3) == 55_124 and abs(people.loc["1951-03-31"] / 1e3 - 50_692.6) < 0.1, people.loc["1959-03-31"])
+    check("population: the population drawn from 1960-12-31 and from 1991-12-31", pd.isna(people.loc["1960-12-31"]) and pd.isna(people.loc["1991-12-31"]), people.notna().sum())
+    gdp_people = de_data.west_german_gdp_population()
+    check("population: through 1990 and 1991 West Germany's, the same as its GDP's", np.isclose(people.loc["1990-12-31"], gdp_people.loc["1990-12-31"]) and 63_000_000 < people.loc["1990-12-31"] < 64_000_000, people.loc["1990-12-31"])
+    own = de_data.west_german_own_populations()
+    check("population: GDP's its own; the total's and every level's debt the debt's; interest none", own[GDP_COLUMN].equals(gdp_people) and all(own[column].equals(people) for column in (DE_DEBT_COLUMN, *(component_column("debt", letter) for letter in COMPONENT_LETTERS)))
+          and DE_INTEREST_COLUMN not in own, sorted(own))
+    dates = pd.to_datetime(["1950-03-31", "1952-03-31", "1959-04-01", "1961-01-01", "1990-12-31", "1991-01-01", "1991-12-31"])
+    values = [9573.94e6, 12276.12e6, 25463.4e6, 28998.43e6, 555.13e9, 555.13e9, 618.218e9]
+    column = component_column("debt", "f")
+    frame = pd.DataFrame({"DATE": dates, DE_DEBT_COLUMN: values, column: [value / 2 for value in values]})
+    frame.loc[5, [DE_DEBT_COLUMN, column]] = frame.loc[4, [DE_DEBT_COLUMN, column]].to_numpy()
+    drawn = pd.Series([50e6, 80e6], index=pd.to_datetime(["1961-01-01", "1991-12-31"]))
+    per_person = measures.per_person(frame, DE, drawn, own)
+    check("per person: 1950's figure before the population drawn begins comes back as published, 190.2003", abs(per_person[DE_DEBT_COLUMN].iloc[0] - 190.2003) < 1e-6, per_person[DE_DEBT_COLUMN].iloc[0])
+    check("per person: a level over the same people as the total", abs(per_person[column].iloc[1] * 2 - per_person[DE_DEBT_COLUMN].iloc[1]) < 1e-9, per_person[column].iloc[1])
+    check("per person: 1960's, shown on 1961-01-01, by the population drawn", abs(per_person[DE_DEBT_COLUMN].iloc[3] - 28998.43e6 / 50e6) < 1e-6, per_person[DE_DEBT_COLUMN].iloc[3])
+    check("per person: 1990's by West Germany's, whatever the population drawn says, and held", abs(per_person[DE_DEBT_COLUMN].iloc[4] - 555.13e9 / people.loc["1990-12-31"]) < 1e-6 and per_person[DE_DEBT_COLUMN].iloc[5] == per_person[DE_DEBT_COLUMN].iloc[4], per_person[DE_DEBT_COLUMN].iloc[4])
+    check("per person: all of Germany's from 1991-12-31 by the population drawn", abs(per_person[DE_DEBT_COLUMN].iloc[6] - 618.218e9 / 80e6) < 1e-6, per_person[DE_DEBT_COLUMN].iloc[6])
+
+
 def check_west_gdp() -> None:
     """Batch 16: West Germany's GDP, read from the extracts of the Federal Statistical Office's tables (saved 2026-11-05), its bake, its joins and its population."""
     annual_rows, quarter_rows = csv_rows("destatis_81000_117_gdp.csv"), csv_rows("destatis_fs18_s27_gdp_q.csv")
@@ -298,7 +396,7 @@ def check_west_gdp() -> None:
     gdp = [130.31e9, 130.31e9, 154.77e9, 1000e9, 1306.68e9, 1391.36e9, 1590e9]
     frame = pd.DataFrame({"DATE": dates, GDP_COLUMN: [np.nan, gdp[1], gdp[2], gdp[3], gdp[4], gdp[5], gdp[6]]})
     drawn = pd.Series([50e6, 80e6], index=pd.to_datetime(["1960-01-01", "1991-12-31"]))
-    per_person = measures.per_person(frame, DE, drawn, measures.OwnPopulation(GDP_COLUMN, people))[GDP_COLUMN]
+    per_person = measures.per_person(frame, DE, drawn, {GDP_COLUMN: people})[GDP_COLUMN]
     check("per person: 1959's figure showing on 1960-01-01 comes back as published, 2524", abs(per_person.iloc[1] - 2524) < 1e-6, per_person.iloc[1])
     check("per person: 1960's and 1989's by the population drawn", abs(per_person.iloc[2] - gdp[2] / measures.population_on(frame["DATE"], drawn).iloc[2]) < 1e-6
           and abs(per_person.iloc[3] - gdp[3] / measures.population_on(frame["DATE"], drawn).iloc[3]) < 1e-6, per_person.iloc[2])
@@ -424,8 +522,8 @@ def check_fetchers() -> None:
               yields["10-Year"].loc["1972-08-01":"1972-09-30"].dropna().to_dict() == {pd.Timestamp("1972-08-01"): 7.9, pd.Timestamp("1972-09-30"): 8.08})
         check("yields: the 30-year monthly 2000-01 to 2000-07, then daily", through["30-Year"] == pd.Timestamp("2000-07-31"), through["30-Year"])
         debt = de_data.fetch_de_debt(config)[de_data.DE_DEBT_COLUMN]
-        check("debt: year-end 1991-1999 (ECB), then quarterly (Eurostat) from 2000 Q1",
-              debt.index[0] == pd.Timestamp("1991-12-31") and debt.loc["1999-12-31"] == 1_253_598e6
+        check("debt: West Germany's from 1950-03-31, year-end 1991-1999 (ECB), then quarterly (Eurostat) from 2000 Q1",
+              debt.index[0] == pd.Timestamp("1950-03-31") and debt.loc["1991-12-31"] == 618_218e6 and debt.loc["1999-12-31"] == 1_253_598e6
               and pd.Timestamp("2000-03-31") in debt.index and debt.loc["2026-03-31"] == 2_902_035.3e6)
         interest = de_data.fetch_de_interest(config)[de_data.DE_INTEREST_COLUMN]
         check("interest: annual 1995-2001, then four-quarter sums from 2002 Q4",
@@ -546,7 +644,7 @@ def check_cnbc() -> None:
 
 
 def main() -> int:
-    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_west_gdp, check_older_mortgages, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
+    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_west_gdp, check_german_debt, check_older_mortgages, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
         group()
     passed = sum(RESULTS)
     print(f"[de parsers] {passed} of {len(RESULTS)} checks passed")

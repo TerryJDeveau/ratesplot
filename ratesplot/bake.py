@@ -103,6 +103,7 @@ from .config import (
     DE_ARCHIVE_END_MARKER,
     DESTATIS_CPI_LONG_SERIES_URL,
     DESTATIS_NATIONAL_ACCOUNTS_URL,
+    DESTATIS_PUBLIC_DEBT_URL,
     DESTATIS_REVISED_QUARTERS_URL,
     DATE_COLUMN,
     GDP_COLUMN,
@@ -1938,6 +1939,68 @@ def parse_west_german_quarterly_gdp(rows) -> pd.Series:
     return series
 
 
+# Germany's public debt by level (batch 16), the Federal Statistical Office's Fachserie
+# 14 Reihe 5, 2021, sheet 1.1.1: debt to the non-public sector, millions of euros at
+# 1.95583 and euros per person. Dated 31 March to 1959 and 31 December from 1960, with no
+# 1959-12 or 1960-03. By its footnotes West Berlin is in from 1952, the Saarland from 1960,
+# the federal special funds from 1954, all of Germany from 1991. The rows are the table's
+# own, each column named above it, so a table that moved one would be refused. Kept: the
+# total to 1991, the year it overlaps the ECB's; the levels to 2000, the year they overlap
+# Eurostat's; the total per person to 1959 (``de_data.west_german_debt_population``).
+DE_DEBT_SHEET = "1.1.1"
+_DE_DEBT_TITLE = "1.1.1 Schulden beim nicht-öffentlichen Bereich insgesamt *"
+_DE_DEBT_HEADINGS = ["Stichtag", "Insgesamt", "", "Bund", "", "Länder", "", "Gemeinden/Gv.", ""]
+_DE_DEBT_UNITS = ["", *(["Mill. EUR", "je Einwohner in EUR"] * 4)]
+_DE_DEBT_DATES = pd.DatetimeIndex([pd.Timestamp(year, 3, 31) for year in range(1950, 1960)] + [pd.Timestamp(year, 12, 31) for year in range(1960, 2001)])
+_DE_DEBT_TOTAL_LAST = pd.Timestamp("1991-12-31")
+_DE_DEBT_EACH_LAST = pd.Timestamp("1959-03-31")
+# The levels add up to the total exactly, but for 1951 to 1954, whose federal and local
+# columns are rounded to the million (measured 2026-11-05: 2.51 million at most, in 1954).
+_DE_DEBT_LEVELS_ADD_UP_WITHIN = 3.0
+
+
+def _german_debt_date(label: str) -> pd.Timestamp | None:
+    """Return the day a row of the debt table describes, its label written ``1950-03-31 00:00:00`` or ``31.03.1952 5`` (a footnote's number after it); None for another row."""
+    iso = re.match(r"(\d{4})-(\d{2})-(\d{2})\b", label)
+    if iso:
+        return pd.Timestamp(int(iso.group(1)), int(iso.group(2)), int(iso.group(3)))
+    german = re.match(r"(\d{2})\.(\d{2})\.(\d{4})\b", label)
+    return pd.Timestamp(int(german.group(3)), int(german.group(2)), int(german.group(1))) if german else None
+
+
+def parse_german_debt(rows) -> dict[str, pd.Series]:
+    """Return Germany's debt from the rows of Fachserie 14 Reihe 5's sheet 1.1.1, keyed ``total``, ``per_person``, ``federal``, ``states``, ``local``.
+
+    Millions of euros to two places (per person: euros to four), each dated as the
+    table dates it. Raises if a heading or unit has moved, a date is missing or added,
+    or the levels no longer add up to the total, so a changed table cannot shift a curve.
+    """
+    table = [cells for cells in ([_workbook_heading(cell) for cell in row[:9]] for row in rows) if any(cells)]
+    if table[2][0] != _DE_DEBT_TITLE:
+        raise RuntimeError(f"German debt: the sheet's title is now {table[2][0]!r}; data module not modified.")
+    headings = [re.sub(r"\s+\d+$", "", cell) for cell in table[3]]
+    if headings != _DE_DEBT_HEADINGS or table[4] != _DE_DEBT_UNITS:
+        raise RuntimeError(f"German debt: the headings are now {headings}, {table[4]}; data module not modified.")
+    values: dict[pd.Timestamp, list[float]] = {}
+    for cells in table[5:]:
+        date = _german_debt_date(cells[0])
+        if date is not None and date <= _DE_DEBT_DATES[-1]:
+            values[date] = [float(cell) for cell in cells[1:]]
+    read = pd.DataFrame.from_dict(values, orient="index", columns=["total", "per_person", "federal", "federal_each", "states", "states_each", "local", "local_each"]).sort_index().rename_axis(DATE_COLUMN)
+    if not read.index.equals(_DE_DEBT_DATES):
+        raise RuntimeError(f"German debt: {len(read)} dates, not every 31 March of 1950 to 1959 and 31 December of 1960 to 2000; data module not modified.")
+    apart = (read["total"] - read[["federal", "states", "local"]].sum(axis=1)).abs().max()
+    if apart > _DE_DEBT_LEVELS_ADD_UP_WITHIN:
+        raise RuntimeError(f"German debt: the levels differ from the total by up to {apart:g} million; data module not modified.")
+    return {
+        "total": read.loc[: _DE_DEBT_TOTAL_LAST, "total"].round(2),
+        "per_person": read.loc[: _DE_DEBT_EACH_LAST, "per_person"].round(4),
+        "federal": read["federal"].round(2),
+        "states": read["states"].round(2),
+        "local": read["local"].round(2),
+    }
+
+
 def _rows_of_sheet(content: bytes, sheet: str) -> list[tuple]:
     """Return one sheet's rows of a workbook served as ``content``."""
     import openpyxl  # the bake's own dependency, as the UK's: the program does not need it for this
@@ -1968,6 +2031,16 @@ def _west_german_gdp(saved_annual: Path | None, saved_quarterly: Path | None) ->
     return parse_west_german_gdp(annual_rows), parse_west_german_quarterly_gdp(quarter_rows), [annual_name, quarter_name]
 
 
+def _german_debt(saved: Path | None) -> tuple[dict[str, pd.Series], str]:
+    """Return ``(Germany's debt by level, where it was read from)``: from the Federal Statistical Office, or the extract ``saved``."""
+    if saved is None:
+        print("Downloading the Federal Statistical Office's public debt, Fachserie 14 Reihe 5 …")
+        return parse_german_debt(_rows_of_sheet(_destatis_content(DESTATIS_PUBLIC_DEBT_URL), DE_DEBT_SHEET)), DESTATIS_PUBLIC_DEBT_URL
+    with Path(saved).open(encoding="utf-8", newline="") as file:
+        rows = list(csv.reader(file))
+    return parse_german_debt(rows), f"{Path(saved).name} (extracted from sheet {DE_DEBT_SHEET} of {DESTATIS_PUBLIC_DEBT_URL})"
+
+
 def bake_german_archives(
     source_path: Path | None = None,
     saved_csv: Path | None = None,
@@ -1977,13 +2050,14 @@ def bake_german_archives(
     saved_mortgage_csvs: dict[str, Path] | None = None,
     saved_gdp_annual_csv: Path | None = None,
     saved_gdp_quarterly_csv: Path | None = None,
+    saved_debt_csv: Path | None = None,
 ) -> None:
     """Extract the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, and West Germany's consumer prices, population and GDP, and embed them into ``ratesplot/de_archive_data.py``.
 
     ``saved_csv``, ``saved_discount_csv``, ``saved_cpi_workbook``,
     ``saved_population_text``, ``saved_mortgage_csvs`` (each name of
-    ``DE_MORTGAGE_HISTORY_SERIES`` -> its file), ``saved_gdp_annual_csv`` and
-    ``saved_gdp_quarterly_csv`` read the downloads already on disk (as saved in
+    ``DE_MORTGAGE_HISTORY_SERIES`` -> its file), ``saved_gdp_annual_csv``,
+    ``saved_gdp_quarterly_csv`` and ``saved_debt_csv`` read the downloads already on disk (as saved in
     ``tools/de_fixtures``) instead of fetching them. The yield is a monthly average, so each month is dated by
     its first day; every value the series has is kept (to 2020-04), and
     ``de_data`` uses the months before the term structure begins. The discount
@@ -2043,6 +2117,8 @@ def bake_german_archives(
     west_each = _require_rows(west_years["per_person"].rename("value").to_frame(), "West Germany's GDP per person")
     west_old_basis = _require_rows(west_years["old_basis"].rename("value").to_frame(), "West Germany's GDP on the old basis")
     west_gdp_quarters = _require_rows(west_quarters.rename("value").to_frame(), "West Germany's quarterly GDP")
+    debt, debt_name = _german_debt(saved_debt_csv)
+    debts = {name: _require_rows(values.rename("value").to_frame(), f"Germany's debt, {name}") for name, values in debt.items()}
     block = (
         f"{DE_ARCHIVE_BEGIN_MARKER}\n"
         f"# Generated on {dt.date.today():%Y-%m-%d} from the Deutsche Bundesbank and the Federal Statistical Office, read from:\n# {source_name}\n"
@@ -2051,6 +2127,7 @@ def bake_german_archives(
         f"# {west_people_name}\n"
         + "".join(f"# {name}\n" for name in mortgage_names)
         + "".join(f"# {name}\n" for name in west_gdp_names)
+        + f"# {debt_name}\n"
         + "# Historical observations in the source's own terms; de_data and rates join\n"
         "# them to the live series at run time.\n\n"
         + _embedded_list("EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY", comment, data, "value")
@@ -2132,10 +2209,41 @@ def bake_german_archives(
             west_gdp_quarters,
             "value",
         )
+        + "\n"
+        + _embedded_list(
+            "EMBEDDED_DE_DEBT_TOTAL",
+            "Public debt to the non-public sector, the Federal Statistical Office's, millions of euros at\n"
+            "1.95583, dated 31 March to 1959 and 31 December from 1960: West Berlin in from 1952, the\n"
+            "Saarland from 1960, all of Germany from 1991, whose figure is only for the ratio to the ECB's.",
+            debts["total"],
+            "value",
+        )
+        + "\n"
+        + _embedded_list(
+            "EMBEDDED_DE_DEBT_PER_PERSON",
+            "The same total per person, as published, in euros, to 1959.",
+            debts["per_person"],
+            "value",
+        )
+        + "\n"
+        + "\n".join(
+            _embedded_list(
+                f"EMBEDDED_DE_DEBT_{name.upper()}",
+                f"{who}, from the same table, on the same dates, to 2000, whose figure is only for the ratio\n"
+                "to Eurostat's.",
+                debts[name],
+                "value",
+            )
+            for name, who in (
+                ("federal", "The Bund's, its special funds in from 1954"),
+                ("states", "The Länder's"),
+                ("local", "The Gemeinden's and their associations'"),
+            )
+        )
         + f"{DE_ARCHIVE_END_MARKER}"
     )
     _replace_generated_block(source_path, DE_ARCHIVE_BEGIN_MARKER, DE_ARCHIVE_END_MARKER, block)
-    print(f"Embedded the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, and West Germany's consumer prices, population and GDP, into {source_path}")
+    print(f"Embedded the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, West Germany's consumer prices, population and GDP, and Germany's debt by level, into {source_path}")
     print(f"  EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY {len(data):5,} values, {data.index[0]:%Y-%m-%d} to {data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_DISCOUNT_RATE_CHANGES     {len(discount_data):5,} changes, {discount_data.index[0]:%Y-%m-%d} to {discount_data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS   {len(west_all):5,} months, {west_all.index[0]:%Y-%m-%d} to {west_all.index[-1]:%Y-%m-%d}")
@@ -2149,6 +2257,7 @@ def bake_german_archives(
         ("EMBEDDED_DE_WEST_GDP_PER_PERSON", "years", west_each),
         ("EMBEDDED_DE_WEST_GDP_OLD_BASIS", "years", west_old_basis),
         ("EMBEDDED_DE_WEST_GDP_QUARTERS", "quarters", west_gdp_quarters),
+        *((f"EMBEDDED_DE_DEBT_{name.upper()}", "dates", frame) for name, frame in debts.items()),
     ):
         print(f"  {name:37} {len(frame):5,} {what}, {frame.index[0]:%Y-%m-%d} to {frame.index[-1]:%Y-%m-%d}")
 
