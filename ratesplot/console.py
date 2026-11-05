@@ -83,6 +83,21 @@ def current_writer() -> Callable[[str], object]:
     return stream.write if stream is not None else _discard  # None: pythonw, no console
 
 
+def tolerant_output() -> None:
+    """A character the output's encoding lacks comes out replaced, rather than stopping the program (batch 40.4).
+
+    Python writes to a pipe or a file in the system's code page, cp1252 on
+    Terry's machines, which has no Δ, and a note can print the inflation curve's
+    name; a console window takes every character. Measured 2026-11-05: without
+    this, ``python ratesplot.py -u --inflation -s:2025-10-02 --e:2025-10-20
+    --save:FILE | more`` draws nothing and ends "Charts not drawn: United States.".
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)  # None under pythonw; a harness's stand-in has no reconfigure
+        if reconfigure is not None:
+            reconfigure(errors="replace")
+
+
 def _discard(text: str) -> int:
     return len(text)
 
