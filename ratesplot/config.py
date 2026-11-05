@@ -752,17 +752,24 @@ CURRENCY_SYMBOLS = {"CAD": "C$", "USD": "$", "GBP": "£", "EUR": "€"}
 # Canadian chart, where "$" alone would read as Canadian dollars; the U.S.
 # chart keeps its "$" (plan 30.1's note).
 MASTER_SYMBOLS = {**CURRENCY_SYMBOLS, "USD": "US$"}
-# The right axis's label for amounts, in a currency's code: each nation's
-# own (``CountryMetadata.currency_label``, ``per_capita_label``), or on a
-# chart converted to the master currency the master's, with its rate
-# (``CountryMetadata.macro_axis_label``).
-AMOUNTS_AXIS_LABEL = "Nominal Units ({} – Log Scale)"
-PER_CAPITA_AXIS_LABEL = "Nominal Units per Capita ({} – Log Scale)"
-# The same at constant prices (--constant, batch 13.2): "Real Units at
-# 2026-09 Prices (CAD – Log Scale)", the month of the consumer price index
-# the amounts are expressed in (``PlotConfig.price_base``).
-REAL_AXIS_LABEL = "Real Units at {month} Prices ({currency} – Log Scale)"
-REAL_PER_CAPITA_AXIS_LABEL = "Real Units per Capita at {month} Prices ({currency} – Log Scale)"
+
+
+def amounts_axis_label(currency: str, *, per_capita: bool = False, month: str | None = None, rate: str | None = None) -> str:
+    """The right axis's label for amounts in ``currency``, its code named once, at the start (batch 40.5; Terry, 2026-11-05).
+
+    "Nominal USD (Log Scale)", "Nominal USD per Capita (Log Scale)". At
+    constant prices (--constant, batch 13.2), with the month of the consumer
+    price index the amounts are expressed in (``PlotConfig.price_base``): "Inf.
+    Adj. CAD at 2026-09 Prices (Log Scale)". On a chart converted to the master
+    currency (--master, batch 30), the master's code, with its rate
+    (``MasterConversion.rate_text``): "Nominal USD (at 0.72134 per CAD,
+    2026-10-16 – Log Scale)".
+    """
+    kind = "Nominal" if month is None else "Inf. Adj."
+    per = " per Capita" if per_capita else ""
+    prices = "" if month is None else f" at {month} Prices"
+    scale = "Log Scale" if rate is None else f"{rate} – Log Scale"
+    return f"{kind} {currency}{per}{prices} ({scale})"
 
 
 @dataclass(frozen=True)
@@ -788,9 +795,9 @@ class MasterConversion:
         return MASTER_SYMBOLS[self.currency]
 
     @property
-    def described(self) -> str:
-        """The rate as the axis label and the message log give it: "USD at 0.72134 per CAD, 2026-10-16"."""
-        return f"{self.currency} at {self.rate:.5g} per {self.own}, {self.dated:%Y-%m-%d}"
+    def rate_text(self) -> str:
+        """The rate as the axis label gives it, the currency's code being named before it: "at 0.72134 per CAD, 2026-10-16"."""
+        return f"at {self.rate:.5g} per {self.own}, {self.dated:%Y-%m-%d}"
 
 
 @dataclass(frozen=True)
@@ -1138,8 +1145,6 @@ class CountryMetadata:
     key: str
     country_name: str
     currency_prefix: str
-    currency_label: str
-    per_capita_label: str
     yield_title: str
     debt_column: str
     debt_label: str
@@ -1197,22 +1202,16 @@ class CountryMetadata:
         return dict(self.level_names)[letter]
 
     def macro_axis_label(self, config: PlotConfig) -> str:
-        """Return the right (macro) axis label for the measure ``config`` asks for.
-
-        A chart in the master currency (--master, batch 30) names it and its
-        rate: "Nominal Units (USD at 0.72134 per CAD, 2026-10-16 – Log Scale)".
-        """
+        """Return the right (macro) axis label for the measure ``config`` asks for (``amounts_axis_label``)."""
         if config.relative:
             return RELATIVE_AXIS_LABEL
         master = config.master_conversion
-        if config.price_base is not None:
-            # At constant prices (batch 13.2): "Real Units at 2026-09 Prices (CAD – Log Scale)".
-            currency = nation_by_key(self.key).currency if master is None else master.described
-            label = REAL_PER_CAPITA_AXIS_LABEL if config.per_capita else REAL_AXIS_LABEL
-            return label.format(month=f"{config.price_base:%Y-%m}", currency=currency)
-        if master is not None:
-            return (PER_CAPITA_AXIS_LABEL if config.per_capita else AMOUNTS_AXIS_LABEL).format(master.described)
-        return self.per_capita_label if config.per_capita else self.currency_label
+        return amounts_axis_label(
+            nation_by_key(self.key).currency if master is None else master.currency,
+            per_capita=config.per_capita,
+            month=None if config.price_base is None else f"{config.price_base:%Y-%m}",
+            rate=None if master is None else master.rate_text,
+        )
 
     def macro_specs(self, config: PlotConfig, *, aggregate_debt: bool = True) -> tuple[tuple[str, bool, str, str], ...]:
         """Return ``(style_key, enabled, column, label)`` for each macro curve, in legend order.
@@ -1420,8 +1419,6 @@ CDN = CountryMetadata(
     key="cdn",
     country_name="Canada",
     currency_prefix=CURRENCY_SYMBOLS["CAD"],
-    currency_label=AMOUNTS_AXIS_LABEL.format("CAD"),
-    per_capita_label=PER_CAPITA_AXIS_LABEL.format("CAD"),
     # The titles name the nation by its adjective, the legend by CDN (batch 22).
     yield_title="Canadian Benchmark Yields",
     title_nation="Canadian",
@@ -1442,8 +1439,6 @@ US = CountryMetadata(
     key="us",
     country_name="United States",
     currency_prefix=CURRENCY_SYMBOLS["USD"],
-    currency_label=AMOUNTS_AXIS_LABEL.format("USD"),
-    per_capita_label=PER_CAPITA_AXIS_LABEL.format("USD"),
     yield_title="U.S. Treasury Yields",
     # "U.S." in the yields' phrase, which always comes first; "US" in the rest.
     title_nation="US",
@@ -1464,8 +1459,6 @@ UK = CountryMetadata(
     key="uk",
     country_name="United Kingdom",
     currency_prefix=CURRENCY_SYMBOLS["GBP"],
-    currency_label=AMOUNTS_AXIS_LABEL.format("GBP"),
-    per_capita_label=PER_CAPITA_AXIS_LABEL.format("GBP"),
     # The Bank of England's fitted par yields (monthly averages of gilt
     # redemption yields before them): the title says which kind they are.
     yield_title="UK Gilt Yields (fitted par)",
@@ -1502,8 +1495,6 @@ DE = CountryMetadata(
     key="de",
     country_name="Germany",
     currency_prefix=CURRENCY_SYMBOLS["EUR"],
-    currency_label=AMOUNTS_AXIS_LABEL.format("EUR"),
-    per_capita_label=PER_CAPITA_AXIS_LABEL.format("EUR"),
     # The Bundesbank's Svensson term structure: zero-coupon yields fitted to
     # the Federal securities' prices; the title says which kind they are.
     yield_title="German Federal Yields (Svensson fitted)",

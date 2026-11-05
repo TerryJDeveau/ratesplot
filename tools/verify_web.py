@@ -2090,7 +2090,7 @@ def check_batch30(check: Check) -> None:
     us_data = web.export.chart_data(drawing.figures["us"], drawing.drawn.for_nation("us"), "us")
     check("the Canadian chart in US$: its axis, its exported data's unit; the U.S. chart's as before",
           "USD at" in drawing.figures["cdn"].axes[1].get_ylabel() and "US$" in data.units and "C$" not in data.units
-          and drawing.figures["us"].axes[1].get_ylabel() == "Nominal Units (USD – Log Scale)" and "US$" in us_data.units,
+          and drawing.figures["us"].axes[1].get_ylabel() == "Nominal USD (Log Scale)" and "US$" in us_data.units,
           (drawing.figures["cdn"].axes[1].get_ylabel(), data.units))
     geometry = drawing.geometry["cdn"]
     _left, top, _right, bottom = geometry.box
