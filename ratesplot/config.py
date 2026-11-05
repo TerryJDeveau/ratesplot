@@ -396,10 +396,22 @@ BUNDESBANK_DATA_URL = "https://api.statistiken.bundesbank.de/rest/data/{flow}/{k
 BUNDESBANK_OLD_SERIES_URL = "https://www.bundesbank.de/statistic-rmi/StatisticDownload"
 # The Federal Statistical Office's long series of consumer prices from 1948,
 # its last edition (December 2022), read by the German bake alone (batch 16).
-# Its robots.txt asks for 30 s between requests; the bake asks once.
+# Its robots.txt asks for 30 s between requests, which the bake waits
+# (``bake._destatis_content``).
 DESTATIS_CPI_LONG_SERIES_URL = (
     "https://www.destatis.de/DE/Themen/Wirtschaft/Preise/Verbraucherpreisindex/Publikationen/"
     "Downloads-Verbraucherpreise/verbraucherpreisindex-lange-reihen-xlsx-5611103.xlsx?__blob=publicationFile"
+)
+# West Germany's GDP (batch 16), read by the German bake alone: the "Statistischer
+# Bericht" on the national accounts (50 MB), table 81000-117, the years from 1950;
+# and Fachserie 18 Reihe S.27, the quarters of 1970 to 1991 after the revision of 2005.
+DESTATIS_NATIONAL_ACCOUNTS_URL = (
+    "https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/"
+    "Downloads-Inlandsprodukt/statistischer-bericht-2180120.xlsx?__blob=publicationFile"
+)
+DESTATIS_REVISED_QUARTERS_URL = (
+    "https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/"
+    "Downloads-Inlandsprodukt/inlandsprodukt-revidiert-vierteljahr-2189027919005.xlsx?__blob=publicationFile"
 )
 # The Bundesbank's "Lange Zeitreihen" of 2020-09-01, a PDF with data to 2019,
 # read by the German bake alone, for West Germany's population before Eurostat's

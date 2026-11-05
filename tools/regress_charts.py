@@ -199,7 +199,7 @@ CASES: dict[str, list[str]] = {
     # values, then daily) with -l; the yield axis's other curves with its own
     # default mortgage band and spreads; every term and band; the ECB rate
     # alone over its span; each measure (per person from 1991, where
-    # GDP and debt begin); the levels; --reg; all four nations; values for
+    # debt begins); the levels; --reg; all four nations; values for
     # Germany alone, by its prefix --ger: and from --nations:de.
     "de_default": ["--na:de"],
     "de1956_l": ["--na:de", "-s:1956", "-l"],
@@ -261,8 +261,8 @@ CASES: dict[str, list[str]] = {
     # Canadian dollar at its gold par; in 1947 a limit in euros left to the
     # axis with a warning (no rate before 1948-06-21), the other converted at
     # J562 and M15; in 1960 euros at the mark's parity of 4.20 on the other
-    # three charts (Germany's has no right-axis curve before 1991), with J562
-    # and M15.
+    # three charts (Germany's own limits in euros, its GDP drawn from 1950 since
+    # batch 16), with J562 and M15.
     "fx_1912": ["--na:ca,gb", "--top:USD15b", "--bottom:USD50m", "-s:1867", "--e:1912"],
     "fx_1947": ["--na:ca,gb", "--top:EUR20b", "--bottom:USD100m", "-s:1926", "--e:1947"],
     "fx_1960_all": ["--na:ca,us,gb,de", "--top:EUR2t", "--bottom:EUR2b", "-s:1956", "--e:1960"],
@@ -299,7 +299,7 @@ CASES: dict[str, list[str]] = {
     "real_breakeven": ["--gdp", "--debt", "--interest", "--na:us,gb", "--y:10,r10", "--sp:10y-r10", "-s:2010"],
     # Batch 13.1: the inflation curve, beside each nation's yields with its end
     # label, and alone from 1910 (each nation from its first month: the U.S.
-    # 1914, Canada 1915, the UK 1915-07, Germany 1992).
+    # 1914, Canada 1915, the UK 1915-07, Germany 1992, 1949-06 since batch 16).
     "inflation": ["--gdp", "--debt", "--interest", "--yield", "--na:ca,us,gb,de", "--inf", "-l", "-s:2018"],
     "inflation_long": ["--na:ca,us,gb,de", "--inf", "--no-yield", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1910"],
     # Batch 13.2: the amounts at constant prices, with the regression's real
@@ -348,6 +348,12 @@ CASES: dict[str, list[str]] = {
     "alone_yields": ["-c", "--y:2,10", "-s:2000", "-l"],
     "alone_cpi": ["-u", "--cpi", "-s:1990", "-l"],
     "gdp_policy": ["-u", "--gdp", "--policy", "-s:2000", "-l"],
+    # Batch 16: Germany's GDP from 1950 across its joins, with the regression and
+    # the end labels; per person; at unification, in euros and per person; beside the debt.
+    "de_gdp1950": ["--na:de", "--gdp", "--y:10", "-l", "--reg", "-s:1950"],
+    "de_gdp1950_p": ["--na:de", "--gdp", "-p", "-l", "-s:1950"],
+    "de_gdp_unification": ["--na:de", "--gdp", "--debt", "-s:1985", "--e:1996"],
+    "de_gdp_unification_p": ["--na:de", "--gdp", "--debt", "-p", "-s:1985", "--e:1996"],
 }
 
 

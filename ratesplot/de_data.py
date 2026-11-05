@@ -32,7 +32,12 @@ reach them; ``tools/de_fixtures/README.md`` holds the measurements):
   and before it the annual figures from 1995 (gov_10dd_edpt1), which equal
   the sums of their quarters exactly where both exist. Levels from 2002.
 * GDP: at market prices, current prices, not seasonally adjusted, quarterly
-  from 1991 (Eurostat namq_10_gdp), summed over four quarters.
+  from 1991 (Eurostat namq_10_gdp), summed over four quarters, from 1991-12-31.
+  Before it West Germany's, baked (``west_german_gdp``): the Federal Statistical
+  Office's four-quarter sums from 1970-12-31 to 1991-09-30, its years on the old
+  basis from 1960 and without the Saarland and West Berlin from 1950, each at its
+  year's end. The two changes of territory are kept as steps (1960, 1991); the
+  revision of 2005 at 1970 is bridged, not a change of territory.
 * Population: Eurostat namq_10_pe (thousands, quarterly from 1991, dated
   mid-quarter), and before it demo_pjan (on 1 January, from 1960: West
   Germany until 1990, so the curve steps up by 17 million at unification,
@@ -70,6 +75,7 @@ import numpy as np
 import pandas as pd
 
 from .config import (
+    BILLION,
     BUNDESBANK_DATA_URL,
     BUNDESBANK_SERIES_URL,
     COMPONENT_LETTERS,
@@ -93,10 +99,15 @@ from .de_archive_data import (
     EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY,
     EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS,
     EMBEDDED_DE_WEST_CPI_FOUR_PERSON,
+    EMBEDDED_DE_WEST_GDP_NARROW,
+    EMBEDDED_DE_WEST_GDP_OLD_BASIS,
+    EMBEDDED_DE_WEST_GDP_PER_PERSON,
+    EMBEDDED_DE_WEST_GDP_QUARTERS,
     EMBEDDED_DE_WEST_POPULATION,
+    EMBEDDED_DE_WEST_POPULATION_AT_UNIFICATION,
 )
 from .http import BotCheck, de_get, downloads_of
-from .joins import embedded_frame, ttm_sum
+from .joins import embedded_frame, splice_archived_series, ttm_sum
 
 # Chart column -> the Bundesbank's code of that residual maturity in the
 # Svensson term structure ("R10XX" = 10.0 years), and the series key with
@@ -274,9 +285,20 @@ _QUARTER_MIDDLE_DAYS = 45
 # ``--start`` is earlier (``de_series_earliest`` adds the chosen yields).
 DE_SERIES_EARLIEST = {
     "German General Government Debt (ECB, year-end from 1991)": pd.Timestamp("1991-12-31"),
-    "TTM Nominal GDP (Eurostat, quarterly from 1991)": pd.Timestamp("1991-12-31"),
+    "TTM Nominal GDP (West Germany's from 1950, Eurostat's quarters from 1991)": pd.Timestamp("1950-12-31"),
     "TTM German Interest Payable (Eurostat, annual from 1995)": pd.Timestamp("1995-12-31"),
 }
+
+# Where Germany's GDP covers another territory than the population drawn, so has a
+# population of its own (``west_german_gdp_population``). Its first figure with the
+# Saarland and West Berlin: an observation shows on the first chart date on or after
+# its own, so 1959's may show on 1960-01-01, and its population holds until this date,
+# not to 1959-12-31. The first count in the population drawn that unification's step
+# reaches: interpolated towards all of Germany's from here. The first sum for all of
+# Germany: the population drawn is the GDP's again.
+_DE_GDP_WHOLE_TERRITORY_FROM = pd.Timestamp("1960-12-31")
+_DE_POPULATION_STEP_REACHES_FROM = pd.Timestamp("1990-01-01")
+_DE_GDP_UNIFIED_FROM = pd.Timestamp("1991-12-31")
 
 
 # ---------------------------------------------------------------------------
@@ -833,16 +855,74 @@ def fetch_de_debt(config: PlotConfig) -> pd.DataFrame | None:
     return joined.rename(DE_DEBT_COLUMN).to_frame() if joined is not None else None
 
 
+def _in_euros(rows: list[tuple[str, float]]) -> pd.Series:
+    """Return a baked list in billions of euros as euros, on its dates."""
+    return embedded_frame(rows, GDP_COLUMN)[GDP_COLUMN] * BILLION
+
+
+def west_german_gdp() -> pd.Series:
+    """Return West Germany's trailing-twelve-month GDP to 1991, in euros (batch 16): each year's end from 1950, then four-quarter sums from 1970-12-31.
+
+    Three spans the Federal Statistical Office says are not fully comparable.
+    From 1960 the Saarland and West Berlin are in, a change of territory: a step,
+    kept (1959's figure leaves them out, 1960's has them, 6.0 % of it). At 1970 the
+    revision of 2005 raises the level by 4.4 %, no change of territory: the older
+    years reach the revised sum by the rule every other archive joins by
+    (``joins.splice_archived_series``), the ratio at 1970 and a ramp over 1965 to
+    1969, so 1970's growth is the old basis's own.
+    """
+    whole = splice_archived_series(
+        _in_euros(EMBEDDED_DE_WEST_GDP_OLD_BASIS).to_frame(GDP_COLUMN),
+        ttm_sum(_in_euros(EMBEDDED_DE_WEST_GDP_QUARTERS)).to_frame(GDP_COLUMN),
+        GDP_COLUMN,
+        annual_historical=True,
+    )[GDP_COLUMN]
+    return _before(_in_euros(EMBEDDED_DE_WEST_GDP_NARROW), whole)
+
+
+def west_german_gdp_population() -> pd.Series:
+    """Return the population West Germany's GDP is divided by where the population drawn covers another territory, in persons, each held until the next; a date with none: the population drawn from there.
+
+    Two spans. To 1959 the GDP leaves out the Saarland and West Berlin and the
+    population drawn has them (``west_german_population``), which would read about
+    6 % low and step up at 1960: GDP over its published figure per person, each
+    dated by 31 December, so those figures come back as published. Through 1990 and
+    1991 the population drawn runs from West Germany's count on 1990-01-01 to all of
+    Germany's on 1991-01-01, and stays there, while the GDP is West Germany's to
+    1991-09-30, which would read up to about 20 % low: West Germany's annual averages,
+    log-linear between their middles, 1991's held after its own, on each date the GDP
+    is observed.
+    """
+    each = embedded_frame(EMBEDDED_DE_WEST_GDP_PER_PERSON, GDP_COLUMN)[GDP_COLUMN]
+    narrow = _in_euros(EMBEDDED_DE_WEST_GDP_NARROW) / each
+    gdp_dates = west_german_gdp().index
+    dates = gdp_dates[(gdp_dates > _DE_POPULATION_STEP_REACHES_FROM) & (gdp_dates < _DE_GDP_UNIFIED_FROM)].insert(0, _DE_POPULATION_STEP_REACHES_FROM)
+    averages = embedded_frame(EMBEDDED_DE_WEST_POPULATION_AT_UNIFICATION, POPULATION_COLUMN)[POPULATION_COLUMN] * THOUSAND
+    west = pd.Series(np.exp(np.interp(dates.as_unit("ns").asi8, averages.index.as_unit("ns").asi8, np.log(averages.to_numpy(dtype=float)))), index=dates)
+    drawn = pd.Series(np.nan, index=pd.DatetimeIndex([_DE_GDP_WHOLE_TERRITORY_FROM, _DE_GDP_UNIFIED_FROM]))
+    return pd.concat([narrow, west, drawn]).sort_index().rename(POPULATION_COLUMN)
+
+
 @downloads_of("Eurostat GDP")
 def fetch_de_gdp(config: PlotConfig) -> pd.DataFrame | None:
-    """Return trailing-twelve-month nominal GDP: four-quarter sums of Eurostat's quarters (from 1991); None, with a warning, if it fails."""
+    """Return trailing-twelve-month nominal GDP: West Germany's (``west_german_gdp``) until four-quarter sums of Eurostat's quarters begin (1991-12-31), then those.
+
+    If Eurostat fails, West Germany's alone, with a warning; under -r None, with a
+    warning, since debt and interest begin at unification, and would be divided by
+    West Germany's GDP and their ratio then held to the chart's end.
+    """
     if not config.needs_gdp:
         return None
+    west = west_german_gdp()
     try:
-        return ttm_sum(eurostat_series("namq_10_gdp")).rename(GDP_COLUMN).to_frame()
+        unified = ttm_sum(eurostat_series("namq_10_gdp"))
     except Exception as exc:
-        print(f"  Warning: Eurostat German GDP unavailable ({exc}); not drawn.")
-        return None
+        if config.relative:
+            print(f"  Warning: Eurostat German GDP unavailable ({exc}); not drawn.")
+            return None
+        print(f"  Warning: Eurostat German GDP unavailable ({exc}); West Germany's alone, to {west.index[-1]:%Y-%m-%d}.")
+        return west.rename(GDP_COLUMN).to_frame()
+    return _before(west, unified).rename(GDP_COLUMN).to_frame()
 
 
 @downloads_of("Eurostat interest outlays")

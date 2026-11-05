@@ -10,6 +10,8 @@ the same, so drawing code finds the curves where it always does.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 import pandas as pd
 
@@ -22,16 +24,24 @@ from .config import COMPONENT_LETTERS, DATE_COLUMN, CountryMetadata, PlotConfig,
 PRICE_BASE_ATTR = "price_base"
 
 
+class OwnPopulation(NamedTuple):
+    """A population one column alone is divided by under -p, where that column's figures cover another territory than the population drawn (West Germany's GDP, batch 16)."""
+
+    column: str
+    people: pd.Series  # persons, each held until the next date; a date with none: the population drawn from there
+
+
 def express(
     macro: pd.DataFrame,
     config: PlotConfig,
     metadata: CountryMetadata,
     population: pd.Series | None = None,
     prices: pd.Series | None = None,
+    own_population: OwnPopulation | None = None,
 ) -> pd.DataFrame:
     """Return ``macro`` in the measure ``config`` asks for (unchanged for plain dollars), in the master currency if its chart is converted.
 
-    ``population`` (date-indexed, persons) is needed only for -p, ``prices``
+    ``population`` (date-indexed, persons) and ``own_population`` are needed only for -p, ``prices``
     (the nation's consumer price index by month, ``prices.consumer_prices``)
     only for --constant. Per person, then at constant prices (the order is
     immaterial: each divides each amount on its date), then in the master
@@ -42,7 +52,7 @@ def express(
     """
     if config.relative:
         return as_percent_of_gdp(macro, metadata)
-    measured = per_person(macro, metadata, population) if config.per_capita else macro
+    measured = per_person(macro, metadata, population, own_population) if config.per_capita else macro
     if config.constant_prices:
         measured = in_constant_prices(measured, metadata, prices, config.end)
     return in_master_currency(measured, config, metadata)
@@ -96,11 +106,16 @@ def in_constant_prices(
 
 def index_on(dates: pd.Series, index: pd.Series) -> pd.Series:
     """Return a monthly price index (dated by each month's first day) on each of ``dates``: its month's value, or the latest before it; missing before its first month."""
+    return held_on(dates, index.dropna())
+
+
+def held_on(dates: pd.Series, values: pd.Series) -> pd.Series:
+    """Return ``values`` on each of ``dates``: the latest on or before it, which may itself be missing; missing before the first."""
     when = pd.DatetimeIndex(pd.to_datetime(dates))
-    known = index.dropna().sort_index()
+    known = values.sort_index()
     at = known.index.searchsorted(when, side="right") - 1
-    values = np.where(at >= 0, known.to_numpy(dtype=float)[np.clip(at, 0, None)], np.nan)
-    return pd.Series(values, index=dates.index)
+    held = np.where(at >= 0, known.to_numpy(dtype=float)[np.clip(at, 0, None)], np.nan)
+    return pd.Series(held, index=dates.index)
 
 
 def in_master_currency(macro: pd.DataFrame, config: PlotConfig, metadata: CountryMetadata) -> pd.DataFrame:
@@ -173,13 +188,17 @@ def ratio_at_observations(numerator: pd.Series, denominator: pd.Series) -> pd.Se
     return (numerator / denominator).where(observed).ffill().where(numerator.notna())
 
 
-def per_person(macro: pd.DataFrame, metadata: CountryMetadata, population: pd.Series | None) -> pd.DataFrame:
+def per_person(
+    macro: pd.DataFrame, metadata: CountryMetadata, population: pd.Series | None, own_population: OwnPopulation | None = None
+) -> pd.DataFrame:
     """Divide GDP, debt and interest by the population, in dollars per person.
 
     Each ratio is taken when its series is observed (``ratio_at_observations``),
     with the population interpolated to that date (``population_on``), so the
     curves keep their steps rather than drifting between observations as the
-    population grows.
+    population grows. ``own_population``'s column is divided by its own where it has
+    one, the latest on or before each date, not interpolated: each is the population
+    of a figure of that column, whichever chart date the figure first shows on.
     """
     columns = _debt_and_interest_columns(macro, metadata)
     if metadata.gdp_column in macro.columns:
@@ -195,7 +214,10 @@ def per_person(macro: pd.DataFrame, metadata: CountryMetadata, population: pd.Se
 
     people = population_on(result[DATE_COLUMN], population)
     for column in columns:
-        result[column] = ratio_at_observations(result[column], people.where(people > 0))
+        divisor = people
+        if own_population is not None and column == own_population.column:
+            divisor = held_on(result[DATE_COLUMN], own_population.people).combine_first(people)
+        result[column] = ratio_at_observations(result[column], divisor.where(divisor > 0))
     return result
 
 

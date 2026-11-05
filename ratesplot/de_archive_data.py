@@ -19,19 +19,26 @@ source's 1995 = 100. ``de_data.with_west_germany`` scales each to the next.
 West Germany's population 1950 to 1959 (batch 16), the Bundesbank's annual averages
 in its long series of 2020-09-01, before Eurostat's counts begin at 1960-01-01.
 
+West Germany's GDP (batch 16), the Federal Statistical Office's table 81000-117 and
+its revised quarters: the years 1950 to 1959 without the Saarland and West Berlin,
+with their figures per person; the whole territory's 1960 to 1970 on the old basis;
+the quarters of 1970 to 1991. ``de_data.west_german_gdp`` sums and joins them.
+
 The block between the BEGIN/END markers is regenerated in place by
 ``tools/bake_archives.py --only de`` (see :mod:`ratesplot.bake`). Do not
 hand-edit it.
 """
 
 # BEGIN AUTO-GENERATED GERMAN ARCHIVE DATA
-# Generated on 2026-11-04 from the Deutsche Bundesbank and the Federal Statistical Office, read from:
+# Generated on 2026-11-05 from the Deutsche Bundesbank and the Federal Statistical Office, read from:
 # bbk01_WU0004.csv (saved from https://www.bundesbank.de/statistic-rmi/StatisticDownload?tsId=BBK01.WU0004)
 # bbin1_BBKDIS.csv (saved from https://api.statistiken.bundesbank.de/rest/download/BBIN1/M.DE.BBK.BBKDIS.DEM.ME?format=csv&lang=en)
 # destatis_vpi_lange_reihen.xlsx (saved from https://www.destatis.de/DE/Themen/Wirtschaft/Preise/Verbraucherpreisindex/Publikationen/Downloads-Verbraucherpreise/verbraucherpreisindex-lange-reihen-xlsx-5611103.xlsx?__blob=publicationFile)
 # bbk_lange_zeitreihen_V1.txt (page 29, by pdftotext -layout, of https://www.bundesbank.de/resource/blob/846346/6bfc076ef91cdb9d0600f257da83ca28/mL/2020-10-02-12-56-47-lange-zeitreihen-data.pdf)
 # bbib1_HYP_F05J.csv (saved from https://api.statistiken.bundesbank.de/rest/download/BBIB1/M.DE.B.S.DNB.HYP.F05J.A.E1.11A?format=csv&lang=en)
 # bbib1_HYP_F10J.csv (saved from https://api.statistiken.bundesbank.de/rest/download/BBIB1/M.DE.B.S.DNB.HYP.F10J.A.E1.11A?format=csv&lang=en)
+# destatis_81000_117_gdp.csv (extracted from sheet csv-81000-117 of https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/Downloads-Inlandsprodukt/statistischer-bericht-2180120.xlsx?__blob=publicationFile)
+# destatis_fs18_s27_gdp_q.csv (extracted from sheet 1.1 of https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/Downloads-Inlandsprodukt/inlandsprodukt-revidiert-vierteljahr-2189027919005.xlsx?__blob=publicationFile)
 # Historical observations in the source's own terms; de_data and rates join
 # them to the live series at run time.
 
@@ -1449,6 +1456,13 @@ EMBEDDED_DE_WEST_POPULATION = [
     ("1959-07-01", 54876),
 ]
 
+# The same column's last years for West Germany alone, for its GDP's figures per person.
+EMBEDDED_DE_WEST_POPULATION_AT_UNIFICATION = [
+    ("1989-07-01", 62063),
+    ("1990-07-01", 63254),
+    ("1991-07-01", 64074),
+]
+
 # BBIB1.M.DE.B.S.DNB.HYP.F05J.A.E1.11A: the effective rate on new mortgages fixed for 5 years, percent
 # a year, an average of what the banks reported in the two middle weeks of the month, each
 # month dated by its first day; the banks of the new Länder from 1991-01.
@@ -1965,5 +1979,144 @@ EMBEDDED_DE_MORTGAGE_10Y_HISTORY = [
     ("2003-04-01", 5.29),
     ("2003-05-01", 5.02),
     ("2003-06-01", 4.77),
+]
+
+# West Germany's GDP at current prices without the Saarland and West Berlin, billions of euros
+# at 1.95583, each year dated by 31 December.
+EMBEDDED_DE_WEST_GDP_NARROW = [
+    ("1950-12-31", 49.69),
+    ("1951-12-31", 61),
+    ("1952-12-31", 69.75),
+    ("1953-12-31", 74.92),
+    ("1954-12-31", 80.41),
+    ("1955-12-31", 91.89),
+    ("1956-12-31", 101.58),
+    ("1957-12-31", 110.72),
+    ("1958-12-31", 118.95),
+    ("1959-12-31", 130.31),
+]
+
+# The same territory's GDP per person, as published, in euros, each year dated by 31 December.
+EMBEDDED_DE_WEST_GDP_PER_PERSON = [
+    ("1950-12-31", 1059),
+    ("1951-12-31", 1287),
+    ("1952-12-31", 1461),
+    ("1953-12-31", 1555),
+    ("1954-12-31", 1651),
+    ("1955-12-31", 1868),
+    ("1956-12-31", 2040),
+    ("1957-12-31", 2195),
+    ("1958-12-31", 2330),
+    ("1959-12-31", 2524),
+]
+
+# West Germany's GDP at current prices, the whole former territory, before the revision of
+# 2005, billions of euros, each year dated by 31 December; its last year only for the ratio to
+# the revised figure.
+EMBEDDED_DE_WEST_GDP_OLD_BASIS = [
+    ("1960-12-31", 154.77),
+    ("1961-12-31", 169.6),
+    ("1962-12-31", 184.46),
+    ("1963-12-31", 195.5),
+    ("1964-12-31", 214.83),
+    ("1965-12-31", 234.77),
+    ("1966-12-31", 249.63),
+    ("1967-12-31", 252.76),
+    ("1968-12-31", 272.66),
+    ("1969-12-31", 305.22),
+    ("1970-12-31", 345.28),
+]
+
+# West Germany's GDP at current prices, the whole former territory, after the revision of 2005,
+# not seasonally adjusted, billions of euros, each quarter dated by its last day.
+EMBEDDED_DE_WEST_GDP_QUARTERS = [
+    ("1970-03-31", 80.2),
+    ("1970-06-30", 88.3),
+    ("1970-09-30", 94.3),
+    ("1970-12-31", 97.8),
+    ("1971-03-31", 91.38),
+    ("1971-06-30", 97.35),
+    ("1971-09-30", 104.05),
+    ("1971-12-31", 107.46),
+    ("1972-03-31", 100.45),
+    ("1972-06-30", 105.44),
+    ("1972-09-30", 111.7),
+    ("1972-12-31", 118.78),
+    ("1973-03-31", 113.72),
+    ("1973-06-30", 118.49),
+    ("1973-09-30", 123.4),
+    ("1973-12-31", 130.41),
+    ("1974-03-31", 122.71),
+    ("1974-06-30", 127.97),
+    ("1974-09-30", 134.77),
+    ("1974-12-31", 140.57),
+    ("1975-03-31", 128.18),
+    ("1975-06-30", 134.47),
+    ("1975-09-30", 139.16),
+    ("1975-12-31", 149.2),
+    ("1976-03-31", 138.99),
+    ("1976-06-30", 146.36),
+    ("1976-09-30", 150.46),
+    ("1976-12-31", 161.59),
+    ("1977-03-31", 149.71),
+    ("1977-06-30", 155.57),
+    ("1977-09-30", 159.28),
+    ("1977-12-31", 171.98),
+    ("1978-03-31", 158.34),
+    ("1978-06-30", 166.35),
+    ("1978-09-30", 171.26),
+    ("1978-12-31", 182.99),
+    ("1979-03-31", 170.58),
+    ("1979-06-30", 181.65),
+    ("1979-09-30", 186.51),
+    ("1979-12-31", 198.63),
+    ("1980-03-31", 188.44),
+    ("1980-06-30", 193.56),
+    ("1980-09-30", 198.64),
+    ("1980-12-31", 207.88),
+    ("1981-03-31", 194.32),
+    ("1981-06-30", 201.71),
+    ("1981-09-30", 208.53),
+    ("1981-12-31", 221.23),
+    ("1982-03-31", 204.94),
+    ("1982-06-30", 211.71),
+    ("1982-09-30", 215.56),
+    ("1982-12-31", 228),
+    ("1983-03-31", 212.05),
+    ("1983-06-30", 219.11),
+    ("1983-09-30", 225),
+    ("1983-12-31", 242.11),
+    ("1984-03-31", 226.61),
+    ("1984-06-30", 226.47),
+    ("1984-09-30", 235.5),
+    ("1984-12-31", 253.42),
+    ("1985-03-31", 232.03),
+    ("1985-06-30", 238.81),
+    ("1985-09-30", 248.61),
+    ("1985-12-31", 264.96),
+    ("1986-03-31", 241.02),
+    ("1986-06-30", 255.08),
+    ("1986-09-30", 262.21),
+    ("1986-12-31", 278.82),
+    ("1987-03-31", 248.76),
+    ("1987-06-30", 260.04),
+    ("1987-09-30", 267.97),
+    ("1987-12-31", 288.36),
+    ("1988-03-31", 262.27),
+    ("1988-06-30", 273.9),
+    ("1988-09-30", 283.57),
+    ("1988-12-31", 303.55),
+    ("1989-03-31", 283.31),
+    ("1989-06-30", 295.62),
+    ("1989-09-30", 300.65),
+    ("1989-12-31", 321.08),
+    ("1990-03-31", 308.07),
+    ("1990-06-30", 319.12),
+    ("1990-09-30", 329.26),
+    ("1990-12-31", 350.23),
+    ("1991-03-31", 332.5),
+    ("1991-06-30", 351.87),
+    ("1991-09-30", 356.76),
+    ("1991-12-31", 374.67),
 ]
 # END AUTO-GENERATED GERMAN ARCHIVE DATA

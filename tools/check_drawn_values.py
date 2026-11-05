@@ -67,6 +67,7 @@ Exit code 1 on any FAIL.
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -88,6 +89,7 @@ from ratesplot.de_archive_data import (  # noqa: E402
     EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS,
     EMBEDDED_DE_WEST_CPI_FOUR_PERSON,
     EMBEDDED_DE_WEST_POPULATION,
+    EMBEDDED_DE_WEST_POPULATION_AT_UNIFICATION,
 )
 from ratesplot.cdn_archive_data import EMBEDDED_CDN_POPULATION_HISTORY  # noqa: E402
 from ratesplot.config import (  # noqa: E402
@@ -194,6 +196,12 @@ CASES: dict[str, list[str]] = {
     "de_cpi_1948": ["--na:de", "-s:1948", "--cpi"],
     # Batch 16: Germany's mortgage bands across the Bundesbank's older rates and the join to the ECB's (2003-01).
     "de_mortgages_1982": ["--na:de", "-s:1982", "--e:2006", "--mo:1-5,5-10,over10"],
+    # Batch 16: Germany's GDP from 1950, each figure worked out here across every join (1960, 1970, 1991), in euros
+    # and per person (the published figures to 1959; West Germany's population through 1990 and 1991); and per
+    # person beside a yield, where a figure first shows on a later chart date (1959's on 1960-01-01).
+    "de_gdp_1950": ["--na:de", "-s:1950", "--e:2000", "--gdp"],
+    "de_gdp_1950_pc": ["--na:de", "-s:1950", "--e:2000", "--gdp", "-p"],
+    "de_gdp_1950_pc_yield": ["--na:de", "-s:1950", "--e:2000", "--gdp", "-p", "--y:10"],
     "population": ["--na:ca,us,gb,de", "-s:1700", "--population", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
     "population_pc": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:1960", "--pop", "-p", "--no-yield"],
     # Batch 13.3: the real yields, each nation's every one; Canada's monthly from 1991, then daily; the UK's
@@ -648,6 +656,8 @@ def check_case(name: str, tokens: list[str]) -> bool:
                     passed &= check_price_index(key, line, config)
                 elif line.label == POPULATION_LABEL:
                     passed &= check_population(key, line, config)
+                elif name.startswith("de_gdp_") and axis is figure.axes[1] and "GDP" in line.label:
+                    passed &= check_german_gdp(key, line, config)
                 elif axis is figure.axes[1] and not line.values.empty and config.master_currency is None and not config.constant_prices:
                     print(f"  {key:4} {line.label[:44]:44} right axis, derived (not compared): {span(list(line.values.index))}")
         if config.master_currency is not None:
@@ -859,6 +869,92 @@ def check_population(key: str, line: Drawn, config) -> bool:
         print(f"  {key:4} {line.label[:44]:44} FAIL  its source could not be read ({exc})")
         return False
     return _each_point_is(key, line, people, config, "the population", f"its date's estimate (the estimates from {people.index[0]:%Y-%m-%d})")
+
+
+def german_gdp() -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Germany's TTM GDP worked out here on its own (batch 16), in euros, by the date each describes; with the published figures per person to 1959, and West Germany's annual averages at unification, in persons.
+
+    From the saved extracts of the Federal Statistical Office's tables, read by
+    this tool and not by the bake, and Eurostat's whole series: the narrow years to
+    1959; the whole territory's 1960 to 1969 raised by the ratio at 1970, in equal
+    steps of the logarithm over 1965 to 1969; the four-quarter sums from 1970-12-31,
+    until Eurostat's first sum, 1991-12-31; Eurostat's on.
+    """
+    raw = ROOT / "tools" / "de_fixtures" / "raw"
+    with (raw / "destatis_81000_117_gdp.csv").open(encoding="utf-8", newline="") as file:
+        rows = list(csv.DictReader(file))
+
+    def table(territory: str, kind: str, first: int, last: int) -> pd.Series:
+        found = {int(row["Jahr"]): float(row["Wert"]) for row in rows if row["Gebiet1"] == territory and row["Merkmal2"] == kind and first <= int(row["Jahr"]) <= last}
+        return pd.Series(found, dtype=float)
+
+    def at_year_ends(values: pd.Series) -> pd.Series:
+        return values.set_axis(pd.DatetimeIndex([pd.Timestamp(year, 12, 31) for year in values.index]))
+
+    narrow_territory = "Früheres Bundesgebiet (ohne Berlin-West und Saarland)"
+    narrow = table(narrow_territory, "in jeweiligen Preisen", 1950, 1959)
+    each = table(narrow_territory, "in jeweiligen Preisen je Einwohner", 1950, 1959)
+    old = table("Früheres Bundesgebiet", "in jeweiligen Preisen", 1960, 1970)
+    with (raw / "destatis_fs18_s27_gdp_q.csv").open(encoding="utf-8", newline="") as file:
+        lines = [line for line in csv.reader(file) if "Vj" in line[1]]
+    dates = pd.date_range("1970-03-31", "1991-12-31", freq="QE")
+    assert len(lines) == len(dates)
+    sums = pd.Series([float(line[2]) for line in lines], index=dates).rolling(4).sum().dropna()
+    ratio = sums.iloc[0] / old.loc[1970]
+    scaled = pd.Series({year: old.loc[year] * ratio ** (max(year - 1965, 0) / 4) for year in range(1960, 1970)})
+    quarters = _clean(de_data.parse_jsonstat(de_data.eurostat_download("namq_10_gdp"), "CP_MEUR")) * 1e6
+    unified = quarters.rolling(4).sum().dropna()
+    west = pd.concat([at_year_ends(narrow), at_year_ends(scaled), sums]) * 1e9
+    joined = pd.concat([west.loc[west.index < unified.index[0]], unified])
+    averages = pd.Series({pd.Timestamp(date): value * 1000.0 for date, value in EMBEDDED_DE_WEST_POPULATION_AT_UNIFICATION})
+    return joined, at_year_ends(each), averages
+
+
+def check_german_gdp(key: str, line: Drawn, config) -> bool:
+    """Germany's GDP drawn from 1950 (batch 16), each point the latest figure on or before it, in euros or per person; True if every point is, and every figure in the window drawn.
+
+    Per person, worked out here on its own: the published figure to 1959;
+    then the figure over the population on the chart date it first shows on,
+    log-linear between ``population``'s estimates; through 1990 and 1991, while
+    West Germany's figures run on and the population drawn has reached all of
+    Germany's, over West Germany's annual averages, log-linear between their
+    middles, 1991's held, on the figure's own date.
+    """
+    with this_thread_output_to(None):
+        gdp, each, averages = german_gdp()
+        people = population("de")
+    gdp = gdp.loc[(gdp.index >= pd.Timestamp(config.start)) & (gdp.index <= pd.Timestamp(config.end))]
+    drawn_dates = line.values.index
+    failures: list[str] = []
+    # A figure shows on the first chart date on or after it, within two months at the longest; the chart may end first.
+    missing = [when for when in gdp.index if when <= drawn_dates[-1] and not ((drawn_dates >= when) & (drawn_dates < when + pd.Timedelta(days=62))).any()]
+    failures += [f"{when:%Y-%m-%d}: a figure, {gdp[when]:g}, not drawn" for when in missing[:3]]
+    if len(drawn_dates) and drawn_dates[0] < gdp.index[0]:
+        failures.append(f"{drawn_dates[0]:%Y-%m-%d}: drawn before the first figure, {gdp.index[0]:%Y-%m-%d}")
+
+    def log_linear(when: pd.Timestamp, estimates: pd.Series) -> float:
+        return float(np.exp(np.interp(when.value, pd.DatetimeIndex(estimates.index).as_unit("ns").asi8, np.log(estimates.to_numpy(dtype=float)))))
+
+    expected: dict[pd.Timestamp, float] = {}
+    for when in drawn_dates:
+        figure = gdp.index[gdp.index <= when][-1]
+        shown = drawn_dates[drawn_dates >= figure][0]
+        if not config.per_capita:
+            expected[when] = gdp[figure]
+        elif figure.year < 1960:
+            expected[when] = each[figure]
+        elif pd.Timestamp("1990-01-01") < figure < pd.Timestamp("1991-12-31"):
+            expected[when] = gdp[figure] / log_linear(figure, averages)
+        else:
+            expected[when] = gdp[figure] / log_linear(shown, people.sort_index())
+    want = pd.Series(expected, dtype=float)
+    wrong = want.index[~np.isclose(line.values.to_numpy(), want.to_numpy(), rtol=1e-9, atol=0)]
+    failures += [f"{when:%Y-%m-%d} {line.values[when]:g}: expected {want[when]:g}" for when in wrong[:5]]
+    ok = not failures
+    print(f"  {key:4} {line.label[:44]:44} {'OK' if ok else 'FAIL':5} {len(line.values):,} points, each the latest of {len(gdp)} figures worked out here; {span(list(drawn_dates))}")
+    for failure in failures:
+        print(f"         {failure}")
+    return ok
 
 
 def _each_point_is(key: str, line: Drawn, expected: pd.Series, config, what: str, said: str) -> bool:
