@@ -354,6 +354,13 @@ CASES: dict[str, list[str]] = {
     "de_gdp1950_p": ["--na:de", "--gdp", "-p", "-l", "-s:1950"],
     "de_gdp_unification": ["--na:de", "--gdp", "--debt", "-s:1985", "--e:1996"],
     "de_gdp_unification_p": ["--na:de", "--gdp", "--debt", "-p", "-s:1985", "--e:1996"],
+    # Batch 16: Germany's debt from 1950 across its joins, in euros, per person and over
+    # GDP; and each level, in euros and per person, across its join at 2000.
+    "de_debt1950": ["--na:de", "--debt", "--gdp", "-l", "-s:1950"],
+    "de_debt1950_p": ["--na:de", "--debt", "--gdp", "-p", "-l", "-s:1950"],
+    "de_debt1950_r": ["--na:de", "--debt", "-r", "-s:1950"],
+    "de_levels1950": ["--na:de", "--debt:fpm", "-l", "-s:1950"],
+    "de_levels1950_p": ["--na:de", "--debt:fnm", "-p", "-l", "-s:1950", "--e:2005"],
 }
 
 

@@ -19,14 +19,19 @@ reach them; ``tools/de_fixtures/README.md`` holds the measurements):
 * Debt: general government consolidated gross debt (Maastricht), quarterly
   from 2000 (Eurostat gov_10q_ggdebt, S13), and before it the year-end
   figures from 1991 (ECB GFS, annual), which equal the fourth quarters
-  exactly where both exist. Germany's figures begin with unification: West
-  Germany's (1950-1990) are still to be found and baked.
+  exactly where both exist. Before them West Germany's, baked (``_with_older_debt``):
+  the Federal Statistical Office's debt to the non-public sector from 1950-03-31,
+  dated 31 March to 1959 and 31 December from 1960, its own figure for 1991 giving the
+  ratio to the ECB's over the same territory. West Berlin comes in at 1952 and the
+  Saarland at 1960, and unification at 1991, each kept as a step.
 * Levels (``--debt:LETTERS``): the federal government ("f", Bund, central
   government S1311 with its special funds), the Länder ("p", state
   government S1312), local government ("m", Gemeinden, S1313), and "n" the
   Länder and local together. The social security funds (S1314, under 0.5 %
   of the total) are no level of the chart. The levels are not consolidated
-  with each other, so they add up to about 1 % more than the total.
+  with each other, so they add up to about 1 % more than the total; before
+  2000 the same Office's table, from 1950, its figure for 2000 giving each ratio
+  to Eurostat's, so there they add up to the Office's total, not to the line drawn.
 * Interest: D.41 interest payable by general government (consolidated),
   quarterly from 2002 (Eurostat gov_10q_ggnfa), summed over four quarters,
   and before it the annual figures from 1995 (gov_10dd_edpt1), which equal
@@ -96,6 +101,11 @@ from .config import (
 )
 from .baked import frame_with_recent_part, read_series, with_recent_part
 from .de_archive_data import (
+    EMBEDDED_DE_DEBT_FEDERAL,
+    EMBEDDED_DE_DEBT_LOCAL,
+    EMBEDDED_DE_DEBT_PER_PERSON,
+    EMBEDDED_DE_DEBT_STATES,
+    EMBEDDED_DE_DEBT_TOTAL,
     EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY,
     EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS,
     EMBEDDED_DE_WEST_CPI_FOUR_PERSON,
@@ -284,7 +294,7 @@ _QUARTER_MIDDLE_DAYS = 45
 # First observation of each German input other than the yields, to warn when
 # ``--start`` is earlier (``de_series_earliest`` adds the chosen yields).
 DE_SERIES_EARLIEST = {
-    "German General Government Debt (ECB, year-end from 1991)": pd.Timestamp("1991-12-31"),
+    "German General Government Debt (West Germany's from 1950, the ECB's year ends from 1991)": pd.Timestamp("1950-03-31"),
     "TTM Nominal GDP (West Germany's from 1950, Eurostat's quarters from 1991)": pd.Timestamp("1950-12-31"),
     "TTM German Interest Payable (Eurostat, annual from 1995)": pd.Timestamp("1995-12-31"),
 }
@@ -299,6 +309,11 @@ DE_SERIES_EARLIEST = {
 _DE_GDP_WHOLE_TERRITORY_FROM = pd.Timestamp("1960-12-31")
 _DE_POPULATION_STEP_REACHES_FROM = pd.Timestamp("1990-01-01")
 _DE_GDP_UNIFIED_FROM = pd.Timestamp("1991-12-31")
+
+# The Federal Statistical Office's debt by the Eurostat subsector it is joined to, and
+# the last year it can be compared with a live series: its figures stop at that year.
+_DE_DEBT_OF_SECTOR = {"S1311": EMBEDDED_DE_DEBT_FEDERAL, "S1312": EMBEDDED_DE_DEBT_STATES, "S1313": EMBEDDED_DE_DEBT_LOCAL}
+_DE_DEBT_RATIO_UNTIL_YEAR = 2000
 
 
 # ---------------------------------------------------------------------------
@@ -834,10 +849,11 @@ def _ttm_interest(sectors: tuple[str, ...]) -> pd.Series:
 
 @downloads_of("ECB and Eurostat government debt")
 def fetch_de_debt(config: PlotConfig) -> pd.DataFrame | None:
-    """Return general government gross debt: year-end figures (ECB) until Eurostat's quarters begin, then the quarters.
+    """Return general government gross debt: West Germany's until the ECB's year ends begin (1991-12-31), and those until Eurostat's quarters begin, then the quarters.
 
-    If Eurostat fails, the year-end figures alone, with a warning; if the
-    ECB does, the quarters alone (from 2000), with a warning.
+    If Eurostat fails, the older figures alone, with a warning; if the ECB does, the
+    quarters alone (from 2000), with a warning: West Germany's would be drawn straight
+    across to them.
     """
     if not config.include_debt:
         return None
@@ -852,7 +868,68 @@ def fetch_de_debt(config: PlotConfig) -> pd.DataFrame | None:
         print(f"  Warning: Eurostat quarterly German debt unavailable ({exc}); the year-end figures alone.")
         quarterly = None
     joined = _before(annual, quarterly)
+    if annual is not None:
+        joined = _with_older_debt(_debt_in_euros(EMBEDDED_DE_DEBT_TOTAL), joined)
     return joined.rename(DE_DEBT_COLUMN).to_frame() if joined is not None else None
+
+
+def _debt_in_euros(rows: list[tuple[str, float]]) -> pd.Series:
+    """Return a baked list in millions of euros as euros, on its dates."""
+    return embedded_frame(rows, DE_DEBT_COLUMN)[DE_DEBT_COLUMN] * MILLION
+
+
+def _with_older_debt(older: pd.Series, live: pd.Series) -> pd.Series:
+    """Return the Federal Statistical Office's debt until ``live`` begins, raised to ``live``'s level, then ``live``.
+
+    ``older``'s last figure is of the year ``live`` first reaches, on the same
+    territory, so the ratio of the two is a difference of definition alone: the
+    Office counts debt to the non-public sector, the ECB and Eurostat the Maastricht
+    measure. The older years reach it by the rule every other archive joins by
+    (``joins.splice_archived_series``), the ratio at that year and a ramp over the five
+    before it, so the rise into that year stays the Office's own. Changes of
+    territory (1952, 1960, 1991) are left as the steps they are.
+    """
+    return splice_archived_series(
+        older.to_frame(DE_DEBT_COLUMN),
+        live.to_frame(DE_DEBT_COLUMN),
+        DE_DEBT_COLUMN,
+        annual_historical=True,
+        calibration_end_year=_DE_DEBT_RATIO_UNTIL_YEAR,
+    )[DE_DEBT_COLUMN]
+
+
+def _debt_of_level(sectors: tuple[str, ...]) -> pd.Series:
+    """Return the gross debt of these subsectors together: each the Federal Statistical Office's from 1950, raised to Eurostat's level (``_with_older_debt``), until its quarters begin in 2000.
+
+    Each joined on its own, so "n" is exactly the Länder and local government added up.
+    """
+    parts = [_with_older_debt(_debt_in_euros(_DE_DEBT_OF_SECTOR[sector]), _quarterly_debt((sector,))) for sector in sectors]
+    return pd.concat(parts, axis=1).sum(axis=1, min_count=len(parts)).dropna()
+
+
+def west_german_debt_population() -> pd.Series:
+    """Return the population West Germany's debt, and each level's, is divided by where the population drawn does not serve, in persons, each held until the next; a date with none: the population drawn from there.
+
+    Two spans, as West Germany's GDP has (``west_german_gdp_population``). To 1959 the
+    debt over the Office's own figure per person, which come back as published. They
+    use the whole territory's population while the debt leaves out West Berlin until
+    1952 and the Saarland until 1960, the Office's choice and no step at either; and the
+    first figure, 1950-03-31, is before the first population drawn, 1950-07-01. The
+    levels are over the same people, so they add up: the Office's own column for the
+    Gemeinden is over the people outside the city states. Through 1990 and 1991 the
+    population drawn runs up to all of Germany's while the debt is West Germany's: the
+    same population as West Germany's GDP. All of Germany's from 1991-12-31: the
+    population drawn.
+    """
+    each = embedded_frame(EMBEDDED_DE_DEBT_PER_PERSON, DE_DEBT_COLUMN)[DE_DEBT_COLUMN]
+    published = _debt_in_euros(EMBEDDED_DE_DEBT_TOTAL).loc[each.index] / each
+    return pd.concat([published, west_german_gdp_population().loc[_DE_GDP_WHOLE_TERRITORY_FROM:]]).rename(POPULATION_COLUMN)
+
+
+def west_german_own_populations() -> dict[str, pd.Series]:
+    """Return each column's own population for -p (``measures.per_person``): West Germany's GDP's, and its debt's, in total and for every level."""
+    debt = west_german_debt_population()
+    return {GDP_COLUMN: west_german_gdp_population(), DE_DEBT_COLUMN: debt, **{component_column("debt", letter): debt for letter in COMPONENT_LETTERS}}
 
 
 def _in_euros(rows: list[tuple[str, float]]) -> pd.Series:
@@ -908,8 +985,8 @@ def fetch_de_gdp(config: PlotConfig) -> pd.DataFrame | None:
     """Return trailing-twelve-month nominal GDP: West Germany's (``west_german_gdp``) until four-quarter sums of Eurostat's quarters begin (1991-12-31), then those.
 
     If Eurostat fails, West Germany's alone, with a warning; under -r None, with a
-    warning, since debt and interest begin at unification, and would be divided by
-    West Germany's GDP and their ratio then held to the chart's end.
+    warning, since all of Germany's debt and interest would be divided by West
+    Germany's GDP and their ratio then held to the chart's end.
     """
     if not config.needs_gdp:
         return None
@@ -951,16 +1028,17 @@ def fetch_de_interest(config: PlotConfig) -> pd.DataFrame | None:
 def fetch_de_components(config: PlotConfig) -> pd.DataFrame | None:
     """Return debt and TTM interest by level of government (--debt:LETTERS): federal, Länder, local, Länder and local.
 
-    Quarterly only (debt from 2000, interest from 2002): Eurostat's annual
-    tables have the levels only lately. A level whose source fails is left
-    out, with a warning.
+    Eurostat's quarters (debt from 2000, interest from 2002): its annual tables
+    have the levels only lately. Debt before them from the Federal Statistical
+    Office's table (``_debt_of_level``). A level whose source fails is left out,
+    with a warning.
     """
     columns: list[pd.Series] = []
     for letter in COMPONENT_LETTERS:
         if letter not in config.components:
             continue
         sectors = _LEVEL_SECTORS[letter]
-        for kind, include, fetch in (("debt", config.include_debt, _quarterly_debt), ("interest", config.include_interest, _ttm_interest)):
+        for kind, include, fetch in (("debt", config.include_debt, _debt_of_level), ("interest", config.include_interest, _ttm_interest)):
             if not include:
                 continue
             try:

@@ -42,6 +42,7 @@ Interest is summed over four quarters.
 ## Germany
 
 - **Debt.** Eurostat's dataset [gov_10q_ggdebt](https://ec.europa.eu/eurostat/databrowser/view/gov_10q_ggdebt/default/table?lang=en), gross debt by subsector, quarterly from 2000: the federal government with its special funds (central government, S.1311), the Länder (state government, S.1312) and local government (S.1313). The social security funds (S.1314) are left out. The levels add up to about 1 % more than the total.
+- **Debt before 2000.** The Federal Statistical Office's table behind [West Germany's debt](?help=debt) has each level from 1950-03-31, on the same dates: the Bund (its special funds from 1954), the Länder and the Gemeinden. All of Germany's from 1991. At the end of 2000 Eurostat's federal figure is 5.2 % above the table's, the Länder's 4.9 % and local government's 11.8 %, a difference of definition, so each rises to Eurostat's by a ramp over 1995 to 1999, as the total does before 1991. To 1994 the levels add up to the table's total, not to the total drawn, which is 3.1 % above it at the end of 1991.
 - **Interest.** Eurostat's dataset [gov_10q_ggnfa](https://ec.europa.eu/eurostat/databrowser/view/gov_10q_ggnfa/default/table?lang=en), interest payable (D.41) by the same subsectors, quarterly from 2002, summed over four quarters.
 
 ## How the program keeps these figures

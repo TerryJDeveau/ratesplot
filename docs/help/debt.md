@@ -28,10 +28,14 @@ The line is their sum, from 1966, where the federal series begins. With Intraday
 
 ## Germany
 
+- **1950 to 1990: West Germany's.** The public budgets' debt to the non-public sector, from the Federal Statistical Office's [Fachserie 14 Reihe 5, 2021](https://www.destatis.de/DE/Themen/Staat/Oeffentliche-Finanzen/Schulden-Finanzvermoegen/Publikationen/Downloads-Schulden/schulden-oeffentlicher-haushalte-2140500217005.xlsx?__blob=publicationFile), sheet 1.1.1, in millions of euros: at 31 March of each year to 1959, then at 31 December from 1960, so there is no figure between 1959-03 and 1960-12. West Berlin is in from 1952 and the Saarland from 1960, each left as a step in the line.
+- **The join at 1991.** The same table gives all of Germany at the end of 1991 as 599.51 billion euros, where the ECB's Maastricht measure has 618.22 billion: over one territory, the two measures differ by 3.1 %. So the older figures rise to the ECB's level by a ramp: 1986 as published, then in equal steps of the logarithm to 3.12 % at 1990, whose 538.33 billion is drawn as 555.13. The rise from 1990 to 1991, 11.4 %, is then the table's own, unification included; between the figures as published it would be 14.8 %.
 - **1991 to 1999: year ends.** General government consolidated debt, annual, from the ECB's government finance statistics ([the series on the ECB Data Portal](https://data.ecb.europa.eu/data/datasets/GFS/GFS.A.N.DE.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T)), at each year's end from 1991.
 - **2000 on: quarters.** General government consolidated gross debt, the Maastricht measure, Eurostat's dataset [gov_10q_ggdebt](https://ec.europa.eu/eurostat/databrowser/view/gov_10q_ggdebt/default/table?lang=en), millions of euros at each quarter's end. The nations send it to Eurostat within three months of each quarter's end ([Eurostat's notes](https://ec.europa.eu/eurostat/cache/metadata/en/gov_10q_ggdebt_esms.htm)); the second quarter of 2026 is the latest. The ECB's year ends equal Eurostat's fourth quarters where both exist, so no scaling is needed.
 
-Figures before 1999 are Deutsche Marks converted to euros at 1.95583, as the ECB and Eurostat publish them. Germany's figures begin with unification; West Germany's, from 1950, are planned.
+Figures before 1999 are Deutsche Marks converted to euros at 1.95583, as the ECB and Eurostat publish them.
+
+As a [percent of GDP](?help=percent-of-gdp), the line begins at 1951-03-31, the first debt with a year's GDP before it. To 1959 the GDP leaves out West Berlin and the Saarland, while the debt has West Berlin from 1952, so those years mix territories; the GDP's step for the two at the end of 1960 is 6.0 %.
 
 ## How the program keeps these figures
 
