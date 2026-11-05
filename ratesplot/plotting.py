@@ -741,9 +741,12 @@ def draw_country(
     if extra is not None:
         extra_frame = pd.DataFrame({DATE_COLUMN: extra.values.index, extra.label: extra.values.to_numpy()})
         ax_extra = ax_yield.twinx() if config.has_macro_series else ax_macro
+        extra_in_range = filter_to_date_range(extra_frame, DATE_COLUMN, config)
+        if extra.held_across_month:
+            extra_in_range = _held_across_its_month(extra_in_range, extra.label, config)
         extra_line = add_macro_line(
             ax_extra,
-            filter_to_date_range(extra_frame, DATE_COLUMN, config),
+            extra_in_range,
             enabled=True,
             column=extra.label,
             label=extra.label,
@@ -993,6 +996,24 @@ class ExtraCurve:
     value_format: ValueFormatter  # its end label and read-out
     tick_format: ValueFormatter
     export_axis: str  # what Export chart names its unit by (``export._unit``)
+    held_across_month: bool = False  # a monthly figure in steps: its last drawn across its month (``_held_across_its_month``)
+
+
+def _held_across_its_month(frame: pd.DataFrame, column: str, config: PlotConfig) -> pd.DataFrame:
+    """``frame`` with its last value carried across its month, or to the chart's End if that comes first.
+
+    A line in steps gives its last point no width, so a month's figure would
+    show only once the next month's has come. The inflation curve's rule
+    (decision 44, ``rates.held_steps``): an observed value to the end of its own
+    period, and no further.
+    """
+    if frame.empty or pd.isna(frame[column].iloc[-1]):
+        return frame
+    last = frame[DATE_COLUMN].iloc[-1]
+    until = min(last + pd.DateOffset(months=1), config.end)
+    if until <= last:
+        return frame
+    return pd.concat([frame, frame.iloc[[-1]].assign(**{DATE_COLUMN: until})], ignore_index=True)
 
 
 def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
@@ -1021,6 +1042,7 @@ def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
         value_format=format_index,
         tick_format=format_index_tick,
         export_axis=INDEX_AXIS,
+        held_across_month=True,
     )
 
 

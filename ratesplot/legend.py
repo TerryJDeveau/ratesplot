@@ -129,9 +129,9 @@ _TITLE_TOP_Y = 0.995
 _SUBTITLE_DROP_TITLE_SIZES = 0.027 * 15.36 * 72.0 / TITLE_FS
 _SUBTITLE_FS_REDUCTION_PT = 6
 _AXES_GAP_BELOW_SUBTITLE_PX = 10.0
-# The room left at the figure's edge when an axis outside the right axis ended
-# past it (``_keep_outer_axis_inside``): tight_layout's own pad (0.4 of a 10 pt font).
-_OUTER_AXIS_MARGIN_PT = 4.0
+# The room left at the figure's edge when a y axis ended past it
+# (``_keep_axes_inside``): tight_layout's own pad (0.4 of a 10 pt font).
+_AXIS_MARGIN_PT = 4.0
 # The title may use at most this fraction of the figure width before it is
 # shrunk further than font_scale alone would make it.
 _TITLE_MAX_WIDTH_FRACTION = 0.98
@@ -645,23 +645,29 @@ def _whole_pixels(size_pt: float, dpi: float) -> int:
     return int(size_pt * dpi / 72.0 + 0.5)
 
 
-def _keep_outer_axis_inside(figure: Figure, scale: float) -> None:
-    """Narrow the axes when an axis outside the right axis (the extra curve's, ``plotting._place_outside``) ends past the figure's edge.
+def _keep_axes_inside(figure: Figure, scale: float) -> None:
+    """Narrow the axes when any y axis's title or tick labels end past the figure's edge, on either side.
 
     ``tight_layout`` fits the axes to the tick labels of the height they had;
     pushing their top down below the subtitle changes the height, and the log
     locator, counting label heights, may then choose a wider label (measured
-    2026-11-03: "92.5M" over the population's 90M, its axis label cut off).
-    Only an axis past the edge moves anything, so a chart that fits is as it was.
+    2026-11-03: "92.5M" over the population's 90M, the outer axis's label cut
+    off; 2026-11-05: "$13.2T" on a left axis mirroring the right, its title 18
+    px past the left edge). Only an axis past an edge moves anything, so a chart
+    that fits is as it was.
     """
-    outer = figure.axes[2:]
-    if not outer:
-        return
     renderer = figure.canvas.get_renderer()
-    overflow = max(axis.get_tightbbox(renderer).x1 for axis in outer) - figure.bbox.x1
-    if overflow > 0:
-        margin = _OUTER_AXIS_MARGIN_PT * scale * figure.dpi / 72.0
-        figure.subplots_adjust(right=figure.subplotpars.right - (overflow + margin) / figure.bbox.width)
+    boxes = [box for box in (axis.yaxis.get_tightbbox(renderer) for axis in figure.axes) if box is not None]
+    if not boxes:
+        return
+    margin = _AXIS_MARGIN_PT * scale * figure.dpi / 72.0
+    width = figure.bbox.width
+    pars = figure.subplotpars
+    past_left, past_right = figure.bbox.x0 - min(box.x0 for box in boxes), max(box.x1 for box in boxes) - figure.bbox.x1
+    if past_left > 0:
+        figure.subplots_adjust(left=pars.left + (past_left + margin) / width)
+    if past_right > 0:
+        figure.subplots_adjust(right=pars.right - (past_right + margin) / width)
 
 
 def finish_legend_and_title(
@@ -742,7 +748,7 @@ def finish_legend_and_title(
         subtitle_bottom = subtitle_y - subtitle_fs / 72.0 / max(figure_height, 0.1)
         gap_fraction = _AXES_GAP_BELOW_SUBTITLE_PX * scale / (figure_height * CANVAS_DPI)
         figure.subplots_adjust(top=subtitle_bottom - gap_fraction)
-        _keep_outer_axis_inside(figure, scale)
+        _keep_axes_inside(figure, scale)
         apply_date_xlim(ax, config)
 
     def place_labels() -> list[Bbox]:
