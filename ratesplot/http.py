@@ -134,24 +134,36 @@ def last_good_folder() -> Path:
     return (Path(base) if base else Path.home() / ".cache") / "ratesplot" / "last_good"
 
 
-def enable_last_good_copies(folder: Path | None = None) -> None:
+def enable_last_good_copies(folder: Path | None = None) -> str | None:
     """Keep the last good copy of every cached download in ``folder`` (``last_good_folder``), and use it when its source fails.
 
-    A folder that cannot be made leaves the copies off, with a note. When
-    the copies are turned on in a folder, its copies replaced by a later
-    start's are removed, once (``_prune_copies``, batch 41.2): the window, the
-    web page and the command line each turn them on as they start.
+    Returns a note for the message log when something went wrong, else None;
+    the caller shows it (the command line and the page's server print it, the
+    window puts it in its message log, where a print at its start would not
+    reach). A folder that cannot be made leaves the copies off, and the note
+    says so. When the copies are turned on in a folder, its copies replaced
+    by a later start's are removed, once (``_prune_copies``, batch 41.2): the
+    window, the web page and the command line each turn them on as they
+    start. That pass says nothing unless it meets an error (Terry,
+    2026-11-11: "fine if no errors encountered"): a copy it cannot read, or
+    one it cannot remove, is then named in the note.
     """
     global _copies_folder
     folder = folder or last_good_folder()
     try:
         folder.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        print(f"  Note: no copies of the downloads can be kept in {folder} ({exc}); a source that fails is not drawn.")
-        return
+        return f"No copies of the downloads can be kept in {folder} ({exc}); a source that fails is not drawn."
+    note = None
     if folder != _copies_folder:  # the command line opening the window turns them on twice: one pass
-        _prune_copies(folder)
+        note = _prune_copies(folder)[2]
     _copies_folder = folder
+    return note
+
+
+def _named(paths: list[str]) -> str:
+    """Up to three file names, and how many more."""
+    return ", ".join(paths[:3]) + (f" and {len(paths) - 3} more" if len(paths) > 3 else "")
 
 
 def _start_day(text: str) -> date | None:
@@ -197,35 +209,47 @@ def _request_and_start(key: tuple) -> tuple[tuple, date] | None:
     return None
 
 
-def _prune_copies(folder: Path) -> tuple[int, int]:
-    """One pass over ``folder`` (batch 41.2): each request's copies from a start earlier than its latest removed, and stray temporary files more than a day old; return how many of each.
+def _prune_copies(folder: Path) -> tuple[int, int, str | None]:
+    """One pass over ``folder`` (batch 41.2): each request's copies from a start earlier than its latest removed, and stray temporary files more than a day old.
 
-    Every copy's key is read (339 copies, 8.8 MB, in 0.08 s, measured
-    2026-11-11). A copy that cannot be read is left as it is: its reader
-    says so if it is ever needed. Builds the index ``_keep_copy`` keeps up
-    to date. A file another program holds open is left for the next pass.
+    Returns how many of each, and a note naming what went wrong (None when
+    nothing did). Every copy's key is read (339 copies, 8.8 MB, in 0.08 s,
+    measured 2026-11-11). A copy that cannot be read is left as it is (its
+    reader says so again if it is ever needed); a file another program
+    holds open is left for the next pass; both are named in the note. A file
+    gone since the listing (another window's pass) is no error. Builds the
+    index ``_keep_copy`` keeps up to date.
     """
     global _indexed_folder
     by_request: dict[tuple, dict[date, Path]] = {}
     strays = 0
+    unreadable: list[str] = []
+    held: list[str] = []
     now = time.time()
     try:
         paths = list(folder.iterdir())
-    except OSError:
-        paths = []
+    except OSError as exc:
+        return 0, 0, f"The kept copies of downloads in {folder} could not be listed ({exc}); none was pruned."
     for path in paths:
         if path.suffix == ".tmp":
-            with contextlib.suppress(OSError):
+            try:
                 if now - path.stat().st_mtime > _STRAY_COPY_SECONDS:
                     path.unlink()
                     strays += 1
+            except FileNotFoundError:
+                pass
+            except OSError:
+                held.append(path.name)
             continue
         if path.suffix != ".pickle":
             continue
         try:
             key = pickle.loads(path.read_bytes())[0]
             found = _request_and_start(key) if isinstance(key, tuple) and key else None
-        except Exception:  # a damaged copy: left for its reader to name
+        except FileNotFoundError:
+            continue
+        except Exception:  # a damaged copy
+            unreadable.append(path.name)
             continue
         if found is not None:
             by_request.setdefault(found[0], {})[found[1]] = path
@@ -233,32 +257,53 @@ def _prune_copies(folder: Path) -> tuple[int, int]:
     for copies in by_request.values():
         latest = max(copies)
         for day in [day for day in copies if day < latest]:
-            with contextlib.suppress(OSError):
-                copies.pop(day).unlink()
+            earlier = copies.pop(day)
+            try:
+                earlier.unlink()
                 replaced += 1
+            except FileNotFoundError:
+                pass
+            except OSError:
+                held.append(earlier.name)
     with _copies_lock:
         _copies_by_request.clear()
         _copies_by_request.update(by_request)
         _indexed_folder = folder
-    return replaced, strays
+    problems = []
+    if unreadable:
+        problems.append(f"{len(unreadable)} could not be read and {'was' if len(unreadable) == 1 else 'were'} left as "
+                        f"{'it is' if len(unreadable) == 1 else 'they are'} ({_named(unreadable)})")
+    if held:
+        problems.append(f"{len(held)} to be removed could not be, held open by another window perhaps ({_named(held)}); "
+                        "the next start tries again")
+    return replaced, strays, (f"The kept copies of downloads in {folder}: {'; '.join(problems)}." if problems else None)
 
 
-def _replace_earlier(path: Path, request: tuple, day: date) -> None:
-    """Note ``path`` as ``request``'s copy from ``day``, and remove its copies from earlier starts (batch 41.2).
+def _replace_earlier(path: Path, request: tuple, day: date) -> list[str]:
+    """Note ``path`` as ``request``'s copy from ``day``, and remove its copies from earlier starts (batch 41.2); return those that could not be.
 
     A copy from a later start is kept: this program then asks an earlier one
     (a window started before a re-bake), and the next pass removes this one.
+    One gone already (another window's pass) is no error; one held open is
+    left for the next pass.
     """
     global _indexed_folder
+    held: list[str] = []
     with _copies_lock:
         if _indexed_folder != path.parent:  # copies kept in a folder no pass has read: an index of its own
             _copies_by_request.clear()
             _indexed_folder = path.parent
         copies = _copies_by_request.setdefault(request, {})
-        for earlier in [earlier for earlier in copies if earlier < day]:
-            with contextlib.suppress(OSError):  # gone already (another window's pass), or held: the next pass
-                copies.pop(earlier).unlink()
+        for earlier_day in [earlier_day for earlier_day in copies if earlier_day < day]:
+            earlier = copies.pop(earlier_day)
+            try:
+                earlier.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                held.append(earlier.name)
         copies[day] = path
+    return held
 
 
 def _copy_label(key: tuple) -> str:
@@ -287,8 +332,10 @@ def _keep_copy(key: tuple, result: object) -> None:
             temporary.unlink()
         return
     found = _request_and_start(key)
-    if found is not None:
-        _replace_earlier(path, *found)
+    held = _replace_earlier(path, *found) if found is not None else []
+    if held:  # said, as Terry asked of the pruning's errors (2026-11-11)
+        print(f"  Note: {_copy_label(key)}: its copy from an earlier start could not be removed, held open by another "
+              f"window perhaps ({_named(held)}); the next start tries again.")
 
 
 def _last_good_copy(key: tuple) -> tuple[float, object] | None:
