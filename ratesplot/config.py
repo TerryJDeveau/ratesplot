@@ -363,9 +363,11 @@ ARCHIVE_END_MARKER = "# END AUTO-GENERATED CANADIAN ARCHIVE DATA"
 
 # U.S. state and local government debt apart (Census Bureau), baked into
 # ``ratesplot/us_archive_data.py``: the historical database of national totals
-# (fiscal years 1902-2008, an Access file), then each later year's estimates
-# by state and type of government (fixed-width text; 2009-2010 on the old
-# site, later years inside each year's "Individual Unit File" ZIP).
+# (fiscal years 1902-2008, an Access file, no longer updated, read from its
+# extract ``tools/us_fixtures/census_hist_fin_debt.csv``; plan item 23.3), then
+# each later year's estimates by state and type of government (fixed-width
+# text; 2009-2010 on the old site, later years inside each year's "Individual
+# Unit File" ZIP).
 CENSUS_HIST_FIN_URL = "https://www2.census.gov/programs-surveys/gov-finances/datasets/historical/hist_fin.zip"
 CENSUS_OLD_ESTIMATES_URL = "https://www2.census.gov/govs/estimate/"
 CENSUS_TABLES_URL = "https://www2.census.gov/programs-surveys/gov-finances/tables/"

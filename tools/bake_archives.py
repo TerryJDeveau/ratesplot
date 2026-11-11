@@ -9,9 +9,13 @@ the BEGIN/END markers of
   tables, the balance of payments under BPM5 among them, *Historical Statistics of Canada* with the Canadian dollar's rate
   1913-1977, Bank of Canada term bands);
 * ``ratesplot/us_archive_data.py``: U.S. state and local government debt apart
-  (Census Bureau). Needs ``pyodbc`` and the Microsoft Access ODBC driver, to
-  read the Census historical database, and ``xlrd`` for one old ``.xls``
-  table (both ``pip install``-able; only this bake uses them);
+  (Census Bureau): through fiscal 2008 from the extract of the Census
+  historical database, ``tools/us_fixtures/census_hist_fin_debt.csv`` (frozen:
+  the database is no longer updated), then each year's estimates. Needs
+  ``xlrd`` for one old ``.xls`` table. ``--us-hist-fin`` reads the historical
+  database itself first and writes the extract from it, which needs
+  ``pyodbc`` and the Microsoft Access ODBC driver (Windows; both
+  ``pip install``-able but the driver, and only the bake uses them);
 * ``ratesplot/uk_archive_data.py``: the UK history (the Bank of England's
   "A millennium of macroeconomic data", no longer updated), its exchange
   rates of the pound among it (batch 18.4). Needs
@@ -75,6 +79,7 @@ Usage (from the project root)::
 
     python tools/bake_archives.py            # every nation, and boe, boc, fred, ecb, eurostat, ons, bbk and statcan
     python tools/bake_archives.py --only us  # or cdn, uk, de, boe, boc, fred, ecb, eurostat, ons, bbk, statcan
+    python tools/bake_archives.py --only us --us-hist-fin  # the Census historical database read again (Windows)
     python tools/bake_archives.py --only uk --uk-workbook a-millennium-of-macroeconomic-data-for-the-uk.xlsx
     python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv --de-cpi-workbook tools/de_fixtures/raw/destatis_vpi_lange_reihen.xlsx --de-population-text tools/de_fixtures/raw/bbk_lange_zeitreihen_V1.txt --de-mortgage-5y-csv tools/de_fixtures/raw/bbib1_HYP_F05J.csv --de-mortgage-10y-csv tools/de_fixtures/raw/bbib1_HYP_F10J.csv --de-gdp-annual-csv tools/de_fixtures/raw/destatis_81000_117_gdp.csv --de-gdp-quarterly-csv tools/de_fixtures/raw/destatis_fs18_s27_gdp_q.csv --de-debt-csv tools/de_fixtures/raw/destatis_fs14_r5_debt.csv --de-interest-west-csv tools/de_fixtures/raw/destatis_fs18_s29_interest.csv --de-interest-csv tools/de_fixtures/raw/destatis_fs18_r14_interest.csv
 """
@@ -123,6 +128,7 @@ BAKES = {
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation's archives, or one live source's history (boe, boc, fred, ecb, eurostat, ons, bbk, statcan)")
+    parser.add_argument("--us-hist-fin", action="store_true", help="read the Census historical database itself and write its extract before the U.S. bake (Windows: pyodbc and the Microsoft Access ODBC driver)")
     parser.add_argument("--uk-workbook", type=Path, help="the UK millennium workbook already on disk (not downloaded)")
     parser.add_argument("--de-csv", type=Path, help="the Bundesbank's WU0004 download already on disk (not downloaded)")
     parser.add_argument("--de-discount-csv", type=Path, help="the Bundesbank's discount rate download (BBIN1) already on disk")
@@ -141,7 +147,9 @@ def main(argv: list[str]) -> int:
     with http.drawing_downloads():
         for key, bake in BAKES.items():
             if args.only in (None, key):
-                if key == "uk":
+                if key == "us":
+                    bake(read_database=args.us_hist_fin)
+                elif key == "uk":
                     bake(workbook_path=args.uk_workbook)
                 elif key == "de":
                     bake(

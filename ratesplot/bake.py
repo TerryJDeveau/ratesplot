@@ -37,6 +37,7 @@ from __future__ import annotations
 import calendar
 import csv
 import datetime as dt
+import hashlib
 import io
 import os
 import py_compile
@@ -1128,21 +1129,23 @@ def _check_levels_add_up(levels: dict[str, pd.Series], what: str) -> None:
         raise RuntimeError(f"{what}: state + local differs from the total by up to {gap.max():.4%}; data module not modified.")
 
 
-def _extract_census_hist_fin(mdb_path: Path) -> dict[str, pd.Series]:
-    """Return total debt outstanding by fiscal year (dollars) for "p" state, "m" local and "sl" both.
+def _read_census_hist_fin(mdb_path: Path) -> dict[str, dict[int, float]]:
+    """Return total debt outstanding by fiscal year for "p" state, "m" local and "sl" both, in $ thousands as the database gives them.
 
     Reads the Census historical database, an Access file, through the
     Microsoft Access ODBC driver (installed with Microsoft Office);
-    ``pyodbc`` is needed only for this bake.
+    ``pyodbc`` is needed only for this (``--us-hist-fin``). A year the
+    table leaves empty, or flags as not published (a negative figure), is
+    left out.
     """
     try:
         import pyodbc
     except ImportError as exc:
         raise RuntimeError(
-            "The U.S. bake needs pyodbc (pip install pyodbc) and the Microsoft Access ODBC driver."
+            "Reading the Census historical database needs pyodbc (pip install pyodbc) and the Microsoft Access ODBC driver."
         ) from exc
     connection = pyodbc.connect(f"Driver={{Microsoft Access Driver (*.mdb, *.accdb)}};Dbq={mdb_path};")
-    levels: dict[str, pd.Series] = {}
+    levels: dict[str, dict[int, float]] = {}
     try:
         for key, table in _HIST_FIN_TABLES.items():
             cursor = connection.cursor()
@@ -1154,16 +1157,104 @@ def _extract_census_hist_fin(mdb_path: Path) -> dict[str, pd.Series]:
             record = dict(zip(columns, rows[0]))
             if str(record["Name"]).strip() != "Total Debt Outstanding" or str(record["State Code"]).strip() != "00":
                 raise RuntimeError(f"Census {table}: {_HIST_FIN_TOTAL_DEBT} is {record['Name']!r}, not the national total debt")
-            by_year = {
-                int(column[-4:]): float(record[column]) * THOUSAND
+            levels[key] = {
+                int(column[-4:]): float(record[column])
                 for column in columns
                 if re.fullmatch(r"[A-Za-z&]+-\d{4}", column) and record[column] is not None and record[column] >= 0
             }
-            levels[key] = pd.Series(by_year).sort_index()
     finally:
         connection.close()
-    _check_levels_add_up(levels, "Census historical database")
     return levels
+
+
+def _census_history_levels(thousands: dict[str, dict[int, float]], what: str) -> dict[str, pd.Series]:
+    """The historical database's national totals (``thousands``, $ thousands by fiscal year) as dollars by year, each level checked to add up."""
+    levels = {key: pd.Series({year: value * THOUSAND for year, value in by_year.items()}, dtype=float).sort_index()
+              for key, by_year in thousands.items()}
+    _check_levels_add_up(levels, what)
+    return levels
+
+
+# The historical database's part, frozen (plan item 23.3): the database is no
+# longer updated, and reading it needs the Microsoft Access ODBC driver, which
+# only Windows has. So its national totals of item C1203 are kept as an extract,
+# which the U.S. bake reads; the bake then needs only the yearly estimates
+# files, and the daily job (on Linux) can run it when the Census adds a year.
+# ``tools/bake_archives.py --only us --us-hist-fin`` reads the database again
+# and writes the extract (Windows only); git shows whether it changed.
+US_CENSUS_HISTORY_EXTRACT = Path(__file__).resolve().parents[1] / "tools" / "us_fixtures" / "census_hist_fin_debt.csv"
+_HIST_FIN_EXTRACT_COLUMNS = {"p": "state", "m": "local", "sl": "state and local"}
+_HIST_FIN_EXTRACT_HEADER = ["fiscal year", *_HIST_FIN_EXTRACT_COLUMNS.values()]
+
+
+def _extract_cell(value: float | None) -> str:
+    """A figure as the extract writes it: a whole number of thousands as an integer, any other as its exact float; blank if none."""
+    if value is None:
+        return ""
+    return str(int(value)) if float(value).is_integer() else repr(float(value))
+
+
+def _write_census_hist_fin_extract(thousands: dict[str, dict[int, float]], zip_bytes: bytes, path: Path) -> None:
+    """Write the historical database's national totals (``_read_census_hist_fin``) as the extract the U.S. bake reads.
+
+    The comment lines say where it came from; the rows hold every fiscal year
+    any level has, a level's cell blank where the database has no figure.
+    Written as text, so with the platform's line endings (git's autocrlf).
+    """
+    years = sorted(set().union(*thousands.values()))
+    comment = (
+        "The Census Bureau's historical database of government finances, Hist_Fin.mdb in\n"
+        f"{CENSUS_HIST_FIN_URL}\n"
+        f"({len(zip_bytes):,} bytes, md5 {hashlib.md5(zip_bytes).hexdigest()}): item {_HIST_FIN_TOTAL_DEBT}, \"Total Debt Outstanding\" at the end of\n"
+        "each fiscal year, the United States (State Code 00), $ thousands as the database gives them, from its\n"
+        f"tables {', '.join(repr(table) for table in _HIST_FIN_TABLES.values())}.\n"
+        "A year a table leaves empty, or flags as not published (a negative figure), is blank.\n"
+        f"Written on {dt.date.today():%Y-%m-%d} by tools/bake_archives.py --only us --us-hist-fin (Windows: pyodbc and\n"
+        "the Microsoft Access ODBC driver). The database is no longer updated, so the U.S. bake reads this file\n"
+        f"(through fiscal {_HIST_FIN_LAST_YEAR}; the yearly estimates after it) and needs neither (plan item 23.3)."
+    )
+    text = io.StringIO()
+    text.write("".join(f"# {line}\n" for line in comment.splitlines()))
+    writer = csv.writer(text, lineterminator="\n")
+    writer.writerow(_HIST_FIN_EXTRACT_HEADER)
+    for year in years:
+        writer.writerow([year, *(_extract_cell(thousands[key].get(year)) for key in _HIST_FIN_EXTRACT_COLUMNS)])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text.getvalue(), encoding="utf-8")
+    print(f"Wrote the historical database's extract, {len(years)} fiscal years, to {path}")
+
+
+def parse_census_hist_fin_extract(text: str) -> dict[str, dict[int, float]]:
+    """Return the extract's figures (``_write_census_hist_fin_extract``) by level and fiscal year, in $ thousands.
+
+    Lines starting with ``#`` are its notes. Raises if the heading is not the
+    extract's, a year is not four digits or does not follow the one before,
+    a figure is not a number of at least zero, or a level has no figure, so a
+    damaged file cannot shift a curve.
+    """
+    rows = [row for row in csv.reader(io.StringIO(text)) if row and not row[0].startswith("#")]
+    if not rows or rows[0] != _HIST_FIN_EXTRACT_HEADER:
+        raise RuntimeError(f"The Census historical database's extract: the heading reads {rows[:1]}, not {_HIST_FIN_EXTRACT_HEADER}; data module not modified.")
+    thousands: dict[str, dict[int, float]] = {key: {} for key in _HIST_FIN_EXTRACT_COLUMNS}
+    previous = 0
+    for row in rows[1:]:
+        if len(row) != len(_HIST_FIN_EXTRACT_HEADER) or not re.fullmatch(r"\d{4}", row[0]) or int(row[0]) <= previous:
+            raise RuntimeError(f"The Census historical database's extract: the row {row} is not a fiscal year after {previous} and three figures; data module not modified.")
+        previous = int(row[0])
+        for key, cell in zip(_HIST_FIN_EXTRACT_COLUMNS, row[1:]):
+            if not cell:
+                continue
+            try:
+                value = float(cell)
+            except ValueError:
+                value = float("nan")
+            if not value >= 0:  # NaN fails too
+                raise RuntimeError(f"The Census historical database's extract: {cell!r} for fiscal {previous} is not a figure of at least zero; data module not modified.")
+            thousands[key][previous] = value
+    empty = [key for key, by_year in thousands.items() if not by_year]
+    if empty:
+        raise RuntimeError(f"The Census historical database's extract: no figures for {empty}; data module not modified.")
+    return thousands
 
 
 def _parse_census_estimates(text: str, year: int) -> dict[str, float]:
@@ -1266,25 +1357,37 @@ def _parse_census_summary_table(table: pd.DataFrame, year: int) -> dict[str, flo
     return {key: float(row.iloc[column]) * THOUSAND for key, column in columns.items()}
 
 
-def bake_us_archives(source_path: Path | None = None) -> None:
-    """Download the Census counts of state and of local government debt and embed them.
+def bake_us_archives(source_path: Path | None = None, *, read_database: bool = False, extract_path: Path | None = None) -> None:
+    """Embed the Census counts of state and of local government debt, downloading each year's estimates.
 
     Writes into ``ratesplot/us_archive_data.py`` unless ``source_path`` is
     given. The Federal Reserve's quarterly state-and-local debt (FRED
     SLGSDODNS) is not split by level; ``us_data`` splits it by these yearly
     shares. Every fiscal year from 1902 (annual from 1952) to the latest the
-    Census has published. The years without an estimates file (2011, 2016)
-    are read from that year's summary Table 1 instead; a year with neither
-    is left out, and ``us_data`` interpolates across it. Needs ``pyodbc``
-    with the Microsoft Access ODBC driver, and ``xlrd`` for 2011's table.
+    Census has published: through 2008 from the historical database's
+    extract (``US_CENSUS_HISTORY_EXTRACT``, or ``extract_path``), then each
+    year's estimates. The years without an estimates file (2011, 2016) are
+    read from that year's summary Table 1 instead; a year with neither is
+    left out, and ``us_data`` interpolates across it. Needs ``xlrd`` for
+    2011's table. ``read_database`` first downloads the historical database
+    itself and writes the extract from it: that needs ``pyodbc`` with the
+    Microsoft Access ODBC driver (Windows).
     """
     source_path = source_path or Path(__file__).resolve().with_name("us_archive_data.py")
+    extract_path = extract_path or US_CENSUS_HISTORY_EXTRACT
 
-    print("Downloading the Census historical government finance database …")
-    archive = zipfile.ZipFile(io.BytesIO(canadian_get(CENSUS_HIST_FIN_URL).content))
-    with tempfile.TemporaryDirectory() as folder:
-        mdb_path = Path(archive.extract("Hist_Fin.mdb", folder))
-        history = _extract_census_hist_fin(mdb_path)
+    if read_database:
+        print("Downloading the Census historical government finance database …")
+        content = canadian_get(CENSUS_HIST_FIN_URL).content
+        archive = zipfile.ZipFile(io.BytesIO(content))
+        with tempfile.TemporaryDirectory() as folder:
+            database = _read_census_hist_fin(Path(archive.extract("Hist_Fin.mdb", folder)))
+        _census_history_levels(database, "Census historical database")  # checked before it is written
+        _write_census_hist_fin_extract(database, content, extract_path)
+    print(f"Reading the Census historical database's extract, {extract_path.name} …")
+    history = _census_history_levels(
+        parse_census_hist_fin_extract(extract_path.read_text(encoding="utf-8")), "Census historical database's extract"
+    )
     levels = {key: series.loc[series.index <= _HIST_FIN_LAST_YEAR] for key, series in history.items()}
 
     later: dict[int, dict[str, float]] = {}
