@@ -12,7 +12,9 @@ Every nation reports these under the IMF's sixth balance of payments manual (BPM
 ## Where the figures come from
 
 - **The United States, from 1960.** The Bureau of Economic Analysis' international transactions, quarterly and seasonally adjusted, through FRED: under BPM6 from 1999 (`IEAX`, `IEAM`; `IEAXGS`, `IEAMGS`), and before it the older manual's figures (`BOPX`, `BOPM`; `BOPXGS`, `BOPMGS`). The older credits and debits leave out the transfers, which are put in from the older current account balance (`BOPBCA`) by their net, on the side its sign puts it, so that the gap is the current account balance in both. The two join end to end in 1999, nothing scaled: there the older credits are 3.4 % under the newer (the older manual has no transfers received), the debits 1.6 %, exports 0.6 % and imports 0.8 % over.
-- **Canada, the United Kingdom and Germany** are not drawn yet; their charts say so in the message log.
+- **Canada, from 1946.** Statistics Canada's balance of international payments, quarterly and seasonally adjusted: under BPM6 from 1981 (table 36-10-0018: the receipts and payments of the whole current account, and of goods and services), and before it the same lines under the older manual (table 36-10-0047, archived). The two join end to end in 1981, nothing scaled: there the older receipts are 1.4 % under the newer, the payments 1.9 %, exports 1.0 % and imports 1.2 %.
+- **The United Kingdom, from 1955.** The Office for National Statistics' balance of payments (dataset PNBP), quarterly and seasonally adjusted, under BPM6 throughout: the current account's credits and debits (`HBON`, `HBOO`), and exports and imports of goods and services (`IKBH`, `IKBI`). One series each, with no join.
+- **Germany** is not drawn yet; its chart says so in the message log.
 
 ## On the command line
 

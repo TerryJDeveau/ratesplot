@@ -163,6 +163,8 @@ CHART_CASES = (
     "real_four",
     # Batch 23: the balance of payments, trade fitted by --reg; on all four beside GDP.
     "u_pay_trade_reg", "pay_all4",
+    # Batch 23's second stage: Canada's and the UK's beside debt and GDP, with end labels.
+    "c_uk_pay_mix",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs

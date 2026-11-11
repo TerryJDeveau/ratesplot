@@ -38,28 +38,46 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   join the older is 3.4 % under the newer for the credits (BPM5 has no
   transfers received), 1.6 % for the debits, 0.6 % for exports, 0.8 % over
   for imports.
+* Canada: Statistics Canada's international accounts, quarterly, seasonally
+  adjusted, millions of dollars a quarter: 36-10-0018 (BPM6) from 1981-Q1,
+  receipts and payments of the total current account and of goods and
+  services; before 1981 the same lines of 36-10-0047 (BPM5, 1946-Q1 to
+  2012-Q2, archived). Joined end to end at 1981-Q1, nothing scaled: there
+  the older is 1.4 % under the newer for the receipts, 1.9 % for the
+  payments, 1.0 % for exports, 1.2 % for imports.
+* The UK: the ONS's balance of payments (dataset PNBP), quarterly from 1955
+  Q1, seasonally adjusted, £m a quarter, under BPM6 throughout: HBON and
+  HBOO, the current account's credits and debits (HBON less HBOO is the
+  balance, HBOP, exactly), and IKBH and IKBI, exports and imports of goods
+  and services. One series each, no join.
 """
 
 from __future__ import annotations
 
 import pandas as pd
 
+from .cdn_data import statcan_stopped_table, statcan_table
 from .config import (
     BILLION,
     DATE_COLUMN,
     MILLION,
     PAYMENTS_CREDITS_COLUMN,
     PAYMENTS_DEBITS_COLUMN,
+    STATCAN_CDN_OLD_PAYMENTS_TABLE,
+    STATCAN_CDN_OLD_PAYMENTS_VECTORS,
+    STATCAN_CDN_PAYMENTS_TABLE,
+    STATCAN_CDN_PAYMENTS_VECTORS,
     nation_by_key,
 )
 from .frames import at_quarter_end
 from .http import downloads_of
 from .joins import ttm_sum
+from .uk_data import ons_series
 from .us_data import fred_series
 
 # The nations whose balance of payments is drawn so far (batch 23's stages):
 # a chart of another prints a note and draws none.
-PAYMENTS_NATIONS = ("us",)
+PAYMENTS_NATIONS = ("us", "cdn", "uk")
 
 # FRED's BEA series, BPM6, from 1999-Q1, millions of dollars a quarter,
 # seasonally adjusted: (credits, debits) of each pair.
@@ -72,6 +90,20 @@ US_OLD_PAYMENTS_STOPPED = pd.Timestamp("2014-01-01")
 # Where the BPM6 figures take over (FRED dates a quarter by its first day).
 US_PAYMENTS_JOIN = pd.Timestamp("1999-01-01")
 US_PAYMENTS_EARLIEST = pd.Timestamp("1960-01-01")
+
+# Canada (Statistics Canada dates a quarter by its first day): the vectors of
+# each table are in ``config`` (``cdn_data`` reads them). 36-10-0047 is
+# archived: its last quarter is declared here, so it is read from its bake
+# alone (``cdn_data.statcan_stopped_table``; tools/check_baked.py checks the
+# bake ends there).
+CDN_OLD_PAYMENTS_STOPPED = pd.Timestamp("2012-04-01")
+CDN_PAYMENTS_JOIN = pd.Timestamp("1981-01-01")
+CDN_PAYMENTS_EARLIEST = pd.Timestamp("1946-01-01")
+
+# The UK's ONS series (``uk_data.ONS_SERIES``), £m a quarter, dated by each
+# quarter's last day: (credits, debits) of each pair.
+UK_PAYMENTS_SERIES = {"current": ("HBON", "HBOO"), "trade": ("IKBH", "IKBI")}
+UK_PAYMENTS_EARLIEST = pd.Timestamp("1955-01-01")
 
 
 def _fred_quarters(series_id: str, *, stopped: pd.Timestamp | None = None) -> pd.Series:
@@ -100,6 +132,27 @@ def _us_quarters(item: str) -> tuple[pd.Series, pd.Series]:
     return joined[0], joined[1]
 
 
+def _cdn_quarters(item: str) -> tuple[pd.Series, pd.Series]:
+    """Canada's receipts and payments of pair ``item``, each a quarter's flow in dollars, 36-10-0047 to 1980 then 36-10-0018 (the module's docstring)."""
+    new = statcan_table(STATCAN_CDN_PAYMENTS_TABLE)
+    old = statcan_stopped_table(STATCAN_CDN_OLD_PAYMENTS_TABLE)
+    joined = []
+    for old_vector, new_vector in zip(STATCAN_CDN_OLD_PAYMENTS_VECTORS[item], STATCAN_CDN_PAYMENTS_VECTORS[item]):
+        before, after = old[old_vector].dropna(), new[new_vector].dropna()
+        joined.append(pd.concat([before.loc[before.index < CDN_PAYMENTS_JOIN], after.loc[after.index >= CDN_PAYMENTS_JOIN]]) * MILLION)
+    return joined[0], joined[1]
+
+
+def _uk_quarters(item: str) -> tuple[pd.Series, pd.Series]:
+    """The UK's credits and debits of pair ``item``, each a quarter's flow in pounds (``uk_data.ons_series``)."""
+    credits_id, debits_id = UK_PAYMENTS_SERIES[item]
+    return ons_series(credits_id), ons_series(debits_id)
+
+
+# Each drawn nation's reader: (credits, debits) of a pair, a quarter's flows.
+_QUARTERS = {"us": _us_quarters, "cdn": _cdn_quarters, "uk": _uk_quarters}
+
+
 def _ttm_frame(credits: pd.Series, debits: pd.Series) -> pd.DataFrame:
     """The pair's quarterly flows as trailing-twelve-month sums, ``[DATE, credits, debits]``, dated by each last quarter's end."""
     frame = pd.DataFrame({PAYMENTS_CREDITS_COLUMN: ttm_sum(credits), PAYMENTS_DEBITS_COLUMN: ttm_sum(debits)}).dropna()
@@ -109,7 +162,7 @@ def _ttm_frame(credits: pd.Series, debits: pd.Series) -> pd.DataFrame:
 
 def payments_earliest(key: str) -> pd.Timestamp | None:
     """The first quarter of nation ``key``'s balance of payments, for the coverage warning; None where none is drawn yet."""
-    return {"us": US_PAYMENTS_EARLIEST}.get(key)
+    return {"us": US_PAYMENTS_EARLIEST, "cdn": CDN_PAYMENTS_EARLIEST, "uk": UK_PAYMENTS_EARLIEST}.get(key)
 
 
 @downloads_of("the balance of payments")
@@ -122,5 +175,5 @@ def fetch_payments(key: str, item: str) -> pd.DataFrame | None:
     if key not in PAYMENTS_NATIONS:
         print(f"  Note: the balance of payments is not drawn yet for {nation_by_key(key).name} (batch 23's later stages).")
         return None
-    credits, debits = _us_quarters(item)
+    credits, debits = _QUARTERS[key](item)
     return _ttm_frame(credits, debits)

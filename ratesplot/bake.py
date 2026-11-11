@@ -67,6 +67,8 @@ from .cdn_data import (
     FRED_CDN_GDP_SERIES,
     GFS_VECTORS,
     STATCAN_BAKED_SOURCE,
+    STATCAN_PAYMENTS_ACCOUNTS,
+    STATCAN_PAYMENTS_SIDES,
     STATCAN_SERIES_READ,
     statcan_download,
     statcan_zip_table,
@@ -132,6 +134,10 @@ from .config import (
     STATCAN_CDN_GDP_TABLE,
     STATCAN_CDN_GDP_VECTOR,
     STATCAN_CDN_INTEREST_TABLE,
+    STATCAN_CDN_OLD_PAYMENTS_TABLE,
+    STATCAN_CDN_OLD_PAYMENTS_VECTORS,
+    STATCAN_CDN_PAYMENTS_TABLE,
+    STATCAN_CDN_PAYMENTS_VECTORS,
     STATCAN_CDN_POPULATION_TABLE,
     STATCAN_CDN_POPULATION_VECTOR,
     STATCAN_TABLE_URL,
@@ -3016,6 +3022,11 @@ _ONS_SERIES_TITLES = {
             "(dated here by the quarter's last day, as every period is; uk_data dates it by the quarter's middle)",
     "D7G7": "CPI ANNUAL RATE 00: ALL ITEMS 2015=100; dataset MM23; monthly",
     "D7BT": "CPI INDEX 00: ALL ITEMS 2015=100; dataset MM23; monthly",
+    # The balance of payments (batch 23), titles as the dataset's CSV lists them, read 2026-11-11.
+    "HBON": "BoP Current Account Credits SA £m; dataset PNBP; quarterly",
+    "HBOO": "BoP Current Account Debits SA £m; dataset PNBP; quarterly",
+    "IKBH": "Total Trade (TT): WW: Exports: BOP: CP: SA; dataset PNBP; quarterly",
+    "IKBI": "Total Trade (TT): WW: Imports: BOP: CP: SA; dataset PNBP; quarterly",
 }
 # The unit of each ONS series as its description gives it (``uk_data.ONS_SERIES``), in words.
 _ONS_UNIT_WORDS = {
@@ -3167,6 +3178,10 @@ _STATCAN_TABLE_TITLES = {
     STATCAN_CDN_CPI_TABLE: "Consumer Price Index, monthly, not seasonally adjusted",
     STATCAN_CDN_CPI_SA_TABLE: "Consumer Price Index, monthly, seasonally adjusted",
     BOC_FINANCIAL_MARKET_TABLE: "Financial market statistics, last Wednesday unless otherwise stated, Bank of Canada, monthly",
+    # The balance of payments (batch 23), read 2026-11-11; 36-10-0047 is archived, no longer updated.
+    STATCAN_CDN_PAYMENTS_TABLE: "Balance of international payments, current account, seasonally adjusted, quarterly",
+    STATCAN_CDN_OLD_PAYMENTS_TABLE: "Balance of international payments, current account, seasonally adjusted, quarterly "
+                                    "(archived, 1946 to 2012)",
 }
 # Each vector read: Statistics Canada's own series title (WDS
 # getSeriesInfoFromVector, read 2026-10-22); the GFS table's are
@@ -3181,6 +3196,13 @@ _STATCAN_SERIES_TITLES = {
     STATCAN_CDN_CPI_SA_VECTOR: "Canada;All-items",
     CDN_REAL_RETURN_VECTOR: "Canada;Real return bonds, long-term",
     **{vector: f"Canada;{sector};{item}" for (sector, item), vector in GFS_VECTORS.items()},
+    # The balance of payments' (batch 23): "Canada;SIDE;ACCOUNT", the labels cdn_data reads them by.
+    **{
+        vector: f"Canada;{side};{account}"
+        for vectors in (STATCAN_CDN_PAYMENTS_VECTORS, STATCAN_CDN_OLD_PAYMENTS_VECTORS)
+        for item, pair in vectors.items()
+        for vector, side, account in zip(pair, STATCAN_PAYMENTS_SIDES, (STATCAN_PAYMENTS_ACCOUNTS[item],) * 2)
+    },
 }
 # A table's unit and scale (cdn_data.StatcanRead), in words.
 _STATCAN_UNIT_WORDS = {
@@ -3190,7 +3212,7 @@ _STATCAN_UNIT_WORDS = {
 
 
 def statcan_baked_series() -> dict[str, str]:
-    """Every Statistics Canada vector the program reads (``cdn_data.STATCAN_SERIES_READ``), by its file's name (the vector): its table. Debt, GDP, interest, the levels, the population and the consumer price indexes (``cdn_data``); the CMHC mortgage rate (``rates``)."""
+    """Every Statistics Canada vector the program reads (``cdn_data.STATCAN_SERIES_READ``), by its file's name (the vector): its table. Debt, GDP, interest, the levels, the population and the consumer price indexes (``cdn_data``); the CMHC mortgage rate (``rates``); the balance of payments (``payments``, batch 23)."""
     return dict(sorted((vector, table) for table, read in STATCAN_SERIES_READ.items() for vector in read.vectors))
 
 

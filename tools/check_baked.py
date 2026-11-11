@@ -26,8 +26,8 @@ Offline, in seconds:
   series asked for, as before 19.2; a bake whose last row has no value
   counted from its last value, its rows without one kept; a series declared
   stopped (19.3): its bake alone, nothing asked or said;
-* each series declared stopped in ``rates`` (19.3): its bake ends on the
-  date declared;
+* each series declared stopped in ``rates``, ``de_data`` or ``payments``
+  (19.3): its bake ends on the date declared;
 * ``baked.frame_with_recent_part``, the same for a group of series asked for
   in one request (the Bank of Canada's benchmark yields): one request, from
   the earliest bake's last date less the recent part; only the columns read;
@@ -68,8 +68,8 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, baked, cdn_data, de_data, rates, uk_data, us_data  # noqa: E402
-from ratesplot.config import DATE_COLUMN  # noqa: E402
+from ratesplot import bake, baked, cdn_data, de_data, payments, rates, uk_data, us_data  # noqa: E402
+from ratesplot.config import DATE_COLUMN, STATCAN_CDN_OLD_PAYMENTS_VECTORS  # noqa: E402
 
 RESULTS: list[bool] = []
 
@@ -385,7 +385,7 @@ def check_report() -> None:
 
 
 def check_stopped_declared() -> None:
-    """Each series declared stopped (19.3, beside its series in ``rates``): its bake ends on the declared date.
+    """Each series declared stopped (19.3, beside its series in ``rates``, ``de_data`` or ``payments``): its bake ends on the declared date.
 
     One that does not has been revised, or has started again: its declaration
     is then to be looked at (the drawing reads its bake alone, the new values too).
@@ -397,6 +397,11 @@ def check_stopped_declared() -> None:
         # The inflation-linked bonds redeemed (batch 13.3), declared beside the bonds in ``de_data``.
         **{(de_data.BUNDESBANK_BAKED_SOURCE, f"{de_data.DE_LINKED_BOND_FLOW}.{de_data.linked_bond_key(isin)}"): bond.last_value
            for isin, bond in de_data.DE_LINKED_BONDS.items() if bond.last_value is not None},
+        # The balance of payments under the older manual (batch 23): the U.S.' BPM5 series and Canada's archived table.
+        **{(us_data.FRED_BAKED_SOURCE, code): payments.US_OLD_PAYMENTS_STOPPED
+           for code in (*(code for pair in payments.US_OLD_PAYMENTS_SERIES.values() for code in pair), payments.US_OLD_BALANCE_SERIES)},
+        **{(cdn_data.STATCAN_BAKED_SOURCE, vector): payments.CDN_OLD_PAYMENTS_STOPPED
+           for pair in STATCAN_CDN_OLD_PAYMENTS_VECTORS.values() for vector in pair},
     }
     ends = {key: baked.read_series(*key).last_valid_index() for key in declared}
     wrong = {"/".join(key): f"{ends[key]:%Y-%m-%d}, declared {end:%Y-%m-%d}" for key, end in declared.items() if ends[key] != end}

@@ -287,6 +287,19 @@ STATCAN_CDN_CPI_VECTOR = "v41690973"
 # older than a recent part's 24 months reaches the bake by the daily job.
 STATCAN_CDN_CPI_SA_TABLE = "18100006"
 STATCAN_CDN_CPI_SA_VECTOR = "v41690914"
+# Canada's balance of payments (batch 23, --payments; ``ratesplot.payments``),
+# quarterly, seasonally adjusted, millions of dollars a quarter (not at annual
+# rates). 36-10-0018, the international accounts under BPM6, from 1981-Q1;
+# 36-10-0047, the same accounts under BPM5, 1946-Q1 to 2012-Q2, inactive (no
+# longer updated), read only before 1981. Measured 2026-11-11: both tables
+# label the vectors alike ("Receipts, seasonally adjusted" or "Payments,
+# seasonally adjusted"; "Total current account" or "Goods and services"), one
+# row per quarter, every quarter with a value.
+STATCAN_CDN_PAYMENTS_TABLE = "36100018"
+STATCAN_CDN_OLD_PAYMENTS_TABLE = "36100047"
+# Each pair's (receipts, payments) vectors, by ``PAYMENTS_ITEMS``.
+STATCAN_CDN_PAYMENTS_VECTORS = {"current": ("v61915244", "v61915273"), "trade": ("v61915245", "v61915274")}
+STATCAN_CDN_OLD_PAYMENTS_VECTORS = {"current": ("v114364", "v114397"), "trade": ("v114365", "v114398")}
 
 # Archived (terminated) StatCan tables. They no longer change, so the bake
 # (``tools/bake_archives.py``) downloads them once and writes the required rows
