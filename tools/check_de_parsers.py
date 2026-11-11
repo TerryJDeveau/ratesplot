@@ -324,8 +324,9 @@ def check_german_debt() -> None:
     gdp_people = de_data.west_german_gdp_population()
     check("population: through 1990 and 1991 West Germany's, the same as its GDP's", np.isclose(people.loc["1990-12-31"], gdp_people.loc["1990-12-31"]) and 63_000_000 < people.loc["1990-12-31"] < 64_000_000, people.loc["1990-12-31"])
     own = de_data.west_german_own_populations()
-    check("population: GDP's its own; the total's and every level's debt the debt's; interest none", own[GDP_COLUMN].equals(gdp_people) and all(own[column].equals(people) for column in (DE_DEBT_COLUMN, *(component_column("debt", letter) for letter in COMPONENT_LETTERS)))
-          and DE_INTEREST_COLUMN not in own, sorted(own))
+    check("population: GDP's its own; the total's and every level's debt the debt's; the interest's, total and levels, GDP's (16.6)",
+          own[GDP_COLUMN].equals(gdp_people) and all(own[column].equals(people) for column in (DE_DEBT_COLUMN, *(component_column("debt", letter) for letter in COMPONENT_LETTERS)))
+          and all(own[column].equals(gdp_people) for column in (DE_INTEREST_COLUMN, *(component_column("interest", letter) for letter in COMPONENT_LETTERS))), sorted(own))
     dates = pd.to_datetime(["1950-03-31", "1952-03-31", "1959-04-01", "1961-01-01", "1990-12-31", "1991-01-01", "1991-12-31"])
     values = [9573.94e6, 12276.12e6, 25463.4e6, 28998.43e6, 555.13e9, 555.13e9, 618.218e9]
     column = component_column("debt", "f")
@@ -338,6 +339,112 @@ def check_german_debt() -> None:
     check("per person: 1960's, shown on 1961-01-01, by the population drawn", abs(per_person[DE_DEBT_COLUMN].iloc[3] - 28998.43e6 / 50e6) < 1e-6, per_person[DE_DEBT_COLUMN].iloc[3])
     check("per person: 1990's by West Germany's, whatever the population drawn says, and held", abs(per_person[DE_DEBT_COLUMN].iloc[4] - 555.13e9 / people.loc["1990-12-31"]) < 1e-6 and per_person[DE_DEBT_COLUMN].iloc[5] == per_person[DE_DEBT_COLUMN].iloc[4], per_person[DE_DEBT_COLUMN].iloc[4])
     check("per person: all of Germany's from 1991-12-31 by the population drawn", abs(per_person[DE_DEBT_COLUMN].iloc[6] - 618.218e9 / 80e6) < 1e-6, per_person[DE_DEBT_COLUMN].iloc[6])
+
+
+def check_german_interest() -> None:
+    """Batch 16 (16.6): Germany's interest paid in total and by level, read from the extracts of Fachserie 18 Reihe S.29 and Reihe 1.4 (saved 2026-11-10), its bake, its joins and its population."""
+    west_sheets = bake._sheets_of_extract(RAW / "destatis_fs18_s29_interest.csv")
+    unified_sheets = bake._sheets_of_extract(RAW / "destatis_fs18_r14_interest.csv")
+    west = bake.parse_west_german_interest(west_sheets)
+    unified = bake.parse_german_interest(unified_sheets)
+    year = lambda values, when: values.loc[pd.Timestamp(when, 12, 31)]  # noqa: E731
+    check("interest: West Germany's, every year 1970-1990, the total and each level; the total 3.33 and 34.35 billion (its float noise rounded)",
+          all(list(values.index.year) == list(range(1970, 1991)) for values in west.values()) and year(west["total"], 1970) == 3.33 and year(west["total"], 1990) == 34.35,
+          {name: len(values) for name, values in west.items()})
+    check("interest: West Germany's levels of 1980 add up to the 16.74 billion Reihe S.29's sheet 3.4.1.2 gives as the Staat's interest paid (8.24 + 4.97 + 3.53)",
+          round(sum(year(west[name], 1980) for name in ("federal", "states", "local")), 2) == 16.74 and year(west["federal"], 1980) == 8.24)
+    check("interest: all of Germany's, the total 1991-1995 (42.65 to 66.581), each level 1991-2002 (the Bund 25.366 to 42.127)",
+          list(unified["total"].index.year) == list(range(1991, 1996)) and year(unified["total"], 1991) == 42.65 and year(unified["total"], 1995) == 66.581
+          and all(list(unified[name].index.year) == list(range(1991, 2003)) for name in ("federal", "states", "local"))
+          and year(unified["federal"], 1991) == 25.366 and year(unified["federal"], 2002) == 42.127, {name: len(values) for name, values in unified.items()})
+    yearly_nac = de_data.parse_jsonstat(jsonstat("est_edpt1_a_nac"), "MIO_NAC", sector="S13", na_item="D41PAY")
+    check("interest: the Office's total of 1995 is Eurostat's annual figure in national currency (the saved answer of 2026-11-10), 66,581 million",
+          round(year(unified["total"], 1995) * 1000, 3) == yearly_nac.loc["1995-12-31"], yearly_nac.loc["1995-12-31"])
+    quarters = {sector: de_data.parse_jsonstat(jsonstat("est_ggnfa_q_nac"), "MIO_NAC", sector=sector) for sector in ("S1311", "S1312", "S1313")}
+    sums = {name: round(quarters[sector].loc["2002"].sum(), 3) for name, sector in (("federal", "S1311"), ("states", "S1312"), ("local", "S1313"))}
+    check("interest: each level's 2002 is the sum of Eurostat's four quarters of 2002 (42,127, 19,426 and 4,624 million)",
+          all(round(year(unified[name], 2002) * 1000, 3) == sums[name] for name in sums), sums)
+    for prefix, read in (("EMBEDDED_DE_WEST_INTEREST", west), ("EMBEDDED_DE_INTEREST", unified)):
+        for name, values in read.items():
+            baked_values = pd.Series({pd.Timestamp(date): value for date, value in getattr(de_archive_data, f"{prefix}_{name.upper()}")}, dtype=float)
+            check(f"bake: {prefix}_{name.upper()} holds the extract", baked_values.equals(values.rename(None).rename_axis(None)), len(baked_values))
+    # Refusals: a sheet that moved its territory, title, unit or line, lost a year, or holds a word where a number was.
+
+    def changed(sheets: dict[str, list], sheet: str, edit) -> dict[str, list]:
+        copy = {name: [list(row) for row in rows] for name, rows in sheets.items()}
+        edit(copy[sheet])
+        return copy
+
+    def at(rows: list[list[str]], label: str) -> int:
+        return next(number for number, row in enumerate(rows) if len(row) > 2 and row[2] == label)
+
+    def set_cell(rows: list[list[str]], row: int, column: int, value: str) -> None:
+        rows[row][column] = value
+
+    heading = at(west_sheets["3.4.3.2"], "Gegenstand der Nachweisung")
+    spending = at(west_sheets["3.4.3.4"], "Ausgaben")
+    line = next(number for number, row in enumerate(west_sheets["3.4.3.4"]) if number > spending and len(row) > 2 and row[2] == "Vermögenseinkommen")
+    year_1975 = next(column for column, cell in enumerate(west_sheets["3.4.3.2"][heading]) if cell == "1975")
+    parse_west = bake.parse_west_german_interest
+    check("interest: another territory is refused", raises(parse_west, changed(west_sheets, "3.4.3.2", lambda rows: set_cell(rows, 0, 0, "Deutschland"))) is not None)
+    check("interest: another title is refused", raises(parse_west, changed(west_sheets, "3.4.3.4", lambda rows: set_cell(rows, 1, 0, rows[1][0].replace("des Bundes", "der Länder")))) is not None)
+    check("interest: another unit is refused", raises(parse_west, changed(west_sheets, "3.4.3.5", lambda rows: set_cell(rows, 2, 0, "Mrd. DM"))) is not None)
+    check("interest: the spending side's line renamed is refused", raises(parse_west, changed(west_sheets, "3.4.3.4", lambda rows: set_cell(rows, line, 2, "Zinsen"))) is not None)
+    check("interest: a year gone from the heading is refused", raises(parse_west, changed(west_sheets, "3.4.3.2", lambda rows: set_cell(rows, heading, year_1975, ""))) is not None)
+    check("interest: a word where a number was is refused", raises(parse_west, changed(west_sheets, "3.4.3.4", lambda rows: set_cell(rows, line, year_1975, "x"))) is not None)
+    check("interest: Reihe 1.4 read as West Germany's is refused (its first row is the title)", raises(parse_west, unified_sheets) is not None)
+    check("interest: Reihe 1.4's years written as days are read (1991-01-01 00:00:00)", any(cell.startswith("1991-01-01") for cell in unified_sheets["3.4.3.2"][at(unified_sheets["3.4.3.2"], "Gegenstand der Nachweisung")]))
+    # The joins, on made-up live series: the total to Eurostat's annual figures, each level to its quarters.
+    older = de_data._older_interest(de_data.GENERAL_GOVERNMENT)
+    check("join: the Office's years, West Germany's 1970-1990 then all of Germany's 1991-1995, each at its year's end, in euros",
+          list(older.index.year) == list(range(1970, 1996)) and older.loc["1990-12-31"] == 34.35e9 and older.loc["1991-12-31"] == 42.65e9, len(older))
+    annual = pd.Series([66_581e6, 66_769e6, 66_801e6, 67_765e6, 64_274e6, 67_540e6, 66_201e6, 66_135e6], index=pd.to_datetime([f"{y}-12-31" for y in range(1995, 2003)]))
+    sums_live = pd.Series([66_135e6, 65_075e6], index=pd.to_datetime(["2002-12-31", "2003-12-31"]))
+
+    def down(*_args, **_named):
+        raise RuntimeError("down")
+
+    real_series, real_ttm = de_data.eurostat_series, de_data._ttm_interest
+    config = PlotConfig(start=pd.Timestamp("1950-01-01"), end=pd.Timestamp("2005-01-01"), components="fpmn")
+    said = io.StringIO()
+    try:
+        de_data.eurostat_series = lambda *_args, **_named: annual
+        de_data._ttm_interest = lambda sectors: sums_live * {("S13",): 1.0, ("S1311",): 0.64, ("S1312",): 0.29, ("S1313",): 0.07}[tuple(sectors)]
+        joined = de_data.fetch_de_interest(config)[DE_INTEREST_COLUMN]
+        levels = de_data.fetch_de_components(PlotConfig(start=config.start, end=config.end, components="fpmn", include_debt=False))
+        with contextlib.redirect_stdout(said):
+            de_data.eurostat_series = down
+            no_annual = de_data.fetch_de_interest(config)[DE_INTEREST_COLUMN]
+            de_data.eurostat_series = lambda *_args, **_named: annual
+            de_data._ttm_interest = down
+            no_quarters = de_data.fetch_de_interest(config)[DE_INTEREST_COLUMN]
+    finally:
+        de_data.eurostat_series, de_data._ttm_interest = real_series, real_ttm
+    check("join: the Office's years to 1994, Eurostat's years 1995-2001, its sums from 2002; unification a step (34.35 to 42.65 billion)",
+          joined.index[0] == pd.Timestamp("1970-12-31") and joined.loc["1994-12-31"] == 60.789e9 and joined.loc["1995-12-31"] == 66_581e6
+          and joined.loc["2001-12-31"] == 66_201e6 and joined.loc["2002-12-31"] == 66_135e6 and joined.loc["2003-12-31"] == 65_075e6 and len(joined) == 34, len(joined))
+    check("down: Eurostat's years gone, its sums alone, said so: the Office's would be drawn straight across 1995 to 2002",
+          no_annual.index[0] == pd.Timestamp("2002-12-31") and "drawn from 2002" in said.getvalue(), no_annual.index[0])
+    check("down: Eurostat's quarters gone, the Office's years and Eurostat's, said so", no_quarters.index[0] == pd.Timestamp("1970-12-31") and no_quarters.index[-1] == pd.Timestamp("2002-12-31")
+          and "annual figures alone" in said.getvalue(), no_quarters.index[-1])
+    federal = levels[component_column("interest", "f")].dropna()
+    check("join: a level, the Office's years 1970-2001 (West Germany's to 1990), then Eurostat's sums from 2002",
+          federal.index[0] == pd.Timestamp("1970-12-31") and federal.loc["1990-12-31"] == 18.87e9 and federal.loc["1991-12-31"] == 25.366e9
+          and federal.loc["2001-12-31"] == 42.501e9 and federal.loc["2002-12-31"] == 66_135e6 * 0.64, federal.loc["2001-12-31"])
+    together = levels[component_column("interest", "n")].dropna()
+    states, local = levels[component_column("interest", "p")].dropna(), levels[component_column("interest", "m")].dropna()
+    check("join: Länder and local together, exactly the two joined lines added up on every date", together.equals((states + local).dropna().rename(together.name)), together.loc["1980-12-31"])
+    # Per person: 1990's over West Germany's people, 1991's over the population drawn.
+    own = de_data.west_german_own_populations()
+    dates = pd.to_datetime(["1971-01-01", "1990-12-31", "1991-01-02", "1991-12-31"])
+    frame = pd.DataFrame({"DATE": dates, DE_INTEREST_COLUMN: [3.33e9, 34.35e9, 34.35e9, 42.65e9]})
+    drawn = pd.Series([60e6, 79e6, 80e6], index=pd.to_datetime(["1970-01-01", "1991-01-01", "1992-01-01"]))
+    per_person = measures.per_person(frame, DE, drawn, own)[DE_INTEREST_COLUMN]
+    west_1990 = de_data.west_german_gdp_population().loc["1990-12-31"]
+    check("per person: 1970's by the population drawn; 1990's by West Germany's on 1990-12-31 (63.3 million), held; 1991's by the population drawn",
+          abs(per_person.iloc[0] - 3.33e9 / measures.population_on(frame["DATE"], drawn).iloc[0]) < 1e-6 and 63e6 < west_1990 < 64e6
+          and abs(per_person.iloc[1] - 34.35e9 / west_1990) < 1e-6 and per_person.iloc[2] == per_person.iloc[1]
+          and abs(per_person.iloc[3] - 42.65e9 / measures.population_on(frame["DATE"], drawn).iloc[3]) < 1e-6, per_person.tolist())
 
 
 def check_west_gdp() -> None:
@@ -542,9 +649,10 @@ def check_fetchers() -> None:
               debt.index[0] == pd.Timestamp("1950-03-31") and debt.loc["1991-12-31"] == 618_218e6 and debt.loc["1999-12-31"] == 1_253_598e6
               and pd.Timestamp("2000-03-31") in debt.index and debt.loc["2026-03-31"] == 2_902_262.5e6)
         interest = de_data.fetch_de_interest(config)[de_data.DE_INTEREST_COLUMN]
-        check("interest: annual 1995-2001, then four-quarter sums from 2002 Q4",
-              interest.index[0] == pd.Timestamp("1995-12-31") and interest.loc["2001-12-31"] > 0
-              and interest.index[interest.index > pd.Timestamp("2001-12-31")][0] == pd.Timestamp("2002-12-31"))
+        check("interest: the Office's years from 1970 (34.35 billion in 1990, 60.789 in 1994), Eurostat's annual 1995-2001 (66,581 million in 1995), then four-quarter sums from 2002 Q4",
+              interest.index[0] == pd.Timestamp("1970-12-31") and interest.loc["1990-12-31"] == 34.35e9 and interest.loc["1994-12-31"] == 60.789e9
+              and interest.loc["1995-12-31"] == 66_581e6 and interest.loc["2001-12-31"] > 0
+              and interest.index[interest.index > pd.Timestamp("2001-12-31")][0] == pd.Timestamp("2002-12-31"), interest.loc["1995-12-31"])
         gdp = de_data.fetch_de_gdp(config)[GDP_COLUMN]
         unified = de_data.ttm_sum(de_data.parse_jsonstat(jsonstat("est_gdp_q_nac"), "CP_MNAC")) * 1e6
         check("GDP: West Germany's from 1950-12-31 to 1991-09-30, then Eurostat's four-quarter sums from 1991 Q4",
@@ -660,7 +768,7 @@ def check_cnbc() -> None:
 
 
 def main() -> int:
-    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_west_gdp, check_german_debt, check_older_mortgages, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
+    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_west_gdp, check_german_debt, check_german_interest, check_older_mortgages, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
         group()
     passed = sum(RESULTS)
     print(f"[de parsers] {passed} of {len(RESULTS)} checks passed")

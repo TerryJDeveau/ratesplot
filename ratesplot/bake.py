@@ -102,9 +102,11 @@ from .config import (
     DE_ARCHIVE_BEGIN_MARKER,
     DE_ARCHIVE_END_MARKER,
     DESTATIS_CPI_LONG_SERIES_URL,
+    DESTATIS_DETAILED_YEARS_URL,
     DESTATIS_NATIONAL_ACCOUNTS_URL,
     DESTATIS_PUBLIC_DEBT_URL,
     DESTATIS_REVISED_QUARTERS_URL,
+    DESTATIS_REVISED_YEARS_URL,
     DATE_COLUMN,
     GDP_COLUMN,
     HISTORICAL_CDN_GDP_ANNUAL_TABLE,
@@ -2001,15 +2003,130 @@ def parse_german_debt(rows) -> dict[str, pd.Series]:
     }
 
 
-def _rows_of_sheet(content: bytes, sheet: str) -> list[tuple]:
-    """Return one sheet's rows of a workbook served as ``content``."""
+# Germany's interest paid (batch 16, 16.6): the Federal Statistical Office's national
+# accounts of government, billions of euros at 1.95583 a year, the spending side's line 40,
+# "Vermögenseinkommen" (property income paid), which for government is its interest. Measured
+# 2026-11-10: in Reihe S.29 the levels of 1980 add up to the 16.74 its sheet 3.4.1.2 calls the
+# Staat's "Geleistete Zinsen", and in Reihe 1.4 every figure from 1999, the total and each
+# level, is Eurostat's D41PAY of the same sector. The receipts side's line named "Zinsen" is
+# interest received. Each level's sheet is that level's own, not consolidated with the others,
+# as Eurostat's subsectors are; the total's is consolidated. Two workbooks: Fachserie 18 Reihe
+# S.29, West Germany ("Früheres Bundesgebiet") 1970 to 1991 after the revision of 2005, three
+# blocks of years side by side; Reihe 1.4, its 2025 edition, all of Germany from 1991, one
+# block, its years written as days (1991-01-01). Kept: West Germany's to 1990, the year before
+# all of Germany's begins; all of Germany's total to 1995 and its levels to 2002, the first
+# years of Eurostat's annual total and of its quarters' sums, for the check that they agree.
+DE_INTEREST_SHEETS = {
+    "total": ("3.4.3.2", "des Staates (konsolidiert)"),
+    "federal": ("3.4.3.4", "des Bundes"),
+    "states": ("3.4.3.5", "der Länder"),
+    "local": ("3.4.3.6", "der Gemeinden"),
+}
+_DE_INTEREST_TITLE = "{sheet} Einnahmen und Ausgaben sowie Finanzierungssaldo {who}"
+_DE_INTEREST_UNIT = "Mrd. EUR"
+_DE_INTEREST_HEADING = "Gegenstand der Nachweisung"
+_DE_INTEREST_SPENDING = ("36", "Ausgaben")
+_DE_INTEREST_LINE = ("40", "Vermögenseinkommen")
+_DE_WEST_TERRITORY = "Früheres Bundesgebiet"
+_DE_WEST_INTEREST_YEARS = (1970, 1991)
+_DE_WEST_INTEREST_LAST_KEPT = 1990
+_DE_INTEREST_FIRST_YEAR = 1991
+_DE_INTEREST_LAST_KEPT = {"total": 1995, "federal": 2002, "states": 2002, "local": 2002}
+
+
+def _heading_year(cell: object) -> int | None:
+    """Return the year a heading cell names: 1970, a day such as 1991-01-01 (Reihe 1.4's), or either as an extract's text; None for another cell."""
+    if isinstance(cell, dt.datetime):
+        return cell.year if (cell.month, cell.day) == (1, 1) else None
+    if isinstance(cell, (int, float)) and not isinstance(cell, bool):
+        return int(cell) if float(cell).is_integer() and 1900 < cell < 2100 else None
+    match = re.fullmatch(r"(\d{4})(?:\.0)?|(\d{4})-01-01(?: 00:00:00)?", _workbook_heading(cell))
+    return int(match.group(1) or match.group(2)) if match else None
+
+
+def _line_key(cells: list[str]) -> tuple[str, str]:
+    """A row's line number and label (its first and third cells), the number as the table writes it (``40``, not ``40.0``)."""
+    number = re.sub(r"\.0$", "", cells[0]) if cells else ""
+    return number, cells[2] if len(cells) > 2 else ""
+
+
+def parse_government_interest(sheets: dict[str, list], territory: str | None, first: int, last: int | None, places: int) -> dict[str, pd.Series]:
+    """Return government's interest paid from the rows of each sheet of ``DE_INTEREST_SHEETS`` (its name -> its rows), keyed as that is, billions of euros to ``places``, each year dated by 31 December.
+
+    Every year from ``first`` to ``last`` (None: to the sheet's last year), no
+    other. ``territory``: what the first row names (Reihe S.29), or None, where the
+    first row is the title (Reihe 1.4, all of Germany). Raises if a title, the unit,
+    the heading or the spending side's line has moved, or a year is missing, given
+    twice or not a number, so a changed table cannot shift a curve.
+    """
+    found: dict[str, pd.Series] = {}
+    for name, (sheet, who) in DE_INTEREST_SHEETS.items():
+        rows = [list(row) for row in sheets[sheet]]
+        text = [[_workbook_heading(cell) for cell in row] for row in rows]
+        title = _DE_INTEREST_TITLE.format(sheet=sheet, who=who)
+        top = [territory, title, _DE_INTEREST_UNIT] if territory is not None else [title, _DE_INTEREST_UNIT]
+        read_top = [cells[0] if cells else "" for cells in text[: len(top)]]
+        if read_top != top:
+            raise RuntimeError(f"German interest, sheet {sheet}: its first rows read {read_top}, not {top}; data module not modified.")
+        heading = next((i for i, cells in enumerate(text) if len(cells) > 2 and cells[2] == _DE_INTEREST_HEADING), None)
+        spending = next((i for i, cells in enumerate(text) if heading is not None and i > heading and _line_key(cells) == _DE_INTEREST_SPENDING), None)
+        line = next((i for i in range(spending + 1, len(text)) if _line_key(text[i]) == _DE_INTEREST_LINE), None) if spending is not None else None
+        if line is None:
+            raise RuntimeError(f"German interest, sheet {sheet}: no heading, or no line {' '.join(_DE_INTEREST_LINE)} under {' '.join(_DE_INTEREST_SPENDING)}; data module not modified.")
+        values: dict[int, float] = {}
+        for column, cell in enumerate(rows[heading]):
+            year = _heading_year(cell)
+            if year is None:
+                continue
+            if year in values:
+                raise RuntimeError(f"German interest, sheet {sheet}: {year} is in the heading twice; data module not modified.")
+            value = rows[line][column] if column < len(rows[line]) else None
+            try:
+                values[year] = round(float(value), places)
+            except (TypeError, ValueError):
+                raise RuntimeError(f"German interest, sheet {sheet}: {year} reads {value!r}, not a number; data module not modified.") from None
+        years = sorted(values)
+        if not years or years != list(range(first, (last if last is not None else years[-1]) + 1)):
+            raise RuntimeError(f"German interest, sheet {sheet}: the years {years[:1]} to {years[-1:]}, not every year from {first} to {last or 'the last'}; data module not modified.")
+        found[name] = pd.Series({pd.Timestamp(year, 12, 31): values[year] for year in years}, dtype=float).rename_axis(DATE_COLUMN)
+    return found
+
+
+def parse_west_german_interest(sheets: dict[str, list]) -> dict[str, pd.Series]:
+    """Return West Germany's interest paid, 1970 to 1990, in total (consolidated) and by level, from the rows of Fachserie 18 Reihe S.29's sheets (``parse_government_interest``)."""
+    read = parse_government_interest(sheets, _DE_WEST_TERRITORY, *_DE_WEST_INTEREST_YEARS, places=2)
+    return {name: values.loc[: pd.Timestamp(_DE_WEST_INTEREST_LAST_KEPT, 12, 31)] for name, values in read.items()}
+
+
+def parse_german_interest(sheets: dict[str, list]) -> dict[str, pd.Series]:
+    """Return all of Germany's interest paid from 1991, the total (consolidated) to 1995 and each level to 2002, from the rows of Fachserie 18 Reihe 1.4's sheets (``parse_government_interest``)."""
+    read = parse_government_interest(sheets, None, _DE_INTEREST_FIRST_YEAR, None, places=3)
+    return {name: values.loc[: pd.Timestamp(_DE_INTEREST_LAST_KEPT[name], 12, 31)] for name, values in read.items()}
+
+
+def _rows_of_sheets(content: bytes, sheets: tuple[str, ...]) -> dict[str, list[tuple]]:
+    """Return each named sheet's rows of a workbook served as ``content``."""
     import openpyxl  # the bake's own dependency, as the UK's: the program does not need it for this
 
     workbook = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     try:
-        return list(workbook[sheet].iter_rows(values_only=True))
+        return {sheet: list(workbook[sheet].iter_rows(values_only=True)) for sheet in sheets}
     finally:
         workbook.close()
+
+
+def _rows_of_sheet(content: bytes, sheet: str) -> list[tuple]:
+    """Return one sheet's rows of a workbook served as ``content``."""
+    return _rows_of_sheets(content, (sheet,))[sheet]
+
+
+def _sheets_of_extract(saved: Path) -> dict[str, list[list[str]]]:
+    """Return an extract's rows by sheet: each row of the CSV is its sheet's name, then its cells."""
+    sheets: dict[str, list[list[str]]] = {}
+    with Path(saved).open(encoding="utf-8", newline="") as file:
+        for row in csv.reader(file):
+            sheets.setdefault(row[0], []).append(row[1:])
+    return sheets
 
 
 def _west_german_gdp(saved_annual: Path | None, saved_quarterly: Path | None) -> tuple[dict[str, pd.Series], pd.Series, list[str]]:
@@ -2041,6 +2158,25 @@ def _german_debt(saved: Path | None) -> tuple[dict[str, pd.Series], str]:
     return parse_german_debt(rows), f"{Path(saved).name} (extracted from sheet {DE_DEBT_SHEET} of {DESTATIS_PUBLIC_DEBT_URL})"
 
 
+def _german_interest(saved_west: Path | None, saved_unified: Path | None) -> tuple[dict[str, pd.Series], dict[str, pd.Series], list[str]]:
+    """Return ``(West Germany's interest by level, all of Germany's, where each was read from)``: from the Federal Statistical Office, or the extracts ``saved``."""
+    sheets = tuple(sheet for sheet, _who in DE_INTEREST_SHEETS.values())
+    names = []
+    read: list[dict[str, pd.Series]] = []
+    for saved, url, parse, what in (
+        (saved_west, DESTATIS_REVISED_YEARS_URL, parse_west_german_interest, "Fachserie 18 Reihe S.29, West Germany's years of 1970 to 1991"),
+        (saved_unified, DESTATIS_DETAILED_YEARS_URL, parse_german_interest, "Fachserie 18 Reihe 1.4, Germany's years from 1991"),
+    ):
+        if saved is None:
+            print(f"Downloading the Federal Statistical Office's {what} …")
+            read.append(parse(_rows_of_sheets(_destatis_content(url), sheets)))
+            names.append(url)
+        else:
+            read.append(parse(_sheets_of_extract(saved)))
+            names.append(f"{Path(saved).name} (extracted from sheets {', '.join(sheets)} of {url})")
+    return read[0], read[1], names
+
+
 def bake_german_archives(
     source_path: Path | None = None,
     saved_csv: Path | None = None,
@@ -2051,14 +2187,18 @@ def bake_german_archives(
     saved_gdp_annual_csv: Path | None = None,
     saved_gdp_quarterly_csv: Path | None = None,
     saved_debt_csv: Path | None = None,
+    saved_interest_west_csv: Path | None = None,
+    saved_interest_csv: Path | None = None,
 ) -> None:
-    """Extract the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, and West Germany's consumer prices, population and GDP, and embed them into ``ratesplot/de_archive_data.py``.
+    """Extract the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, and West Germany's consumer prices, population and GDP, and Germany's debt and interest, and embed them into ``ratesplot/de_archive_data.py``.
 
     ``saved_csv``, ``saved_discount_csv``, ``saved_cpi_workbook``,
     ``saved_population_text``, ``saved_mortgage_csvs`` (each name of
     ``DE_MORTGAGE_HISTORY_SERIES`` -> its file), ``saved_gdp_annual_csv``,
-    ``saved_gdp_quarterly_csv`` and ``saved_debt_csv`` read the downloads already on disk (as saved in
-    ``tools/de_fixtures``) instead of fetching them. The yield is a monthly average, so each month is dated by
+    ``saved_gdp_quarterly_csv``, ``saved_debt_csv``, ``saved_interest_west_csv`` and
+    ``saved_interest_csv`` read the downloads already on disk (as saved in
+    ``tools/de_fixtures``) instead of fetching them. The interest (batch 16, 16.6) is in
+    the source's billions of euros, each year dated by 31 December; ``de_data`` joins it. The yield is a monthly average, so each month is dated by
     its first day; every value the series has is kept (to 2020-04), and
     ``de_data`` uses the months before the term structure begins. The discount
     rate is kept on the days it changed (``parse_bundesbank_change_days``);
@@ -2119,6 +2259,12 @@ def bake_german_archives(
     west_gdp_quarters = _require_rows(west_quarters.rename("value").to_frame(), "West Germany's quarterly GDP")
     debt, debt_name = _german_debt(saved_debt_csv)
     debts = {name: _require_rows(values.rename("value").to_frame(), f"Germany's debt, {name}") for name, values in debt.items()}
+    west_interest, unified_interest, interest_names = _german_interest(saved_interest_west_csv, saved_interest_csv)
+    interests = {
+        **{f"EMBEDDED_DE_WEST_INTEREST_{name.upper()}": _require_rows(values.rename("value").to_frame(), f"West Germany's interest, {name}") for name, values in west_interest.items()},
+        **{f"EMBEDDED_DE_INTEREST_{name.upper()}": _require_rows(values.rename("value").to_frame(), f"Germany's interest, {name}") for name, values in unified_interest.items()},
+    }
+    whose_interest = {"total": "general government's, consolidated", "federal": "the Bund's", "states": "the Länder's", "local": "the Gemeinden's"}
     block = (
         f"{DE_ARCHIVE_BEGIN_MARKER}\n"
         f"# Generated on {dt.date.today():%Y-%m-%d} from the Deutsche Bundesbank and the Federal Statistical Office, read from:\n# {source_name}\n"
@@ -2128,6 +2274,7 @@ def bake_german_archives(
         + "".join(f"# {name}\n" for name in mortgage_names)
         + "".join(f"# {name}\n" for name in west_gdp_names)
         + f"# {debt_name}\n"
+        + "".join(f"# {name}\n" for name in interest_names)
         + "# Historical observations in the source's own terms; de_data and rates join\n"
         "# them to the live series at run time.\n\n"
         + _embedded_list("EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY", comment, data, "value")
@@ -2240,10 +2387,34 @@ def bake_german_archives(
                 ("local", "The Gemeinden's and their associations'"),
             )
         )
+        + "\n"
+        + "\n".join(
+            _embedded_list(
+                f"EMBEDDED_DE_WEST_INTEREST_{name.upper()}",
+                f"West Germany's interest paid, {whose_interest[name]}, the Federal Statistical Office's (Fachserie 18\n"
+                "Reihe S.29, after the revision of 2005), billions of euros at 1.95583, each year dated by 31\n"
+                "December, to 1990.",
+                interests[f"EMBEDDED_DE_WEST_INTEREST_{name.upper()}"],
+                "value",
+            )
+            for name in DE_INTEREST_SHEETS
+        )
+        + "\n"
+        + "\n".join(
+            _embedded_list(
+                f"EMBEDDED_DE_INTEREST_{name.upper()}",
+                f"All of Germany's interest paid, {whose_interest[name]}, the Federal Statistical Office's (Fachserie 18\n"
+                "Reihe 1.4), billions of euros at 1.95583, each year dated by 31 December, from 1991 to\n"
+                f"{_DE_INTEREST_LAST_KEPT[name]}, whose figure is only for the check that it is Eurostat's.",
+                interests[f"EMBEDDED_DE_INTEREST_{name.upper()}"],
+                "value",
+            )
+            for name in DE_INTEREST_SHEETS
+        )
         + f"{DE_ARCHIVE_END_MARKER}"
     )
     _replace_generated_block(source_path, DE_ARCHIVE_BEGIN_MARKER, DE_ARCHIVE_END_MARKER, block)
-    print(f"Embedded the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, West Germany's consumer prices, population and GDP, and Germany's debt by level, into {source_path}")
+    print(f"Embedded the Bundesbank's yield on public debt securities, discount rate and older mortgage rates, West Germany's consumer prices, population and GDP, and Germany's debt and interest by level, into {source_path}")
     print(f"  EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY {len(data):5,} values, {data.index[0]:%Y-%m-%d} to {data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_DISCOUNT_RATE_CHANGES     {len(discount_data):5,} changes, {discount_data.index[0]:%Y-%m-%d} to {discount_data.index[-1]:%Y-%m-%d}")
     print(f"  EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS   {len(west_all):5,} months, {west_all.index[0]:%Y-%m-%d} to {west_all.index[-1]:%Y-%m-%d}")
@@ -2258,6 +2429,7 @@ def bake_german_archives(
         ("EMBEDDED_DE_WEST_GDP_OLD_BASIS", "years", west_old_basis),
         ("EMBEDDED_DE_WEST_GDP_QUARTERS", "quarters", west_gdp_quarters),
         *((f"EMBEDDED_DE_DEBT_{name.upper()}", "dates", frame) for name, frame in debts.items()),
+        *((name, "years", frame) for name, frame in interests.items()),
     ):
         print(f"  {name:37} {len(frame):5,} {what}, {frame.index[0]:%Y-%m-%d} to {frame.index[-1]:%Y-%m-%d}")
 

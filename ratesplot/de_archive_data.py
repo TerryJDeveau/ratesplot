@@ -34,7 +34,7 @@ hand-edit it.
 """
 
 # BEGIN AUTO-GENERATED GERMAN ARCHIVE DATA
-# Generated on 2026-11-05 from the Deutsche Bundesbank and the Federal Statistical Office, read from:
+# Generated on 2026-11-10 from the Deutsche Bundesbank and the Federal Statistical Office, read from:
 # bbk01_WU0004.csv (saved from https://www.bundesbank.de/statistic-rmi/StatisticDownload?tsId=BBK01.WU0004)
 # bbin1_BBKDIS.csv (saved from https://api.statistiken.bundesbank.de/rest/download/BBIN1/M.DE.BBK.BBKDIS.DEM.ME?format=csv&lang=en)
 # destatis_vpi_lange_reihen.xlsx (saved from https://www.destatis.de/DE/Themen/Wirtschaft/Preise/Verbraucherpreisindex/Publikationen/Downloads-Verbraucherpreise/verbraucherpreisindex-lange-reihen-xlsx-5611103.xlsx?__blob=publicationFile)
@@ -44,6 +44,8 @@ hand-edit it.
 # destatis_81000_117_gdp.csv (extracted from sheet csv-81000-117 of https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/Downloads-Inlandsprodukt/statistischer-bericht-2180120.xlsx?__blob=publicationFile)
 # destatis_fs18_s27_gdp_q.csv (extracted from sheet 1.1 of https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/Downloads-Inlandsprodukt/inlandsprodukt-revidiert-vierteljahr-2189027919005.xlsx?__blob=publicationFile)
 # destatis_fs14_r5_debt.csv (extracted from sheet 1.1.1 of https://www.destatis.de/DE/Themen/Staat/Oeffentliche-Finanzen/Schulden-Finanzvermoegen/Publikationen/Downloads-Schulden/schulden-oeffentlicher-haushalte-2140500217005.xlsx?__blob=publicationFile)
+# destatis_fs18_s29_interest.csv (extracted from sheets 3.4.3.2, 3.4.3.4, 3.4.3.5, 3.4.3.6 of https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/Downloads-Inlandsprodukt/inlandsprodukt-revidiert-jahr-2189029919005.xlsx?__blob=publicationFile)
+# destatis_fs18_r14_interest.csv (extracted from sheets 3.4.3.2, 3.4.3.4, 3.4.3.5, 3.4.3.6 of https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/Downloads-Inlandsprodukt/inlandsprodukt-endgueltig-xlsx-2180140.xlsx?__blob=publicationFile)
 # Historical observations in the source's own terms; de_data and rates join
 # them to the live series at run time.
 
@@ -2353,5 +2355,178 @@ EMBEDDED_DE_DEBT_LOCAL = [
     ("1998-12-31", 101355.95),
     ("1999-12-31", 101922.46),
     ("2000-12-31", 98011.07),
+]
+
+# West Germany's interest paid, general government's, consolidated, the Federal Statistical Office's (Fachserie 18
+# Reihe S.29, after the revision of 2005), billions of euros at 1.95583, each year dated by 31
+# December, to 1990.
+EMBEDDED_DE_WEST_INTEREST_TOTAL = [
+    ("1970-12-31", 3.33),
+    ("1971-12-31", 3.81),
+    ("1972-12-31", 4.5),
+    ("1973-12-31", 5.39),
+    ("1974-12-31", 6.52),
+    ("1975-12-31", 7.67),
+    ("1976-12-31", 9.61),
+    ("1977-12-31", 10.16),
+    ("1978-12-31", 10.68),
+    ("1979-12-31", 12.97),
+    ("1980-12-31", 16.18),
+    ("1981-12-31", 20.19),
+    ("1982-12-31", 24.04),
+    ("1983-12-31", 26.24),
+    ("1984-12-31", 27.4),
+    ("1985-12-31", 28.63),
+    ("1986-12-31", 28.17),
+    ("1987-12-31", 28.61),
+    ("1988-12-31", 29.84),
+    ("1989-12-31", 31.56),
+    ("1990-12-31", 34.35),
+]
+
+# West Germany's interest paid, the Bund's, the Federal Statistical Office's (Fachserie 18
+# Reihe S.29, after the revision of 2005), billions of euros at 1.95583, each year dated by 31
+# December, to 1990.
+EMBEDDED_DE_WEST_INTEREST_FEDERAL = [
+    ("1970-12-31", 1.46),
+    ("1971-12-31", 1.59),
+    ("1972-12-31", 1.76),
+    ("1973-12-31", 2.27),
+    ("1974-12-31", 2.65),
+    ("1975-12-31", 3.07),
+    ("1976-12-31", 4.22),
+    ("1977-12-31", 4.77),
+    ("1978-12-31", 5.22),
+    ("1979-12-31", 6.33),
+    ("1980-12-31", 8.24),
+    ("1981-12-31", 10.35),
+    ("1982-12-31", 12.39),
+    ("1983-12-31", 13.9),
+    ("1984-12-31", 14.73),
+    ("1985-12-31", 15.32),
+    ("1986-12-31", 15.27),
+    ("1987-12-31", 15.96),
+    ("1988-12-31", 16.43),
+    ("1989-12-31", 17.12),
+    ("1990-12-31", 18.87),
+]
+
+# West Germany's interest paid, the Länder's, the Federal Statistical Office's (Fachserie 18
+# Reihe S.29, after the revision of 2005), billions of euros at 1.95583, each year dated by 31
+# December, to 1990.
+EMBEDDED_DE_WEST_INTEREST_STATES = [
+    ("1970-12-31", 0.91),
+    ("1971-12-31", 1.08),
+    ("1972-12-31", 1.24),
+    ("1973-12-31", 1.33),
+    ("1974-12-31", 1.69),
+    ("1975-12-31", 2.23),
+    ("1976-12-31", 2.91),
+    ("1977-12-31", 3.19),
+    ("1978-12-31", 3.4),
+    ("1979-12-31", 4.21),
+    ("1980-12-31", 4.97),
+    ("1981-12-31", 6.17),
+    ("1982-12-31", 7.6),
+    ("1983-12-31", 8.45),
+    ("1984-12-31", 9.22),
+    ("1985-12-31", 9.75),
+    ("1986-12-31", 9.82),
+    ("1987-12-31", 9.8),
+    ("1988-12-31", 10.16),
+    ("1989-12-31", 10.84),
+    ("1990-12-31", 11.5),
+]
+
+# West Germany's interest paid, the Gemeinden's, the Federal Statistical Office's (Fachserie 18
+# Reihe S.29, after the revision of 2005), billions of euros at 1.95583, each year dated by 31
+# December, to 1990.
+EMBEDDED_DE_WEST_INTEREST_LOCAL = [
+    ("1970-12-31", 1.22),
+    ("1971-12-31", 1.47),
+    ("1972-12-31", 1.85),
+    ("1973-12-31", 2.21),
+    ("1974-12-31", 2.67),
+    ("1975-12-31", 2.85),
+    ("1976-12-31", 2.97),
+    ("1977-12-31", 2.72),
+    ("1978-12-31", 2.56),
+    ("1979-12-31", 2.99),
+    ("1980-12-31", 3.53),
+    ("1981-12-31", 4.22),
+    ("1982-12-31", 4.63),
+    ("1983-12-31", 4.47),
+    ("1984-12-31", 4.28),
+    ("1985-12-31", 4.18),
+    ("1986-12-31", 3.84),
+    ("1987-12-31", 3.6),
+    ("1988-12-31", 3.7),
+    ("1989-12-31", 4.07),
+    ("1990-12-31", 4.46),
+]
+
+# All of Germany's interest paid, general government's, consolidated, the Federal Statistical Office's (Fachserie 18
+# Reihe 1.4), billions of euros at 1.95583, each year dated by 31 December, from 1991 to
+# 1995, whose figure is only for the check that it is Eurostat's.
+EMBEDDED_DE_INTEREST_TOTAL = [
+    ("1991-12-31", 42.65),
+    ("1992-12-31", 52.77),
+    ("1993-12-31", 55.756),
+    ("1994-12-31", 60.789),
+    ("1995-12-31", 66.581),
+]
+
+# All of Germany's interest paid, the Bund's, the Federal Statistical Office's (Fachserie 18
+# Reihe 1.4), billions of euros at 1.95583, each year dated by 31 December, from 1991 to
+# 2002, whose figure is only for the check that it is Eurostat's.
+EMBEDDED_DE_INTEREST_FEDERAL = [
+    ("1991-12-31", 25.366),
+    ("1992-12-31", 34.187),
+    ("1993-12-31", 35.311),
+    ("1994-12-31", 39.362),
+    ("1995-12-31", 44.2),
+    ("1996-12-31", 44.133),
+    ("1997-12-31", 44.052),
+    ("1998-12-31", 44.937),
+    ("1999-12-31", 42.882),
+    ("2000-12-31", 44.287),
+    ("2001-12-31", 42.501),
+    ("2002-12-31", 42.127),
+]
+
+# All of Germany's interest paid, the Länder's, the Federal Statistical Office's (Fachserie 18
+# Reihe 1.4), billions of euros at 1.95583, each year dated by 31 December, from 1991 to
+# 2002, whose figure is only for the check that it is Eurostat's.
+EMBEDDED_DE_INTEREST_STATES = [
+    ("1991-12-31", 12.665),
+    ("1992-12-31", 13.697),
+    ("1993-12-31", 14.854),
+    ("1994-12-31", 15.67),
+    ("1995-12-31", 16.479),
+    ("1996-12-31", 16.98),
+    ("1997-12-31", 17.54),
+    ("1998-12-31", 17.83),
+    ("1999-12-31", 17.156),
+    ("2000-12-31", 18.423),
+    ("2001-12-31", 18.917),
+    ("2002-12-31", 19.426),
+]
+
+# All of Germany's interest paid, the Gemeinden's, the Federal Statistical Office's (Fachserie 18
+# Reihe 1.4), billions of euros at 1.95583, each year dated by 31 December, from 1991 to
+# 2002, whose figure is only for the check that it is Eurostat's.
+EMBEDDED_DE_INTEREST_LOCAL = [
+    ("1991-12-31", 5.108),
+    ("1992-12-31", 5.713),
+    ("1993-12-31", 6.004),
+    ("1994-12-31", 6.062),
+    ("1995-12-31", 6.185),
+    ("1996-12-31", 5.956),
+    ("1997-12-31", 5.485),
+    ("1998-12-31", 5.269),
+    ("1999-12-31", 4.459),
+    ("2000-12-31", 4.959),
+    ("2001-12-31", 4.859),
+    ("2002-12-31", 4.624),
 ]
 # END AUTO-GENERATED GERMAN ARCHIVE DATA
