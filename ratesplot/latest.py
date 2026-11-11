@@ -77,6 +77,7 @@ from .config import (
     YIELD_COLUMNS,
     PlotConfig,
     component_column,
+    macro_column_kind,
     nation_by_key,
 )
 from .http import downloads_of, latest_get, note_quote_seconds, parse_boc_csv
@@ -178,10 +179,11 @@ def project_to_now(
     if not config.projections or data.empty or not observed or not _quotes_can_reach(config):
         return data
     end = data[DATE_COLUMN].max()
+    # Only a smooth series is projected (batch 42.1, ``config.SERIES_KINDS``).
     starts = {
         column: start
         for column, start in observed.items()
-        if column in data.columns and start is not None and start < end
+        if column in data.columns and macro_column_kind(column).projected and start is not None and start < end
         and (end - start).days <= _PROJECTION_MAX_AGE_DAYS
     }
     if not starts:

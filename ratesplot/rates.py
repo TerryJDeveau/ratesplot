@@ -38,6 +38,8 @@ from .config import (
     POLICY_RATE_STYLE,
     POLICY_TERMS,
     PRIME_RATE_STYLE,
+    SERIES_KINDS,
+    SET_BY_ANNOUNCEMENT,
     SPREAD_COLORS,
     SPREAD_STYLE,
     TERM_COLORS,
@@ -248,11 +250,21 @@ OBSERVED = {
 # subtitle, which names the last day drawn, names the period's last day (an
 # August average: 08-31, not 09-01).
 _PERIOD_END_MARGIN = pd.Timedelta(seconds=1)
-_MORTGAGE_HOLDS = {"us": "weekly", "cdn": "weekly", "uk": "monthly", "de": "monthly"}
+# A period, as ``config.SeriesKind`` names it, -> its key of ``OBSERVED``.
+_OBSERVED_PERIODS = {"day": "daily", "week": "weekly", "month": "monthly"}
+
+
+def holds_of(kind_key: str) -> str:
+    """Return how a value of the kind ``kind_key`` holds (batch 42.1, ``config.SERIES_KINDS``): ``HELD`` if set by announcement, else its period's key of ``OBSERVED``."""
+    kind = SERIES_KINDS[kind_key]
+    if kind.type == SET_BY_ANNOUNCEMENT:
+        return HELD
+    assert kind.period in _OBSERVED_PERIODS, (kind_key, kind)
+    return _OBSERVED_PERIODS[kind.period]
 
 
 def holding(values: pd.Series, kind: str) -> pd.Series:
-    """Return ``kind`` (``HELD`` or a key of ``OBSERVED``) for each of ``values``, as ``RateCurve.holds`` takes it."""
+    """Return ``kind`` (``HELD`` or a key of ``OBSERVED``, from ``holds_of``) for each of ``values``, as ``RateCurve.holds`` takes it."""
     assert kind == HELD or kind in OBSERVED, kind
     return pd.Series(kind, index=values.index, dtype=object)
 
@@ -459,7 +471,7 @@ def inflation_rate(country: str) -> RateCurve | None:
     except Exception as exc:
         print(f"  Warning: {nation_by_key(country).adjective} consumer prices unavailable ({exc}); inflation not drawn.")
         return None
-    return RateCurve(INFLATION_KEY, INFLATION_LABEL, values, INFLATION_STYLE, title="Inflation", holds=holding(values, "monthly"))
+    return RateCurve(INFLATION_KEY, INFLATION_LABEL, values, INFLATION_STYLE, title="Inflation", holds=holding(values, holds_of("inflation")))
 
 
 def _parts(*named: tuple[pd.Series, str, str]) -> tuple[tuple[pd.Timestamp, str, str], ...]:
@@ -495,7 +507,9 @@ def us_policy_target() -> RateCurve | None:
     # The monthly average is observed across its month (the last month's to
     # the target's first day); the target and its range are announced.
     lower, upper = pd.concat([monthly, target, low]), pd.concat([monthly, target, high])
-    holds = pd.concat([holding(monthly, "monthly"), holding(target, HELD), holding(low, HELD)])
+    holds = pd.concat(
+        [holding(monthly, holds_of("policy_monthly_average")), holding(target, holds_of("policy")), holding(low, holds_of("policy"))]
+    )
     parts = _parts(
         (monthly, "Fed Funds Rate (monthly avg.)", "Monthly Avg."),
         (target, "Fed Funds Target", "Target"),
@@ -513,7 +527,7 @@ def us_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
         return None
     # The rate banks paid each other that day: observed, not announced.
     return RateCurve("policy_market", OVERNIGHT_RATE_NAMED.format("Fed Funds, effective"), values, style, title="Policy Rate",
-                     holds=holding(values, "daily"))
+                     holds=holding(values, holds_of("policy_market")))
 
 
 def cdn_policy_target() -> RateCurve | None:
@@ -551,7 +565,7 @@ def cdn_policy_target() -> RateCurve | None:
     values = pd.concat([bank, target])
     parts = _parts((bank, "Bank Rate", "Bank Rate"), (target, "Target for the Overnight Rate", "Overnight Target"))
     # Both are announced: each holds until it is changed.
-    return RateCurve("policy", _named(parts), values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, HELD),
+    return RateCurve("policy", _named(parts), values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, holds_of("policy")),
                      parts=parts)
 
 
@@ -563,7 +577,7 @@ def cdn_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
         print(f"  Warning: Bank of Canada CORRA ({CDN_CORRA_SERIES}) unavailable ({exc}); not drawn.")
         return None
     return RateCurve("policy_market", OVERNIGHT_RATE_NAMED.format("CORRA"), values, style, title="Policy Rate",
-                     holds=holding(values, "daily"))
+                     holds=holding(values, holds_of("policy_market")))
 
 
 def _baked(rows: list[tuple[str, float]]) -> pd.Series:
@@ -595,7 +609,7 @@ def uk_policy_target() -> RateCurve | None:
     values = _joined(history, live)
     if values.empty:
         return None
-    return RateCurve("policy", "Official Bank Rate", values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, HELD))
+    return RateCurve("policy", "Official Bank Rate", values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, holds_of("policy")))
 
 
 def uk_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
@@ -606,7 +620,7 @@ def uk_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
         print(f"  Warning: Bank of England SONIA ({UK_MARKET_SERIES}) unavailable ({exc}); not drawn.")
         return None
     return RateCurve("policy_market", OVERNIGHT_RATE_NAMED.format("SONIA"), values, style, title="Policy Rate",
-                     holds=holding(values, "daily"))
+                     holds=holding(values, holds_of("policy_market")))
 
 
 def _uk_mortgage(term: str) -> pd.Series:
@@ -692,7 +706,7 @@ def de_policy_target() -> RateCurve | None:
         (values, "ECB Main Refinancing Rate", "ECB Main Refinancing Rate"),
     )
     values = pd.concat([discount, values])
-    return RateCurve("policy", _named(parts), values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, HELD),
+    return RateCurve("policy", _named(parts), values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, holds_of("policy")),
                      parts=parts)
 
 
@@ -718,7 +732,7 @@ def de_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
     values = pd.concat([eonia, estr])
     parts = _parts((eonia, "EONIA", "EONIA"), (estr, "€STR", "€STR"))
     return RateCurve("policy_market", OVERNIGHT_RATE_NAMED.format(_named(parts)), values, style, title="Policy Rate",
-                     holds=holding(values, "daily"), parts=parts, named_in=OVERNIGHT_RATE_NAMED)
+                     holds=holding(values, holds_of("policy_market")), parts=parts, named_in=OVERNIGHT_RATE_NAMED)
 
 
 def _de_mortgage(term: str) -> pd.Series:
@@ -796,8 +810,8 @@ def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) ->
         return None
     # The prime rates are announced, and so is the tracker (Bank Rate's
     # changes); the mortgage rates are surveys and averages, observed weekly
-    # or monthly.
-    holds = holding(values, HELD if term in ("prime", "tracker") else _MORTGAGE_HOLDS[country])
+    # or monthly (``config.SERIES_KINDS``).
+    holds = holding(values, holds_of(term if term in ("prime", "tracker") else f"mortgage_{country}"))
     if country == "cdn" and term == "5":
         try:
             history = cdn_mortgage_history()
@@ -809,7 +823,7 @@ def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) ->
         else:
             history = history.loc[history.index < values.index[0]]
             values = pd.concat([history, values])
-            holds = pd.concat([holding(history, "monthly"), holds])
+            holds = pd.concat([holding(history, holds_of("mortgage_cdn_history")), holds])
     if margin:
         values = values + margin
     color_of = YIELD_TERMS[yield_term] if yield_term is not None else None
@@ -941,7 +955,7 @@ def with_announced(country: str, curve: RateCurve | None, end: pd.Timestamp) -> 
     if first is None:
         return curve
     added = values.loc[values.index >= first]
-    return replace(curve, values=values, holds=pd.concat([curve.holds, holding(added, HELD)]), announced=first)
+    return replace(curve, values=values, holds=pd.concat([curve.holds, holding(added, holds_of("policy"))]), announced=first)
 
 
 # The curves that follow a nation's policy target (batch 32.5, decision 90),
@@ -1009,7 +1023,7 @@ def with_followed(
     for day, value in added.items():
         drawn = f"; not yet in {own}" if day <= end else ", takes effect after the chart ends; not drawn"
         print(f"  Note: {curve.label}: {value:.2f}% from {day:%Y-%m-%d}, the policy target's change carried to it{drawn}.")
-    return replace(curve, values=pd.concat([curve.values, added]), holds=pd.concat([curve.holds, holding(added, HELD)]),
+    return replace(curve, values=pd.concat([curve.values, added]), holds=pd.concat([curve.holds, holding(added, holds_of(term))]),
                    announced=added.index[0])
 
 

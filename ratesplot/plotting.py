@@ -92,6 +92,7 @@ from .config import (
     POPULATION_TITLE,
     PROJECTION_ALPHA,
     SEASONALLY_ADJUSTED_NATIONS,
+    SERIES_KINDS,
     PROJECTION_KEY_COLOR,
     PROJECTION_LABEL,
     PROJECTION_LABEL_PREFIX,
@@ -283,6 +284,11 @@ def add_macro_line(
     return line
 
 
+# A yield's monthly figures, and a spread's taken from them, drawn as their
+# kind is (batch 42.1, ``config.SERIES_KINDS``): each across its month.
+_MONTHLY_YIELD = SERIES_KINDS["yield_monthly"].drawstyle
+
+
 def _yield_style(column: str, config: PlotConfig, nation_key: str) -> dict:
     """Return the line style of one yield column: its term's own colour, unless the nation draws the default five.
 
@@ -371,7 +377,7 @@ def add_stepped_yield_lines(
 
         if not historical.empty:
             (line,) = ax.plot(
-                historical.index, historical.values, label=label, drawstyle="steps-post", **_yield_style(column, config, nation_key)
+                historical.index, historical.values, label=label, **(_yield_style(column, config, nation_key) | _MONTHLY_YIELD)
             )
             mark_series(line, label, YIELD_AXIS)
             mark_reading(line, format_yield, quoted=True)
@@ -460,7 +466,7 @@ def add_rate_lines(
         else:
             monthly = values.loc[values.index <= curve.steps_until]
             daily = values.loc[values.index > curve.steps_until]
-            parts = [(monthly, style | {"drawstyle": "steps-post"}, reading), (daily, style, reading)]
+            parts = [(monthly, style | _MONTHLY_YIELD, reading), (daily, style, reading)]
         name = legend_label(curve, config)
         exported = f"{name}, lower limit" if curve.upper is not None else name
         first: Line2D | None = None
@@ -1082,7 +1088,7 @@ def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
         value_format=format_index,
         tick_format=format_index_tick,
         export_axis=INDEX_AXIS,
-        held_across_month=True,
+        held_across_month=SERIES_KINDS["price_index"].period == "month",  # its kind's period (batch 42.1)
     )
 
 

@@ -354,6 +354,7 @@ def _curve(line: Line2D, name: str, how: _Mark, height: float) -> Curve | None:
     if not len(xy):
         return None
     days, values = xy[:, 0] - _EPOCH, xy[:, 1]
+    # Drawn in steps as its series' kind says (batch 42.1, ``config.SeriesKind.in_steps``): read as the value in force.
     steps = line.get_drawstyle().startswith("steps")
     if how.projected:
         valid = np.isfinite(days) & np.isfinite(values)

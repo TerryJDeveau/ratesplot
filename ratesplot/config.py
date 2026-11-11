@@ -665,12 +665,144 @@ REAL_YIELD_STYLE = {"linestyle": (0, (6, 2))}
 # or else with only other rates on it (--policy, --mortgages).
 YIELD_AXIS_LABEL = "Bond Yield (%)"
 RATE_AXIS_LABEL = "Rate (%)"
+
+# Each kind of series' type and timing (batch 42.1; Terry's item 1 of
+# 2026-11-10, decision 125): how a series behaves between its observations
+# and after its last, and what an observation's date stands for. Every
+# series drawn, and every one added later, has its kind here.
+#
+# Three types:
+# - set by announcement: a policy rate, and the rates that follow it (the
+#   prime rates, the UK tracker): the value in force each day, held until the
+#   next announcement; known, not forecast.
+# - market: bond yields, real yields, spreads, the surveyed mortgage rates,
+#   the market's overnight rate; later exchange rates and stock indexes: not
+#   filled in between observations, and not projected (fresher figures come
+#   from the quotes).
+# - smooth: debt, GDP, interest, the balance of payments, the population, the
+#   price index and the inflation rate taken from it: filled in between
+#   observations (42.2) and projected past the last (--projections).
+# The fourth combination, projected but not filled in, can't occur: two known
+# points on either side pin a value down at least as well as one point
+# projected ahead. A series filled in but not projected needs no type of its
+# own: a switch of its own turns its projection off (43.2).
+#
+# The timing, a property of its own: a moment (debt at a quarter's end, a
+# day's closing yield, a population estimate) or a period, named by its
+# length (a month's price index, a week's or a month's surveyed rate, the
+# day an overnight rate is paid for). A sum over a window ending at its date
+# (the TTM sums; a year's figure in the older history) is a period, the
+# window's, dated by its last day (``frames.at_quarter_end``; 42.3).
+#
+# Before batch 42 the timing showed only in the drawing: steps for a value
+# held across its period or to the next announcement (decision 44). One
+# drawing that rule doesn't give is kept by ``held``: a moment drawn held to
+# the next observation, in steps (debt, as drawn before 42.2). The population,
+# a moment too, is drawn through its points, as -p divides by it
+# (``measures.population_on``).
+SET_BY_ANNOUNCEMENT = "set by announcement"
+MARKET = "market"
+SMOOTH = "smooth"
+SERIES_TYPES = (SET_BY_ANNOUNCEMENT, MARKET, SMOOTH)
+# A period's names: a day, a week, a month, a quarter's flow, a year's, and a
+# sum over the twelve months its date ends.
+PERIODS = ("day", "week", "month", "quarter", "year", "12 months")
+
+
+@dataclass(frozen=True)
+class SeriesKind:
+    """One kind of series' type and timing (``SERIES_KINDS``; batch 42.1)."""
+
+    type: str  # one of SERIES_TYPES
+    period: str | None = None  # one of PERIODS; None: a moment
+    # A moment drawn held to the next observation, in steps (see above); a
+    # period's value and a set rate are always held.
+    held: bool = False
+
+    def __post_init__(self) -> None:
+        assert self.type in SERIES_TYPES, self.type
+        assert self.period is None or self.period in PERIODS, self.period
+        assert not self.held or self.period is None, "a period's value is held whatever ``held`` says"
+
+    @property
+    def filled_in(self) -> bool:
+        """True for a series filled in between its observations (42.2): a smooth one."""
+        return self.type == SMOOTH
+
+    @property
+    def projected(self) -> bool:
+        """True for a series projected past its last observation (--projections): a smooth one."""
+        return self.type == SMOOTH
+
+    @property
+    def in_steps(self) -> bool:
+        """True for a series drawn in steps, each value held across its period, to the next announcement or (``held``) to the next observation."""
+        return self.type == SET_BY_ANNOUNCEMENT or self.period is not None or self.held
+
+    @property
+    def drawstyle(self) -> dict:
+        """Its line's drawing, merged into its style: steps, or nothing (matplotlib's straight segments)."""
+        return {"drawstyle": "steps-post"} if self.in_steps else {}
+
+
+# Each kind, by the key its curve's style or ``RateCurve.holds`` names it by.
+# The mortgage rates by nation, as each nation's are surveyed: the U.S.' (the
+# Freddie Mac survey) and Canada's posted rates weekly, before them Canada's
+# monthly CMHC rate; the UK's quoted rates and Germany's rates on new loans
+# monthly averages. The levels of debt and interest (``debt_f`` ...) take the
+# aggregate's kind (below, with their styles).
+SERIES_KINDS = {
+    # The yield axis.
+    "yield": SeriesKind(MARKET),  # a day's closing yield, or the day's quote (--cur)
+    # A monthly figure before a term's daily ones begin: Canada's to 2001, the
+    # UK's monthly averages, Germany's month-end values, each drawn across its month.
+    "yield_monthly": SeriesKind(MARKET, "month"),
+    "real_yield": SeriesKind(MARKET),
+    "spread": SeriesKind(MARKET),
+    "policy": SeriesKind(SET_BY_ANNOUNCEMENT),
+    "policy_monthly_average": SeriesKind(MARKET, "month"),  # the fed funds rate before its target (1982-09)
+    "policy_market": SeriesKind(MARKET, "day"),  # the rate paid for one night, held across its day
+    "prime": SeriesKind(SET_BY_ANNOUNCEMENT),
+    "tracker": SeriesKind(SET_BY_ANNOUNCEMENT),
+    "mortgage_us": SeriesKind(MARKET, "week"),
+    "mortgage_cdn": SeriesKind(MARKET, "week"),
+    "mortgage_cdn_history": SeriesKind(MARKET, "month"),
+    "mortgage_uk": SeriesKind(MARKET, "month"),
+    "mortgage_de": SeriesKind(MARKET, "month"),
+    "inflation": SeriesKind(SMOOTH, "month"),  # a month's 12-month rise, taken from the price index
+    # The right axis: stocks are moments, flows the sums of their windows.
+    "debt": SeriesKind(SMOOTH, held=True),
+    "federal_debt": SeriesKind(SMOOTH, held=True),
+    "net_debt": SeriesKind(SMOOTH, held=True),
+    "gdp": SeriesKind(SMOOTH, "12 months"),
+    "interest": SeriesKind(SMOOTH, "12 months"),
+    "payments_credits": SeriesKind(SMOOTH, "12 months"),
+    "payments_debits": SeriesKind(SMOOTH, "12 months"),
+    # The extra axis.
+    "price_index": SeriesKind(SMOOTH, "month"),
+    "population": SeriesKind(SMOOTH),
+}
+
+
+def _one_drawstyle(*keys: str) -> dict:
+    """The drawing shared by the kinds ``keys``, for a style they share (the mortgage rates')."""
+    drawings = {tuple(SERIES_KINDS[key].drawstyle.items()) for key in keys}
+    assert len(drawings) == 1, keys
+    return SERIES_KINDS[keys[0]].drawstyle
+
+
+# The yields' styles, above, are a day's figures drawn straight; their
+# monthly figures take "yield_monthly"'s steps where they are drawn
+# (``plotting.add_stepped_yield_lines``).
+assert not SERIES_KINDS["yield"].drawstyle and not SERIES_KINDS["real_yield"].drawstyle
+
+
 # --policy (ratesplot.rates): a step line, as a policy rate holds until it is
 # changed; dark brown, a colour no yield term has, a little thicker than the
 # yields so it reads as the anchor of the curve. (Dark gold at first: on
 # real data it was hard to tell from the 2-year's orange where they cross;
 # Terry chose dark brown, 2026-10-06.)
-POLICY_RATE_STYLE = {"color": "#5c4033", "linewidth": 1.8, "drawstyle": "steps-post"}
+POLICY_RATE_STYLE = {"color": "#5c4033", "linewidth": 1.8} | SERIES_KINDS["policy"].drawstyle
 # --policy:LIST (batch 9.1; Terry, decision 27, 2026-10-13): each central
 # bank's official rate ("target", the default) and the market's overnight rate
 # around it ("market": the effective fed funds rate, CORRA, SONIA, €STR), which
@@ -683,7 +815,7 @@ POLICY_RATE_STYLE = {"color": "#5c4033", "linewidth": 1.8, "drawstyle": "steps-p
 # band has one.
 POLICY_TERMS = ("target", "market")
 DEFAULT_POLICY_TERMS = ("target",)
-POLICY_MARKET_STYLE = POLICY_RATE_STYLE | {"color": "#9d8c85", "linewidth": 0.8}
+POLICY_MARKET_STYLE = POLICY_RATE_STYLE | {"color": "#9d8c85", "linewidth": 0.8} | SERIES_KINDS["policy_market"].drawstyle
 # The U.S. target range (from 2008-12-16) is drawn as a band between its two
 # limits, each a step line in the policy rate's style, shaded between them.
 POLICY_BAND_ALPHA = 0.25
@@ -694,14 +826,14 @@ POLICY_BAND_ALPHA = 0.25
 # red and purple and the policy rate brown. Monthly steps, each month's rise
 # across its own month, as an observed value is drawn (decision 44); a little
 # thicker than the yields, so the dots read.
-INFLATION_STYLE = {"color": "#ff1493", "linewidth": 2.0, "linestyle": ":", "drawstyle": "steps-post"}
+INFLATION_STYLE = {"color": "#ff1493", "linewidth": 2.0, "linestyle": ":"} | SERIES_KINDS["inflation"].drawstyle
 # --cpi[:sa] (batch 13.4): the consumer price index on an axis of its
 # own, in the inflation curve's deep pink, solid, so the two read as one
 # measure (a slope of the index is the rise the inflation curve shows), and
 # as thick as the right-axis curves it is listed with. Monthly steps, each
 # month's index across its own month, as an observed value is drawn
 # (decision 44).
-PRICE_INDEX_STYLE = {"color": "#ff1493", "linewidth": 2.5, "drawstyle": "steps-post"}
+PRICE_INDEX_STYLE = {"color": "#ff1493", "linewidth": 2.5} | SERIES_KINDS["price_index"].drawstyle
 # The index drawn (--cpi[:sa]): its legend label, title phrase
 # and axis label, and its unit in Export chart's data, which names each nation's base as its
 # statistics office states it (``PRICE_INDEX_BASES``).
@@ -719,7 +851,7 @@ SEASONALLY_ADJUSTED_NATIONS = ("us", "cdn", "de")
 # right-axis curves it is listed with. Not steps: an estimate is a count on one
 # date, not a value held across a period, and between two of them -p divides by
 # a straight line on the log scale (``measures.population_on``), which this is.
-POPULATION_STYLE = {"color": "#b8860b", "linewidth": 2.5}
+POPULATION_STYLE = {"color": "#b8860b", "linewidth": 2.5} | SERIES_KINDS["population"].drawstyle
 POPULATION_LABEL = "Population"
 POPULATION_TITLE = "Population"
 POPULATION_AXIS_LABEL = "Population (Persons, Log Scale)"
@@ -792,7 +924,9 @@ MORTGAGE_OWN_COLORS = {"15": "#556b2f", "prime": "#696969", "svr": "#696969", "t
 # Dashed steps (a posted or surveyed rate holds until the next), thinner than
 # the policy rate; the variable rates dash-dotted: Canada's, as it shares the
 # 5-year's colour, and the UK tracker, as it shares the policy rate's.
-MORTGAGE_STYLE = {"linewidth": 1.5, "linestyle": "--", "drawstyle": "steps-post"}
+MORTGAGE_STYLE = {"linewidth": 1.5, "linestyle": "--"} | _one_drawstyle(
+    "mortgage_us", "mortgage_cdn", "mortgage_cdn_history", "mortgage_uk", "mortgage_de", "prime", "tracker"
+)
 VARIABLE_MORTGAGE_STYLE = MORTGAGE_STYLE | {"linestyle": "-."}
 # The prime rate: dotted, a base rate rather than a mortgage of a term.
 PRIME_RATE_STYLE = MORTGAGE_STYLE | {"linestyle": ":", "linewidth": 1.8}
@@ -803,7 +937,7 @@ PRIME_RATE_STYLE = MORTGAGE_STYLE | {"linestyle": ":", "linewidth": 1.8}
 # drawn the left axis is "Yield and Spread (%)".
 DEFAULT_SPREADS = (("10y", "2y"), ("10y", "3m"), ("30y", "10y"))
 SPREAD_COLORS = ("#4b0082", "#c71585", "#000080", "#800000", "#008080")
-SPREAD_STYLE = {"linewidth": 2.5}
+SPREAD_STYLE = {"linewidth": 2.5} | SERIES_KINDS["spread"].drawstyle
 SPREAD_AXIS_LABEL = "Yield and Spread (%)"
 
 
@@ -1113,20 +1247,22 @@ TERM_COLORS = {
 # (Canada only) federal debt alone before the aggregate begins: dotted, so the
 # drop in level where it hands over reads as a change of coverage.
 MACRO_PLOT_STYLES = {
-    "debt": {"color": "black", "linewidth": 2.5, "drawstyle": "steps-post"},
-    "federal_debt": {"color": "black", "linewidth": 2.5, "drawstyle": "steps-post", "linestyle": ":"},
-    "gdp": {"color": "darkgreen", "linewidth": 2.5, "drawstyle": "steps-post", "linestyle": "-."},
-    "interest": {"color": "darkred", "linewidth": 2.5, "drawstyle": "steps-post", "linestyle": "--"},
+    "debt": {"color": "black", "linewidth": 2.5},
+    "federal_debt": {"color": "black", "linewidth": 2.5, "linestyle": ":"},
+    "gdp": {"color": "darkgreen", "linewidth": 2.5, "linestyle": "-."},
+    "interest": {"color": "darkred", "linewidth": 2.5, "linestyle": "--"},
     # Net debt (the UK's, batch 3), drawn with gross debt: solid as debt is,
     # in slate grey, a colour no other right-axis curve has.
-    "net_debt": {"color": "#708090", "linewidth": 2.5, "drawstyle": "steps-post"},
+    "net_debt": {"color": "#708090", "linewidth": 2.5},
     # The balance of payments (batch 23): money in and money out, in colours
     # no other right-axis curve has (debt black, GDP dark green, interest dark
     # red, net debt slate, the levels blue, brown, orange and teal), solid, so
     # that the shading between them carries the sign (PAYMENTS_SHADING).
-    "payments_credits": {"color": "#6a3d9a", "linewidth": 2.5, "drawstyle": "steps-post"},
-    "payments_debits": {"color": "#b8860b", "linewidth": 2.5, "drawstyle": "steps-post"},
+    "payments_credits": {"color": "#6a3d9a", "linewidth": 2.5},
+    "payments_debits": {"color": "#b8860b", "linewidth": 2.5},
 }
+# Each drawn as its kind is (batch 42.1): in steps, each value held to the next.
+MACRO_PLOT_STYLES = {key: style | SERIES_KINDS[key].drawstyle for key, style in MACRO_PLOT_STYLES.items()}
 
 # The gap between the balance of payments' two curves (batch 23, plan 23):
 # light green where more comes in than goes out (credits above debits), light
@@ -1143,9 +1279,13 @@ PAYMENTS_SHADING_ALPHA = 0.45
 COMPONENT_LETTERS = ("f", "n", "p", "m")
 COMPONENT_SYNONYMS = {"s": "p"}
 COMPONENT_COLORS = {"f": "#1f3a93", "n": "#8b4513", "p": "#d35400", "m": "#008080"}
+# Each level is of its aggregate's kind (batch 42.1), and drawn as it is.
+SERIES_KINDS.update(
+    {f"{kind}_{letter}": SERIES_KINDS[kind] for kind in ("debt", "interest") for letter in COMPONENT_LETTERS}
+)
 MACRO_PLOT_STYLES.update(
     {
-        f"{kind}_{letter}": {"color": color, "linewidth": 2.5, "drawstyle": "steps-post", "linestyle": linestyle}
+        f"{kind}_{letter}": {"color": color, "linewidth": 2.5, "linestyle": linestyle} | SERIES_KINDS[f"{kind}_{letter}"].drawstyle
         for kind, linestyle in (("debt", "-"), ("interest", "--"))
         for letter, color in COMPONENT_COLORS.items()
     }
@@ -1614,6 +1754,24 @@ DE = CountryMetadata(
     component_debt_label="{} German Public Debt",
     component_debt_title="{} German Public Debt",
 )
+
+
+def macro_column_kind(column: str) -> SeriesKind:
+    """The kind (``SERIES_KINDS``, batch 42.1) of the series a right-axis column holds, for any nation; a column untagged is an error.
+
+    The projection to today reads it (``latest.project_to_now``): only a
+    smooth series is projected.
+    """
+    keys = {component_column(kind, letter): f"{kind}_{letter}" for kind in ("debt", "interest") for letter in COMPONENT_LETTERS}
+    keys |= dict(zip(PAYMENTS_COLUMNS, _PAYMENTS_KEYS))
+    for metadata in (CDN, US, UK, DE):
+        keys |= {metadata.debt_column: "debt", metadata.gdp_column: "gdp", metadata.interest_column: "interest"}
+        if metadata.federal_debt_column is not None:
+            keys[metadata.federal_debt_column] = "federal_debt"
+        if metadata.net_debt_column is not None:
+            keys[metadata.net_debt_column] = "net_debt"
+    assert column in keys, f"{column!r} has no kind in SERIES_KINDS"
+    return SERIES_KINDS[keys[column]]
 
 
 # ---------------------------------------------------------------------------
