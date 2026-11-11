@@ -103,7 +103,7 @@ from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
 import ratesplot  # noqa: E402
 from ratesplot import cli, export, frontend, gui, hover, http, monitors, options, wait  # noqa: E402
 from ratesplot.axes import format_population, format_yield  # noqa: E402
-from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS  # noqa: E402
+from ratesplot.config import COMPARE_KEY, NATIONS, WEB_PAGE_ADDRESS  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
 from ratesplot.version import version_text  # noqa: E402
@@ -114,6 +114,8 @@ from ratesplot.version import version_text  # noqa: E402
 CHART_CASES = (
     "default", "c2015", "u_reg_r", "c_lv_r", "uk_rates", "de_rates", "all4", "policy_both", "nat_levels", "nat_fx", "inflation",
     "constant_pc", "cpi_sa", "population", "real_four",
+    # Batch 26: the comparison chart after the four nations', the policy rates with end labels.
+    "cmp_pol_l",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -267,7 +269,7 @@ def check_charts(cases: tuple[str, ...], outdir: Path, verbose: bool = False) ->
             output = io.StringIO()
             with contextlib.nullcontext() if verbose else contextlib.redirect_stdout(output):
                 written = verify_charts.run(outdir / name, tokens)
-            keys = [key for key in NATION_KEYS if key in app.pngs]
+            keys = [key for key in (*NATION_KEYS, COMPARE_KEY) if key in app.pngs]  # the comparison chart last (batch 26)
             verdicts = []
             if len(keys) != len(written):
                 verdicts.append(f"FAIL: the window drew {len(keys)} chart(s), the command line {len(written)}")
@@ -280,7 +282,7 @@ def check_charts(cases: tuple[str, ...], outdir: Path, verbose: bool = False) ->
             payloads, flags, unmatched, misspelled = cli.sort_tokens(opened.command_tokens())
             back = options.config_from_choices(payloads, flags)
             round_trip = not unmatched and not misspelled and all(
-                options.drawn_config(back, key) == options.drawn_config(app.shown_config, key) for key in keys
+                options.drawn_config(back, key) == options.drawn_config(app.shown_config, key) for key in keys if key in NATION_KEYS
             )
             verdicts.append("written line: same" if round_trip else f"FAIL: the written line draws otherwise: {' '.join(opened.command_tokens())}")
             all_same &= round_trip
@@ -944,6 +946,8 @@ def check_levels(check: Check) -> None:
             w.root.geometry(placed(size, -40))
             w.pump(30)
             for key, tab in app.tabs.items():
+                if key not in app.panel_flows:
+                    continue  # the comparison chart's tab (batch 26), which has no panel
                 app.notebook.select(tab)
                 w.pump(5)
                 panel = next(child for child in tab.winfo_children() if isinstance(child, ttk.LabelFrame))

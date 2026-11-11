@@ -84,7 +84,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 import ratesplot  # noqa: E402
 from ratesplot import cli, frontend, hover, http, options, plotting, web  # noqa: E402
 from ratesplot.cli import sort_tokens  # noqa: E402
-from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS, PlotConfig  # noqa: E402
+from ratesplot.config import COMPARE_KEY, NATIONS, WEB_PAGE_ADDRESS, PlotConfig  # noqa: E402
 from ratesplot.frontend import move_dates_updates, starting_choices  # noqa: E402
 from ratesplot.version import version_text  # noqa: E402
 from ratesplot.options import command_line_tokens, config_from_choices, drawn_config  # noqa: E402
@@ -167,6 +167,8 @@ CHART_CASES = (
     "c_uk_pay_mix",
     # Batch 23's third stage: Germany's monthly sums per person across unification.
     "de_pay_pc",
+    # Batch 26: the comparison chart after the four nations', the policy rates with end labels.
+    "cmp_pol_l",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -213,7 +215,7 @@ def check_charts(cases: tuple[str, ...], outdir: Path, verbose: bool = False) ->
         output = io.StringIO()
         with contextlib.nullcontext() if verbose else contextlib.redirect_stdout(output):
             written = verify_charts.run(outdir / name, tokens)
-        keys = [key for key in NATION_KEYS if key in drawing.pngs]
+        keys = [key for key in (*NATION_KEYS, COMPARE_KEY) if key in drawing.pngs]  # the comparison chart last (batch 26)
         verdicts = []
         if len(keys) != len(written):
             verdicts.append(f"FAIL: the page drew {len(keys)} chart(s), the command line {len(written)}")
@@ -903,7 +905,7 @@ def check_layout(check: Check) -> None:
     check("no exception", not at.exception, at.exception)
     titles = [header.value for header in at.subheader]
     wanted = [
-        "Country selection", "Curve selection", "Measure of debt, GDP, and interest", "Rates on the yield axis",
+        "Country selection", "Comparison chart", "Curve selection", "Measure of debt, GDP, and interest", "Rates on the yield axis",
         "Date window", "Final canvas size in pixels",
     ]
     check("the titled blocks in order", titles[: len(wanted)] == wanted, titles)
@@ -935,11 +937,12 @@ def check_layout(check: Check) -> None:
     # "?" left no room for its text (Canada's terms showed only the "?").
     # "Seas. adj." (batch 13.4), a list with no label under its flag, has it
     # on its one box instead, as the window's ⓘ ends its row; so has the
-    # balance of payments' pair (batch 23), on its row's last box, "trade".
+    # balance of payments' pair (batch 23), on its row's last box, "trade";
+    # so has the comparison chart's measure (batch 26), on its first row's last, "30y".
     helped = [box.key for box in at.checkbox if box.key and box.key.startswith("choice:") and box.help]
     check("a list's tick boxes carry no help of their own (it is on the list's label), but those under their flag with none: "
-          "“trade” of the balance of payments' pair and “Seas. adj.”",
-          helped == ["choice:payments-items:trade", "choice:cpi-adjustment:sa"], helped[:3])
+          "“30y” of the comparison's measure, “trade” of the balance of payments' pair and “Seas. adj.”",
+          helped == ["choice:compare-measure:30y", "choice:payments-items:trade", "choice:cpi-adjustment:sa"], helped[:4])
 
 
 def check_batch15(check: Check) -> None:
