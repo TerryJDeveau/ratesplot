@@ -166,6 +166,7 @@ from .de_data import (
     term_structure_key,
 )
 from .fx import FX_SERIES
+from .payments import US_OLD_BALANCE_SERIES, US_OLD_PAYMENTS_SERIES, US_PAYMENTS_SERIES
 from .http import canadian_get, de_get, fetch_fred_csv, get_if_published, uk_get
 from .rates import (
     CDN_BANK_RATE_SERIES,
@@ -2789,17 +2790,28 @@ _FRED_SERIES_TITLES = {
     "DEXUSUK": "U.S. Dollars to U.K. Pound Sterling Spot Exchange Rate; daily",
     "DEXUSEU": "U.S. Dollars to Euro Spot Exchange Rate; daily",
     "EXGEUS": "German Deutsche Marks to U.S. Dollar Spot Exchange Rate (DISCONTINUED); monthly",
+    # The balance of payments (batch 23, ``payments``), read from each series' page 2026-11-11.
+    "IEAX": "Exports of goods and services and income receipts (credits); quarterly",
+    "IEAM": "Imports of goods and services and income receipts (debits); quarterly",
+    "IEAXGS": "Exports of goods and services; quarterly",
+    "IEAMGS": "Imports of goods and services; quarterly",
+    "BOPX": "Exports of Goods, Services and Income (DISCONTINUED); quarterly",
+    "BOPM": "Imports of Goods, Services, and Income (DISCONTINUED); quarterly",
+    "BOPXGS": "Exports of Goods and Services (DISCONTINUED); quarterly",
+    "BOPMGS": "Imports of Goods and Services (DISCONTINUED); quarterly",
+    "BOPBCA": "Balance on Current Account (DISCONTINUED); quarterly",
 }
 
 
 def fred_baked_codes() -> list[str]:
-    """Every FRED series the program reads: the yields, debt, interest, GDP, population and consumer prices (``us_data``), the policy, mortgage and prime rates (``rates``), Canada's GDP (``cdn_data``, when Statistics Canada fails), the exchange rates (``fx``, batch 18.3)."""
+    """Every FRED series the program reads: the yields, debt, interest, GDP, population and consumer prices (``us_data``), the policy, mortgage and prime rates (``rates``), Canada's GDP (``cdn_data``, when Statistics Canada fails), the exchange rates (``fx``, batch 18.3), the balance of payments (``payments``, batch 23)."""
     return sorted({
         *US_YIELD_SERIES.values(), US_DEBT_SERIES_ID, US_STATE_LOCAL_DEBT_SERIES_ID, US_INTEREST_SERIES_ID,
         US_FEDERAL_INTEREST_SERIES_ID, US_STATE_LOCAL_INTEREST_SERIES_ID, US_STATE_INTEREST_SERIES_ID,
         US_LOCAL_INTEREST_SERIES_ID, US_GDP_SERIES_ID, US_POPULATION_SERIES_ID, US_CPI_SERIES_ID, US_CPI_SA_SERIES_ID,
         US_MONTHLY_EFFECTIVE_SERIES, US_TARGET_SERIES, *US_TARGET_RANGE_SERIES, US_MARKET_SERIES, *US_MORTGAGE_SERIES.values(),
         FRED_CDN_GDP_SERIES, *FX_SERIES,
+        *(code for pair in (*US_PAYMENTS_SERIES.values(), *US_OLD_PAYMENTS_SERIES.values()) for code in pair), US_OLD_BALANCE_SERIES,
     })
 
 

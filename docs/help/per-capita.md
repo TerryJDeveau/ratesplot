@@ -1,6 +1,6 @@
 # Per capita (-p)
 
-GDP, debt and interest drawn per person: each divided by the nation's population on the same date, in its own currency. The right axis reads "Nominal USD per Capita (Log Scale)", in each nation's currency, and each line's name ends "per Capita".
+GDP, debt, interest and the [balance of payments](?help=payments) drawn per person: each divided by the nation's population on the same date, in its own currency. The right axis reads "Nominal USD per Capita (Log Scale)", in each nation's currency, and each line's name ends "per Capita".
 
 ## How the division is made
 

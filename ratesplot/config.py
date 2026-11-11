@@ -596,6 +596,33 @@ UK_INTEREST_COLUMN = "TTM UK Interest Paid (£)"
 DE_DEBT_COLUMN = "Total German Debt (€)"
 DE_INTEREST_COLUMN = "TTM German Interest Paid (€)"
 
+# --payments[:LIST] (batch 23; Terry, 2026-10-24, decisions 61 and 62): the
+# money coming into a nation against the money going out, as two curves on the
+# right axis in the nation's currency, each the sum over the trailing twelve
+# months, the gap between them shaded. Two pairs, one at a time: "current", the
+# current account's credits against its debits (goods, services, primary and
+# secondary income), whose gap is the current account balance; "trade",
+# exports against imports of goods and services, whose gap is the trade
+# balance. Not gross inflows against gross outflows over the whole statement,
+# which balance by construction (``ratesplot.payments``). The pair's two
+# columns are the same for either item (only one is drawn at a time).
+PAYMENTS_ITEMS = ("current", "trade")
+DEFAULT_PAYMENTS_ITEMS = ("current",)
+PAYMENTS_CREDITS_COLUMN = "TTM Credits ($)"
+PAYMENTS_DEBITS_COLUMN = "TTM Debits ($)"
+PAYMENTS_COLUMNS = (PAYMENTS_CREDITS_COLUMN, PAYMENTS_DEBITS_COLUMN)
+# Each pair's legend labels (credits, debits) and its phrase in the title.
+PAYMENTS_LABELS = {
+    "current": ("TTM Current Account Credits", "TTM Current Account Debits"),
+    "trade": ("TTM Exports", "TTM Imports"),
+}
+# "and" within the pair, as "Public Debt and Interest Outlays" is, since the
+# title joins its phrases with commas and an ampersand.
+PAYMENTS_TITLES = {
+    "current": "TTM Current Account Credits and Debits",
+    "trade": "TTM Exports and Imports",
+}
+
 # ---------------------------------------------------------------------------
 # Chart styling and per-country metadata
 # ---------------------------------------------------------------------------
@@ -1068,7 +1095,20 @@ MACRO_PLOT_STYLES = {
     # Net debt (the UK's, batch 3), drawn with gross debt: solid as debt is,
     # in slate grey, a colour no other right-axis curve has.
     "net_debt": {"color": "#708090", "linewidth": 2.5, "drawstyle": "steps-post"},
+    # The balance of payments (batch 23): money in and money out, in colours
+    # no other right-axis curve has (debt black, GDP dark green, interest dark
+    # red, net debt slate, the levels blue, brown, orange and teal), solid, so
+    # that the shading between them carries the sign (PAYMENTS_SHADING).
+    "payments_credits": {"color": "#6a3d9a", "linewidth": 2.5, "drawstyle": "steps-post"},
+    "payments_debits": {"color": "#b8860b", "linewidth": 2.5, "drawstyle": "steps-post"},
 }
+
+# The gap between the balance of payments' two curves (batch 23, plan 23):
+# light green where more comes in than goes out (credits above debits), light
+# pink where the reverse (plotting.draw_country). Not fitted by --reg
+# (decision 62), and not in the legend: the curves' own entries say which is which.
+PAYMENTS_SHADING = {"surplus": "#90ee90", "deficit": "#ffb6c1"}
+PAYMENTS_SHADING_ALPHA = 0.45
 
 # Components of debt and interest (--debt:LETTERS / --interest:LETTERS): f
 # federal, n non-federal (provincial + local), p provincial or state (s is
@@ -1266,6 +1306,7 @@ class CountryMetadata:
                  self.component_interest_label.format(self.level_name(letter)))
                 for letter in letters
             ]
+            specs += _payments_specs(config)
             return tuple((key, enabled, column, _with_suffix(label, suffix)) for key, enabled, column, label in specs)
         aggregates = nation_by_key(self.key).view("debt_aggregates", config.debt_aggregates)
         gross = config.include_debt and "gross" in aggregates
@@ -1286,6 +1327,7 @@ class CountryMetadata:
             # Debt" in a title).
             label = self.federal_debt_label if aggregate_debt else _without_years(self.federal_debt_label)
             specs.insert(1, ("federal_debt", gross, self.federal_debt_column, label))
+        specs += _payments_specs(config)
         return tuple((key, enabled, column, _with_suffix(label, suffix)) for key, enabled, column, label in specs)
 
     def title_for(
@@ -1349,6 +1391,10 @@ class CountryMetadata:
         drawn = set(macro_keys_drawn)
         if "debt" in drawn:
             drawn.discard("federal_debt")
+        # The balance of payments' pair is one phrase, after the other amounts
+        # (batch 23): "TTM Exports and Imports".
+        payments_parts = [PAYMENTS_TITLES[config.payments_items[0]]] if drawn & set(_PAYMENTS_KEYS) else []
+        drawn -= set(_PAYMENTS_KEYS)
         macro_titles = {
             "debt": self.debt_title,
             "federal_debt": self.federal_debt_title,
@@ -1384,6 +1430,7 @@ class CountryMetadata:
                 macro_titles[kind] = templates[kind].format(names[kind]).strip()
             naming.add(macro_titles["debt"])
             macro_parts = [macro_titles[key] for key in macro_titles if key in drawn]
+        macro_parts += payments_parts
         levels_suffix = LEVELS_TITLE_SUFFIX if by_level else ""
         yield_parts = ([yield_phrase] if yields_drawn else []) + list(dict.fromkeys(rate_titles))
         index_parts = [extra_title] if extra_title else []
@@ -1410,6 +1457,16 @@ class CountryMetadata:
             # "... by Level of Government" qualifies the macro phrase alone.
             return nation + "; ".join([_join_title_parts(yield_parts + macro_parts) + levels_suffix] + index_parts)
         return nation + _join_title_parts(parts) + levels_suffix
+
+
+# The balance of payments' two curves' style keys (MACRO_PLOT_STYLES), credits first.
+_PAYMENTS_KEYS = ("payments_credits", "payments_debits")
+
+
+def _payments_specs(config: PlotConfig) -> list[tuple[str, bool, str, str]]:
+    """The balance of payments' two ``macro_specs`` entries (batch 23): the pair chosen, credits then debits, after every other amount."""
+    labels = PAYMENTS_LABELS[config.payments_items[0]]
+    return [(key, config.payments, column, label) for key, column, label in zip(_PAYMENTS_KEYS, PAYMENTS_COLUMNS, labels)]
 
 
 def _nation_word_replaced(phrase: str, nation: str, word: str) -> str:
@@ -1621,6 +1678,12 @@ class PlotConfig:
     include_debt: bool = True
     include_gdp: bool = True
     include_interest: bool = True
+    # --payments[:LIST] (batch 23): the balance of payments' pair on the right
+    # axis, the item of PAYMENTS_ITEMS chosen (one at a time, decision 61); a
+    # flag, off until named, measured as the other amounts are (-r, -p,
+    # --constant, --master) and fitted by --reg (decision 62).
+    payments: bool = False
+    payments_items: tuple[str, ...] = DEFAULT_PAYMENTS_ITEMS
     # --cpi[:sa] (batch 13.4): each nation's consumer price index on an axis
     # of its own (log, in index points), seasonally adjusted where published
     # with price_index_adjusted (--cpi:sa, which has no effect without
@@ -1894,13 +1957,13 @@ class PlotConfig:
 
     @property
     def needs_gdp(self) -> bool:
-        """True when GDP must be fetched: to draw it, or to divide debt or interest by it (-r)."""
-        return self.include_gdp or (self.relative and (self.include_debt or self.include_interest))
+        """True when GDP must be fetched: to draw it, or to divide debt, interest or the balance of payments by it (-r)."""
+        return self.include_gdp or (self.relative and (self.include_debt or self.include_interest or self.payments))
 
     @property
     def has_macro_series(self) -> bool:
-        """True when at least one curve on the right (log) axis is drawn."""
-        return self.include_debt or self.draws_gdp or self.include_interest
+        """True when at least one curve on the right (log) axis is drawn: debt, GDP, interest or the balance of payments (batch 23)."""
+        return self.include_debt or self.draws_gdp or self.include_interest or self.payments
 
     @property
     def draws_price_index(self) -> bool:

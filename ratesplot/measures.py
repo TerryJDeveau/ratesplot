@@ -15,7 +15,7 @@ from typing import Mapping
 import numpy as np
 import pandas as pd
 
-from .config import COMPONENT_LETTERS, DATE_COLUMN, CountryMetadata, PlotConfig, component_column, nation_by_key
+from .config import COMPONENT_LETTERS, DATE_COLUMN, PAYMENTS_COLUMNS, CountryMetadata, PlotConfig, component_column, nation_by_key
 
 
 # The month whose consumer prices a chart's amounts are in (--constant),
@@ -134,15 +134,15 @@ def in_master_currency(macro: pd.DataFrame, config: PlotConfig, metadata: Countr
 
 
 def _debt_and_interest_columns(macro: pd.DataFrame, metadata: CountryMetadata) -> list[str]:
-    """The debt and interest columns present in ``macro``: the aggregates, federal debt alone, net debt, and each level."""
+    """The amounts other than GDP present in ``macro``: the aggregates, federal debt alone, net debt, each level, and the balance of payments' pair (batch 23)."""
     candidates = [metadata.debt_column, metadata.federal_debt_column, metadata.net_debt_column, metadata.interest_column] + [
         component_column(kind, letter) for kind in ("debt", "interest") for letter in COMPONENT_LETTERS
-    ]
+    ] + list(PAYMENTS_COLUMNS)
     return [column for column in candidates if column is not None and column in macro.columns]
 
 
 def as_percent_of_gdp(macro: pd.DataFrame, metadata: CountryMetadata) -> pd.DataFrame:
-    """Divide debt and interest by TTM GDP, in percent (see ``ratio_at_observations``).
+    """Divide debt, interest and the balance of payments by TTM GDP, in percent (see ``ratio_at_observations``).
 
     Where GDP is missing (in Canada, before 1926, so the federal-only debt
     from 1867 shows only from 1926) the ratio is missing too. The GDP column
@@ -153,7 +153,7 @@ def as_percent_of_gdp(macro: pd.DataFrame, metadata: CountryMetadata) -> pd.Data
         return macro
     result = macro.copy()
     if metadata.gdp_column not in result.columns or not result[metadata.gdp_column].notna().any():
-        print("  Warning: GDP is unavailable, so debt and interest cannot be shown as a percentage of it.")
+        print("  Warning: GDP is unavailable, so the amounts cannot be shown as a percentage of it.")
         for column in columns:
             result[column] = np.nan
         return result

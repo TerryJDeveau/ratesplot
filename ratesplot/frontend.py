@@ -754,7 +754,7 @@ def idle_control_reasons(flags: Mapping[str, bool]) -> dict[str, str]:
     """
     reasons = idle_option_reasons(
         flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True),
-        extra_curve=flags.get("cpi", False) or flags.get("population", False),
+        extra_curve=flags.get("cpi", False) or flags.get("population", False), payments=flags.get("payments", False),
     )
     # The price index seasonally adjusted (batch 13.4): the ONS publishes
     # none, so with the UK the only nation ticked "Seas. adj." changes nothing

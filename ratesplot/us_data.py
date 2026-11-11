@@ -26,6 +26,7 @@ from .config import (
     DATE_COLUMN,
     GDP_COLUMN,
     MILLION,
+    PAYMENTS_COLUMNS,
     POPULATION_COLUMN,
     RECENT_PART_REVISED,
     RECENT_PART_UNREVISED,
@@ -353,13 +354,19 @@ def _fetch_us_interest_levels(letters: str, config: PlotConfig) -> list[pd.DataF
 
 
 @downloads_of("FRED debt, GDP, and interest")
-def fetch_us_macro(config: PlotConfig, last_yield_date: pd.Timestamp | None) -> pd.DataFrame:
+def fetch_us_macro(
+    config: PlotConfig, last_yield_date: pd.Timestamp | None, payments: pd.DataFrame | None = None
+) -> pd.DataFrame:
     """Fetch the selected U.S. macro series and align them on one ``DATE`` column.
 
     Args:
         last_yield_date: When later than the final macro observation, the last
             macro row is repeated at this date so the step curves extend to the
             right edge of the yield data instead of stopping a quarter early.
+        payments: The balance of payments' pair (--payments, batch 23), a
+            ``[DATE, credits, debits]`` frame of TTM sums read by
+            ``ratesplot.payments`` (which reads FRED through this module, so
+            ``plotting`` hands it in), or None.
     """
     if not config.has_macro_series:
         return pd.DataFrame()
@@ -391,6 +398,9 @@ def fetch_us_macro(config: PlotConfig, last_yield_date: pd.Timestamp | None) -> 
         gdp[GDP_COLUMN] = gdp["GDP_SAAR"].rolling(4, min_periods=4).mean()
         frames.append(gdp[[DATE_COLUMN, GDP_COLUMN]])
 
+    if payments is not None:
+        frames.append(payments)
+
     # The date each drawn curve's data describe up to, for --cur's projection to
     # today (ratesplot.latest). The aggregate debt is known as late as the later
     # of its parts; each level of debt as its source.
@@ -399,7 +409,7 @@ def fetch_us_macro(config: PlotConfig, last_yield_date: pd.Timestamp | None) -> 
         for frame in frames
         for column in frame.columns.drop(DATE_COLUMN)
     }
-    observed = {column: ends[column] for column in (GDP_COLUMN, US_INTEREST_COLUMN) if column in ends}
+    observed = {column: ends[column] for column in (GDP_COLUMN, US_INTEREST_COLUMN, *PAYMENTS_COLUMNS) if column in ends}
     observed.update({column: date for column, date in ends.items() if column.startswith("Interest [")})
     if config.include_debt:
         parts = [ends.get("Fed_Debt")] + ([ends.get("State_Local_Debt")] if state_local_debt_known else [])
@@ -408,6 +418,8 @@ def fetch_us_macro(config: PlotConfig, last_yield_date: pd.Timestamp | None) -> 
         for letter in "npm":
             observed[component_column("debt", letter)] = ends.get("State_Local_Debt") if state_local_debt_known else None
 
+    if not frames:
+        return pd.DataFrame()  # the balance of payments alone, its source failed
     # Outer merge keeps every observation date from every source.
     data = frames[0]
     for frame in frames[1:]:
@@ -433,7 +445,7 @@ def fetch_us_macro(config: PlotConfig, last_yield_date: pd.Timestamp | None) -> 
                     data[component_column("debt", "p")], data[component_column("debt", "m")] = parts
 
     interest_levels = [component_column("interest", letter) for letter in COMPONENT_LETTERS]
-    for column in [GDP_COLUMN, US_INTEREST_COLUMN, *interest_levels]:
+    for column in [GDP_COLUMN, US_INTEREST_COLUMN, *interest_levels, *PAYMENTS_COLUMNS]:
         if column in data:
             data[column] = data[column].ffill()
 
@@ -451,7 +463,7 @@ def fetch_us_macro(config: PlotConfig, last_yield_date: pd.Timestamp | None) -> 
         carried = before.iloc[[-1]].copy()
         carried[DATE_COLUMN] = config.start
         data = pd.concat([carried, data], ignore_index=True)
-    candidates = [US_DEBT_COLUMN, GDP_COLUMN, US_INTEREST_COLUMN] + [
+    candidates = [US_DEBT_COLUMN, GDP_COLUMN, US_INTEREST_COLUMN, *PAYMENTS_COLUMNS] + [
         component_column(kind, letter) for kind in ("debt", "interest") for letter in COMPONENT_LETTERS
     ]
     macro_columns = [c for c in candidates if c in data.columns]

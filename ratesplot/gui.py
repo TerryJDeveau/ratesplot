@@ -670,6 +670,14 @@ class _ChoicesEditor:
     def box_changed(self, value: str) -> None:
         if self.syncing:
             return
+        if self.option.one_at_a_time and self.boxes[value].get():
+            # One item at a time (the balance of payments' pairs, batch 23): the others unticked.
+            self.syncing = True
+            try:
+                for item, variable in self.boxes.items():
+                    variable.set(item == value)
+            finally:
+                self.syncing = False
         ticked = [item for item, variable in self.boxes.items() if variable.get()]
         if not ticked and choice_is_list(self.option):
             self.boxes[value].set(True)

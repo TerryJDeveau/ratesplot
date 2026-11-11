@@ -119,6 +119,10 @@ VALUES = (
     "--no-gdp --no-debt --no-interest --no-yield --us:po:none", "--gdp --debt --interest --yield --us:po:none",
     "--gdp --debt --interest --yield --prime:0.5", "--gdp --debt --interest --yield --uk:tracker:2",
     "--rem", "--no-rem", "--rem --po", "--no-rem --gdp --y:2,10",
+    # The balance of payments (batch 23): each pair, beside the amounts or alone, under -r, -p and constant prices
+    # (not idle with it alone on the right axis), with --reg and a limit; the pair kept while it is off; the "no" form.
+    "--payments", "--pay:trade", "--pay:trade --yield --reg", "--pay --no-gdp --no-debt --no-interest -r", "--pay:tr -p --con",
+    "--pay --top:5t", "--pay -r --top:30%", "--no-pay", "--pay:trade --no-pay", "--gdp --debt --interest --yield --pay:trade",
 )
 
 

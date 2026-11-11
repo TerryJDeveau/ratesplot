@@ -135,7 +135,7 @@ def check_reasons() -> None:
     base_payloads, base_flags = choices_from_config(PlotConfig())
     switches = (
         "debt", "gdp", "interest", "relative", "constant", "yield", "mortgages", "spreads", "policy", "inflation", "regression",
-        "current", "auto-refresh", "cpi", "population",
+        "current", "auto-refresh", "cpi", "population", "payments",
     )
     first_level = {nation.key: nation.level_boxes[0][0] for nation in NATIONS if nation.level_boxes}
     variants = {
@@ -166,7 +166,7 @@ def check_reasons() -> None:
     check(f"{combinations} combinations, {len(keys)} controls each ({greyed_seen} greyed): a reason exactly where greyed",
           disagreements == 0, first_disagreement)
     check("greyed_reason agrees with greyed_reasons", greyed_reason("relative", base_payloads, {**base_flags, "debt": False, "interest": False})
-          == "it acts on debt and interest, and neither is ticked")
+          == "it acts on debt, interest and the balance of payments, and none is ticked")
     check("the line a greyed control's help gains", greyed_line("“Bond yields” is unticked") == "Greyed because “Bond yields” is unticked.")
 
 
@@ -181,7 +181,7 @@ def check_all_ticks() -> None:
         "a text the box refuses": ({nation_choice(us, by_name("max")): "eight"}, two, "the Max box's text is not a value it takes"),
         "one nation": ({nation_choice(us, by_name("max")): "8"}, {"us": True}, "only one nation is ticked"),
         "Top with no right-axis curve": ({nation_choice(us, by_name("top")): "20t"}, {**two, "debt": False, "gdp": False, "interest": False},
-                                         "it acts on the right axis's curves, and none of debt, GDP and interest is ticked"),
+                                         "it acts on the right axis's curves, and none of debt, GDP, interest and the balance of payments is ticked"),
     }
     for label, (payloads, flags, expected) in cases.items():
         key = next(iter(payloads), nation_choice(us, by_name("max")))
