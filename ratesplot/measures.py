@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from .config import COMPONENT_LETTERS, DATE_COLUMN, PAYMENTS_COLUMNS, CountryMetadata, PlotConfig, component_column, nation_by_key
+from .frames import at_middle_of_month
 
 
 # The month whose consumer prices a chart's amounts are in (--constant),
@@ -47,12 +48,12 @@ def express(
         return as_percent_of_gdp(macro, metadata)
     measured = per_person(macro, metadata, population, own_populations) if config.per_capita else macro
     if config.constant_prices:
-        measured = in_constant_prices(measured, metadata, prices, config.end)
+        measured = in_constant_prices(measured, metadata, prices, config.end, filled=config.daily)
     return in_master_currency(measured, config, metadata)
 
 
 def in_constant_prices(
-    macro: pd.DataFrame, metadata: CountryMetadata, prices: pd.Series | None, end: pd.Timestamp
+    macro: pd.DataFrame, metadata: CountryMetadata, prices: pd.Series | None, end: pd.Timestamp, *, filled: bool = False
 ) -> pd.DataFrame:
     """Return ``macro``'s amounts at the consumer prices of one month (--constant, batch 13.2), that month in ``attrs[PRICE_BASE_ATTR]``.
 
@@ -71,6 +72,11 @@ def in_constant_prices(
     index begins there is no price to divide by, and nothing is drawn
     there. With no index on or before the End, ``macro`` as it is, in
     current prices, with a warning, and None in the attribute.
+
+    With ``filled`` (Daily values, batch 42.2) the index is filled in as the
+    amounts are, each month's pinned at its middle (``index_on``), so an
+    amount filled in between its observations is divided by prices filled
+    in alike, not by a month's index held across it.
     """
     columns = _debt_and_interest_columns(macro, metadata)
     if metadata.gdp_column in macro.columns:
@@ -91,15 +97,27 @@ def in_constant_prices(
     result.attrs[PRICE_BASE_ATTR] = base_month
     if macro.empty or not columns:
         return result
-    index = index_on(result[DATE_COLUMN], known)
+    index = index_on(result[DATE_COLUMN], known, filled=filled)
     for column in columns:
         result[column] = ratio_at_observations(result[column], index) * base_index
     return result
 
 
-def index_on(dates: pd.Series, index: pd.Series) -> pd.Series:
-    """Return a monthly price index (dated by each month's first day) on each of ``dates``: its month's value, or the latest before it; missing before its first month."""
-    return held_on(dates, index.dropna())
+def index_on(dates: pd.Series, index: pd.Series, *, filled: bool = False) -> pd.Series:
+    """Return a monthly price index (dated by each month's first day) on each of ``dates``: its month's value, or the latest before it; missing before its first month.
+
+    ``filled`` (batch 42.2): each month's value pinned at its middle
+    (``frames.at_middle_of_month``), the straight line between two by days,
+    the first month's value held before its middle and the last's after
+    it; missing before the first month still.
+    """
+    known = index.dropna().sort_index()
+    if not filled or known.empty:
+        return held_on(dates, known)
+    when = pd.DatetimeIndex(pd.to_datetime(dates)).asi8
+    values = np.interp(when, at_middle_of_month(known.index).asi8, known.to_numpy(dtype=float))
+    values[when < known.index[0].value] = np.nan
+    return pd.Series(values, index=dates.index)
 
 
 def held_on(dates: pd.Series, values: pd.Series) -> pd.Series:

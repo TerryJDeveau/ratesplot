@@ -50,6 +50,7 @@ from .config import (
 )
 from .de_archive_data import EMBEDDED_DE_DISCOUNT_RATE_CHANGES, EMBEDDED_DE_MORTGAGE_5Y_HISTORY, EMBEDDED_DE_MORTGAGE_10Y_HISTORY
 from .de_data import ecb_series
+from .frames import at_middle_of_month
 from .de_data import YIELD_HISTORY_ATTR as DE_YIELD_HISTORY_ATTR
 from .http import downloads_of
 from .prices import inflation
@@ -417,6 +418,58 @@ def held_steps(curve: RateCurve, config: PlotConfig, values: pd.Series | None = 
     if not points:
         return values.iloc[:0]
     return pd.Series([value for _date, value in points], index=pd.DatetimeIndex([date for date, _value in points]))
+
+
+def filled_through(values: pd.Series, kind_key: str, config: PlotConfig) -> pd.Series:
+    """Return the points that draw ``values``, a smooth series observed a month at a time, filled in from ``config.start`` to ``config.end``; a NaN breaks the line.
+
+    Daily values (batch 42.2; Terry, decision 125): each month's value
+    pinned at the month's middle (``frames.at_middle_of_month``) and joined
+    to the next by a straight line. A run of months begins at its first
+    month's first day and ends at its last month's end, the value held
+    across those half months, as before each month's value was held across
+    its month (decision 44, ``held_steps``), so the line begins and ends
+    where it did. A month missing breaks the line (the U.S.' 2025-10), as
+    a missing stretch breaks the steps. Cut at the window's edges, the value
+    there taken on the line. Empty when no value applies in the window.
+    """
+    kind = SERIES_KINDS[kind_key]
+    assert kind.filled_in and kind.period == "month", (kind_key, kind)
+    period, longest = OBSERVED[_OBSERVED_PERIODS[kind.period]]
+    values = values.dropna().sort_index()
+    if values.empty:
+        return values.iloc[:0]
+    starts = pd.DatetimeIndex(values.index)
+    middles = at_middle_of_month(starts)
+    numbers = values.to_numpy(dtype=float)
+    points: list[tuple[pd.Timestamp, float]] = []
+    for position, (start, middle, value) in enumerate(zip(starts, middles, numbers)):
+        if position == 0 or start - starts[position - 1] > longest:
+            if position:  # the run before ends with its last month, and a break
+                last_end = starts[position - 1] + period - _PERIOD_END_MARGIN
+                points += [(last_end, float(numbers[position - 1])), (last_end + _PERIOD_END_MARGIN, float("nan"))]
+            points.append((start, float(value)))
+        points.append((middle, float(value)))
+    points.append((starts[-1] + period - _PERIOD_END_MARGIN, float(numbers[-1])))
+    line = pd.Series([value for _date, value in points], index=pd.DatetimeIndex([date for date, _value in points]))
+    return cut_to(line, config.start, config.end)
+
+
+def cut_to(line: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:
+    """``line``'s points from ``start`` to ``end``, with a point at each edge the line crosses, its value there on the straight line (by days)."""
+    inside = line.loc[(line.index >= start) & (line.index <= end)]
+    edges: list[tuple[pd.Timestamp, float]] = []
+    for edge in (start, end):
+        if edge in inside.index:
+            continue
+        before, after = line.loc[line.index < edge], line.loc[line.index > edge]
+        if before.empty or after.empty or pd.isna(before.iloc[-1]) or pd.isna(after.iloc[0]):
+            continue
+        (t0, v0), (t1, v1) = (before.index[-1], before.iloc[-1]), (after.index[0], after.iloc[0])
+        edges.append((edge, float(v0 + (v1 - v0) * ((edge - t0) / (t1 - t0)))))
+    if not edges:
+        return inside
+    return pd.concat([inside, pd.Series(dict(edges), dtype=float)]).sort_index()
 
 
 def in_window(values: pd.Series, config: PlotConfig) -> pd.Series:

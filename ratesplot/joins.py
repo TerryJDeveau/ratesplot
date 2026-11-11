@@ -10,7 +10,8 @@ joins its baked history to its live tables by the same rules:
   its last years (see there);
 * ``ttm_sum``: quarterly flows summed over the trailing four quarters;
 * ``dated_by_quarter_end``: a joined series dated by the day each figure describes;
-* ``align_macro``: the macro series forward-filled onto the yield dates.
+* ``align_macro``: the macro series forward-filled onto the yield dates, or
+  filled in between their observations (``carried``, batch 42.2).
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
-from .config import ARCHIVE_CALIBRATION_END_YEAR, ARCHIVE_SPLICE_YEARS, DATE_COLUMN, PlotConfig
+from .config import ARCHIVE_CALIBRATION_END_YEAR, ARCHIVE_SPLICE_YEARS, DATE_COLUMN, PlotConfig, macro_column_kind
 from .frames import at_quarter_end, normalize_date_column, rows_to_frame
 
 # How far past its last observation a right-axis value is carried onto the
@@ -168,10 +169,46 @@ def dated_by_quarter_end(series: pd.DataFrame | pd.Series | None) -> pd.DataFram
 # ---------------------------------------------------------------------------
 
 
+def carried(values: pd.Series, *, filled: bool, dates: pd.Series | pd.Index | None = None) -> pd.Series:
+    """Return ``values`` with each row that has none given one from the observations around it; missing before the first.
+
+    As before batch 42, each value held until the next (``filled`` False:
+    a forward fill). With ``filled`` (Daily values, batch 42.2; Terry,
+    decision 125), each row between two observations takes the straight
+    line between them, by days, so a curve drawn through its rows passes
+    straight through its observations; after the last, the last value is
+    held, as before (a projection, --projections, carries it on). For a
+    sum over the twelve months to its date (TTM GDP, interest, the
+    balance of payments) this is the sum over the twelve months to each
+    day with each quarter's flow spread evenly across its quarter, the
+    quarter leaving the window counted (42.3): the sum at a fraction f
+    through quarter k+1 is TTM(k) + f · [TTM(k+1) − TTM(k)]. No break
+    between two observations however far apart (Canada's debt of 1933 to
+    1943, a year-end figure every few years, runs straight between them
+    as it was held flat before). ``dates``: the rows' dates, where the
+    index is not (the U.S. frame's).
+    """
+    if not filled:
+        return values.ffill()
+    when = pd.DatetimeIndex(values.index if dates is None else pd.to_datetime(dates)).asi8
+    known = values.notna().to_numpy()
+    if not known.any():
+        return values
+    # np.interp holds the last value after the last observation, and the
+    # first before the first, which is blanked: nothing is known there.
+    numbers = np.interp(when, when[known], values.to_numpy(dtype=float)[known])
+    numbers[when < when[known].min()] = np.nan
+    return pd.Series(numbers, index=values.index, name=values.name)
+
+
 def align_macro(
     yields_all: pd.DataFrame, series: Iterable[pd.DataFrame | None], config: PlotConfig
 ) -> pd.DataFrame:
     """Forward-fill the macro series (frames of one or more columns; None = absent) onto the yield dates.
+
+    With Daily values (``config.daily``, batch 42.2) each smooth column is
+    filled in between its observations instead (``carried``), and each
+    observation in the window is a row of its own.
 
     Returns a frame with a ``DATE`` column plus one column per available series.
     When yields are deselected a daily calendar over the window is used instead.
@@ -205,9 +242,14 @@ def align_macro(
         if not yields_all.empty and config.start < first_yield:
             before_yields = macro.index[(macro.index > config.start) & (macro.index < first_yield)]
             plot_index = plot_index.union(before_yields).union(pd.DatetimeIndex([config.start]))
-        aligned = (
-            macro.reindex(macro.index.union(plot_index)).sort_index().ffill().reindex(plot_index)
-        )
+        if config.daily:
+            # Daily values (batch 42.2): each observation in the window a row
+            # of its own, so a curve drawn through its rows passes through
+            # each observation on its date, whatever the yields' dates.
+            plot_index = plot_index.union(macro.index[(macro.index >= config.start) & (macro.index <= config.end)])
+        every = macro.reindex(macro.index.union(plot_index)).sort_index()
+        aligned = every.apply(lambda column: carried(column, filled=config.daily and macro_column_kind(column.name).filled_in))
+        aligned = aligned.reindex(plot_index)
     for column in aligned.columns:
         # The latest date, not the last row: concat with sort=False leaves the
         # dates unsorted (a series' dates missing from the first come after it).

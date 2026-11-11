@@ -34,6 +34,12 @@ def at_quarter_end(dates: pd.DatetimeIndex | pd.Series) -> pd.DatetimeIndex | pd
     return dates + pd.offsets.QuarterEnd(0)
 
 
+def at_middle_of_month(dates: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """Move each month's first day to its middle (the 16th of a 31-day month, the 15th of February): where a month's figure is pinned when it is filled in (batch 42.2)."""
+    dates = pd.DatetimeIndex(dates)
+    return dates + pd.to_timedelta(dates.days_in_month // 2, unit="D")
+
+
 def normalize_date_column(df: pd.DataFrame, date_column: str = DATE_COLUMN) -> pd.DataFrame:
     """Return a copy whose date column is named ``date_column``.
 

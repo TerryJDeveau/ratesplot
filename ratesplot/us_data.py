@@ -33,12 +33,16 @@ from .config import (
     THOUSAND,
     US_DEBT_COLUMN,
     US_INTEREST_COLUMN,
+    SERIES_KINDS,
     YIELD_TERMS,
     PlotConfig,
+    SeriesKind,
     component_column,
+    macro_column_kind,
 )
 from .frames import at_quarter_end
 from .http import downloads_of, fetch_fred_csv
+from .joins import carried as carried_onto_rows
 from .latest import extend_us_federal_debt, observed_through, project_to_now
 from .us_archive_data import EMBEDDED_US_DEBT_BY_LEVEL
 
@@ -425,12 +429,26 @@ def fetch_us_macro(
     for frame in frames[1:]:
         data = data.merge(frame, on=DATE_COLUMN, how="outer")
     data = data.sort_values(DATE_COLUMN)
+    if config.daily:
+        # Daily values (batch 42.2): a row at the window's start and one at its
+        # last date (the yields' last day, else the End), so the values there
+        # are filled in between the figures around them, a figure past the End
+        # among them: a chart ending between two figures reads what a later
+        # chart reads there (the frame is cut at the End in prepare_us).
+        edges = [config.start] + ([last_yield_date] if last_yield_date is not None else [])
+        missing = [edge for edge in edges if not (data[DATE_COLUMN] == edge).any()]
+        if missing:
+            data = pd.concat([data, pd.DataFrame({DATE_COLUMN: missing})], ignore_index=True).sort_values(DATE_COLUMN)
+
+    def held(column: str, kind: SeriesKind) -> pd.Series:
+        """One column carried onto every row (``joins.carried``): held to the next value, or filled in with Daily values."""
+        return carried_onto_rows(data[column], filled=config.daily and kind.filled_in, dates=data[DATE_COLUMN])
 
     if config.include_debt:
         # Debt is a stock: carry the last known level forward. Missing
         # state/local observations contribute zero rather than dropping the row.
-        data["Fed_Debt"] = data["Fed_Debt"].ffill()
-        state_local = data["State_Local_Debt"].ffill()
+        data["Fed_Debt"] = held("Fed_Debt", SERIES_KINDS["debt"])
+        state_local = held("State_Local_Debt", SERIES_KINDS["debt"])
         data["State_Local_Debt"] = state_local.fillna(0)
         data[US_DEBT_COLUMN] = data["Fed_Debt"] + data["State_Local_Debt"]
         if split:
@@ -447,7 +465,7 @@ def fetch_us_macro(
     interest_levels = [component_column("interest", letter) for letter in COMPONENT_LETTERS]
     for column in [GDP_COLUMN, US_INTEREST_COLUMN, *interest_levels, *PAYMENTS_COLUMNS]:
         if column in data:
-            data[column] = data[column].ffill()
+            data[column] = held(column, macro_column_kind(column))
 
     # Trim to the window and drop rows where no selected series has a value yet
     # (e.g. the first three quarters before a TTM rolling window is complete).

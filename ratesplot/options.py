@@ -1279,6 +1279,17 @@ OPTIONS: tuple[Option, ...] = (
         "on by default: each right-axis curve\ncarried from its last value to today at\nits past year's pace, drawn faint",
         names=("projections",), shortest=3, label="Projections to today", panel="labels", topic="projections",
     ),
+    # Daily values (batch 42.2; Terry, 2026-11-10, decisions 125 and 129: on
+    # by default, the name NG_analysis's window gives it): each smooth series
+    # filled in between its observations (``config.SeriesKind.filled_in``),
+    # drawn straight through them and read day by day; off, each value held
+    # to the next, as before. At least "da": "--d:" is --debt's levels.
+    Option(
+        "daily", Kind.FLAG, ("daily",), "labels", "--da / --daily / --no-da",
+        "on by default: debt, GDP, interest, the\nbalance of payments, inflation, the price\n"
+        "index and the population filled in\nbetween their figures, drawn straight\nthrough them and read day by day",
+        names=("daily",), shortest=2, label="Daily values", panel="labels", topic="daily",
+    ),
     # The hover read-out (batch 11.2, ratesplot.hover), on by default with a
     # box and a switch of its own (Terry, 2026-10-26, decision 68: "a tick-box
     # to turn off the hover read-out ..., as some people won't like it"). At
@@ -1802,6 +1813,7 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     idle = idle_options(
         values["include_debt"], values["include_gdp"], values["include_interest"],
         extra_curve=values["price_index"] or values["population"], payments=values["payments"],
+        inflation=values["inflation"],
     )
     if values["relative"] and "relative" in idle:
         values["relative"] = False
@@ -1825,7 +1837,9 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     return PlotConfig(**values)
 
 
-def idle_options(debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False, payments: bool = False) -> frozenset[str]:
+def idle_options(
+    debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False, payments: bool = False, inflation: bool = False
+) -> frozenset[str]:
     """Return the options that change nothing on any chart while these right-axis curves are chosen.
 
     Terry, 2026-10-08: grey out "Regression segments", "By level", "% of GDP"
@@ -1853,15 +1867,23 @@ def idle_options(debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = F
     right axis, measured, fitted and projected as debt and interest are: -r
     divides it by GDP, so -r is not idle while it is drawn, nor is any of
     the others; the levels of government still need debt or interest.
+
+    Daily values (batch 42.2) act on the smooth series (``config.SeriesKind.filled_in``):
+    the right axis's curves, the extra axis's and the inflation curve.
     """
-    return frozenset(idle_option_reasons(debt, gdp, interest, extra_curve=extra_curve, payments=payments))
+    return frozenset(idle_option_reasons(debt, gdp, interest, extra_curve=extra_curve, payments=payments, inflation=inflation))
 
 
 def idle_option_reasons(
-    debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False, payments: bool = False
+    debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False, payments: bool = False, inflation: bool = False
 ) -> dict[str, str]:
     """Return ``idle_options``' names, each with why it is idle, a clause to follow "Greyed because" (batch 29.1)."""
     reasons: dict[str, str] = {}
+    if not (debt or gdp or interest or payments or extra_curve or inflation):
+        reasons["daily"] = (
+            "it acts on the series that change steadily (debt, GDP, interest, the balance of payments, inflation, "
+            "the price index and the population), and none is ticked"
+        )
     if not (debt or interest):
         reasons |= dict.fromkeys(("debt-parts", "interest-parts"), "it acts on debt and interest, and neither is ticked")
         if not payments:
@@ -2180,6 +2202,7 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     idle = idle_options(
         flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True),
         extra_curve=flags.get("cpi", False) or flags.get("population", False), payments=flags.get("payments", False),
+        inflation=flags.get("inflation", False),
     )
     idle_keys = idle_margins(payloads, flags) | idle_aggregates(payloads, flags)
     payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle and key not in idle_keys}
