@@ -290,16 +290,14 @@ STATCAN_CDN_CPI_SA_VECTOR = "v41690914"
 # Canada's balance of payments (batch 23, --payments; ``ratesplot.payments``),
 # quarterly, seasonally adjusted, millions of dollars a quarter (not at annual
 # rates). 36-10-0018, the international accounts under BPM6, from 1981-Q1;
-# 36-10-0047, the same accounts under BPM5, 1946-Q1 to 2012-Q2, inactive (no
-# longer updated), read only before 1981. Measured 2026-11-11: both tables
-# label the vectors alike ("Receipts, seasonally adjusted" or "Payments,
-# seasonally adjusted"; "Total current account" or "Goods and services"), one
-# row per quarter, every quarter with a value.
+# before 1981 the archived table under BPM5 (ARCHIVED_CDN_PAYMENTS_TABLE
+# below). Measured 2026-11-11: both tables label the vectors alike
+# ("Receipts, seasonally adjusted" or "Payments, seasonally adjusted"; "Total
+# current account" or "Goods and services"), one row per quarter, every
+# quarter with a value.
 STATCAN_CDN_PAYMENTS_TABLE = "36100018"
-STATCAN_CDN_OLD_PAYMENTS_TABLE = "36100047"
 # Each pair's (receipts, payments) vectors, by ``PAYMENTS_ITEMS``.
 STATCAN_CDN_PAYMENTS_VECTORS = {"current": ("v61915244", "v61915273"), "trade": ("v61915245", "v61915274")}
-STATCAN_CDN_OLD_PAYMENTS_VECTORS = {"current": ("v114364", "v114397"), "trade": ("v114365", "v114398")}
 
 # Archived (terminated) StatCan tables. They no longer change, so the bake
 # (``tools/bake_archives.py``) downloads them once and writes the required rows
@@ -314,6 +312,14 @@ ARCHIVED_CDN_PROV_LOCAL_DEBT_URL = STATCAN_TABLE_URL.format(table_id=ARCHIVED_CD
 # for the debt components (--debt:p, --debt:m).
 ARCHIVED_CDN_PROVINCIAL_DEBT_TABLE = "36100535"
 ARCHIVED_CDN_LOCAL_DEBT_TABLE = "36100536"
+# The balance of payments under BPM5 (batch 23), 1946-Q1 to 2012-Q2, archived,
+# no longer updated: read only before 1981, where 36-10-0018 takes over. The
+# (receipts, payments) vectors of each pair, by ``PAYMENTS_ITEMS``, labelled
+# as 36-10-0018's are. Baked whole into ``cdn_archive_data`` and never asked
+# for again (Terry, 2026-11-11; it had been baked among the live tables).
+ARCHIVED_CDN_PAYMENTS_TABLE = "36100047"
+ARCHIVED_CDN_PAYMENTS_URL = STATCAN_TABLE_URL.format(table_id=ARCHIVED_CDN_PAYMENTS_TABLE)
+ARCHIVED_CDN_PAYMENTS_VECTORS = {"current": ("v114364", "v114397"), "trade": ("v114365", "v114398")}
 
 # Older history, also baked (see ``ratesplot.bake``).
 # National accounts on the 1968 SNA basis, the source of GDP and government

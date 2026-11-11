@@ -23,7 +23,8 @@ cdn_data          Bank of Canada / Statistics Canada fetch, splice and align; bo
                   sources' series read through their bake and recent part
                   (boc_valet_series, also for rates; statcan_table)
 cdn_archive_data  baked historical CDN rows: debt, GDP, interest, population, yield
-                  stand-ins (rewritten by tools/bake_archives.py)
+                  stand-ins, the balance of payments before 1981 (rewritten by
+                  tools/bake_archives.py)
 cdn_hist_yields   transcribed Bank of Canada historical yield tables (1919-2000)
 bake              the bake of the historical data (run by tools/bake_archives.py), and of
                   the live sources' history into data/
@@ -103,4 +104,4 @@ window is opened, so --no-gui and the web page never load tkinter.
 # build, in a commit of its own made before the push (the daily data job's commits leave it). It counts from 0 at
 # the first work on batch 11: its four pushes of 2026-10-27 made 6.4. Shown with the commit the program was
 # started from (version.version_text).
-__version__ = "8.3"
+__version__ = "8.4"

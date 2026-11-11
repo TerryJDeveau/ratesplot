@@ -54,6 +54,7 @@ from .cdn_archive_data import (
 from .baked import frame_with_recent_part, read_series, with_recent_part
 from .cdn_hist_yields import build_cdn_hist_yields
 from .config import (
+    ARCHIVED_CDN_PAYMENTS_VECTORS,
     BOC_FINANCIAL_MARKET_TABLE,
     BOC_GROUP_URL,
     BOC_SERIES_URL,
@@ -78,8 +79,6 @@ from .config import (
     STATCAN_CDN_DEBT_VECTOR,
     STATCAN_CDN_GDP_TABLE,
     STATCAN_CDN_GDP_VECTOR,
-    STATCAN_CDN_OLD_PAYMENTS_TABLE,
-    STATCAN_CDN_OLD_PAYMENTS_VECTORS,
     STATCAN_CDN_PAYMENTS_TABLE,
     STATCAN_CDN_PAYMENTS_VECTORS,
     STATCAN_CDN_INTEREST_TABLE,
@@ -347,8 +346,8 @@ def _real_return_rows(table: pd.DataFrame) -> pd.Series:
     return table["Rates"].eq("Real return bonds, long-term")
 
 
-# The balance of payments' rows (batch 23), by the labels 36-10-0018 and
-# 36-10-0047 share: each pair's receipts, then its payments.
+# The balance of payments' rows (batch 23), by the labels 36-10-0018 and the
+# archived 36-10-0047 share: each pair's receipts, then its payments.
 STATCAN_PAYMENTS_SIDES = ("Receipts, seasonally adjusted", "Payments, seasonally adjusted")
 STATCAN_PAYMENTS_ACCOUNTS = {"current": "Total current account", "trade": "Goods and services"}
 
@@ -362,7 +361,7 @@ def _payments_rows(side: str, account: str) -> Callable[[pd.DataFrame], pd.Serie
 
 
 def _payments_vectors(vectors: dict[str, tuple[str, str]]) -> dict[str, Callable[[pd.DataFrame], pd.Series]]:
-    """Each balance of payments vector of one table (``config.STATCAN_CDN_PAYMENTS_VECTORS`` or the older table's) with the rows that are it."""
+    """Each balance of payments vector of one table (``config.STATCAN_CDN_PAYMENTS_VECTORS`` or ``ARCHIVED_CDN_PAYMENTS_VECTORS``) with the rows that are it."""
     return {
         vector: _payments_rows(side, STATCAN_PAYMENTS_ACCOUNTS[item])
         for item, pair in vectors.items()
@@ -392,9 +391,7 @@ class StatcanRead:
 # (``tools/bake_archives.py --only statcan``), a file per vector, named by it;
 # one request answers every vector of a table (``statcan_table``). The Real
 # Return Bonds' yield (batch 13.3) is its bake alone, asked nothing in a
-# drawing: only its months to 2000 are drawn (``fetch_cdn_yields``). So is
-# the older balance of payments table (batch 23), which has stopped
-# (``statcan_stopped_table``).
+# drawing: only its months to 2000 are drawn (``fetch_cdn_yields``).
 STATCAN_SERIES_READ = {
     STATCAN_CDN_DEBT_TABLE: StatcanRead("Dollars", 6, {STATCAN_CDN_DEBT_VECTOR: _debt_rows}),
     STATCAN_CDN_GDP_TABLE: StatcanRead("Dollars", 6, {STATCAN_CDN_GDP_VECTOR: _gdp_rows}),
@@ -407,9 +404,14 @@ STATCAN_SERIES_READ = {
     STATCAN_CDN_CPI_SA_TABLE: StatcanRead("2002=100", 0, {STATCAN_CDN_CPI_SA_VECTOR: _all_items_rows}),
     BOC_FINANCIAL_MARKET_TABLE: StatcanRead("Percent", 0, {CDN_REAL_RETURN_VECTOR: _real_return_rows}),
     STATCAN_CDN_PAYMENTS_TABLE: StatcanRead("Dollars", 6, _payments_vectors(STATCAN_CDN_PAYMENTS_VECTORS)),
-    STATCAN_CDN_OLD_PAYMENTS_TABLE: StatcanRead("Dollars", 6, _payments_vectors(STATCAN_CDN_OLD_PAYMENTS_VECTORS)),
 }
 STATCAN_BAKED_SOURCE = "statcan"
+# What the Canadian archive's bake reads of the archived balance of payments
+# table 36-10-0047 (batch 23; ``bake.bake_canadian_archives``), found and
+# checked as a live table's vectors are (``_statcan_vectors``). Not a live
+# table: it is baked once into ``cdn_archive_data``, never asked for in a
+# drawing or by the daily job (Terry, 2026-11-11).
+ARCHIVED_PAYMENTS_READ = StatcanRead("Dollars", 6, _payments_vectors(ARCHIVED_CDN_PAYMENTS_VECTORS))
 
 
 def statcan_zip_table_with_metadata(table_id: str) -> tuple[pd.DataFrame, str]:
@@ -436,8 +438,8 @@ def statcan_zip_table(table_id: str) -> pd.DataFrame:
     return statcan_zip_table_with_metadata(table_id)[0]
 
 
-def _statcan_vectors(table: pd.DataFrame, table_id: str) -> pd.DataFrame:
-    """The vectors read of a whole Statistics Canada table (``STATCAN_SERIES_READ``), a column each, in the table's unit.
+def _statcan_vectors(table: pd.DataFrame, table_id: str, read: StatcanRead | None = None) -> pd.DataFrame:
+    """The vectors read of a whole Statistics Canada table (``read``, by default ``STATCAN_SERIES_READ``'s), a column each, in the table's unit.
 
     Each vector's rows are found by the table's labels and checked, not
     trusted: the vector declared and no other, the declared unit and scale,
@@ -445,7 +447,7 @@ def _statcan_vectors(table: pd.DataFrame, table_id: str) -> pd.DataFrame:
     day, as Statistics Canada dates it (``REF_DATE`` is ``YYYY-MM``, or
     ``YYYY-MM-DD`` in 17-10-0009); a row without a value is NaN.
     """
-    read = STATCAN_SERIES_READ[table_id]
+    read = read or STATCAN_SERIES_READ[table_id]
     columns = {}
     for vector, rows_of in read.vectors.items():
         rows = table.loc[rows_of(table)]
@@ -536,24 +538,6 @@ def statcan_table(table_id: str) -> pd.DataFrame:
         lambda start: statcan_download(table_id, start),
         RECENT_PART_REVISED,
     )
-
-
-def statcan_stopped_table(table_id: str) -> pd.DataFrame:
-    """Return the vectors read of a Statistics Canada table that has stopped, a column each, in the table's unit: their bakes alone.
-
-    As a series whose source has stopped is read (batch 19.3, Terry's
-    decision 51; ``baked.with_recent_part``'s ``stopped``): its bake alone,
-    with no request and no warning. The table's last date is declared by the
-    caller beside its vectors (``payments.CDN_OLD_PAYMENTS_STOPPED``), and
-    tools/check_baked.py checks that each bake ends there; the daily job
-    re-bakes it as every other table, so a revision still reaches the bake.
-    A table with a vector not baked is its ZIP, whole (``statcan_download``).
-    """
-    vectors = list(STATCAN_SERIES_READ[table_id].vectors)
-    bakes = [read_series(STATCAN_BAKED_SOURCE, vector) for vector in vectors]
-    if any(series is None or series.empty for series in bakes):
-        return statcan_download(table_id)
-    return pd.concat(dict(zip(vectors, bakes)), axis=1).sort_index()
 
 
 def statcan_wds_vectors(vector_ids: Iterable[str | int], *, latest_n: int = 250) -> pd.DataFrame:

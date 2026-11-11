@@ -69,7 +69,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from ratesplot import bake, baked, cdn_data, de_data, payments, rates, uk_data, us_data  # noqa: E402
-from ratesplot.config import DATE_COLUMN, STATCAN_CDN_OLD_PAYMENTS_VECTORS  # noqa: E402
+from ratesplot.config import DATE_COLUMN  # noqa: E402
 
 RESULTS: list[bool] = []
 
@@ -397,11 +397,10 @@ def check_stopped_declared() -> None:
         # The inflation-linked bonds redeemed (batch 13.3), declared beside the bonds in ``de_data``.
         **{(de_data.BUNDESBANK_BAKED_SOURCE, f"{de_data.DE_LINKED_BOND_FLOW}.{de_data.linked_bond_key(isin)}"): bond.last_value
            for isin, bond in de_data.DE_LINKED_BONDS.items() if bond.last_value is not None},
-        # The balance of payments under the older manual (batch 23): the U.S.' BPM5 series and Canada's archived table.
+        # The U.S.' balance of payments under the older manual (batch 23). Canada's archived table is baked into
+        # cdn_archive_data, not a data file (Terry, 2026-11-11).
         **{(us_data.FRED_BAKED_SOURCE, code): payments.US_OLD_PAYMENTS_STOPPED
            for code in (*(code for pair in payments.US_OLD_PAYMENTS_SERIES.values() for code in pair), payments.US_OLD_BALANCE_SERIES)},
-        **{(cdn_data.STATCAN_BAKED_SOURCE, vector): payments.CDN_OLD_PAYMENTS_STOPPED
-           for pair in STATCAN_CDN_OLD_PAYMENTS_VECTORS.values() for vector in pair},
     }
     ends = {key: baked.read_series(*key).last_valid_index() for key in declared}
     wrong = {"/".join(key): f"{ends[key]:%Y-%m-%d}, declared {end:%Y-%m-%d}" for key, end in declared.items() if ends[key] != end}

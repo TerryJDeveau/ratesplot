@@ -351,19 +351,14 @@ _STATCAN_GFS_VECTORS = {
     ("Local government", "Other accounts payable, liabilities"): "v52531222",
 }
 # The balance of payments' (batch 23): table -> (its quarters, {(side, account): (vector, first, last value)}),
-# millions a quarter, the real vectors (config.STATCAN_CDN_PAYMENTS_VECTORS and the archived table's).
+# millions a quarter, the real vectors (config.STATCAN_CDN_PAYMENTS_VECTORS). The archived 36-10-0047 is
+# baked into cdn_archive_data and asked for by nothing synthetic (Terry, 2026-11-11).
 _STATCAN_PAYMENTS = {
     "36100018": (("1981-01-01", "2026-04-01"), {
         ("Receipts, seasonally adjusted", "Total current account"): ("v61915244", 26_400, 330_000),
         ("Payments, seasonally adjusted", "Total current account"): ("v61915273", 30_000, 338_000),
         ("Receipts, seasonally adjusted", "Goods and services"): ("v61915245", 23_700, 270_000),
         ("Payments, seasonally adjusted", "Goods and services"): ("v61915274", 23_000, 276_000),
-    }),
-    "36100047": (("1946-01-01", "2012-04-01"), {
-        ("Receipts, seasonally adjusted", "Total current account"): ("v114364", 900, 160_000),
-        ("Payments, seasonally adjusted", "Total current account"): ("v114397", 800, 176_000),
-        ("Receipts, seasonally adjusted", "Goods and services"): ("v114365", 800, 140_000),
-        ("Payments, seasonally adjusted", "Goods and services"): ("v114398", 700, 150_000),
     }),
 }
 _MILLIONS = {"UOM": "Dollars", "SCALAR_FACTOR": "millions", "SCALAR_ID": 6}
@@ -457,7 +452,7 @@ def statcan(table_id: str) -> bytes:
         })
         return _zip(table_id, frame)
     if table_id in _STATCAN_PAYMENTS:
-        # The balance of payments (batch 23): 36-10-0018 from 1981, the archived 36-10-0047 1946 to 2012-Q2.
+        # The balance of payments (batch 23): 36-10-0018 from 1981.
         (first, last), lines = _STATCAN_PAYMENTS[table_id]
         q = pd.date_range(first, last, freq="QS")
         rows = [
