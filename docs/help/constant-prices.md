@@ -21,7 +21,7 @@ Each is the all-items consumer price index, not seasonally adjusted, the one the
 - **The United Kingdom, 1914-07 to 1987.** The monthly consumer price index in the Bank of England's millennium dataset ([Research datasets](https://www.bankofengland.co.uk/statistics/research-datasets)), 2015 = 100: the ONS's estimates of the CPI from 1949, the cost-of-living index before them.
 - **The United Kingdom, from 1988-01.** The ONS's CPI index, all items, 2015 = 100, to one decimal ([D7BT](https://www.ons.gov.uk/economy/inflationandpriceindices/timeseries/d7bt/mm23)). It and the Bank's index differ by 0.04 % in 1988-01 and by at most 0.17 points in the 351 months both have (to 2017-03, measured 2026-11-03), so they are laid end to end, neither scaled.
 - **Germany, from 1991-01.** The Federal Statistical Office's consumer price index, 2020 = 100, through the Bundesbank ([BBDP1.M.DE.N.VPI.C.A00000.I20.A](https://www.bundesbank.de/dynamic/action/en/statistics/time-series-databases/time-series-databases/759784/759784?tsId=BBDP1.M.DE.N.VPI.C.A00000.I20.A)).
-- **Germany, 1948-06 to 1990.** West Germany's cost-of-living indexes, as the [price index](?help=price-index) page says, scaled to the index above. Of Germany's amounts only GDP reaches back before 1991, to 1950.
+- **Germany, 1948-06 to 1990.** West Germany's cost-of-living indexes, as the [price index](?help=price-index) page says, scaled to the index above. Germany's GDP, debt and interest reach back to 1950 (the interest of each level of government to 1970).
 
 ## How the program keeps these figures
 
