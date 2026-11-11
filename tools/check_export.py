@@ -79,6 +79,8 @@ DEFAULT_CASES = (
     "cpi", "cpi_long", "population", "population_long", "real_alone",
     # Batch 23: the balance of payments' pair, beside debt and GDP, with end labels; the UK's in U.S. dollars.
     "u_pay_mix", "uk_pay_master",
+    # Germany's, a sum each month, in U.S. dollars beside the U.S.'s, fitted.
+    "de_pay_master_reg",
 )
 # --save is run from the command line on these: two nations, then four with their own levels.
 SAVE_CASES = ("default", "nat_levels")

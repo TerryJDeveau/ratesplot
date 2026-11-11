@@ -18,7 +18,8 @@ each other. The financial account waits (plan 23).
 Each nation's reader returns one frame, ``[DATE, PAYMENTS_CREDITS_COLUMN,
 PAYMENTS_DEBITS_COLUMN]``, in the nation's currency (units, not millions),
 each value the sum over the trailing twelve months to its date, dated by the
-last day of its last quarter, as GDP and interest are (``frames.at_quarter_end``).
+last day of its last quarter, as GDP and interest are (``frames.at_quarter_end``);
+Germany's, whose figures are monthly, one each month, by the month's last day.
 ``plotting`` merges it into the macro frame, so that it is measured (-r, -p,
 --constant, --master), fitted (--reg, decision 62), projected (--projections)
 and exported as the other amounts are.
@@ -52,6 +53,25 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   HBOO, the current account's credits and debits (HBON less HBOO is the
   balance, HBOP, exactly), and IKBH and IKBI, exports and imports of goods
   and services. One series each, no join.
+* Germany: the Bundesbank's balance of payments (``de_data.DE_PAYMENTS_SERIES``),
+  monthly from 1971-01, unadjusted (its only whole monthly figures), millions
+  of euros a month, the Deutsche Mark years in euros at 1.95583: West
+  Germany's to 1990-06 and all of Germany's from 1990-07, in one series, no
+  join. The credits and debits are each the sum of goods, services, primary
+  income and secondary income (credits less debits is the Bundesbank's
+  current account balance within 0.002 million a month); trade, of goods and
+  services alone. Each month's twelve-month sum, dated by the month's last
+  day, not a sum of quarters (decision 128's call; alternative: quarterly,
+  as the other three). So the sums ending 1990-07 to 1991-05 hold months of
+  both territories: per person, each is over its months' mean population
+  (``de_data.payments_population``). -r divides them by the GDP drawn,
+  West Germany's until 1991-09-30, so the sums holding all of Germany's
+  months read high until 1991-12-31, by up to 14.4 % (all of Germany's GDP
+  to 1991-12-31 over West Germany's to 1991-09-30), where Germany's debt
+  and interest, each a year's figure until 1991, meet GDP's territory; and
+  each month's sum is over GDP's latest quarter, so the ratio runs up within
+  a quarter by up to its growth (about 2 % a quarter in the 1970s, 1 %
+  since 2010), which batch 42.3's filled-in sums would smooth.
 """
 
 from __future__ import annotations
@@ -71,15 +91,16 @@ from .config import (
     STATCAN_CDN_PAYMENTS_VECTORS,
     nation_by_key,
 )
+from .de_data import DE_PAYMENTS_SERIES, DE_PAYMENTS_SIDES, bundesbank_series
 from .frames import at_quarter_end, rows_to_frame
 from .http import downloads_of
 from .joins import ttm_sum
 from .uk_data import ons_series
 from .us_data import fred_series
 
-# The nations whose balance of payments is drawn so far (batch 23's stages):
-# a chart of another prints a note and draws none.
-PAYMENTS_NATIONS = ("us", "cdn", "uk")
+# The nations whose balance of payments is drawn (batch 23's stages): a chart
+# of another prints a note and draws none.
+PAYMENTS_NATIONS = ("us", "cdn", "uk", "de")
 
 # FRED's BEA series, BPM6, from 1999-Q1, millions of dollars a quarter,
 # seasonally adjusted: (credits, debits) of each pair.
@@ -103,6 +124,13 @@ CDN_PAYMENTS_EARLIEST = pd.Timestamp("1946-01-01")
 # quarter's last day: (credits, debits) of each pair.
 UK_PAYMENTS_SERIES = {"current": ("HBON", "HBOO"), "trade": ("IKBH", "IKBI")}
 UK_PAYMENTS_EARLIEST = pd.Timestamp("1955-01-01")
+
+# Germany: the Bundesbank's items (``de_data.DE_PAYMENTS_ITEMS``) added up into
+# each pair's credits and debits, millions of euros a month.
+DE_PAYMENTS_PARTS = {"current": ("G", "S", "IN1", "IN2"), "trade": ("G", "S")}
+DE_PAYMENTS_EARLIEST = pd.Timestamp("1971-01-01")
+# A year of months, for Germany's twelve-month sums.
+_MONTHS_IN_A_YEAR = 12
 
 
 def _fred_quarters(series_id: str, *, stopped: pd.Timestamp | None = None) -> pd.Series:
@@ -148,8 +176,22 @@ def _uk_quarters(item: str) -> tuple[pd.Series, pd.Series]:
     return ons_series(credits_id), ons_series(debits_id)
 
 
-# Each drawn nation's reader: (credits, debits) of a pair, a quarter's flows.
+def _de_months(item: str) -> tuple[pd.Series, pd.Series]:
+    """Germany's credits and debits of pair ``item``, each a month's flow in euros: the Bundesbank's items added up (the module's docstring).
+
+    A month lacking any item is left out, so no sum of twelve holds it.
+    """
+    sides = []
+    for side in DE_PAYMENTS_SIDES:
+        parts = [bundesbank_series(*DE_PAYMENTS_SERIES[(side, part)], revised=True) for part in DE_PAYMENTS_PARTS[item]]
+        sides.append(pd.concat(parts, axis=1).sum(axis=1, min_count=len(parts)).dropna() * MILLION)
+    return sides[0], sides[1]
+
+
+# Each drawn nation's reader: (credits, debits) of a pair, a quarter's flows,
+# or for Germany a month's.
 _QUARTERS = {"us": _us_quarters, "cdn": _cdn_quarters, "uk": _uk_quarters}
+_MONTHS = {"de": _de_months}
 
 
 def _ttm_frame(credits: pd.Series, debits: pd.Series) -> pd.DataFrame:
@@ -159,9 +201,21 @@ def _ttm_frame(credits: pd.Series, debits: pd.Series) -> pd.DataFrame:
     return frame.rename_axis(DATE_COLUMN).reset_index()
 
 
+def _twelve_month_sum(monthly: pd.Series) -> pd.Series:
+    """The sum of each twelve consecutive months, dated by the last one's last day; a month missing inside leaves the sums that hold it missing (as ``joins.ttm_sum`` for quarters)."""
+    regular = monthly.resample("ME").sum(min_count=1)
+    return regular.rolling(_MONTHS_IN_A_YEAR, min_periods=_MONTHS_IN_A_YEAR).sum().dropna()
+
+
+def _monthly_ttm_frame(credits: pd.Series, debits: pd.Series) -> pd.DataFrame:
+    """The pair's monthly flows as trailing-twelve-month sums, ``[DATE, credits, debits]``, one each month, dated by its last day."""
+    frame = pd.DataFrame({PAYMENTS_CREDITS_COLUMN: _twelve_month_sum(credits), PAYMENTS_DEBITS_COLUMN: _twelve_month_sum(debits)}).dropna()
+    return frame.rename_axis(DATE_COLUMN).reset_index()
+
+
 def payments_earliest(key: str) -> pd.Timestamp | None:
-    """The first quarter of nation ``key``'s balance of payments, for the coverage warning; None where none is drawn yet."""
-    return {"us": US_PAYMENTS_EARLIEST, "cdn": CDN_PAYMENTS_EARLIEST, "uk": UK_PAYMENTS_EARLIEST}.get(key)
+    """The first quarter (Germany's: month) of nation ``key``'s balance of payments, for the coverage warning; None where none is drawn yet."""
+    return {"us": US_PAYMENTS_EARLIEST, "cdn": CDN_PAYMENTS_EARLIEST, "uk": UK_PAYMENTS_EARLIEST, "de": DE_PAYMENTS_EARLIEST}.get(key)
 
 
 @downloads_of("the balance of payments")
@@ -172,7 +226,9 @@ def fetch_payments(key: str, item: str) -> pd.DataFrame | None:
     chart without the pair, as it does a curve whose source fails.
     """
     if key not in PAYMENTS_NATIONS:
-        print(f"  Note: the balance of payments is not drawn yet for {nation_by_key(key).name} (batch 23's later stages).")
+        print(f"  Note: the balance of payments is not drawn yet for {nation_by_key(key).name}.")
         return None
+    if key in _MONTHS:
+        return _monthly_ttm_frame(*_MONTHS[key](item))
     credits, debits = _QUARTERS[key](item)
     return _ttm_frame(credits, debits)

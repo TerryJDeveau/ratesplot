@@ -376,7 +376,8 @@ CASES: dict[str, list[str]] = {
     "de_interest1950_r": ["--na:de", "--interest", "-r", "-s:1950", "--e:1980"],
     # Batch 23: the balance of payments: the U.S. current account from 1960 across its join at 1999 (the
     # surplus green, the deficit pink), over GDP, per person at constant prices, and trade fitted by --reg with
-    # end labels beside debt and GDP; Germany's chart with a note and no pair (until its stage).
+    # end labels beside debt and GDP; trade on all four nations (Germany's with a note and no pair until 23's
+    # third stage).
     "u_pay1960": ["-u", "--pay", "-s:1960"],
     "u_pay_r": ["-u", "--pay", "-r", "-s:1960"],
     "u_pay_pc": ["-u", "--pay", "-p", "--con", "-s:1985"],
@@ -393,6 +394,13 @@ CASES: dict[str, list[str]] = {
     "uk_pay_trade_r": ["--na:gb", "--pay:trade", "-r", "-l", "-s:1970"],
     "uk_pay_master": ["--na:gb,us", "--pay", "--master:USD", "-s:1990"],
     "c_uk_pay_mix": ["--na:ca,gb", "--pay", "--gdp", "--debt", "-l", "-s:1995"],
+    # Batch 23's third stage: Germany's monthly sums from 1971 (West Germany's to 1990-06); trade over GDP with
+    # end labels (the sums of all of Germany over West Germany's GDP to 1991-11); per person across unification
+    # (each mixed sum over its months' people); in U.S. dollars beside the U.S., fitted by --reg.
+    "de_pay1971": ["--na:de", "--pay", "-s:1971"],
+    "de_pay_trade_r": ["--na:de", "--pay:trade", "-r", "-l", "-s:1971"],
+    "de_pay_pc": ["--na:de", "--pay", "-p", "-s:1985", "--e:1995"],
+    "de_pay_master_reg": ["--na:de,us", "--pay", "--master:USD", "--reg", "-s:1999"],
 }
 
 

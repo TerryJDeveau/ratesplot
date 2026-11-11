@@ -1285,8 +1285,9 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     projected = macro.attrs.get(PROJECTION_ATTR, {})
     population = fetch_de_population() if config.per_capita or config.population else None
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
-    # West Germany's GDP and debt and the population drawn cover other territories before 1960 and at unification (batch 16).
-    own_populations = west_german_own_populations() if config.per_capita else None
+    # West Germany's GDP and debt and the population drawn cover other territories before 1960 and at unification (batch 16);
+    # the balance of payments' twelve-month sums mix West Germany's months and all of Germany's through 1990-91 (batch 23).
+    own_populations = west_german_own_populations(population) if config.per_capita else None
     expressed = express(macro, config, DE, population, _consumer_prices("de", config), own_populations)
     expressed.attrs[PROJECTION_ATTR] = projected
     expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("de", config, population)

@@ -165,6 +165,8 @@ CHART_CASES = (
     "u_pay_trade_reg", "pay_all4",
     # Batch 23's second stage: Canada's and the UK's beside debt and GDP, with end labels.
     "c_uk_pay_mix",
+    # Batch 23's third stage: Germany's monthly sums per person across unification.
+    "de_pay_pc",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs

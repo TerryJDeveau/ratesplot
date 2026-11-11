@@ -831,8 +831,45 @@ def check_cnbc() -> None:
     check("CNBC: the feed is the one latest reads", "quote.cnbc.com" in CNBC_QUOTE_URL)
 
 
+def check_balance_of_payments() -> None:
+    """Batch 23's third stage: the Bundesbank's balance of payments items, read in millions, and the population of the sums mixing West Germany's months with all of Germany's."""
+    flow, key = de_data.DE_PAYMENTS_SERIES[("C", "G")]
+    answer = (f'﻿"",{flow}.{key},{flow}.{key}_FLAGS\n"",Current account / Goods / Receipts / Rest of the world,\n'
+              "unit,Euro,\nunit multiplier,Millions,\n1971-01,4617.921,\n1971-02,5261.468,\n")
+    units, multiplier = de_data._BUNDESBANK_UNITS[(flow, key)], de_data._BUNDESBANK_MULTIPLIERS[(flow, key)]
+    values = de_data.parse_bundesbank_csv(answer, units, multiplier)
+    check("payments: millions of euros as written, a month at its last day",
+          values.loc["1971-01-31"] == 4617.921 and values.loc["1971-02-28"] == 5261.468 and len(values) == 2, values.to_dict())
+    check("payments: another multiplier is refused", raises(de_data.parse_bundesbank_csv, answer.replace("Millions", "Billions"), units, multiplier) is not None)
+    check("payments: read as a percent series it is refused", raises(de_data.parse_bundesbank_csv, answer) is not None)
+    check("payments: eight series, credits and debits of four items, each key ending .N.ALL",
+          len(de_data.DE_PAYMENTS_SERIES) == 8 and all(series[1].endswith(".N.ALL") for series in de_data.DE_PAYMENTS_SERIES.values()))
+    # A population drawn as Eurostat's counts give it: West Germany's on 1 January to 1990, all of Germany's from 1991.
+    drawn = pd.Series([61.7e6, 62.7e6, 79.75e6, 80.3e6], index=pd.DatetimeIndex(["1989-01-01", "1990-01-01", "1991-01-01", "1992-01-01"]))
+    own = de_data.payments_population(drawn)
+    check("payments population: a sum each month 1990-01-31 to 1991-05-31, then none (the population drawn) from 1991-06-30",
+          own.index[0] == pd.Timestamp("1990-01-31") and own.index[-2] == pd.Timestamp("1991-05-31") and own.index[-1] == pd.Timestamp("1991-06-30")
+          and pd.isna(own.iloc[-1]) and own.iloc[:-1].notna().all() and len(own) == 18, (len(own), own.index[0], own.index[-1]))
+    averages = {pd.Timestamp("1989-07-01"): 62_063e3, pd.Timestamp("1990-07-01"): 63_254e3, pd.Timestamp("1991-07-01"): 64_074e3}
+
+    def log_linear(day: pd.Timestamp, known: dict) -> float:
+        days = sorted(known)
+        return float(np.exp(np.interp(day.value, [d.value for d in days], [np.log(known[d]) for d in days])))
+
+    def month_population(month_end: pd.Timestamp) -> float:
+        if month_end < pd.Timestamp("1990-07-01"):
+            return log_linear(month_end, averages)
+        return log_linear(max(month_end, pd.Timestamp("1991-01-01")), dict(drawn))
+
+    worst = max(abs(own[end] / np.mean([month_population(m) for m in pd.date_range(end - pd.DateOffset(months=11) + pd.offsets.MonthEnd(0), end, freq="ME")]) - 1)
+                for end in own.index[:-1])
+    check("payments population: each sum's twelve months' mean, West Germany's people to 1990-06, all of Germany's from 1990-07", worst < 1e-12, worst)
+    check("payments population: 1990-12-31 half each, 71.2 million where the population drawn has reached 79.7",
+          71.1e6 < own.loc["1990-12-31"] < 71.4e6, own.loc["1990-12-31"])
+
+
 def main() -> int:
-    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_west_gdp, check_german_debt, check_german_interest, check_german_interest_before_1970, check_older_mortgages, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc):
+    for group in (check_bundesbank, check_discount_rate, check_west_prices, check_west_population, check_west_gdp, check_german_debt, check_german_interest, check_german_interest_before_1970, check_older_mortgages, check_ecb, check_eurostat, check_fetchers, check_bot_check, check_cnbc, check_balance_of_payments):
         group()
     passed = sum(RESULTS)
     print(f"[de parsers] {passed} of {len(RESULTS)} checks passed")
