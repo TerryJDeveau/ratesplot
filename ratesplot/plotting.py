@@ -139,6 +139,7 @@ from .measures import PRICE_BASE_ATTR, express
 from .payments import fetch_payments, payments_earliest
 from .prices import consumer_prices, no_index_note
 from .rates import (
+    HELD,
     INFLATION_KEY,
     RateCurve,
     cut_to,
@@ -245,11 +246,16 @@ def add_macro_line(
     projected_from: pd.Timestamp | None = None,
     axis: str = MACRO_AXIS,
     filled: bool = False,
+    amount: ValueFormatter | None = None,
 ) -> Line2D | None:
     """Plot one macro series if it is enabled and has data; return the (legend) line or ``None``.
 
     ``axis``: the axis Export chart names its unit by, the amounts' unless
     given (the consumer price index's, ``INDEX_AXIS``, batch 13.4).
+
+    ``amount``: how the hover read-out writes a change of the series (batch
+    44, ``hover.mark``): an amount's size in its own unit; None for a
+    series in percent (under -r), its changes in bp or pp.
 
     ``filled`` (Daily values, batch 42.2): the series is filled in between
     its observations (``joins.carried``, ``rates.filled_through``), so it is
@@ -269,7 +275,7 @@ def add_macro_line(
         style = {key: value for key, value in style.items() if key != "drawstyle"}
     if projected_from is None:
         (line,) = ax.plot(data[DATE_COLUMN], data[column], label=label, **style)
-        mark_reading(line, value_format, daily=filled)
+        mark_reading(line, value_format, daily=filled, amount=amount)
         return mark_series(line, label, axis)
 
     observed = data.loc[data[DATE_COLUMN] <= projected_from]
@@ -282,14 +288,14 @@ def add_macro_line(
     if not observed[column].notna().any():
         # The window lies wholly in the projection.
         (line,) = ax.plot(ahead[DATE_COLUMN], ahead[column], label=label, **faint)
-        mark_reading(line, projected_format, projected=True)
+        mark_reading(line, projected_format, projected=True, amount=amount)
         return mark_series(line, label, MACRO_AXIS)
     (line,) = ax.plot(observed[DATE_COLUMN], observed[column], label=label, **style)
     mark_series(line, label, MACRO_AXIS)
-    mark_reading(line, value_format, daily=filled)
+    mark_reading(line, value_format, daily=filled, amount=amount)
     (projection,) = ax.plot(ahead[DATE_COLUMN], ahead[column], label="_projection", **faint)
     mark_series(projection, label, MACRO_AXIS)
-    mark_reading(projection, projected_format, projected=True)
+    mark_reading(projection, projected_format, projected=True, amount=amount)
     return line
 
 
@@ -476,6 +482,10 @@ def add_rate_lines(
         if curve.color_of is not None and f"{curve.color_of} Yield" in yield_colours:
             style = style | {"color": yield_colours[f"{curve.color_of} Yield"]}
         reading = _reading(curve)
+        # The read-out's change (batch 44): a rate set by announcement gives its last change, looked up in its whole
+        # series, so a stretch from the chart's start gives the change before the window.
+        set_rate = _set_by_announcement(curve)
+        history = curve.values if set_rate else None
         if curve.announced is not None:
             published, announced = _apart_at(values, curve.announced)
             parts = [(published, style, reading), (announced, style, _announced_reading)]
@@ -497,7 +507,7 @@ def add_rate_lines(
             (drawn_line,) = ax.plot(part.index, part.to_numpy(), label=label, **(part_style | colour))
             mark_series(drawn_line, exported, YIELD_AXIS)
             # A spread runs on to the day's quotes, as the yields it is taken from do.
-            mark_reading(drawn_line, part_reading, quoted=curve.spread, daily=filled)
+            mark_reading(drawn_line, part_reading, quoted=curve.spread, daily=filled, set_rate=set_rate, history=history)
             first = first or drawn_line
             setattr(first, _LAST_PIECE_ATTR, drawn_line)  # where its end label starts (``last_piece``)
             if curve.spread:
@@ -530,6 +540,16 @@ def _apart_at(values: pd.Series, first: pd.Timestamp) -> tuple[pd.Series, pd.Ser
     return pd.concat([before, held]), pd.concat([held, after])
 
 
+def _set_by_announcement(curve: RateCurve) -> bool:
+    """Whether ``curve`` is a rate set by announcement (``config.SET_BY_ANNOUNCEMENT``: a policy rate, a prime rate, a tracker), as its holds say.
+
+    Its values hold until the next (``rates.HELD``) where it is: the U.S.
+    policy rate's monthly averages before its target (1982-09) are a part
+    of it, so any held value makes the curve one.
+    """
+    return curve.holds is not None and bool((curve.holds == HELD).any())
+
+
 def _announced_reading(value: float) -> str:
     """How the read-out writes a rate drawn from its bank's announcement (batch 32): "2.50% (announced)"."""
     return f"{format_yield(value)} (announced)"
@@ -554,7 +574,7 @@ def _add_band(ax: Axes, curve: RateCurve, lower: pd.Series, config: PlotConfig, 
     edge = apart | np.append(apart[1:], False)
     (line,) = ax.plot(upper.index, upper.where(edge).to_numpy(), label="_nolegend_", **style)
     mark_series(line, exported, YIELD_AXIS)
-    mark_reading(line, format_yield)
+    mark_reading(line, format_yield, set_rate=_set_by_announcement(curve), history=curve.upper)
     ax.fill_between(
         upper.index, lower.to_numpy(), upper.to_numpy(), step="post", color=style["color"], alpha=POLICY_BAND_ALPHA,
         linewidth=0, label="_nolegend_",
@@ -755,6 +775,8 @@ def draw_country(
             value_format=macro_format,
             projected_from=projected.get(column),
             filled=config.daily and SERIES_KINDS[style_key].filled_in,
+            # A change in the read-out (batch 44): in the amounts' currency, with its percentage; under -r in bp or pp.
+            amount=None if config.relative else macro_format,
         )
         if line is not None:
             macro_lines.append(line)
@@ -797,6 +819,9 @@ def draw_country(
             value_format=extra.value_format,
             axis=extra.export_axis,
             filled=extra_filled,
+            # A change in the read-out (batch 44): a count or an index's points, to three figures as the amounts
+            # are written ("+512K", "+1.96", "+0.0323"), with its percentage.
+            amount=format_population,
         )
         if extra_line is not None:
             extra_axis = ExtraAxis(ax_extra, extra.axis_label, extra.tick_format)

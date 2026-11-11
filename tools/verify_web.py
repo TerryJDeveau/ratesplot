@@ -1374,16 +1374,28 @@ def check_batch112(check: Check) -> None:
         lines = hover.chart_lines(drawing.figures[key])
         origin, per_day = sent["days_to_x"]
         same = sent["box"] == [round(value, 2) for value in lines.box] and [c["name"] for c in sent["curves"]] == [c.name for c in lines.curves]
+        changes_said = 0
         for sent_curve, curve in zip(sent["curves"], lines.curves):
             same &= (sent_curve["texts"], sent_curve["steps"], sent_curve["projected"], sent_curve["quoted"]) == (
                 list(curve.texts), curve.steps, curve.projected, curve.quoted)
+            # Batch 44: each point's change, its figures and the date it names, as the page's script puts them together
+            # (``changeText``) against the window's (``hover.Curve.change_text``).
+            same &= (sent_curve["changes"], sent_curve["dated"]) == (list(curve.changes), curve.dated)
             for sent_run, run in zip(sent_curve["runs"], curve.runs):
                 days, tenths = np.cumsum(sent_run["d"]), np.cumsum(sent_run["y"])
                 same &= (days.tolist() == run.day.tolist() and sent_run["t"] == run.text.tolist()
                          and bool(np.all(np.abs(tenths / 10 - run.y) <= 0.05)) and bool(np.all(np.abs(origin + days * per_day - run.x) < 0.01))
                          and sent_run["until"] == (run.until[1] if run.until is not None else None))
-        check(f"{key}: the data unpacked are the lines the window reads (days, x from the day, y, texts)", same)
-    check("the data a tenth of the PNG or less", all(extra * 10 <= png for png, extra in sizes.values()), sizes)
+                for index, (change, back) in enumerate(zip(sent_run["c"], sent_run["b"])):
+                    said = None if change < 0 else sent_curve["changes"][change] + (
+                        "" if sent_curve["dated"] is None else f" {sent_curve['dated']} {hover.date_text(int(days[index]) - back)}")
+                    same &= said == curve.change_text(run, index)
+                    changes_said += said is not None
+        check(f"{key}: the data unpacked are the lines the window reads (days, x from the day, y, texts, changes)", same and changes_said > 0,
+              changes_said)
+    # Batch 44 added a line to every point read (a change and the date it names): the data grew from about 37 KB a chart
+    # to about 60 to 90 KB here, measured 2026-11-11, so the bound moved from a tenth of the PNG to a fifth.
+    check("the data a fifth of the PNG or less", all(extra * 5 <= png for png, extra in sizes.values()), sizes)
     at.checkbox(key="flag:hover").uncheck().run()
     check("unticked: nothing drawn again, each chart its PNG alone", at.session_state["drawing"].finished == finished
           and all(chart_bytes(at, key) == drawing.pngs[key] for key in ("cdn", "us")))
