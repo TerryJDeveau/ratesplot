@@ -867,14 +867,25 @@ _AGGREGATE_CHOICES = (
     ("", (("gross", "Gross (general government)"),)),
     ("", (("net", "Net (public sector, ex banks)"),)),
 )
-# The comparison chart's measures (batch 26), one at a time: the yield terms
-# as their boxes are captioned, the rates, the amounts and the population.
+# The comparison chart's measures (batch 26), one at a time. The boxes share
+# their columns across the rows, and the block may be no wider in one column
+# than the column's default (the regression block's two columns): eleven
+# terms on one row doubled the column's width. So the yield terms five to a
+# row at most, as their own boxes are (``_YIELD_CHOICES``), each longer name
+# in the first column, and no row captioned: the boxes name themselves ("r10"
+# the real 10-year, as --compare:r10 writes it), and a caption's column alone
+# took 45 px.
+_MORE_TERMS = tuple(term for term in NOMINAL_YIELD_TERMS if term not in DEFAULT_YIELD_TERMS)
 _COMPARE_CHOICES = (
-    ("yields", tuple((term, term) for term in NOMINAL_YIELD_TERMS)),
-    (REAL_YIELD_ROW, tuple((term, term) for term in REAL_YIELD_TERMS)),
-    ("rates", (("policy", "policy rate"), ("inflation", "inflation"))),
-    ("amounts", (("debt", "debt"), ("gdp", "GDP"), ("interest", "interest"))),
-    ("count", (("population", "population"),)),
+    ("", tuple((term, term) for term in DEFAULT_YIELD_TERMS)),
+    ("", tuple((term, term) for term in _MORE_TERMS[:3])),
+    ("", tuple((term, term) for term in _MORE_TERMS[3:])),
+    ("", tuple((term, term) for term in REAL_YIELD_TERMS)),
+    ("", (("policy", "policy rate"),)),
+    ("", (("inflation", "inflation"),)),
+    ("", (("debt", "debt"), ("gdp", "GDP"))),
+    ("", (("interest", "interest"),)),
+    ("", (("population", "population"),)),
 )
 
 # Help-listing sections, in display order: key -> heading (and any notes).
