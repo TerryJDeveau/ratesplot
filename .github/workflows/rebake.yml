@@ -10,8 +10,14 @@
 # after the rest is published, so GitHub's failure notice says so.
 #
 # Run on main by the schedule or by hand (Actions, Daily re-bake, Run workflow). A push to
-# the branch rebake-test runs it as a dry run: it bakes and reports, and pushes nothing.
-# The commits it pushes to main reach the web page at its next Reboot or wake.
+# the branch rebake-test, or a run by hand on any branch but main, is a dry run: it bakes
+# and reports, and pushes nothing. The commits it pushes to main reach the web page at its
+# next Reboot or wake.
+#
+# Last it asks the Census whether it lists a fiscal year newer than the program's (plan item
+# 23.3): if so, it bakes the U.S. state and local debt again, for the pull request. Run by
+# hand with "census" ticked (gh workflow run rebake.yml --ref BRANCH -f census=true), it
+# bakes them whatever is listed: a test that the runner can.
 
 name: Daily re-bake
 
@@ -21,6 +27,11 @@ on:
     # little: the Bank of England's database gives its yields about two business days late.
     - cron: "37 6 * * *"
   workflow_dispatch:
+    inputs:
+      census:
+        description: "Bake the U.S. Census's state and local debt even if it lists no newer year (a test that the runner can)"
+        type: boolean
+        default: false
   push:
     branches: [rebake-test]
 
@@ -43,15 +54,21 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install what the bake needs (the versions in requirements.txt)
-        # openpyxl: the Bank of England's real curve comes in Excel files (batch 13.3).
-        run: grep -E '^(numpy|openpyxl|pandas|requests)==' requirements.txt | xargs python -m pip install --quiet
+      - name: Install what the bake needs (the versions in requirements.txt, and xlrd)
+        # openpyxl: the Bank of England's real curve comes in Excel files (batch 13.3). xlrd: the
+        # Census's summary table for fiscal 2011 is an old .xls, which the U.S. bake reads (23.3);
+        # the program does not, so it is not in requirements.txt (the version tested on Buddug).
+        run: |
+          grep -E '^(numpy|openpyxl|pandas|requests)==' requirements.txt | xargs python -m pip install --quiet
+          python -m pip install --quiet xlrd==2.0.2
 
       - name: Re-bake
         id: bake
+        env:
+          CENSUS: ${{ inputs.census && '--census' || '' }}
         run: |
           set +e
-          python tools/rebake.py --out "$RUNNER_TEMP/rebake"
+          python tools/rebake.py --out "$RUNNER_TEMP/rebake" $CENSUS
           echo "status=$?" >> "$GITHUB_OUTPUT"
           cat "$RUNNER_TEMP/rebake/report.md" >> "$GITHUB_STEP_SUMMARY"
 

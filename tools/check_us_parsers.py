@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the U.S. Census bake's readers (plan item 23.3); offline, in seconds.
+"""Check the U.S. Census bake's readers and the daily job's Census step (plan item 23.3); offline, in seconds.
 
 * the extract of the Census historical database
   (``tools/us_fixtures/census_hist_fin_debt.csv``, ``bake.parse_census_hist_fin_extract``):
@@ -11,7 +11,12 @@
   unchanged, a figure with a fraction included;
 * the yearly estimates' fixed-width reader (``bake._parse_census_estimates``):
   the country's lines summed by level over items 44T, 49U and 64V, the
-  states' lines and other items left out, a level without 49U refused.
+  states' lines and other items left out, a level without 49U refused;
+* the daily job's Census step (``tools/rebake.py``): a new fiscal year goes to
+  review, not to main; nothing listed means nothing baked and the module
+  untouched; a bake that changes no value puts the module back byte for byte;
+  a listing that fails fails both levels and keeps the module; the review
+  list names the module once and the pull request's text says why.
 
 The live check of the Census listing is ``tools/check_sources.py --only census``;
 the bake itself, ``tools/bake_archives.py --only us``.
@@ -25,6 +30,9 @@ Exit code 1 if any check fails.
 
 from __future__ import annotations
 
+import dataclasses
+import datetime as dt
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -33,8 +41,11 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tools"))
 
+import rebake  # noqa: E402
 from ratesplot import bake  # noqa: E402
+from ratesplot.bake import SeriesBake, SeriesChanges  # noqa: E402
 from ratesplot.us_archive_data import EMBEDDED_US_DEBT_BY_LEVEL  # noqa: E402
 
 RESULTS: list[bool] = []
@@ -118,8 +129,82 @@ def check_estimates() -> None:
     check("estimates: a level without 49U is refused", raises(bake._parse_census_estimates, "\n".join(without), 2099) is not None)
 
 
+def _module_with(text: str, extra: dict[str, float], generated: str | None = None) -> str:
+    """The module's text with a 2025-06-30 row after each level's 2024 row (``extra``), and its date line changed."""
+    for key, value in extra.items():
+        rows = re.findall(r'    \("2024-06-30", [^)]*\),\r?\n', text)
+        text = text.replace(rows[0 if key == "p" else 1], rows[0 if key == "p" else 1] + f'        ("2025-06-30", {value:.10g}),\n', 1)
+    if generated:
+        text = re.sub(r"# Generated from Census Bureau files on \d{4}-\d{2}-\d{2}\.", f"# Generated from Census Bureau files on {generated}.", text)
+    return text
+
+
+def check_rebake() -> None:
+    added = SeriesChanges(added=pd.DatetimeIndex(["2025-06-30"]), lines=["1 new"])
+    census = SeriesBake(rebake.CENSUS, "Census state debt", rebake.CENSUS_MODULE, changes=added)
+    fred = SeriesBake("fred", "DGS10", ROOT / "ratesplot" / "data" / "fred" / "DGS10.csv", changes=added)
+    unchanged = SeriesBake(rebake.CENSUS, "Census local debt", rebake.CENSUS_MODULE, changes=SeriesChanges())
+    check("job: a new Census year goes to review, a series' new values to main, no change nowhere",
+          (rebake.destination(census), rebake.destination(fred), rebake.destination(unchanged)) == ("review", "main", None))
+
+    original_listed, original_bake = rebake.census_years_listed, rebake.bake_us_archives
+    with tempfile.TemporaryDirectory() as folder:
+        module = Path(folder) / "us_archive_data.py"
+        source = rebake.CENSUS_MODULE.read_bytes()
+        module.write_bytes(source)
+        text = source.decode("utf-8")
+        baked = []
+
+        def bake_writing(new_text: str):
+            def fake(path: Path) -> None:
+                baked.append(path)
+                path.write_text(new_text, encoding="utf-8", newline="")
+            return fake
+
+        try:
+            rebake.census_years_listed = lambda year: []
+            rebake.bake_us_archives = bake_writing("not a module")
+            results, line = rebake.bake_census(module=module)
+            check("job: nothing listed, nothing baked, the module untouched",
+                  results == [] and not baked and module.read_bytes() == source and "fiscal 2024, the newest" in line, line)
+
+            rebake.census_years_listed = lambda year: [year + 1]
+            rebake.bake_us_archives = bake_writing(_module_with(text, {}, generated="2099-01-01"))
+            results, line = rebake.bake_census(module=module)
+            check("job: a bake changing no value (only its date line) puts the module back byte for byte",
+                  module.read_bytes() == source and [rebake.destination(result) for result in results] == [None, None], line)
+
+            rebake.bake_us_archives = bake_writing(_module_with(text, {"p": 1.2e12, "m": 2.2e12}, generated="2099-01-01"))
+            results, line = rebake.bake_census(module=module)
+            check("job: fiscal 2025 baked: both levels for review, each one new value, the module as baked",
+                  [rebake.destination(result) for result in results] == ["review", "review"]
+                  and all(list(result.changes.added) == [pd.Timestamp("2025-06-30")] for result in results)
+                  and "2025-06-30" in module.read_text(encoding="utf-8") and "to fiscal 2025; for review" in line, line)
+
+            module.write_bytes(source)
+            out = Path(folder) / "out"
+            # As the job's: the module in the repository (the lists name files by their path in it).
+            in_repository = [(rebake.CENSUS_NAME, dataclasses.replace(result, path=rebake.CENSUS_MODULE)) for result in results]
+            rebake.write_outputs(out, in_repository, dt.date(2099, 1, 1), [line])
+            check("job: the review list names the module once; the pull request says why; the report has the step's line",
+                  (out / "review.txt").read_text(encoding="utf-8").count("us_archive_data.py") == 1
+                  and rebake.CENSUS_REVIEW_NOTE in (out / "review.md").read_text(encoding="utf-8")
+                  and line in (out / "report.md").read_text(encoding="utf-8")
+                  and (out / "append.txt").read_text(encoding="utf-8") == "")
+
+            def listing_down(year: int) -> list[int]:
+                raise ConnectionError("the Census did not answer")
+            rebake.census_years_listed = listing_down
+            results, line = rebake.bake_census(module=module)
+            check("job: a listing that fails fails both levels and keeps the module",
+                  len(results) == 2 and all(result.error and rebake.destination(result) is None for result in results)
+                  and module.read_bytes() == source and "not baked" in line, line)
+        finally:
+            rebake.census_years_listed, rebake.bake_us_archives = original_listed, original_bake
+
+
 def main() -> int:
-    for group in (check_extract, check_estimates):
+    for group in (check_extract, check_estimates, check_rebake):
         group()
     passed = sum(RESULTS)
     print(f"[us parsers] {passed} of {len(RESULTS)} checks passed")

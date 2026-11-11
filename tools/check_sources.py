@@ -30,8 +30,10 @@ Two checks are of a different kind:
   is taken from.
 * The Census publishes each fiscal year of state and local government
   finances about a year and a half after it ends. When a year newer than the
-  one baked into ``us_archive_data`` is listed, the line says so: run
-  ``python tools/bake_archives.py --only us``, check the charts, commit.
+  one baked into ``us_archive_data`` is listed, the line says so: the daily
+  job (``tools/rebake.py``, plan item 23.3) then bakes it and opens a pull
+  request; by hand, ``python tools/bake_archives.py --only us``, check the
+  charts, commit.
 
 Usage (from the project root)::
 
@@ -546,11 +548,11 @@ def _de_fred(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
 
 def _census(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     baked = max(pd.Timestamp(date).year for date, _value in EMBEDDED_US_DEBT_BY_LEVEL["p"])
-    listed = [year for year in (baked + 1, baked + 2) if bake.census_estimates_url(year)]
+    listed = bake.census_years_listed(baked)
     if listed:
         return None, (
-            f"ACTION: fiscal {listed[-1]} is published, baked only to {baked}: "
-            "run python tools/bake_archives.py --only us, check the charts, commit"
+            f"ACTION: fiscal {listed[-1]} is published, baked only to {baked}: the daily job bakes it into "
+            "its pull request (or python tools/bake_archives.py --only us, check the charts, commit)"
         )
     return None, f"baked to fiscal {baked}, the newest the Census lists"
 

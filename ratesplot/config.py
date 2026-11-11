@@ -367,7 +367,7 @@ ARCHIVE_END_MARKER = "# END AUTO-GENERATED CANADIAN ARCHIVE DATA"
 # extract ``tools/us_fixtures/census_hist_fin_debt.csv``; plan item 23.3), then
 # each later year's estimates by state and type of government (fixed-width
 # text; 2009-2010 on the old site, later years inside each year's "Individual
-# Unit File" ZIP).
+# Unit File" ZIP). The daily job bakes a new year when the Census lists one.
 CENSUS_HIST_FIN_URL = "https://www2.census.gov/programs-surveys/gov-finances/datasets/historical/hist_fin.zip"
 CENSUS_OLD_ESTIMATES_URL = "https://www2.census.gov/govs/estimate/"
 CENSUS_TABLES_URL = "https://www2.census.gov/programs-surveys/gov-finances/tables/"

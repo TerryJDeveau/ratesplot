@@ -42,6 +42,7 @@ import io
 import os
 import py_compile
 import re
+import runpy
 import shutil
 import subprocess
 import tempfile
@@ -1286,6 +1287,25 @@ def census_estimates_url(year: int) -> str | None:
         if found:
             return folder + found.group(1)
     return None
+
+
+def census_years_listed(baked_year: int) -> list[int]:
+    """The next two fiscal years after ``baked_year`` that the Census lists an estimates file for: years to bake.
+
+    Up to four small requests (each year's folder and its summary tables).
+    Used by ``tools/check_sources.py`` and by the daily job (``tools/rebake.py``),
+    which bakes the U.S. again when this is not empty (plan item 23.3).
+    """
+    return [year for year in (baked_year + 1, baked_year + 2) if census_estimates_url(year)]
+
+
+def baked_census_debt(source_path: Path | None = None) -> dict[str, list[tuple[str, float]]]:
+    """``EMBEDDED_US_DEBT_BY_LEVEL`` as the module file holds it now (``ratesplot/us_archive_data.py`` unless ``source_path``).
+
+    Read from the file, not imported, so that a bake in the same process is seen.
+    """
+    source_path = source_path or Path(__file__).resolve().with_name("us_archive_data.py")
+    return runpy.run_path(str(source_path))["EMBEDDED_US_DEBT_BY_LEVEL"]
 
 
 def _census_estimates_text(year: int) -> str | None:

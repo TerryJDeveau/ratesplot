@@ -15,7 +15,8 @@ the BEGIN/END markers of
   ``xlrd`` for one old ``.xls`` table. ``--us-hist-fin`` reads the historical
   database itself first and writes the extract from it, which needs
   ``pyodbc`` and the Microsoft Access ODBC driver (Windows; both
-  ``pip install``-able but the driver, and only the bake uses them);
+  ``pip install``-able but the driver, and only the bake uses them). The daily
+  job (``tools/rebake.py``) runs this bake when the Census lists a new year;
 * ``ratesplot/uk_archive_data.py``: the UK history (the Bank of England's
   "A millennium of macroeconomic data", no longer updated), its exchange
   rates of the pound among it (batch 18.4). Needs
