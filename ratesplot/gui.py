@@ -3429,12 +3429,16 @@ def run_gui(
     """
     _enable_windows_dpi_awareness()
     http.enable_download_cache()
-    http.enable_last_good_copies()  # batch 20: drawn from when a source fails
+    # Batch 20: drawn from when a source fails. Their folder's pass (41.2) says nothing unless it meets an
+    # error, which goes in the message log: a print here would reach no one the window shows.
+    copies_note = http.enable_last_good_copies()
     cli_payloads, cli_flags = cli_payloads or {}, cli_flags or {}
     state, note, remembered_in = load_state()
     choices, notes = starting_choices(config, cli_payloads, cli_flags, state, remembered_in)
     if note:
         notes.insert(0, note)
+    if copies_note:
+        notes.append(copies_note)
     previous = _foreground_window()  # the window with the keyboard before this one opens: usually the command window
     root = tk.Tk()
     root.title(WINDOW_TITLE)

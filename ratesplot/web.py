@@ -1350,7 +1350,10 @@ def _use_market_time_zone() -> None:
 
 _use_market_time_zone()
 http.enable_download_cache(max_age_seconds=DOWNLOAD_MAX_AGE_SECONDS)
-http.enable_last_good_copies()
+# Their folder's pass (batch 41.2) says nothing unless it meets an error: then a line in the server's log.
+_COPIES_NOTE = http.enable_last_good_copies()
+if _COPIES_NOTE:
+    print(f"  Note: {_COPIES_NOTE}")
 
 
 # ---------------------------------------------------------------------------

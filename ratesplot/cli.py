@@ -394,8 +394,11 @@ def main(argv: list[str] | None = None) -> None:
 
     # Each download's last good copy kept, and drawn when its source fails,
     # with a warning at the end of the run (batch 20). The harnesses replace
-    # the cache the copies are kept in, so they never write or read one.
-    enable_last_good_copies()
+    # the cache the copies are kept in, so they never write or read one. Their
+    # folder's pass (batch 41.2) says nothing unless it meets an error.
+    copies_note = enable_last_good_copies()
+    if copies_note:
+        print(f"  Note: {copies_note}")
     # The automatic refresh (batch 11.3): none where nothing new can come, said once.
     refreshing = config.auto_refresh and config.refresh_brings_nothing is None
     if config.auto_refresh and not refreshing:

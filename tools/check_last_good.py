@@ -352,13 +352,37 @@ def check_pruning() -> None:
         return {label for label, key in copies.items() if path_of(key).exists()}
 
     replaced = {"fred X 08-01", "boe A 30/Aug", "eurostat 2024-Q2", "penny 06-30", "valet 1900"}
-    http.enable_last_good_copies(folder)
+    note = http.enable_last_good_copies(folder)
     check("the pass at the start: each copy replaced by a later start removed (02/Sep later than 30/Aug, 2024-Q3 than Q2)",
           left() == set(copies) - replaced, sorted(set(copies) - replaced - left()) or sorted(left() & replaced))
     check("and a copy with no later one kept however old (its source down for weeks), a whole series and a feed kept",
           {"fred Y 07-01, its source down for weeks", "fred X whole", "a feed, no start"} <= left())
     check("and a damaged copy left for its reader; a stray temporary file a day old removed, a fresh one kept",
           damaged.exists() and not stray.exists() and fresh.exists(), (damaged.exists(), sorted(path.name for path in folder.glob("*.tmp"))))
+    check("and the damaged copy named in the pass's note, nothing else (Terry: silent unless an error)",
+          note is not None and f"1 could not be read and was left as it is ({damaged.name})" in note and "held" not in note, note)
+
+    def pass_again() -> str | None:
+        """The pass as a later start of the program makes it."""
+        http._copies_folder = None
+        return http.enable_last_good_copies(folder)
+
+    damaged.unlink()
+    check("a pass meeting no error says nothing", pass_again() is None)
+    for day in ("2026-08-01", "2026-09-01"):
+        path_of(("fred", "W", day)).write_bytes(pickle.dumps((("fred", "W", day), weeks_ago, f"W {day}")))
+    held = open(path_of(("fred", "W", "2026-08-01")), "rb")  # Python opens without sharing deletion: Windows cannot remove it
+    try:
+        note = pass_again()
+    finally:
+        held.close()
+    check("a replaced copy held open: left, and named in the note with the next start's try",
+          path_of(("fred", "W", "2026-08-01")).exists() and note is not None
+          and f"1 to be removed could not be, held open by another window perhaps ({path_of(('fred', 'W', '2026-08-01')).name}); "
+              "the next start tries again." in note, note)
+    note = pass_again()
+    check("the next start: removed, nothing said", not path_of(("fred", "W", "2026-08-01")).exists() and note is None, note)
+
     http._keep_copy(("fred", "Y", "2026-08-01"), "Y's next copy")
     check("a later start's copy kept: the earlier removed at once, the new one read back",
           "fred Y 07-01, its source down for weeks" not in left()
@@ -369,6 +393,16 @@ def check_pruning() -> None:
     http._keep_copy(("uk", boe, (("Datefrom", "03/Sep/2026"), ("SeriesCodes", "B"))), "B's next copy")
     check("a later start of one series: only that series' earlier copies removed",
           "boe B 01/Aug" not in left() and "boe A 02/Sep" in left())
+    said: list[str] = []
+    held = open(path_of(("fred", "W", "2026-09-01")), "rb")
+    try:
+        with this_thread_output_to(said.append):
+            http._keep_copy(("fred", "W", "2026-10-01"), "W's next copy")
+    finally:
+        held.close()
+    check("a later copy kept while the earlier is held open: the earlier left, and a note said at once",
+          path_of(("fred", "W", "2026-09-01")).exists() and "its copy from an earlier start could not be removed" in "".join(said),
+          "".join(said).strip())
     http._copies_folder = None
 
 
@@ -427,7 +461,7 @@ def main() -> int:
     print("[last good] the copies pruned (41.2), in a made-up folder")
     check_pruning()
     folder = temp_folders.make("last_good")
-    http.enable_last_good_copies(folder)
+    check("a new folder: the pass says nothing", http.enable_last_good_copies(folder) is None)
     print(f"[last good] copies in {folder}")
     synthetic_sources.install_synthetic_bake(temp_folders.make("baked"))
 
