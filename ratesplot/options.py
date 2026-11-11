@@ -1362,7 +1362,7 @@ OPTIONS: tuple[Option, ...] = (
     # (cp1252 on Windows), which has no ⓘ.
     Option(
         "hover", Kind.FLAG, ("hover",), "interface", "--ho / --hover / --no-ho",
-        "on by default: the pointer resting on a\nline shows its name, date and value;\n"
+        "on by default: the pointer resting on a\nline shows its name, date, value and\nchange;\n"
         "in the window, unticked also hides the\ntips over controls with an (i) beside\nthem (a click on the (i) shows it)",
         names=("hover",), shortest=2, label="Hover read-out", panel="labels", topic="hover",
     ),

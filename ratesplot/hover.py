@@ -30,10 +30,12 @@ What is shared here, without a GUI toolkit:
   of ``_nearest_line`` and ``_nearest_steps`` line for line;
 * ``Controller``: when the read-out shows, follows the pointer and goes.
 
-What a line says (``Reading``): its legend name; then its value and date.
-A line's points are its observations, and the read-out gives the one nearer
-the pointer along the line, never a value between two: a daily yield's
-Friday or Monday, not a Saturday. A step curve (a quarterly debt, a policy
+What a line says (``Reading``): its legend name; then its value and date;
+then its change (batch 44, below). A line's points are its observations,
+and the read-out gives the last one on or before the day under the pointer,
+never a value between two and never one from a later day (decision 127: a
+daily yield's Friday on the Saturday and the Sunday, its Monday from
+Monday; until batch 44 it gave the nearer one). A step curve (a quarterly debt, a policy
 rate held until changed) gives the value in force on the date under the
 pointer, and the date of its observation where that differs ("2026-08-15
 (observed 2026-06-30)"); a value carried unchanged on later rows is dated
@@ -44,6 +46,20 @@ gives the quote's time, as the subtitle does. Values are written as the end
 labels write them (-l): a yield "4.12%", a spread "+36 pts", an amount
 "$36.2T", under -r "120%". The regression segments are a fit, not a series,
 and say nothing (as Export chart leaves them out).
+
+The change (batch 44; Terry, 2026-11-10 and 11, decisions 127, 129 and
+130), a third line under the value: a plain subtraction in the series' own
+unit, and where that unit isn't percent the percentage change of the same
+pair after it, where the earlier value is above zero. A line read day by day
+(a series filled in, Daily values; a projection) gives its change from the
+day before and that change's rate over a year, "+$4.97B, +1.4 bp a day
+(≈ +5.11%/yr)"; a rate set by announcement (a policy rate, a prime rate)
+its last change and that change's date, "−25 bp on 2026-10-29"; any other
+its change from the observation before, with that one's date, "−3.0 bp
+from 2026-11-06". A change in a rate is in bp below 1 point and pp from 1,
+a percentage change in bp below 1 % and % from 1 (``_hundredths``). Every
+figure the read-out writes, its values too, is rounded on its decimal
+digits, half away from zero (``rounded``, ``for_writing``).
 
 A long daily series has many points to a pixel. Each line keeps, for each
 column of image pixels it crosses, its first and last points there and its
@@ -89,6 +105,20 @@ _QUOTE_ATTR = "_ratesplot_hover_quote"
 # Days are counted from here, so the browser reads them without matplotlib's epoch.
 _EPOCH = mdates.date2num(np.datetime64("1970-01-01"))
 
+# Decision 130 (Terry, 2026-11-11): every figure the read-out writes is rounded
+# on its decimal digits, half away from zero (-1.235 to -1.24, 0.125 to 0.13),
+# not by Python's rounding of the binary value stored (2.675 is stored as
+# 2.67499999999999982, which Python writes 2.67; an exact tie such as 0.125 it
+# takes to even, 0.12). The sources publish decimals, so the decimal digits
+# decide. A figure is first moved away from zero by this fraction of itself:
+# far more than the binary noise of a few subtractions and divisions (about
+# 1e-16 of the figure each), far less than any digit written.
+_NOISE = 1e-12
+# A change's sign: a true minus (decision 129), and a plus.
+_MINUS = "−"
+# A change a day as a rate over a year (decision 129): a year's mean length, leap years counted.
+_DAYS_A_YEAR = 365.25
+
 
 @dataclass(frozen=True)
 class _Mark:
@@ -96,13 +126,47 @@ class _Mark:
     projected: bool
     quoted: bool
     daily: bool = False
+    # How a change in an amount is written (batch 44): a positive amount in the series' own unit, as its values are
+    # ("$4.97B", "512K"); None for a series in percent, whose changes are in bp or pp.
+    amount: Callable[[float], str] | None = None
+    # A rate set by announcement (``config.SET_BY_ANNOUNCEMENT``): its last change and that change's date.
+    set_rate: bool = False
+    # Its whole series' changes, where its last change is looked up (a stretch drawn from the chart's start holds a
+    # value set before it): each change's day (from 1970-01-01), the value it set and the value before it.
+    history: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
 
 
 def mark(
-    line: Line2D, value_format: Callable[[float], str], *, projected: bool = False, quoted: bool = False, daily: bool = False
+    line: Line2D,
+    value_format: Callable[[float], str],
+    *,
+    projected: bool = False,
+    quoted: bool = False,
+    daily: bool = False,
+    amount: Callable[[float], str] | None = None,
+    set_rate: bool = False,
+    history: pd.Series | None = None,
 ) -> Line2D:
-    """Record how the read-out writes ``line``'s values; ``projected``: a projection to today; ``quoted``: a yield or spread, which an intraday quote can end; ``daily``: a series filled in between its observations (Daily values, batch 42.2), read day by day."""
-    setattr(line, _MARK_ATTR, _Mark(value_format, projected, quoted, daily))
+    """Record how the read-out writes ``line``'s values and their changes.
+
+    ``projected``: a projection to today; ``quoted``: a yield or spread, which
+    an intraday quote can end; ``daily``: a series filled in between its
+    observations (Daily values, batch 42.2), read day by day. ``amount``: how
+    a change of an amount is written (a positive amount, as the values are
+    written: ``axes.format_currency`` with the chart's prefix, a count); None
+    for a series in percent (a yield, a rate, a spread, inflation, an amount
+    under -r), whose changes are written in bp or pp. ``set_rate``: a rate set
+    by announcement, which reads its last change and that change's date,
+    looked up in ``history``, its whole series (date-indexed), where given.
+    """
+    changes = None
+    if history is not None:
+        history = history.dropna().sort_index()
+        days = pd.DatetimeIndex(history.index).to_numpy().astype("datetime64[D]").astype(np.int64)
+        values = history.to_numpy(dtype=float)
+        at = np.flatnonzero(values[1:] != values[:-1]) + 1  # each position where the value changes
+        changes = (days[at], values[at], values[at - 1])
+    setattr(line, _MARK_ATTR, _Mark(value_format, projected, quoted, daily, amount, set_rate, changes))
     return line
 
 
@@ -122,6 +186,123 @@ def date_text(day: int) -> str:
     return str(np.datetime64(int(day), "D"))
 
 
+# ---------------------------------------------------------------------------
+# Figures as the read-out writes them (decisions 129 and 130, batch 44)
+# ---------------------------------------------------------------------------
+
+
+def rounded(value: float, decimals: int) -> float:
+    """``value`` rounded to ``decimals`` places on its decimal digits, half away from zero (decision 130).
+
+    Scaled, moved away from zero by ``_NOISE`` of itself (the binary noise
+    nudged out), a half added and the fraction dropped, the sign put back:
+    -1.235 to -1.24, +1.235 to +1.24, 0.125 to 0.13, 4.25 - 3.015
+    (1.2349999999999999 stored) to 1.24. The result is the double nearest
+    the decimal, so a format to ``decimals`` places writes it exactly. A
+    figure that rounds to nothing is 0.0, never -0.0.
+    """
+    scale = 10.0 ** decimals
+    whole = math.floor(abs(value) * scale * (1.0 + _NOISE) + 0.5)
+    return math.copysign(whole / scale, value) if whole else 0.0
+
+
+def for_writing(value: float) -> float:
+    """``value`` made ready for a formatter that rounds it itself (``axes.format_yield``'s ``.3f``, ``format_currency``'s ``.3g``).
+
+    Moved away from zero by ``_NOISE`` of itself, the same nudge as
+    ``rounded``'s, so the formatter's own rounding of the binary value goes
+    half away from zero on the decimal digits it writes (decision 130), at
+    whatever places it chooses: a gilt's 4.1250 is written 4.125%, its 4.12505
+    4.125%, and to two places 4.13 where Python alone wrote 4.12.
+    """
+    return value * (1.0 + _NOISE)
+
+
+def _signed(text: str, figure: float) -> str:
+    """``text`` (a figure's size) with its sign: "+" above zero, a true minus below (decision 129), none at zero."""
+    if figure > 0:
+        return "+" + text
+    if figure < 0:
+        return _MINUS + text
+    return text
+
+
+def _hundredths(value: float, unit: str) -> str:
+    """A change in percentage points (``unit`` " pp") or a percentage change (``unit`` "%"), as decision 129 writes it.
+
+    1 or more in ``unit``, to three places, two where the third is 0
+    ("+1.25 pp", "+1.375 pp", "+2.30%"); below 1 in bp, hundredths of it, to a
+    tenth below 10 and whole from 10 to 99 ("+3.5 bp", "-25 bp"). The unit
+    and the places are chosen on the rounded figure: 9.96 bp is "10 bp", 99.6
+    bp "1.00 pp". Signed (``_signed``), the sign by the rounded figure.
+    """
+    points = abs(value) * 100.0
+    tenths = rounded(points, 1)
+    if tenths < 10.0:
+        text, figure = f"{tenths:.1f} bp", tenths
+    else:
+        whole = rounded(points, 0)
+        if whole < 100.0:
+            text, figure = f"{whole:.0f} bp", whole
+        else:
+            figure = rounded(abs(value), 3)
+            places = f"{figure:,.3f}"
+            text = (places[:-1] if places.endswith("0") else places) + unit
+    return _signed(text, figure if value >= 0 else -figure)
+
+
+def _amount_change(change: float, amount: Callable[[float], str]) -> str:
+    """A change in an amount, in the series' own unit, signed: "+$4.97B", "−512K" (``amount`` writes its size)."""
+    return _signed(amount(for_writing(abs(change))), change)
+
+
+def _figures(how: _Mark, now: float, before: float) -> str:
+    """The change from ``before`` to ``now``: in bp or pp for a series in percent; else in its own unit, then its percentage change where ``before`` is above zero."""
+    change = now - before
+    if how.amount is None:
+        return _hundredths(change, " pp")
+    text = _amount_change(change, how.amount)
+    return f"{text}, {_hundredths(change / before * 100.0, '%')}" if before > 0 else text
+
+
+def _change_a_day(how: _Mark, now: float, before: float) -> str:
+    """A line read day by day: its change from the day before, then that change's rate over a year (decision 129).
+
+    "+0.4 bp a day (≈ +1.46 pp/yr)" for a series in percent; for an amount
+    "+$4.97B, +1.4 bp a day (≈ +5.11%/yr)", the rate over a year being its
+    percentage change's (its own unit's where the day before is not above
+    zero). A day with the value of the day before (a value held after its
+    last figure): "no change from the day before".
+    """
+    change = now - before
+    if change == 0:
+        return "no change from the day before"
+    if how.amount is None:
+        return f"{_hundredths(change, ' pp')} a day (≈ {_hundredths(change * _DAYS_A_YEAR, ' pp')}/yr)"
+    if before > 0:
+        percent = change / before * 100.0
+        return (f"{_amount_change(change, how.amount)}, {_hundredths(percent, '%')} a day "
+                f"(≈ {_hundredths(percent * _DAYS_A_YEAR, '%')}/yr)")
+    return f"{_amount_change(change, how.amount)} a day (≈ {_amount_change(change * _DAYS_A_YEAR, how.amount)}/yr)"
+
+
+def _last_change(how: _Mark, day: int, value: float) -> tuple[float, int] | None:
+    """A set rate's last change on or before ``day``, to ``value``, in its whole series (``_Mark.history``): (the value before it, its day); None if none is known.
+
+    The change looked up is the last whose new value is ``value``: on the
+    day of a change, the point held at the old value reads the change before.
+    """
+    if how.history is None:
+        return None
+    days, new, old = how.history
+    position = int(np.searchsorted(days, day, "right")) - 1
+    # A step back or two at most: a value held to the day another starts (``plotting._apart_at``).
+    for candidate in range(position, max(position - 3, -1), -1):
+        if new[candidate] == value:
+            return float(old[candidate]), int(days[candidate])
+    return None
+
+
 @dataclass(frozen=True)
 class Run:
     """An unbroken stretch of a drawn line: its points in image pixels, each one's day and the index of its value's text.
@@ -136,6 +317,12 @@ class Run:
     day: np.ndarray
     text: np.ndarray
     until: tuple[float, int] | None = None
+    # Each point's change (batch 44): the index of its figures in ``Curve.changes``, -1 where it has none (a line's
+    # first point, with nothing before it on the chart); and how many days before the point's own day the date the
+    # change names is (``Curve.dated``), 0 where it names none. Kept apart from the figures, so the figures repeat
+    # and the page's data stay small: a daily yield's changes are a few dozen texts, its dates every day.
+    change: np.ndarray | None = None
+    back: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -149,11 +336,24 @@ class Curve:
     quoted: bool
     texts: tuple[str, ...]  # its values as written, each once
     runs: tuple[Run, ...]
+    changes: tuple[str, ...] = ()  # its changes' figures as written, each once (batch 44)
+    # The word before a change's date: "from" (the observation before), "on" (a set rate's last change), or None for a
+    # line read day by day, whose change names no date ("... a day").
+    dated: str | None = None
+
+    def change_text(self, run: Run, index: int) -> str | None:
+        """What run point ``index`` says of its change: "−3.0 bp from 2026-11-06"; None where it has none."""
+        if run.change is None or run.change[index] < 0:
+            return None
+        figures = self.changes[int(run.change[index])]
+        if self.dated is None:
+            return figures
+        return f"{figures} {self.dated} {date_text(int(run.day[index]) - int(run.back[index]))}"
 
 
 @dataclass(frozen=True)
 class Reading:
-    """What the read-out says of one line: its name, colour, value and date, and the point read, in image pixels."""
+    """What the read-out says of one line: its name, colour, value, date and change, and the point read, in image pixels."""
 
     name: str
     color: str
@@ -161,11 +361,18 @@ class Reading:
     when: str
     x: float
     y: float
+    change: str | None = None  # batch 44: "−3.0 bp from 2026-11-06"; None where it has none
 
     @property
-    def lines(self) -> tuple[str, str]:
-        """The line's two lines in the read-out: "10-Year Yield", "4.12%  2026-10-27"."""
-        return self.name, f"{self.value}  {self.when}"
+    def lines(self) -> tuple[str, ...]:
+        """The line's lines in the read-out: "10-Year Yield", "4.12%  2026-10-27", then its change, "−3.0 bp from 2026-10-24"."""
+        value = f"{self.value}  {self.when}"
+        return (self.name, value) if self.change is None else (self.name, value, self.change)
+
+    @property
+    def shown(self) -> tuple[tuple[str, str], ...]:
+        """Each of ``lines`` with its colour: the name in the line's, the rest in ``BOX_TEXT``."""
+        return tuple(zip(self.lines, (self.color, BOX_TEXT, BOX_TEXT)))
 
 
 @dataclass(frozen=True)
@@ -187,7 +394,7 @@ class Readings:
 
     @property
     def lines(self) -> tuple[str, ...]:
-        """Every line's two lines, the nearest first."""
+        """Every line's lines (two, or three with a change), the nearest first."""
         return tuple(text for reading in self.each for text in reading.lines)
 
 
@@ -203,10 +410,13 @@ class _Found:
 
 
 def _nearest_line(run: Run, px: float, py: float, reach: float, box: tuple[float, float, float, float]) -> _Found | None:
-    """The point of a run drawn as a line nearest (px, py), within ``reach``: the observation nearer it along the line.
+    """The point of a run drawn as a line nearest (px, py), within ``reach``: the last observation on or before the day there.
 
     Each segment between two points is measured; the first of equally near
-    segments wins. A run of one point draws nothing.
+    segments wins. The point read is the segment's first, or its second where
+    the nearest place on the segment is that point itself (batch 44, decision
+    127: never a value from a later day; until then the nearer of the two). A
+    run of one point draws nothing.
     """
     count = len(run.x)
     if count < 2:
@@ -227,7 +437,7 @@ def _nearest_line(run: Run, px: float, py: float, reach: float, box: tuple[float
     best = int(np.argmin(distance))
     if not distance[best] <= reach:
         return None
-    index = low + best + (1 if along[best] >= 0.5 else 0)
+    index = low + best + (1 if along[best] >= 1.0 else 0)
     return _Found(float(distance[best]), float(run.x[index]), float(run.y[index]), index, int(run.day[index]))
 
 
@@ -314,7 +524,8 @@ class ChartLines:
             return None
         ranked = sorted(best.values(), key=lambda item: (item[0].distance, item[1]))
         return Readings(tuple(
-            Reading(curve.name, curve.color, curve.texts[int(run.text[found.index])], self._when(curve, run, found), found.x, found.y)
+            Reading(curve.name, curve.color, curve.texts[int(run.text[found.index])], self._when(curve, run, found), found.x, found.y,
+                    curve.change_text(run, found.index))
             for found, _order, curve, run in ranked
         ))
 
@@ -408,14 +619,27 @@ def _curve(line: Line2D, name: str, how: _Mark, height: float) -> Curve | None:
     x = transform.transform(np.column_stack([days + _EPOCH, np.ones_like(days)]))[:, 0]
     y = height - transform.transform(np.column_stack([days + _EPOCH, values]))[:, 1]
     valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(values)
-    texts: dict[str, int] = {}
-    runs: list[Run] = []
-    for start, stop in _stretches(valid):
+    stretches = _stretches(valid)
+    # Each stretch's observations: every point; on a step line the first row of each value.
+    observed: list[np.ndarray] = []
+    for start, stop in stretches:
         index = np.arange(start, stop)
         if steps:
             # A value repeated on the next rows (a quarterly figure carried on the dates of a daily series, as
             # the U.S. frame does) draws no riser: its first row is its observation, which the read-out dates.
             index = index[np.r_[True, values[index[1:]] != values[index[:-1]]]]
+        observed.append(index)
+    # The observations in order across the line's breaks: an observation's change is from the one before it,
+    # wherever that is (a missing month between them, its date says so).
+    in_order = np.concatenate(observed) if observed else np.array([], dtype=np.int64)
+    whole_days = np.floor(days)
+    # Python's own floats for the change's figures, point by point (a NumPy scalar costs more than the arithmetic).
+    value_list, day_list = values.tolist(), whole_days.tolist()
+    texts: dict[str, int] = {}
+    changes: dict[str, int] = {}
+    written: dict[object, str] = {}  # each change's figures, made once: a yield's repeat often
+    runs: list[Run] = []
+    for (start, stop), index in zip(stretches, observed):
         keep = index[_decimated(x[index], y[index])]
         until = None
         if steps and stop < len(x) and np.isfinite(x[stop]):
@@ -423,11 +647,60 @@ def _curve(line: Line2D, name: str, how: _Mark, height: float) -> Curve | None:
         elif steps and index[-1] < stop - 1:
             # The run ends on its last value repeated (a rate held to the chart's end): the step is drawn to there.
             until = (float(x[stop - 1]), int(math.floor(days[stop - 1])))
-        indexes = np.array([texts.setdefault(how.value_format(float(value)), len(texts)) for value in values[keep]], dtype=np.int32)
-        runs.append(Run(x[keep], y[keep], np.floor(days[keep]).astype(np.int64), indexes, until))
+        indexes = np.array([texts.setdefault(how.value_format(for_writing(float(value))), len(texts)) for value in values[keep]],
+                           dtype=np.int32)
+        # The point before each in the line's order: the day before for a line read day by day, else the observation
+        # before (``keep`` is among ``in_order``).
+        position = np.searchsorted(in_order, keep)
+        earlier = np.where(position > 0, in_order[np.maximum(position - 1, 0)], -1)
+        change = [_change_of(how, value_list, day_list, point, before, written) for point, before in zip(keep.tolist(), earlier.tolist())]
+        change_indexes = np.array([-1 if one is None else changes.setdefault(one[0], len(changes)) for one in change], dtype=np.int32)
+        back = np.array([0 if one is None else one[1] for one in change], dtype=np.int64)
+        runs.append(Run(x[keep], y[keep], whole_days[keep].astype(np.int64), indexes, until, change_indexes, back))
     if not runs:
         return None
-    return Curve(name, to_hex(line.get_color()), steps, how.projected, how.quoted, tuple(texts), tuple(runs))
+    dated = None if how.daily or how.projected else "on" if how.set_rate else "from"
+    return Curve(name, to_hex(line.get_color()), steps, how.projected, how.quoted, tuple(texts), tuple(runs), tuple(changes), dated)
+
+
+def _change_of(
+    how: _Mark, values: list[float], days: list[float], point: int, earlier: int, written: dict[object, str]
+) -> tuple[str, int] | None:
+    """What a line's ``point`` says of its change (batch 44): its figures, and how many days before the point the date it names is; None where nothing comes before it on the chart.
+
+    ``days`` are whole; ``earlier`` the point before in the line's order
+    (``_curve``: the observation before, across a break; -1 for none);
+    ``written`` the figures already made, by what they depend on. A line read
+    day by day (filled in, or a projection): from the day before, where the
+    line has that day, a text naming no date (``Curve.dated`` None). A rate
+    set by announcement: its last change, on that change's day, from its
+    whole series where it has one (``_last_change``), else from the
+    observation before, on its own day. Any other: from the observation
+    before, on that one's day ("no change" where the two are equal).
+    """
+    now, day = values[point], int(days[point])
+    if how.daily or how.projected:
+        if earlier < 0 or days[earlier] != day - 1 or not math.isfinite(values[earlier]):
+            return None
+        before = values[earlier]
+        if (now, before) not in written:
+            written[now, before] = _change_a_day(how, now, before)
+        return written[now, before], 0
+    if how.set_rate:
+        found = _last_change(how, day, now)
+        if found is not None:
+            return _figures(how, now, found[0]), day - found[1]
+    if earlier < 0:
+        return None
+    before = values[earlier]
+    back = 0 if how.set_rate else day - int(days[earlier])
+    if now == before:
+        return "no change", back
+    # A change in percent depends on the difference alone (to well within a written digit); an amount's on the pair.
+    key = round(now - before, 9) if how.amount is None else (now, before)
+    if key not in written:
+        written[key] = _figures(how, now, before)
+    return written[key], back
 
 
 def _stretches(valid: np.ndarray) -> list[tuple[int, int]]:
@@ -491,11 +764,18 @@ def payload(lines: ChartLines) -> dict:
                 "projected": curve.projected,
                 "quoted": curve.quoted,
                 "texts": list(curve.texts),
+                # Batch 44: its changes' figures, and the word before their dates (None: they name none).
+                "changes": list(curve.changes),
+                "dated": curve.dated,
                 "runs": [
                     {
                         "d": _deltas(run.day),
                         "y": _deltas(np.rint(run.y * 10).astype(np.int64)),
                         "t": run.text.tolist(),
+                        # Each point's change: an index into the curve's changes (-1 for none), and the days back
+                        # from the point's day to the date it names (``Curve.change_text``).
+                        "c": run.change.tolist() if run.change is not None else [-1] * len(run.day),
+                        "b": run.back.tolist() if run.back is not None else [0] * len(run.day),
                         "until": run.until[1] if run.until is not None else None,
                     }
                     for run in curve.runs
@@ -610,7 +890,8 @@ class _PlainWindow:
         self.canvas = figure.canvas
         self.lines: ChartLines | None = None
         self.background = None
-        # The box, and as many texts (two to a line read) and rings (one to a line) as the most lines read yet (batch 11.6).
+        # The box, and as many texts (one to a line of the box: two or three to a line read, batch 44) and rings (one to
+        # a line read) as the most shown yet (batch 11.6).
         self.box = FancyBboxPatch(
             (0, 0), 1, 1, boxstyle="round,pad=0", transform=IdentityTransform(), facecolor=BOX_FACE, edgecolor="#808080",
             linewidth=1.2, visible=False, animated=True, zorder=10,
@@ -654,35 +935,34 @@ class _PlainWindow:
         reading = self.lines.reading(event.x, height - event.y, REACH_PX) if self.lines is not None else None
         self.controller.moved(reading, event.x, event.y)
 
-    def _pooled(self, count: int) -> tuple[list[Text], list[Line2D]]:
-        """Two texts and a ring for each of ``count`` lines read, made as needed; the rest hidden."""
+    def _pooled(self, text_count: int, ring_count: int) -> tuple[list[Text], list[Line2D]]:
+        """``text_count`` texts and ``ring_count`` rings, made as needed; the rest hidden."""
         identity = IdentityTransform()
-        while len(self.rings) < count:
-            for _ in range(2):
-                self.texts.append(self.figure.text(
-                    0, 0, "", transform=identity, fontsize=9, va="bottom", visible=False, animated=True, zorder=11,
-                ))
+        while len(self.texts) < text_count:
+            self.texts.append(self.figure.text(
+                0, 0, "", transform=identity, fontsize=9, va="bottom", visible=False, animated=True, zorder=11,
+            ))
+        while len(self.rings) < ring_count:
             ring = Line2D(
                 [0], [0], transform=identity, marker="o", markersize=9, markerfacecolor="none", markeredgewidth=1.6,
                 linestyle="none", visible=False, animated=True, zorder=10,
             )
             self.figure.add_artist(ring)
             self.rings.append(ring)
-        for artist in (*self.texts[2 * count:], *self.rings[count:]):
+        for artist in (*self.texts[text_count:], *self.rings[ring_count:]):
             artist.set_visible(False)
-        return self.texts[:2 * count], self.rings[:count]
+        return self.texts[:text_count], self.rings[:ring_count]
 
     def _show(self, reading: Readings, x: float, y: float) -> None:
         height = self.figure.bbox.height
-        texts, rings = self._pooled(len(reading.each))
-        for index, one in enumerate(reading.each):
-            name, value = texts[2 * index], texts[2 * index + 1]
-            name.set_text(one.name)
-            name.set_color(one.color)
-            value.set_text(f"{one.value}  {one.when}")
-            value.set_color(BOX_TEXT)
-            rings[index].set_data([one.x], [height - one.y])
-            rings[index].set_markeredgecolor(one.color)
+        shown = [line for one in reading.each for line in one.shown]
+        texts, rings = self._pooled(len(shown), len(reading.each))
+        for text, (content, color) in zip(texts, shown):
+            text.set_text(content)
+            text.set_color(color)
+        for ring, one in zip(rings, reading.each):
+            ring.set_data([one.x], [height - one.y])
+            ring.set_markeredgecolor(one.color)
         # Each text a line of the box, the nearest line's name at the top. Measured shown: matplotlib measures a hidden
         # text as a box of one pixel (animated, a shown text is still drawn only by ``_blit``).
         renderer = self.canvas.get_renderer()

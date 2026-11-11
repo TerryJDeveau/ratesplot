@@ -136,7 +136,7 @@ Downloads
 
 The hover read-out
     As in the window (batch 11.2, ``hover``): the pointer resting on a line
-    shows its name, date and value by the pointer, worked out in the
+    shows its name, date, value and change (batch 44) by the pointer, worked out in the
     visitor's browser from data sent with the chart (``_chart_bytes``), so
     following a line asks nothing of the server. Its box ("Hover read-out")
     changes no chart: unticking it sends the charts without the data, and
@@ -599,7 +599,8 @@ function nearestLine(run, px, py, reach, box) {
     if (best === null || distance < best.distance) best = { distance, i, along };
   }
   if (best === null || !(best.distance <= reach)) return null;
-  const index = best.i + (best.along >= 0.5 ? 1 : 0);
+  // The last observation on or before the day there (batch 44): the segment's second point only at that point.
+  const index = best.i + (best.along >= 1 ? 1 : 0);
   return { distance: best.distance, x: run.x[index], y: run.yy[index], index, day: run.day[index] };
 }
 
@@ -655,6 +656,13 @@ function whenText(lines, curve, run, found) {
   return day;
 }
 
+// A point's change (batch 44, hover.Curve.change_text): its figures, then the date they are from or on, if any.
+function changeText(curve, run, index) {
+  if (run.c[index] < 0) return null;
+  const figures = curve.changes[run.c[index]];
+  return curve.dated === null ? figures : figures + " " + curve.dated + " " + dateText(run.day[index] - run.b[index]);
+}
+
 // Every line within reach, the nearest first, each curve (by its name) once (hover.ChartLines.reading, batch 11.6).
 function reading(lines, x, y, reach) {
   const [left, top, right, bottom] = lines.box;
@@ -674,6 +682,7 @@ function reading(lines, x, y, reach) {
   return ranked.map(({ found, curve, run }) => ({
     name: curve.name, color: curve.color, value: curve.texts[run.t[found.index]],
     when: whenText(lines, curve, run, found), x: found.x, y: found.y,
+    change: changeText(curve, run, found.index),
   }));
 }
 
@@ -739,7 +748,8 @@ export default function (component) {
   if (pngEnd < data.byteLength) {
     readLines(data.subarray(pngEnd)).then((read) => { lines = read; }).catch(() => {});
   }
-  // Each line read: its name in its colour, its value and date under it; a ring on its point. Bordered in the nearest's colour.
+  // Each line read: its name in its colour, its value and date under it, its change under that (batch 44); a ring on
+  // its point. Bordered in the nearest's colour.
   const show = (readings, x, y) => {
     const rect = img.getBoundingClientRect();
     const scale = rect.width / imageWidth;  // screen pixels per image pixel
@@ -762,7 +772,10 @@ export default function (component) {
       name.textContent = one.name;
       name.style.color = one.color;
       value.textContent = one.value + "  " + one.when;
-      return [name, value];
+      if (one.change === null) return [name, value];
+      const change = document.createElement("div");
+      change.textContent = one.change;
+      return [name, value, change];
     }));
     readout.style.borderColor = readings[0].color;
     readout.style.display = "block";

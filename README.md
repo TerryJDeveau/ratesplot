@@ -94,11 +94,22 @@ matplotlib windows (`--no-gui`). The pointer is caught within 3 pixels of a line
 and every line that near is read in the one box, the nearest first: each line's name in its own
 colour with its value and date under it, a ring on each line's point, the box bordered in the
 nearest line's colour. The read-out follows the pointer along the lines, and goes 2 seconds after
-it has left them. A line's value is that of its observation nearer the pointer, never one between two;
-a curve drawn as steps (a quarterly figure, a rate held until changed) gives the value in force
-on the date under the pointer and the date it was observed ("$26.5T  2020-05-15 (observed
-2020-03-31)"); a projection to today, its value on that day, marked "≈" and "(projected)"; an
-intraday quote, its time. "Hover read-out" turns it off, as `--no-hover` does; it changes no chart.
+it has left them. A line's value is that of its last observation on or before the day under the
+pointer, never one between two or from a later day; a curve drawn as steps (a quarterly figure, a
+rate held until changed) gives the value in force on the date under the pointer and the date it was
+observed ("$26.5T  2020-05-15 (observed 2020-03-31)"); a line filled in between its figures (Daily
+values) or a projection to today, its value on that day, a projection marked "≈" and "(projected)";
+an intraday quote, its time.
+
+Under the value, each line gives its change: a plain subtraction in its own unit, and where that
+unit isn't percent the percentage change of the same pair. A line filled in or projected gives its
+change from the day before and that change's rate over a year ("+$4.97B, +1.4 bp a day (≈ +5.11%/yr)");
+a policy or prime rate its last change and that change's date ("−25 bp on 2025-10-29"); any other
+line its change from the observation before, with that one's date ("−3.0 bp from 2026-08-28"). A
+change in a rate is in bp below 1 point and in pp from 1; a percentage change in bp below 1 % and
+in % from 1; pp and % to three places (two where the third is 0), bp to a tenth below 10 and whole
+from 10. Every figure in the read-out is rounded on its decimal digits, half away from zero.
+"Hover read-out" turns it off, as `--no-hover` does; it changes no chart.
 In the window it also hides the tips that pop up over the controls with an ⓘ beside them, whose
 text a click on the ⓘ shows; the buttons keep theirs.
 
