@@ -40,8 +40,11 @@ more): every series of it is then drawn from its copy or its bake, as if it had 
 Usage (from the project root)::
 
     python tools/check_last_good.py
+    python tools/check_last_good.py --keep   # a failed check keeps the run's temporary folders
 
-The exit code is 1 if any check fails. No network is used.
+The exit code is 1 if any check fails. No network is used. The run's four folders in
+Temp (about 30 MB) are removed at its end, and ``ratesplot_…`` folders more than a day old
+at its start (``tools/temp_folders.py``, batch 41.1).
 """
 
 from __future__ import annotations
@@ -49,7 +52,6 @@ from __future__ import annotations
 import re
 import shutil
 import sys
-import tempfile
 from collections import Counter
 import urllib.request
 from pathlib import Path
@@ -65,6 +67,7 @@ import requests  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 import synthetic_sources  # noqa: E402
+import temp_folders  # noqa: E402
 from ratesplot import baked, cdn_data, cli, http  # noqa: E402
 from ratesplot import web  # noqa: E402  (imported first: it turns on the page's caches, undone below)
 from ratesplot.console import this_thread_output_to  # noqa: E402
@@ -256,7 +259,7 @@ def check_not_drawn() -> None:
     case's charts cannot be drawn: the page names each in one line, without a traceback. Then
     a chart that fails for an unexpected reason (a stand-in that raises) keeps its traceback.
     """
-    none_baked = Path(tempfile.mkdtemp(prefix="ratesplot_baked_none_"))
+    none_baked = temp_folders.make("baked_none")
     with_bake, baked.DATA_FOLDER = baked.DATA_FOLDER, none_baked
     baked.forget_read_files()
     config = cli.parse_args(["--no-gui", *CASES["default"], "-s:2000"])
@@ -338,10 +341,11 @@ def main() -> int:
     # web's import turned on the page's memory cache, which would answer pass 2 from pass 1.
     http._download_cache = None
     requests.Session.post = refused_post  # type: ignore[assignment]
-    folder = Path(tempfile.mkdtemp(prefix="ratesplot_last_good_"))
+    temp_folders.begin(temp_folders.keep_asked())
+    folder = temp_folders.make("last_good")
     http.enable_last_good_copies(folder)
     print(f"[last good] copies in {folder}")
-    synthetic_sources.install_synthetic_bake(Path(tempfile.mkdtemp(prefix="ratesplot_baked_")))
+    synthetic_sources.install_synthetic_bake(temp_folders.make("baked"))
 
     print("[last good] pass 1: every source answers")
     requests.Session.get = answering_get  # type: ignore[assignment]
@@ -459,7 +463,7 @@ def main() -> int:
         flat.update((f"{name}, {curve}", days) for curve, days in case_flat.items())
     # The UK's chart without the ONS's bake too, as before 19.2's ONS stage: its gross debt is not drawn, so the
     # national debt runs on alone to 2016, past 1975.
-    without_ons = Path(tempfile.mkdtemp(prefix="ratesplot_baked_no_ons_"))
+    without_ons = temp_folders.make("baked_no_ons")
     shutil.copytree(baked.DATA_FOLDER, without_ons, dirs_exist_ok=True)
     shutil.rmtree(without_ons / "ons")
     with_ons, baked.DATA_FOLDER = baked.DATA_FOLDER, without_ons
@@ -484,6 +488,7 @@ def main() -> int:
     check_not_drawn()
 
     print(f"[last good] {'all checks passed' if not failures else f'{failures} FAILED'}")
+    temp_folders.end(failed=bool(failures))
     return 1 if failures else 0
 
 

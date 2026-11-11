@@ -277,7 +277,9 @@ last good copies with every source cut off, `check_requests.py`, which failed re
 asked again and when a source is asked nothing more, against a server on the same machine,
 `check_monitors.py`, a window kept on its monitor, `check_help.py`, the help beside each control: its texts, its topics' files, and a reason given
 exactly where a control is greyed, and
-`check_baked.py`, the built-in history's files and how a drawing joins them to what it asks for)
+`check_baked.py`, the built-in history's files and how a drawing joins them to what it asks for;
+`temp_folders.py`, which the checks that make folders in Temp use, removing them as they end,
+and `check_temp_folders.py`, its check)
 and the bake of the historical data (`bake_archives.py`), which also writes `ratesplot/data/`:
 the live sources' history, one file per series (`bake_archives.py --only boe`, `--only boc`,
 `--only fred`, `--only ecb`, `--only eurostat`, `--only ons`, `--only bbk`, `--only statcan`), re-baked by running it again or by the daily job

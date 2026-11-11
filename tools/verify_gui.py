@@ -43,8 +43,11 @@ Usage (from the project root)::
     python tools/verify_gui.py --list                   # the chart cases and the groups
     python tools/verify_gui.py --synthetic              # made-up data, no network
     python tools/verify_gui.py --place +988+-3800       # the windows' top left elsewhere (Buddug: an upper monitor's)
+    python tools/verify_gui.py --keep                   # a failed check keeps the run's temporary folders
 
-Exit code 1 on any DIFFER or FAIL.
+Exit code 1 on any DIFFER or FAIL. The run's temporary folders in Temp (its scratch
+APPDATA and its tests') are removed at its end, and those more than a day old at its
+start (``tools/temp_folders.py``, batch 41.1).
 """
 
 from __future__ import annotations
@@ -57,9 +60,7 @@ import hashlib
 import io
 import os
 import re
-import shutil
 import sys
-import tempfile
 import threading
 import time
 import types
@@ -73,13 +74,15 @@ from typing import Callable
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(errors="backslashreplace")
 
-# A scratch APPDATA before anything reads it: the window loads and saves its
-# settings there (frontend.state_folder), never in the person's own.
-SCRATCH_APPDATA = tempfile.mkdtemp(prefix="ratesplot_verify_gui_")
-os.environ["APPDATA"] = SCRATCH_APPDATA
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "tools")]
+
+import temp_folders  # noqa: E402  (batch 41.1: every folder this run makes removed at its end)
+
+# A scratch APPDATA before anything reads it: the window loads and saves its
+# settings there (frontend.state_folder), never in the person's own.
+SCRATCH_APPDATA = str(temp_folders.make("verify_gui"))
+os.environ["APPDATA"] = SCRATCH_APPDATA
 
 import verify_charts  # noqa: E402  (first: it sets the Agg backend before pyplot is imported)
 import tkinter as tk  # noqa: E402
@@ -666,55 +669,52 @@ def check_save_log(check: Check) -> None:
 def check_save_folders(check: Check) -> None:
     """Batch 11.5: the save dialogs open in the folder last saved to, else in Documents; never in the program's own folder."""
     documents = str(frontend.documents_folder())
-    elsewhere = Path(tempfile.mkdtemp(prefix="ratesplot_verify_gui_saves_"))
+    elsewhere = temp_folders.make("verify_gui_saves")
+    with window(f"-c -s:2015 {END}") as w:
+        app = w.app
+        asked: list[dict] = []
+
+        def answer_with(path: str):
+            def answer(**kwargs) -> str:
+                asked.append(kwargs)
+                return path
+            return answer
+
+        def save(how: Callable[[], None], path: str) -> str:
+            """The folder the dialog opened in, answered with ``path``."""
+            dialog = gui.filedialog.asksaveasfilename
+            gui.filedialog.asksaveasfilename = answer_with(path)
+            try:
+                how()
+            finally:
+                gui.filedialog.asksaveasfilename = dialog
+            return str(asked[-1].get("initialdir", ""))
+
+        check("the program is run from its own folder here", Path.cwd().resolve() == ROOT, str(Path.cwd()))
+        first = save(app._save_log, str(elsewhere / "log.txt"))
+        check("nothing remembered: Save log file opens in Documents", first == documents, first)
+        again = save(app._export_chart, str(elsewhere / "chart.png"))
+        check("then Export chart opens where the log was saved", again == str(elsewhere), again)
+        check("and the chart is written there", (elsewhere / "chart.png").exists(), sorted(p.name for p in elsewhere.iterdir()))
+        app._save_folder = str(ROOT)
+        check("a folder saved to in the program's own: Documents next", save(app._save_log, str(elsewhere / "log2.txt")) == documents)
+        app._save_folder = str(ROOT / "out")
+        check("one inside it (out\\): Documents next", save(app._save_log, str(elsewhere / "log3.txt")) == documents)
+        check("no dialog ever opened in the program's folder or the working folder",
+              all(Path(str(kw.get("initialdir", ""))).resolve() not in (ROOT, Path.cwd().resolve()) for kw in asked),
+              [kw.get("initialdir") for kw in asked])
+        app._remember()
+        state, _note, _path = frontend.load_state()
+        check("the folder last saved to remembered with the settings", state.get("save_folder") == str(elsewhere), state.get("save_folder"))
+    root = new_root(SIZE)
     try:
-        with window(f"-c -s:2015 {END}") as w:
-            app = w.app
-            asked: list[dict] = []
-
-            def answer_with(path: str):
-                def answer(**kwargs) -> str:
-                    asked.append(kwargs)
-                    return path
-                return answer
-
-            def save(how: Callable[[], None], path: str) -> str:
-                """The folder the dialog opened in, answered with ``path``."""
-                dialog = gui.filedialog.asksaveasfilename
-                gui.filedialog.asksaveasfilename = answer_with(path)
-                try:
-                    how()
-                finally:
-                    gui.filedialog.asksaveasfilename = dialog
-                return str(asked[-1].get("initialdir", ""))
-
-            check("the program is run from its own folder here", Path.cwd().resolve() == ROOT, str(Path.cwd()))
-            first = save(app._save_log, str(elsewhere / "log.txt"))
-            check("nothing remembered: Save log file opens in Documents", first == documents, first)
-            again = save(app._export_chart, str(elsewhere / "chart.png"))
-            check("then Export chart opens where the log was saved", again == str(elsewhere), again)
-            check("and the chart is written there", (elsewhere / "chart.png").exists(), sorted(p.name for p in elsewhere.iterdir()))
-            app._save_folder = str(ROOT)
-            check("a folder saved to in the program's own: Documents next", save(app._save_log, str(elsewhere / "log2.txt")) == documents)
-            app._save_folder = str(ROOT / "out")
-            check("one inside it (out\\): Documents next", save(app._save_log, str(elsewhere / "log3.txt")) == documents)
-            check("no dialog ever opened in the program's folder or the working folder",
-                  all(Path(str(kw.get("initialdir", ""))).resolve() not in (ROOT, Path.cwd().resolve()) for kw in asked),
-                  [kw.get("initialdir") for kw in asked])
-            app._remember()
-            state, _note, _path = frontend.load_state()
-            check("the folder last saved to remembered with the settings", state.get("save_folder") == str(elsewhere), state.get("save_folder"))
-        root = new_root(SIZE)
-        try:
-            app = gui.RatesPlotApp(root, frontend.starting_choices(cli.parse_args(["--no-gui", "-c", END]), {}, {}, {})[0], [],
-                                   {"save_folder": str(elsewhere)}, normal_geometry=SIZE)
-            check("a window started with it remembered opens there", frontend.save_dialog_folder(app._save_folder) == str(elsewhere))
-            app._close()
-        except Exception:
-            root.destroy()
-            raise
-    finally:
-        shutil.rmtree(elsewhere, ignore_errors=True)
+        app = gui.RatesPlotApp(root, frontend.starting_choices(cli.parse_args(["--no-gui", "-c", END]), {}, {}, {})[0], [],
+                               {"save_folder": str(elsewhere)}, normal_geometry=SIZE)
+        check("a window started with it remembered opens there", frontend.save_dialog_folder(app._save_folder) == str(elsewhere))
+        app._close()
+    except Exception:
+        root.destroy()
+        raise
 
 
 def check_version(check: Check) -> None:
@@ -1775,7 +1775,7 @@ def check_not_drawn(check: Check) -> None:
 
 def check_settings_files(check: Check) -> None:
     """Batch 6: each command window keeps its own settings file; a new one starts from the newest; old ones are tidied."""
-    folder_root = tempfile.mkdtemp(prefix="ratesplot_verify_gui_sessions_")
+    folder_root = str(temp_folders.make("verify_gui_sessions"))
     appdata, console_window = os.environ["APPDATA"], frontend.console_window
     os.environ["APPDATA"] = folder_root
     try:
@@ -1820,12 +1820,11 @@ def check_settings_files(check: Check) -> None:
         check("this window's own file kept however old", load(0xB)[2] == "gui_state_b.json" and (folder / "gui_state_b.json").exists(), load(0xB))
     finally:
         os.environ["APPDATA"], frontend.console_window = appdata, console_window
-        shutil.rmtree(folder_root, ignore_errors=True)
 
 
 def check_remember(check: Check) -> None:
     """Batch 24.6: "Remember my settings" under Reset, ticked at every start; unticked, the settings read at the start are saved (34.2)."""
-    folder_root = tempfile.mkdtemp(prefix="ratesplot_verify_gui_remember_")
+    folder_root = str(temp_folders.make("verify_gui_remember"))
     appdata = os.environ["APPDATA"]
     os.environ["APPDATA"] = folder_root
 
@@ -1948,7 +1947,6 @@ def check_remember(check: Check) -> None:
             raise
     finally:
         os.environ["APPDATA"] = appdata
-        shutil.rmtree(folder_root, ignore_errors=True)
 
 
 def check_batch281(check: Check) -> None:
@@ -2246,7 +2244,7 @@ BUTTON_CLASSES = {"TButton", "TCheckbutton", "TRadiobutton", "Button", "Checkbut
 
 def check_batch31(check: Check) -> None:
     """Batch 31: the window and the page alike: the column's width kept only while ticked; every button and box with a tip."""
-    folder_root = tempfile.mkdtemp(prefix="ratesplot_verify_gui_b31_")
+    folder_root = str(temp_folders.make("verify_gui_b31"))
     appdata = os.environ["APPDATA"]
     os.environ["APPDATA"] = folder_root
 
@@ -2299,7 +2297,6 @@ def check_batch31(check: Check) -> None:
             raise
     finally:
         os.environ["APPDATA"] = appdata
-        shutil.rmtree(folder_root, ignore_errors=True)
 
     with window(f"-c {END}") as w:
         app, root = w.app, w.root
@@ -2481,7 +2478,7 @@ def check_batch31(check: Check) -> None:
 
 def check_batch33(check: Check) -> None:
     """Batch 33: the window's saves by the one rule: a name no file has offered; a name picked replaced; one held numbered."""
-    folder = Path(tempfile.mkdtemp(prefix="ratesplot_verify_gui_b33_"))
+    folder = temp_folders.make("verify_gui_b33")
     log_name = gui.saved_log_name
     try:
         with window(f"-c -s:2015 {END}") as w:
@@ -2549,7 +2546,6 @@ def check_batch33(check: Check) -> None:
             check("the status line names the file", written.name in app.status.get(), app.status.get())
     finally:
         gui.saved_log_name = log_name
-        shutil.rmtree(folder, ignore_errors=True)
 
 
 def check_batch30(check: Check) -> None:
@@ -3050,7 +3046,7 @@ def check_batch37(check: Check) -> None:
 
 def check_batch38(check: Check) -> None:
     """Batch 38: what a command line starts from: the settings remembered, or Reset's values with the box unticked once it names a series; --rem and --no-rem; --save --rem."""
-    folder_root = tempfile.mkdtemp(prefix="ratesplot_verify_gui_b38_")
+    folder_root = str(temp_folders.make("verify_gui_b38"))
     appdata = os.environ["APPDATA"]
     os.environ["APPDATA"] = folder_root
 
@@ -3249,7 +3245,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--verbose", action="store_true", help="show the command line's own output")
     parser.add_argument("--list", action="store_true", help="list the chart cases and the window's groups, and exit")
     parser.add_argument("--place", help="the windows' top left as +X+Y, X and Y may be negative (default +40+40; on Buddug +988+-3800)")
+    parser.add_argument("--keep", action="store_true", help="keep this run's temporary folders if a check fails (removed otherwise)")
     args = parser.parse_args(argv)
+    temp_folders.begin(args.keep)
     if args.place:
         match = PLACE_PATTERN.fullmatch(args.place)
         if not match:
@@ -3286,8 +3284,11 @@ def main(argv: list[str]) -> int:
         if args.only in (None, "window"):
             print(f"[gui] window: {len(groups)} group(s)")
             passed &= check_window(groups)
+    except BaseException:
+        passed = False
+        raise
     finally:
-        shutil.rmtree(SCRATCH_APPDATA, ignore_errors=True)
+        temp_folders.end(failed=not passed)
     return 0 if passed else 1
 
 
