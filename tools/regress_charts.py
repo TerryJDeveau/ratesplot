@@ -369,6 +369,15 @@ CASES: dict[str, list[str]] = {
     "de_interest1970_r": ["--na:de", "--interest", "-r", "-s:1965"],
     "de_interest_levels1970": ["--na:de", "--interest", "--debt:fpm", "--no-debt", "-l", "-s:1965"],
     "de_interest_levels1970_p": ["--na:de", "--interest", "--debt:fnm", "--no-debt", "-p", "-l", "-s:1965", "--e:2005"],
+    # Batch 23: the balance of payments: the U.S. current account from 1960 across its join at 1999 (the
+    # surplus green, the deficit pink), over GDP, per person at constant prices, and trade fitted by --reg with
+    # end labels beside debt and GDP; the other nations' charts with a note and no pair (until their stages).
+    "u_pay1960": ["-u", "--pay", "-s:1960"],
+    "u_pay_r": ["-u", "--pay", "-r", "-s:1960"],
+    "u_pay_pc": ["-u", "--pay", "-p", "--con", "-s:1985"],
+    "u_pay_trade_reg": ["-u", "--pay:trade", "--reg", "-l", "-s:1990"],
+    "u_pay_mix": ["-u", "--pay", "--gdp", "--debt", "-l", "-s:1995"],
+    "pay_all4": ["--na:ca,us,gb,de", "--pay:trade", "--gdp", "-s:2000"],
 }
 
 

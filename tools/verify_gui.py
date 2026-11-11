@@ -2080,8 +2080,8 @@ def check_batch291(check: Check) -> None:
         app.info_marks["relative"].event_generate("<Button-1>")
         root.update()
         key, tip, reason = app.info_shown
-        check("a click opens its panel: the control's tip", key == "relative" and "As % of GDP: debt and interest" in tip, tip)
-        check("the panel says why it is greyed", reason == "Greyed because it acts on debt and interest, and neither is ticked.", reason)
+        check("a click opens its panel: the control's tip", key == "relative" and "As % of GDP: debt, interest and the balance of payments" in tip, tip)
+        check("the panel says why it is greyed", reason == "Greyed because it acts on debt, interest and the balance of payments, and none is ticked.", reason)
         check("More in the lower right, Close beside it", set(panel_buttons(app)) == {"More", "Close"}, sorted(panel_buttons(app)))
         panel_buttons(app)["More"].invoke()
         root.update()
@@ -2715,6 +2715,35 @@ def check_batch132(check: Check) -> None:
         check("constant prices untick -r", flags == {"relative": False, "per-capita": False, "constant": True}, flags)
 
 
+def check_batch23(check: Check) -> None:
+    """Batch 23: “Balance of payments” and its pairs, one at a time: ticking one unticks the other; the chart the written line's."""
+    with window(f"-u --pay -s:1990 {END}") as w:
+        app = w.app
+        editor = app.choice_editors["payments-items"]
+
+        def pair(value: str, on: bool) -> None:
+            editor.boxes[value].set(on)
+            editor.box_changed(value)
+            w.settle()
+
+        check("“Balance of payments” ticked, the current account its pair, --pay written", app.flag_vars["payments"].get()
+              and [value for value, variable in editor.boxes.items() if variable.get()] == ["current"]
+              and any(token.startswith("--pay") for token in w.command_tokens()), w.command_tokens())
+        check("the U.S. chart draws the current account's credits and debits", {line.get_label() for axis in app.figures["us"][0].axes
+              for line in axis.get_lines()} >= {"TTM Current Account Credits", "TTM Current Account Debits"})
+        pair("trade", True)
+        check("ticking trade unticks the current account; :trade written", [value for value, variable in editor.boxes.items() if variable.get()] == ["trade"]
+              and any(token.endswith(":trade") for token in w.command_tokens()), w.command_tokens())
+        check("the chart draws exports and imports, the written line's", {line.get_label() for axis in app.figures["us"][0].axes
+              for line in axis.get_lines()} >= {"TTM Exports", "TTM Imports"} and w.written_draws_the_same(("us",)))
+        pair("trade", False)
+        check("the last pair stays ticked", editor.boxes["trade"].get(), app.status.get())
+        w.tick("payments", False)
+        w.settle()
+        check("“Balance of payments” unticked: its pairs greyed, nothing of it written", not enabled(editor.widgets[0])
+              and not any(token.startswith("--pay") for token in w.command_tokens()), w.command_tokens())
+
+
 def check_batch134(check: Check) -> None:
     """Batch 13.4: "Seas. adj." under "Price index (CPI)", greyed while that is unticked and with the UK alone, ticked and unticked freely; its ⓘ."""
     with window(f"-c -s:2015 {END}") as w:
@@ -3182,6 +3211,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch39": check_batch39,
     "batch37": check_batch37,
     "batch38": check_batch38,
+    "batch23": check_batch23,
 }
 
 

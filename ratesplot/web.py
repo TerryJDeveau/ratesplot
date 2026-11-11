@@ -1533,6 +1533,11 @@ def _choice_changed(key: str, value: str) -> None:
     """Keep at least one box of a list ticked: drawing none is the curve's own box (``choice_refusal``)."""
     if not choice_is_list(option_of(key)):
         return  # a single box of a value that is no list ("Seas. adj.", batch 13.4) may be unticked
+    if option_of(key).one_at_a_time and st.session_state.get(_CHOICE + key + ":" + value, False):
+        # One item at a time (the balance of payments' pairs, batch 23): the others unticked.
+        for item in _choice_values_offered(key):
+            if item != value:
+                st.session_state[_CHOICE + key + ":" + item] = False
     if not any(st.session_state.get(_CHOICE + key + ":" + item, False) for item in _choice_values_offered(key)):
         st.session_state[_CHOICE + key + ":" + value] = True
         st.session_state[_NOTICE] = choice_refusal(option_of(key))

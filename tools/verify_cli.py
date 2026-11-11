@@ -307,6 +307,14 @@ CASES: list[list[str]] = [
     ["--no-yield", "--y:2,10"], ["--no-yield", "--gdp", "--y:2,10"], ["--no-debt", "--agg:net"], ["--no-mo", "--prime:0.5"],
     ["--no-y:30", "--no-gdp"], ["--no-gdp", "--policy"], ["--us:no-y:30", "--no-gdp"], ["--no-policy", "--no-gdp"],
     ["--cdn:y:none"], ["--cdn:y:none", "--policy"], ["--us:po:none"], ["--us:po:none", "--gdp"], ["--cdn:mo:none", "--us:mo:30"],
+    # Batch 23: --payments, at least "pay" ("--pa" too short, "--p" -p); a pair by --payments:LIST, an item by a
+    # leading part, one at a time, never none; it names the series and turns the flag on; no nation's own; the
+    # measures, --reg, Top and Bottom not idle with it alone; --no-payments.
+    ["--payments"], ["--pay"], ["--PAY"], ["--pa"], ["--paymentsx"], ["--no-payments"], ["--no-pay"], ["--pay:current"],
+    ["--pay:trade"], ["--pay:cur"], ["--pay:tr"], ["--pay:c"], ["--pay:TRADE"], ["--pay:current,trade"], ["--pay:trade,tr"],
+    ["--pay:none"], ["--pay:"], ["--pay:goods"], ["--us:pay:trade"], ["--pay", "--gdp"], ["--pay:trade", "--no-pay"],
+    ["--pay", "-r"], ["--pay", "-p", "--con"], ["--pay", "--reg"], ["--pay", "--t:5t", "--b:10b"], ["--pay", "-r", "--t:30%"],
+    ["--pay", "--debt", "--interest", "--gdp", "--yield"],
 ]
 
 

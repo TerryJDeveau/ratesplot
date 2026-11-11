@@ -1,6 +1,6 @@
 # As % of GDP (-r)
 
-Debt and interest drawn as a percentage of the nation's GDP over the same twelve months, rather than in its currency. A share of GDP has no currency, so the nations' charts can be read against each other without exchange rates.
+Debt, interest and the [balance of payments](?help=payments) drawn as a percentage of the nation's GDP over the same twelve months, rather than in its currency. A share of GDP has no currency, so the nations' charts can be read against each other without exchange rates.
 
 ## What is divided by what
 

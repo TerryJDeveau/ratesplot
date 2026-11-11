@@ -62,6 +62,7 @@ from .config import (
     DEFAULT_AUTO_REFRESH_MINUTES,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DEFAULT_MORTGAGE_TERMS,
+    DEFAULT_PAYMENTS_ITEMS,
     DEFAULT_TRACKER_MARGIN,
     DEFAULT_SPREADS,
     DEFAULT_START_FLOOR,
@@ -77,6 +78,7 @@ from .config import (
     MORTGAGE_TERMS,
     NATIONS,
     NOMINAL_YIELD_TERMS,
+    PAYMENTS_ITEMS,
     PER_NATION_FIELDS,
     POLICY_TERMS,
     REAL_YIELD_ROW,
@@ -322,6 +324,28 @@ def parse_mortgage_terms(spec: str) -> tuple[str, ...]:
             )
         chosen.add(term)
     return tuple(term for term in MORTGAGE_TERMS if term in chosen)
+
+
+def parse_payments_items(spec: str) -> tuple[str, ...]:
+    """Parse ``--payments:LIST``: ``current`` (the current account's credits and debits) or ``trade`` (exports and imports), one at a time.
+
+    Batch 23 (decision 61): the two pairs are drawn one at a time, so a list
+    naming both is refused, as is "none" (``--no-payments`` draws none). A
+    leading part of an item's name spells it ("cur", "tr"), as an option's
+    name is spelled.
+    """
+    items = [item.strip().lower() for item in spec.split(",") if item.strip()]
+    if not items or _is_none(spec):
+        raise ValueError(f"--payments:{spec.strip()} names no pair: use current or trade (--no-payments draws none)")
+    chosen = []
+    for item in items:
+        matches = [name for name in PAYMENTS_ITEMS if name.startswith(item)]
+        if len(matches) != 1:
+            raise ValueError(f"invalid --payments item {item!r}: use current (the current account) or trade (goods and services)")
+        chosen.append(matches[0])
+    if len(set(chosen)) > 1:
+        raise ValueError("--payments draws one pair at a time: current or trade, not both")
+    return (chosen[0],)
 
 
 def parse_policy_terms(spec: str) -> tuple[str, ...]:
@@ -688,7 +712,7 @@ def check_macro_bound_units(payloads: Mapping[str, str], values: Mapping[str, ob
     -r has no effect then either, and its percentages were valid before -r
     lost its effect there (2026-10-13).
     """
-    if "top" in idle_options(values["include_debt"], values["include_gdp"], values["include_interest"]):
+    if "top" in idle_options(values["include_debt"], values["include_gdp"], values["include_interest"], payments=values["payments"]):
         return
     for name in ("top", "bottom"):
         if name not in payloads:
@@ -770,6 +794,10 @@ class Option:
     # text (``help``) in the window's ⓘ panel and the page's "?" tip. ""
     # where there is nothing more to say. Several options may share a topic.
     topic: str = ""
+    # GUI editor "choices": True when one item at a time is drawn (the balance
+    # of payments' pairs, batch 23): ticking a box unticks the others
+    # (``frontend.choices_ticked``), and its parser refuses a list of two.
+    one_at_a_time: bool = False
 
 
 # The tick boxes of the list options (Option.choices). Yield terms: the five
@@ -796,6 +824,8 @@ _MORTGAGE_CHOICES = (
 )
 # Every nation has both policy terms (batch 9.1).
 _POLICY_CHOICES = (("", tuple((term, term) for term in POLICY_TERMS)),)
+# The balance of payments' two pairs (batch 23), one at a time (``Option.one_at_a_time``).
+_PAYMENTS_CHOICES = (("", (("current", "current account"), ("trade", "trade"))),)
 _SPREAD_CHOICES = (
     ("", tuple((f"{a}-{b}", f"{a}–{b}") for a, b in DEFAULT_SPREADS)),
     ("", tuple((f"{a}-{b}", f"{a}–{b}") for a, b in (("2y", "3m"), ("5y", "2y"), ("30y", "2y")))),
@@ -891,6 +921,26 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "interest", Kind.TOGGLE, ("include_interest",), "curves", "--interest / --no-interest", "TTM interest outlays",
         names=("interest",), label="TTM interest outlays", topic="interest",
+    ),
+    # Batch 23 (Terry, 2026-10-24 and 25, decisions 61 and 62): the money
+    # coming into each nation against the money going out, two curves on the
+    # right axis and the gap between them shaded. A flag, off until named, and
+    # a series under the series rule (batch 38.2, ``series_named``), as the
+    # rates are; its pair by --payments:LIST, one at a time. At least "pay":
+    # --bop would make --b: (Bottom) ambiguous, --trade --t: (Top).
+    Option(
+        "payments", Kind.FLAG, ("payments",), "curves", "--payments / --no-payments",
+        "the balance of payments: money in against\nmoney out, each summed over the trailing\n"
+        "year, the gap shaded green where more\ncomes in, pink where more goes out; the\nU.S. from 1960",
+        names=("payments",), shortest=3, label="Balance of payments", topic="payments",
+    ),
+    Option(
+        "payments-items", Kind.VALUE, ("payments_items",), "curves", "--payments:LIST / --pay:LIST",
+        "current (the current account's credits\nand debits, the default) or trade\n"
+        "(exports and imports of goods and\nservices), one at a time; turns\n--payments on",
+        names=("payments",), shortest=3, parse=parse_payments_items, turns_on="payments",
+        label="Balance of payments pair", format=format_terms, editor="choices", choices=_PAYMENTS_CHOICES,
+        topic="payments", one_at_a_time=True,
     ),
     # Batch 13.4 (Terry asked 2026-10-13 for the consumer price index itself
     # on the right axis, unadjusted and seasonally adjusted, fitted by --reg):
@@ -1078,14 +1128,14 @@ OPTIONS: tuple[Option, ...] = (
     # countries.
     Option(
         "relative", Kind.SWITCH, ("relative",), "units", "--R / -r / --relative",
-        "debt and interest as % of TTM GDP (log\npercent axis); GDP itself is not drawn;\nno effect without debt or interest",
-        names=("relative",), flag="--R", flag_help="debt and interest as a percentage of GDP", label="As % of GDP",
+        "debt, interest and the balance of\npayments as % of TTM GDP (log percent\naxis); GDP itself is not drawn; no\neffect without one of them",
+        names=("relative",), flag="--R", flag_help="debt, interest and the balance of payments as a percentage of GDP", label="As % of GDP",
         topic="percent-of-gdp",
     ),
     Option(
         "per-capita", Kind.SWITCH, ("per_capita",), "units", "--P / -p / --per-capita",
-        "GDP, debt and interest per person (log\ndollar axis); not with -r",
-        names=("per-capita",), flag="--P", flag_help="GDP, debt and interest per person", label="Per capita",
+        "GDP, debt, interest and the balance of\npayments per person (log dollar axis);\nnot with -r",
+        names=("per-capita",), flag="--P", flag_help="GDP, debt, interest and the balance of payments per person", label="Per capita",
         topic="per-capita",
     ),
     # Batch 13.2 (Terry asked 2026-10-12 for an "inflation adjusted" option
@@ -1095,9 +1145,9 @@ OPTIONS: tuple[Option, ...] = (
     # "con", leaving "--co" free for an option to come.
     Option(
         "constant", Kind.FLAG, ("constant_prices",), "units", "--con / --constant / --no-con",
-        "GDP, debt and interest at constant prices:\neach amount divided by its nation's\n"
-        "consumer price index on its date, at the\nindex of the End's month (or the latest\n"
-        "published); with -p, per person; not with -r",
+        "GDP, debt, interest and the balance of\npayments at constant prices: each amount\n"
+        "divided by its nation's consumer price\nindex on its date, at the index of the\n"
+        "End's month (or the latest published);\nwith -p, per person; not with -r",
         names=("constant",), shortest=3, label="Inflation adjusted", topic="constant-prices",
     ),
     # The master currency (batch 30, decisions 77 and 78): one value for
@@ -1751,7 +1801,7 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # changes nothing.
     idle = idle_options(
         values["include_debt"], values["include_gdp"], values["include_interest"],
-        extra_curve=values["price_index"] or values["population"],
+        extra_curve=values["price_index"] or values["population"], payments=values["payments"],
     )
     if values["relative"] and "relative" in idle:
         values["relative"] = False
@@ -1766,12 +1816,16 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
         and any(values[nation.show_field] for nation in NATIONS if nation.key in SEASONALLY_ADJUSTED_NATIONS)
     ):
         values["price_index_adjusted"] = False
+    # A pair of the balance of payments with it off draws nothing (batch 23):
+    # the default, as the written line leaves the pair out then.
+    if not values["payments"]:
+        values["payments_items"] = DEFAULT_PAYMENTS_ITEMS
     check_macro_bound_units(payloads, values)
     values["nation_settings"] = _nation_settings(payloads, values)
     return PlotConfig(**values)
 
 
-def idle_options(debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False) -> frozenset[str]:
+def idle_options(debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False, payments: bool = False) -> frozenset[str]:
     """Return the options that change nothing on any chart while these right-axis curves are chosen.
 
     Terry, 2026-10-08: grey out "Regression segments", "By level", "% of GDP"
@@ -1794,20 +1848,29 @@ def idle_options(debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = F
     13.4, or the population, 13.5) is fitted by --reg, so the regression
     segments are not idle while it is drawn; the measures, the limits and
     the projections act on the amounts alone.
+
+    The balance of payments (``payments``, batch 23) is an amount on the
+    right axis, measured, fitted and projected as debt and interest are: -r
+    divides it by GDP, so -r is not idle while it is drawn, nor is any of
+    the others; the levels of government still need debt or interest.
     """
-    return frozenset(idle_option_reasons(debt, gdp, interest, extra_curve=extra_curve))
+    return frozenset(idle_option_reasons(debt, gdp, interest, extra_curve=extra_curve, payments=payments))
 
 
-def idle_option_reasons(debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False) -> dict[str, str]:
+def idle_option_reasons(
+    debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False, payments: bool = False
+) -> dict[str, str]:
     """Return ``idle_options``' names, each with why it is idle, a clause to follow "Greyed because" (batch 29.1)."""
     reasons: dict[str, str] = {}
     if not (debt or interest):
-        reasons |= dict.fromkeys(("relative", "debt-parts", "interest-parts"), "it acts on debt and interest, and neither is ticked")
-    if not (debt or gdp or interest):
+        reasons |= dict.fromkeys(("debt-parts", "interest-parts"), "it acts on debt and interest, and neither is ticked")
+        if not payments:
+            reasons["relative"] = "it acts on debt, interest and the balance of payments, and none is ticked"
+    if not (debt or gdp or interest or payments):
         amounts = ("per-capita", "constant", "top", "bottom", "projections")
         reasons |= dict.fromkeys(
             amounts if extra_curve else (*amounts, "regression", "regression-tolerance"),
-            "it acts on the right axis's curves, and none of debt, GDP and interest is ticked",
+            "it acts on the right axis's curves, and none of debt, GDP, interest and the balance of payments is ticked",
         )
     return reasons
 
@@ -2116,7 +2179,7 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     tokens: list[str] = []
     idle = idle_options(
         flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True),
-        extra_curve=flags.get("cpi", False) or flags.get("population", False),
+        extra_curve=flags.get("cpi", False) or flags.get("population", False), payments=flags.get("payments", False),
     )
     idle_keys = idle_margins(payloads, flags) | idle_aggregates(payloads, flags)
     payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle and key not in idle_keys}

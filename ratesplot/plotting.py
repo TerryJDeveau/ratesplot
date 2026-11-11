@@ -71,6 +71,9 @@ from .config import (
     DEFAULT_YIELD_TERMS,
     EARLIEST_DATA_START,
     MACRO_PLOT_STYLES,
+    PAYMENTS_COLUMNS,
+    PAYMENTS_SHADING,
+    PAYMENTS_SHADING_ALPHA,
     MIN_WINDOW_DAYS,
     MORTGAGE_LEGEND_ORDER,
     NOMINAL_YIELD_TERMS,
@@ -132,6 +135,7 @@ from .latest import (
 )
 from .legend import finish_legend_and_title
 from .measures import PRICE_BASE_ATTR, express
+from .payments import fetch_payments, payments_earliest
 from .prices import consumer_prices, no_index_note
 from .rates import (
     INFLATION_KEY,
@@ -731,6 +735,7 @@ def draw_country(
             macro_lines.append(line)
             macro_keys_drawn.append(style_key)
             macro_columns_drawn.append(column)
+    _shade_payments_gap(ax_macro, macro_in_range, macro_columns_drawn, projected)
 
     # The extra axis's curve (``ExtraCurve``): the right axis's when no curve
     # of it is chosen, else on an axis of its own outside it; drawn the same
@@ -846,6 +851,41 @@ def draw_country(
         short_title,
         (lambda: _place_outside(extra_axis.axes, ax_macro, config)) if extra_axis is not None and extra_axis.axes is not ax_macro else None,
     )
+
+
+def _shade_payments_gap(ax: Axes, macro: pd.DataFrame, columns_drawn: list[str], projected: dict) -> None:
+    """Shade the gap between the balance of payments' two curves (batch 23): light green where credits are above debits, light pink where below.
+
+    Plan 23 (Terry, 2026-10-24): "the area between them shaded light green
+    while more comes in than goes out, light pink while the reverse". In
+    steps, as the curves are, behind them; to the end of their observations,
+    not across a projection to today (--projections), which is drawn faint.
+    Not fitted by --reg (decision 62), not marked for Export chart or the
+    hover read-out, and not in the legend.
+    """
+    if not all(column in columns_drawn for column in PAYMENTS_COLUMNS):
+        return
+    credits_column, debits_column = PAYMENTS_COLUMNS
+    observed_until = min((projected[column] for column in PAYMENTS_COLUMNS if column in projected), default=None)
+    rows = macro.dropna(subset=list(PAYMENTS_COLUMNS))
+    if observed_until is not None:
+        rows = rows.loc[rows[DATE_COLUMN] <= observed_until]
+    if rows.empty:
+        return
+    # Each value held from its date to the next, as two points (the steps
+    # written out): matplotlib's own steps with ``where`` leave out the last
+    # step of each stretch, a gap wherever the sign changes.
+    dates = rows[DATE_COLUMN].to_numpy()
+    ends = np.append(dates[1:], dates[-1])
+    x = np.column_stack([dates, ends]).ravel()
+    credits = np.repeat(rows[credits_column].to_numpy(dtype=float), 2)
+    debits = np.repeat(rows[debits_column].to_numpy(dtype=float), 2)
+    for name, where in (("surplus", credits >= debits), ("deficit", credits < debits)):
+        if where.any():
+            ax.fill_between(
+                x, credits, debits, where=where, interpolate=False,
+                color=PAYMENTS_SHADING[name], alpha=PAYMENTS_SHADING_ALPHA, linewidth=0, zorder=1, label=f"_payments_{name}",
+            )
 
 
 def _colour_lone_axes(right_axes: list[tuple[Axes, list[Line2D]]], curves_drawn: int, mirror: Axes | None) -> None:
@@ -1082,6 +1122,26 @@ def _consumer_prices(key: str, config: PlotConfig) -> pd.Series | None:
     return index
 
 
+def _payments(key: str, config: PlotConfig) -> pd.DataFrame | None:
+    """Nation ``key``'s balance of payments pair (--payments, batch 23; ``payments.fetch_payments``), date-indexed; None without --payments or where it is not drawn.
+
+    The coverage warning names it where the chart begins before it. A
+    source that fails leaves the chart without the pair, with a warning, as
+    a curve whose source fails is left out.
+    """
+    if not config.payments:
+        return None
+    earliest = payments_earliest(key)
+    if earliest is not None:
+        warn_series_coverage(config.start, {"Balance of payments (--payments)": earliest})
+    try:
+        frame = fetch_payments(key, config.payments_items[0])
+    except Exception as exc:  # noqa: BLE001 - any source failure: the chart without the pair
+        print(f"  Warning: the balance of payments is unavailable ({exc}); not drawn.")
+        return None
+    return None if frame is None else frame.set_index(DATE_COLUMN)
+
+
 @_with_chart_end
 def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]:
     """Fetch and align all selected Canadian inputs, in the configured measure; return ``(yields, macro, rates)``.
@@ -1103,6 +1163,7 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
         series = (fetch_cdn_components(config), fetch_cdn_gdp(config))
     else:
         series = (fetch_cdn_debt(config), fetch_cdn_gdp(config), fetch_cdn_interest(config))
+    series += (_payments("cdn", config),)
     # --cur on a chart reaching today: each curve carried on from its last data,
     # debt steered by the Government of Canada's market debt (ratesplot.latest).
     parts = [part for part in series if part is not None]
@@ -1141,7 +1202,8 @@ def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     # A spread is cut where its yields are (from the start): their own coverage is the one warned about.
     warn_series_coverage(config.start, {curve.label: curve.first for curve in rates if not curve.spread})
 
-    macro = fetch_us_macro(config, last_yield_date)
+    payments = _payments("us", config)
+    macro = fetch_us_macro(config, last_yield_date, None if payments is None else payments.reset_index())
     projected = macro.attrs.get(PROJECTION_ATTR, {})
     if not macro.empty:
         macro = macro.loc[macro[DATE_COLUMN] <= config.end]
@@ -1174,6 +1236,7 @@ def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
         series = (fetch_uk_components(config), fetch_uk_gdp(config))
     else:
         series = (fetch_uk_debt(config), fetch_uk_gdp(config), fetch_uk_interest(config))
+    series += (_payments("uk", config),)
     parts = [part for part in series if part is not None]
     observed = {column: observed_through(part[column].dropna().index) for part in parts for column in part.columns}
     history = pd.concat(parts, axis=1) if parts else pd.DataFrame()
@@ -1213,6 +1276,7 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
         series = (fetch_de_components(config), fetch_de_gdp(config))
     else:
         series = (fetch_de_debt(config), fetch_de_gdp(config), fetch_de_interest(config))
+    series += (_payments("de", config),)
     parts = [part for part in series if part is not None]
     observed = {column: observed_through(part[column].dropna().index) for part in parts for column in part.columns}
     history = pd.concat(parts, axis=1) if parts else pd.DataFrame()

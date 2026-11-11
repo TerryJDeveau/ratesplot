@@ -161,6 +161,8 @@ CHART_CASES = (
     "population",
     # Batch 13.3: the real yields beside a nominal one on all four, with end labels.
     "real_four",
+    # Batch 23: the balance of payments, trade fitted by --reg; on all four beside GDP.
+    "u_pay_trade_reg", "pay_all4",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -660,6 +662,17 @@ def check_choice_boxes(check: Check) -> None:
         ticked(page, "us:mortgage-terms") == ["15"] and any("untick “Mortgage rates”" in str(item.value) for item in list(page.info) + list(page.warning)),
         ticked(page, "us:mortgage-terms"),
     )
+    # Batch 23: the balance of payments' pairs, one at a time: ticking one unticks the other.
+    pay = new_page("-u --pay --e:2026-09-01")
+    check("--pay: the current account ticked", ticked(pay, "payments-items") == ["current"], ticked(pay, "payments-items"))
+    pay.checkbox(key="choice:payments-items:trade").check()
+    pay.run()
+    check("ticking trade unticks the current account, and the address says trade",
+          not pay.exception and ticked(pay, "payments-items") == ["trade"] and ":trade" in address(pay),
+          (ticked(pay, "payments-items"), address(pay)))
+    pay.checkbox(key="choice:payments-items:trade").uncheck()
+    pay.run()
+    check("the last pair cannot be unticked", ticked(pay, "payments-items") == ["trade"], ticked(pay, "payments-items"))
     page.checkbox(key="flag:spreads").uncheck()
     page.run()
     check(
@@ -917,10 +930,12 @@ def check_layout(check: Check) -> None:
     # 2026-10-13: at the sidebar's narrow default width each list box's own
     # "?" left no room for its text (Canada's terms showed only the "?").
     # "Seas. adj." (batch 13.4), a list with no label under its flag, has it
-    # on its one box instead, as the window's ⓘ ends its row.
+    # on its one box instead, as the window's ⓘ ends its row; so has the
+    # balance of payments' pair (batch 23), on its row's last box, "trade".
     helped = [box.key for box in at.checkbox if box.key and box.key.startswith("choice:") and box.help]
-    check("a list's tick boxes carry no help of their own (it is on the list's label), but “Seas. adj.”, which has none",
-          helped == ["choice:cpi-adjustment:sa"], helped[:3])
+    check("a list's tick boxes carry no help of their own (it is on the list's label), but those under their flag with none: "
+          "“trade” of the balance of payments' pair and “Seas. adj.”",
+          helped == ["choice:payments-items:trade", "choice:cpi-adjustment:sa"], helped[:3])
 
 
 def check_batch15(check: Check) -> None:
@@ -1767,7 +1782,7 @@ def check_batch291(check: Check) -> None:
     at = new_page("-c --no-debt --no-GDP --no-interest --e:2026-09-01")
     box = at.checkbox(key="flag:relative")
     check("% of GDP greyed, its tip saying why, then More to its topic", not at.exception and box.disabled
-          and "Greyed because it acts on debt and interest, and neither is ticked." in box.help
+          and "Greyed because it acts on debt, interest and the balance of payments, and none is ticked." in box.help
           and box.help.endswith("[More](?help=percent-of-gdp)"), box.help)
     # Every control names a topic since batch 29.3: Regression segments' is
     # taken away for the while, so a control with nothing more to say is

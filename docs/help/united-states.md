@@ -9,6 +9,7 @@ At the start it draws GDP, aggregate public debt and interest on the right axis,
 - [TTM nominal GDP](?help=gdp), from 1947: the Bureau of Economic Analysis' GDP, read from FRED.
 - [Aggregate public debt](?help=debt), from 1966: the federal government's total public debt, from the Treasury, plus the state and local governments' debt securities and loans, from the Federal Reserve's Financial Accounts. What one government owes another isn't netted out, as it is in the other three nations' totals.
 - [TTM interest outlays](?help=interest), from 1947: the national accounts' interest payments of all levels of government.
+- [Balance of payments](?help=payments), from 1960: the Bureau of Economic Analysis' international transactions, quarterly, from FRED: the current account's credits and debits, or exports and imports of goods and services.
 - [By level](?help=levels): the debt and interest of the federal, state or local governments, or of the state and local together, instead of the total; the split between state and local comes from yearly figures.
 - [Bond yields](?help=yields), from 1962: the Treasury's constant-maturity yields, daily, read from FRED; from 1962 the 1-, 3-, 5-, 10- and 20-year, the others later. Every term: the 1-, 3- and 6-month, and the 1-, 2-, 3-, 5-, 7-, 10-, 20- and 30-year. The real yields, the Treasury's inflation-indexed securities, daily: r5, r7 and r10 from 2003, r20 from 2004-07, r30 from 2010-02.
 - [Yield spreads](?help=spreads): 10y–2y from 1976-06, 30y–10y from 1977-02 and 10y–3m from 1981-09, daily.
