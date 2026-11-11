@@ -23,7 +23,8 @@ cdn_data          Bank of Canada / Statistics Canada fetch, splice and align; bo
                   sources' series read through their bake and recent part
                   (boc_valet_series, also for rates; statcan_table)
 cdn_archive_data  baked historical CDN rows: debt, GDP, interest, population, yield
-                  stand-ins (rewritten by tools/bake_archives.py)
+                  stand-ins, the balance of payments before 1981 (rewritten by
+                  tools/bake_archives.py)
 cdn_hist_yields   transcribed Bank of Canada historical yield tables (1919-2000)
 bake              the bake of the historical data (run by tools/bake_archives.py), and of
                   the live sources' history into data/

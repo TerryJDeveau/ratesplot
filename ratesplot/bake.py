@@ -56,6 +56,7 @@ import pandas as pd
 
 from . import baked
 from .cdn_data import (
+    ARCHIVED_PAYMENTS_READ,
     BOC_3M_AUCTION_SERIES,
     BOC_3M_TBILL_SERIES,
     BOC_BAKED_SOURCE,
@@ -70,6 +71,7 @@ from .cdn_data import (
     STATCAN_PAYMENTS_ACCOUNTS,
     STATCAN_PAYMENTS_SIDES,
     STATCAN_SERIES_READ,
+    _statcan_vectors,
     statcan_download,
     statcan_zip_table,
     statcan_zip_table_with_metadata,
@@ -85,6 +87,8 @@ from .config import (
     ARCHIVED_CDN_INTEREST_TABLE,
     ARCHIVED_CDN_INTEREST_URL,
     ARCHIVED_CDN_LOCAL_DEBT_TABLE,
+    ARCHIVED_CDN_PAYMENTS_TABLE,
+    ARCHIVED_CDN_PAYMENTS_URL,
     ARCHIVED_CDN_PROV_LOCAL_DEBT_TABLE,
     ARCHIVED_CDN_PROV_LOCAL_DEBT_URL,
     ARCHIVED_CDN_PROVINCIAL_DEBT_TABLE,
@@ -135,8 +139,6 @@ from .config import (
     STATCAN_CDN_GDP_TABLE,
     STATCAN_CDN_GDP_VECTOR,
     STATCAN_CDN_INTEREST_TABLE,
-    STATCAN_CDN_OLD_PAYMENTS_TABLE,
-    STATCAN_CDN_OLD_PAYMENTS_VECTORS,
     STATCAN_CDN_PAYMENTS_TABLE,
     STATCAN_CDN_PAYMENTS_VECTORS,
     STATCAN_CDN_POPULATION_TABLE,
@@ -678,6 +680,29 @@ def _extract_historical_population(table: pd.DataFrame) -> pd.DataFrame:
     return values.rename(POPULATION_COLUMN).rename_axis(DATE_COLUMN).to_frame()
 
 
+def _extract_archived_cdn_payments(table: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Return each vector read of the archived balance of payments table 36-10-0047 (batch 23), keyed by vector.
+
+    The vectors of ``config.ARCHIVED_CDN_PAYMENTS_VECTORS``, each pair's
+    receipts then payments, found by the labels 36-10-0018 shares and checked
+    as a live table's are (``cdn_data._statcan_vectors``: the vector declared
+    and no other, ``UOM`` Dollars, ``SCALAR_ID`` 6, one row per quarter).
+    Every quarter the table gives, in millions of dollars a quarter, the
+    table's unit, dated by the quarter's first day as Statistics Canada dates
+    it; ``payments`` reads them only before 1981. Each must run quarter by
+    quarter with no gap and no quarter without a value, else it raises.
+    """
+    columns = _statcan_vectors(table, ARCHIVED_CDN_PAYMENTS_TABLE, ARCHIVED_PAYMENTS_READ)
+    result: dict[str, pd.DataFrame] = {}
+    for vector in ARCHIVED_PAYMENTS_READ.vectors:
+        values = columns[vector]
+        quarters = pd.date_range(values.index.min(), values.index.max(), freq="QS")
+        if values.isna().any() or not values.index.equals(quarters):
+            raise RuntimeError(f"Statistics Canada {ARCHIVED_CDN_PAYMENTS_TABLE} {vector}: not one value for every quarter")
+        result[vector] = _require_rows(values.rename("value").rename_axis(DATE_COLUMN).to_frame(), f"Archived balance of payments {vector}")
+    return result
+
+
 def _extract_yield_stand_ins(table: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """Return each term band's monthly yields for the months before its benchmark begins.
 
@@ -899,6 +924,9 @@ def bake_canadian_archives(source_path: Path | None = None) -> None:
     for column, frame in stand_ins.items():
         _require_rows(frame, f"{column} stand-in yields")
 
+    print("Downloading the archived balance of payments (BPM5, 1946-2012) …")
+    payments_history = _extract_archived_cdn_payments(statcan_zip_table(ARCHIVED_CDN_PAYMENTS_TABLE))
+
     hsc_urls = "\n".join(
         _hsc_url(series) for series in (HSC_FEDERAL_DEBT_SERIES, HSC_PROVINCIAL_DEBT_SERIES, HSC_LOCAL_DEBT_SERIES)
     )
@@ -1011,6 +1039,17 @@ def bake_canadian_archives(source_path: Path | None = None) -> None:
             cad_per_usd,
             "value",
         ),
+        # Read by ``payments``, not ``cdn_data`` (batch 23; Terry, 2026-11-11: stored here, never asked for again).
+        _embedded_level_dict(
+            "EMBEDDED_CDN_PAYMENTS_HISTORY",
+            "Balance of international payments, current account, seasonally adjusted, quarterly, BPM5, archived:\n"
+            "the receipts and payments of the total current account and of goods and services, keyed by\n"
+            "vector (config.ARCHIVED_CDN_PAYMENTS_VECTORS), millions of dollars a quarter, dated by the\n"
+            "quarter's first day:\n"
+            f"{ARCHIVED_CDN_PAYMENTS_URL}",
+            payments_history,
+            "value",
+        ),
     ]
 
     block = (
@@ -1040,6 +1079,7 @@ def bake_canadian_archives(source_path: Path | None = None) -> None:
         ("Interest 1961- by level", interest_by_level),
         ("Debt history by level", early_debt_by_level),
         ("Interest history by level", early_interest_by_level),
+        ("Balance of payments", payments_history),
     ):
         summary += [(f"{name} [{key}]", frame) for key, frame in by_level.items()]
     summary.append(("Canadian dollars per U.S. dollar", cad_per_usd))
@@ -3256,10 +3296,8 @@ _STATCAN_TABLE_TITLES = {
     STATCAN_CDN_CPI_TABLE: "Consumer Price Index, monthly, not seasonally adjusted",
     STATCAN_CDN_CPI_SA_TABLE: "Consumer Price Index, monthly, seasonally adjusted",
     BOC_FINANCIAL_MARKET_TABLE: "Financial market statistics, last Wednesday unless otherwise stated, Bank of Canada, monthly",
-    # The balance of payments (batch 23), read 2026-11-11; 36-10-0047 is archived, no longer updated.
+    # The balance of payments (batch 23), read 2026-11-11.
     STATCAN_CDN_PAYMENTS_TABLE: "Balance of international payments, current account, seasonally adjusted, quarterly",
-    STATCAN_CDN_OLD_PAYMENTS_TABLE: "Balance of international payments, current account, seasonally adjusted, quarterly "
-                                    "(archived, 1946 to 2012)",
 }
 # Each vector read: Statistics Canada's own series title (WDS
 # getSeriesInfoFromVector, read 2026-10-22); the GFS table's are
@@ -3277,8 +3315,7 @@ _STATCAN_SERIES_TITLES = {
     # The balance of payments' (batch 23): "Canada;SIDE;ACCOUNT", the labels cdn_data reads them by.
     **{
         vector: f"Canada;{side};{account}"
-        for vectors in (STATCAN_CDN_PAYMENTS_VECTORS, STATCAN_CDN_OLD_PAYMENTS_VECTORS)
-        for item, pair in vectors.items()
+        for item, pair in STATCAN_CDN_PAYMENTS_VECTORS.items()
         for vector, side, account in zip(pair, STATCAN_PAYMENTS_SIDES, (STATCAN_PAYMENTS_ACCOUNTS[item],) * 2)
     },
 }

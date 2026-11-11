@@ -42,7 +42,9 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   adjusted, millions of dollars a quarter: 36-10-0018 (BPM6) from 1981-Q1,
   receipts and payments of the total current account and of goods and
   services; before 1981 the same lines of 36-10-0047 (BPM5, 1946-Q1 to
-  2012-Q2, archived). Joined end to end at 1981-Q1, nothing scaled: there
+  2012-Q2, archived, no longer updated), baked once into ``cdn_archive_data``
+  and never asked for again (Terry, 2026-11-11). Joined end to end at
+  1981-Q1, nothing scaled: there
   the older is 1.4 % under the newer for the receipts, 1.9 % for the
   payments, 1.0 % for exports, 1.2 % for imports.
 * The UK: the ONS's balance of payments (dataset PNBP), quarterly from 1955
@@ -56,20 +58,20 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .cdn_data import statcan_stopped_table, statcan_table
+from .cdn_archive_data import EMBEDDED_CDN_PAYMENTS_HISTORY
+from .cdn_data import statcan_table
 from .config import (
+    ARCHIVED_CDN_PAYMENTS_VECTORS,
     BILLION,
     DATE_COLUMN,
     MILLION,
     PAYMENTS_CREDITS_COLUMN,
     PAYMENTS_DEBITS_COLUMN,
-    STATCAN_CDN_OLD_PAYMENTS_TABLE,
-    STATCAN_CDN_OLD_PAYMENTS_VECTORS,
     STATCAN_CDN_PAYMENTS_TABLE,
     STATCAN_CDN_PAYMENTS_VECTORS,
     nation_by_key,
 )
-from .frames import at_quarter_end
+from .frames import at_quarter_end, rows_to_frame
 from .http import downloads_of
 from .joins import ttm_sum
 from .uk_data import ons_series
@@ -92,11 +94,8 @@ US_PAYMENTS_JOIN = pd.Timestamp("1999-01-01")
 US_PAYMENTS_EARLIEST = pd.Timestamp("1960-01-01")
 
 # Canada (Statistics Canada dates a quarter by its first day): the vectors of
-# each table are in ``config`` (``cdn_data`` reads them). 36-10-0047 is
-# archived: its last quarter is declared here, so it is read from its bake
-# alone (``cdn_data.statcan_stopped_table``; tools/check_baked.py checks the
-# bake ends there).
-CDN_OLD_PAYMENTS_STOPPED = pd.Timestamp("2012-04-01")
+# each table are in ``config``. 36-10-0018 is read by ``cdn_data``; the
+# archived 36-10-0047 from ``cdn_archive_data``, where it is baked whole.
 CDN_PAYMENTS_JOIN = pd.Timestamp("1981-01-01")
 CDN_PAYMENTS_EARLIEST = pd.Timestamp("1946-01-01")
 
@@ -135,10 +134,10 @@ def _us_quarters(item: str) -> tuple[pd.Series, pd.Series]:
 def _cdn_quarters(item: str) -> tuple[pd.Series, pd.Series]:
     """Canada's receipts and payments of pair ``item``, each a quarter's flow in dollars, 36-10-0047 to 1980 then 36-10-0018 (the module's docstring)."""
     new = statcan_table(STATCAN_CDN_PAYMENTS_TABLE)
-    old = statcan_stopped_table(STATCAN_CDN_OLD_PAYMENTS_TABLE)
     joined = []
-    for old_vector, new_vector in zip(STATCAN_CDN_OLD_PAYMENTS_VECTORS[item], STATCAN_CDN_PAYMENTS_VECTORS[item]):
-        before, after = old[old_vector].dropna(), new[new_vector].dropna()
+    for old_vector, new_vector in zip(ARCHIVED_CDN_PAYMENTS_VECTORS[item], STATCAN_CDN_PAYMENTS_VECTORS[item]):
+        before = rows_to_frame(EMBEDDED_CDN_PAYMENTS_HISTORY[old_vector], old_vector)[old_vector]
+        after = new[new_vector].dropna()
         joined.append(pd.concat([before.loc[before.index < CDN_PAYMENTS_JOIN], after.loc[after.index >= CDN_PAYMENTS_JOIN]]) * MILLION)
     return joined[0], joined[1]
 

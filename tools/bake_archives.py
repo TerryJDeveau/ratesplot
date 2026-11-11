@@ -6,7 +6,7 @@ extracts the rows the charts need and writes them as Python literals between
 the BEGIN/END markers of
 
 * ``ratesplot/cdn_archive_data.py``: the Canadian history (StatCan archived
-  tables, *Historical Statistics of Canada* with the Canadian dollar's rate
+  tables, the balance of payments under BPM5 among them, *Historical Statistics of Canada* with the Canadian dollar's rate
   1913-1977, Bank of Canada term bands);
 * ``ratesplot/us_archive_data.py``: U.S. state and local government debt apart
   (Census Bureau). Needs ``pyodbc`` and the Microsoft Access ODBC driver, to
