@@ -1,5 +1,5 @@
-# Eurostat, dataset gov_10q_ggnfa (geo=DE unit=MIO_EUR na_item=D41PAY s_adj=NSA sector=S13): Quarterly non-financial accounts for general government: Interest, expenditure, General government, unadjusted; quarterly.
-# Every value Eurostat gives, as ratesplot.de_data reads it: dated by each period's last day, in MIO_EUR,
+# Eurostat, dataset gov_10q_ggnfa (geo=DE unit=MIO_NAC na_item=D41PAY s_adj=NSA sector=S13): Quarterly non-financial accounts for general government: Interest, expenditure, General government, unadjusted; quarterly.
+# Every value Eurostat gives, as ratesplot.de_data reads it: dated by each period's last day, in MIO_NAC,
 # the dataset's unit (de_data converts it to euros or persons).
 # Written by tools/bake_archives.py --only eurostat (ratesplot.bake), read by ratesplot.baked;
 # not edited by hand.

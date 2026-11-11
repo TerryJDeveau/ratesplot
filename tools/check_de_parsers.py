@@ -501,6 +501,22 @@ def check_eurostat() -> None:
     january = parse(jsonstat("est_pjan_a"), "NR")
     check("Eurostat population on 1 January: from 1960; West Germany to 1990, then unified (+17.1 million)",
           january.index[0].year == 1960 and january.loc["1990-12-31"] == 62_679_035 and january.loc["1991-12-31"] == 79_753_227)
+    # The fixtures above are in euros (MIO_EUR, CP_MEUR), saved 2026-10-06; the program asks in national currency
+    # (de_data.EUROSTAT_QUERIES), saved 2026-11-10 (*_nac). Before 1999 the euro units convert each period at its
+    # ECU rate, the national ones at 1.95583, the Federal Statistical Office's own figures.
+    yearly_nac = parse(jsonstat("est_edpt1_a_nac"), "MIO_NAC", sector="S13", na_item="D41PAY")
+    check("Eurostat interest in national currency: 1995-1998 the Office's (66,581 to 67,765 million, Reihe 1.4's table 3.4.3.2)",
+          yearly_nac.loc["1995":"1998"].tolist() == [66_581.0, 66_769.0, 66_801.0, 67_765.0], yearly_nac.loc["1995":"1998"].tolist())
+    ecu = (yearly / yearly_nac).loc["1995":"1998"].round(4).tolist()
+    check("Eurostat interest in euros: 1995-1998 at the ECU rate (+4.38 %, +2.42 %, -0.44 %, -0.68 %), the same from 1999 to 2021",
+          ecu == [1.0438, 1.0242, 0.9956, 0.9932] and (yearly.loc["1999":"2021"] == yearly_nac.loc["1999":"2021"]).all(), ecu)
+    gdp_nac = parse(jsonstat("est_gdp_q_nac"), "CP_MNAC")
+    check("Eurostat GDP in national currency: 1991 sums to 1,591.61 bn, table 81000-117's; in euros to 1,518.03; the same 1999-2019",
+          round(gdp_nac.loc["1991"].sum(), 1) == 1_591_610.0 and round(gdp.loc["1991"].sum(), 1) == 1_518_029.1
+          and (gdp.loc["1999":"2019"] == gdp_nac.loc["1999":"2019"]).all(), (gdp_nac.loc["1991"].sum(), gdp.loc["1991"].sum()))
+    check("the program asks Eurostat for every amount in national currency, never in euros",
+          {unit for _params, unit in de_data.EUROSTAT_QUERIES.values()} == {"MIO_NAC", "CP_MNAC", "THS_PER", "NR"}
+          and all(params.get("unit") == unit for params, unit in de_data.EUROSTAT_QUERIES.values() if "unit" in params))
 
 
 def check_fetchers() -> None:
@@ -524,13 +540,13 @@ def check_fetchers() -> None:
         debt = de_data.fetch_de_debt(config)[de_data.DE_DEBT_COLUMN]
         check("debt: West Germany's from 1950-03-31, year-end 1991-1999 (ECB), then quarterly (Eurostat) from 2000 Q1",
               debt.index[0] == pd.Timestamp("1950-03-31") and debt.loc["1991-12-31"] == 618_218e6 and debt.loc["1999-12-31"] == 1_253_598e6
-              and pd.Timestamp("2000-03-31") in debt.index and debt.loc["2026-03-31"] == 2_902_035.3e6)
+              and pd.Timestamp("2000-03-31") in debt.index and debt.loc["2026-03-31"] == 2_902_262.5e6)
         interest = de_data.fetch_de_interest(config)[de_data.DE_INTEREST_COLUMN]
         check("interest: annual 1995-2001, then four-quarter sums from 2002 Q4",
               interest.index[0] == pd.Timestamp("1995-12-31") and interest.loc["2001-12-31"] > 0
               and interest.index[interest.index > pd.Timestamp("2001-12-31")][0] == pd.Timestamp("2002-12-31"))
         gdp = de_data.fetch_de_gdp(config)[GDP_COLUMN]
-        unified = de_data.ttm_sum(de_data.parse_jsonstat(jsonstat("est_gdp_q"), "CP_MEUR")) * 1e6
+        unified = de_data.ttm_sum(de_data.parse_jsonstat(jsonstat("est_gdp_q_nac"), "CP_MNAC")) * 1e6
         check("GDP: West Germany's from 1950-12-31 to 1991-09-30, then Eurostat's four-quarter sums from 1991 Q4",
               gdp.index[0] == pd.Timestamp("1950-12-31") and gdp.index[gdp.index < unified.index[0]][-1] == pd.Timestamp("1991-09-30")
               and unified.index[0] == pd.Timestamp("1991-12-31") and np.isclose(gdp.loc["1991-12-31"], unified.iloc[0])

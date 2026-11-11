@@ -55,7 +55,11 @@ end-of-month yield at the month's end, a monthly average at the month's
 start. Values are in euros (and persons); each source's unit is checked
 against the one measured, so a change of unit fails rather than shifting a
 curve a thousandfold. Deutsche Mark figures before 1999 are in euros at
-1.95583, as the ECB and Eurostat publish them.
+1.95583, as the ECB publishes them in national currency (XDC) and Eurostat in
+its national-currency units (MIO_NAC, CP_MNAC). Eurostat's euro units (MIO_EUR,
+CP_MEUR) are not asked for: they convert each year before 1999 at that year's
+ECU rate instead (measured 2026-11-10: GDP 4.6 % low in 1991, interest 4.4 %
+high in 1995; from 1999 the two units agree exactly).
 
 The ECB's series (batch 19.2, ``ecb_series``): their history is in
 ``ratesplot/data/ecb/``, and a drawing asks the ECB only for the recent part,
@@ -250,15 +254,21 @@ _ECB_START_FORMS = {"A": "%Y", "M": "%Y-%m", "B": "%Y-%m-%d", "D": "%Y-%m-%d"}
 
 # Eurostat datasets: dataset -> (the query sent, the unit expected). The
 # query is the one measured from the laptop; one answer holds every sector.
+# Amounts in national currency (MIO_NAC, CP_MNAC), Deutsche Marks before 1999
+# at 1.95583; not in MIO_EUR or CP_MEUR, which convert those years at each
+# year's ECU rate (the module's docstring). Measured 2026-11-10: the GDP of
+# 1991 is then 1591.61 billion, the Federal Statistical Office's own, not
+# 1518.03; the interest of 1995 is 66,581 million, the Office's, not 69,497.6;
+# from 1999 every value of all four datasets the same in either unit.
 EUROSTAT_QUERIES = {
-    "gov_10q_ggdebt": ({"geo": "DE", "unit": "MIO_EUR", "na_item": "GD"}, "MIO_EUR"),
-    "gov_10q_ggnfa": ({"geo": "DE", "unit": "MIO_EUR", "na_item": "D41PAY", "s_adj": "NSA"}, "MIO_EUR"),
-    "gov_10dd_edpt1": ({"geo": "DE", "unit": "MIO_EUR"}, "MIO_EUR"),
-    "namq_10_gdp": ({"geo": "DE", "unit": "CP_MEUR", "na_item": "B1GQ", "s_adj": "NSA"}, "CP_MEUR"),
+    "gov_10q_ggdebt": ({"geo": "DE", "unit": "MIO_NAC", "na_item": "GD"}, "MIO_NAC"),
+    "gov_10q_ggnfa": ({"geo": "DE", "unit": "MIO_NAC", "na_item": "D41PAY", "s_adj": "NSA"}, "MIO_NAC"),
+    "gov_10dd_edpt1": ({"geo": "DE", "unit": "MIO_NAC"}, "MIO_NAC"),
+    "namq_10_gdp": ({"geo": "DE", "unit": "CP_MNAC", "na_item": "B1GQ", "s_adj": "NSA"}, "CP_MNAC"),
     "namq_10_pe": ({"geo": "DE", "unit": "THS_PER", "na_item": "POP_NC", "s_adj": "NSA"}, "THS_PER"),
     "demo_pjan": ({"geo": "DE", "sex": "T", "age": "TOTAL"}, "NR"),
 }
-_EUROSTAT_MULTIPLIER = {"MIO_EUR": MILLION, "CP_MEUR": MILLION, "THS_PER": THOUSAND, "NR": 1}
+_EUROSTAT_MULTIPLIER = {"MIO_NAC": MILLION, "CP_MNAC": MILLION, "THS_PER": THOUSAND, "NR": 1}
 # Each dataset's frequency (its one ``freq`` category), measured 2026-10-22;
 # an answer of another raises (``eurostat_download``), since how
 # ``sinceTimePeriod`` is written depends on it (``_eurostat_since``).

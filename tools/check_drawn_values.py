@@ -914,7 +914,7 @@ def german_gdp() -> tuple[pd.Series, pd.Series, pd.Series]:
     sums = pd.Series([float(line[2]) for line in lines], index=dates).rolling(4).sum().dropna()
     ratio = sums.iloc[0] / old.loc[1970]
     scaled = pd.Series({year: old.loc[year] * ratio ** (max(year - 1965, 0) / 4) for year in range(1960, 1970)})
-    quarters = _clean(de_data.parse_jsonstat(de_data.eurostat_download("namq_10_gdp"), "CP_MEUR")) * 1e6
+    quarters = _clean(de_data.parse_jsonstat(de_data.eurostat_download("namq_10_gdp"), de_data.EUROSTAT_QUERIES["namq_10_gdp"][1])) * 1e6
     unified = quarters.rolling(4).sum().dropna()
     west = pd.concat([at_year_ends(narrow), at_year_ends(scaled), sums]) * 1e9
     joined = pd.concat([west.loc[west.index < unified.index[0]], unified])

@@ -25,7 +25,7 @@ Each older source is scaled to meet the newer one by the median ratio of the two
 - **1995 to 2001: years.** General government interest payable (D.41), annual, Eurostat's dataset [gov_10dd_edpt1](https://ec.europa.eu/eurostat/databrowser/view/gov_10dd_edpt1/default/table?lang=en) (government deficit, debt and associated data).
 - **2002 on: quarters.** General government interest payable (D.41), not seasonally adjusted, Eurostat's dataset [gov_10q_ggnfa](https://ec.europa.eu/eurostat/databrowser/view/gov_10q_ggnfa/default/table?lang=en), quarterly from 2002, millions of euros. Eurostat releases each quarter about 112 days after it ends ([Eurostat's notes](https://ec.europa.eu/eurostat/cache/metadata/en/gov_10q_ggnfa_esms.htm)); the second quarter of 2026 is the latest.
 
-The years agree with the sums of their quarters where both exist, so no scaling is needed. Figures before 1999 are Deutsche Marks converted to euros at 1.95583, as Eurostat publishes them.
+The years agree with the sums of their quarters where both exist, so no scaling is needed. Figures before 1999 are Deutsche Marks converted to euros at 1.95583, as Eurostat publishes them in national currency; its figures in euros for those years are at each year's ECU rate instead (4.4 % higher in 1995), and are not used.
 
 ## How the program keeps these figures
 
