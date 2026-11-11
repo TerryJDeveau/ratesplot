@@ -429,6 +429,7 @@ def fetch_us_macro(
     for frame in frames[1:]:
         data = data.merge(frame, on=DATE_COLUMN, how="outer")
     data = data.sort_values(DATE_COLUMN)
+    edges: list[pd.Timestamp] = []
     if config.daily:
         # Daily values (batch 42.2): a row at the window's start and one at its
         # last date (the yields' last day, else the End), so the values there
@@ -436,9 +437,17 @@ def fetch_us_macro(
         # among them: a chart ending between two figures reads what a later
         # chart reads there (the frame is cut at the End in prepare_us).
         edges = [config.start] + ([last_yield_date] if last_yield_date is not None else [])
-        missing = [edge for edge in edges if not (data[DATE_COLUMN] == edge).any()]
-        if missing:
-            data = pd.concat([data, pd.DataFrame({DATE_COLUMN: missing})], ignore_index=True).sort_values(DATE_COLUMN)
+    elif last_yield_date is not None and (data[DATE_COLUMN] > last_yield_date).any():
+        # Without them, the row at the last date where a figure lies past it,
+        # holding the values in force there (2026-06-30's GDP to a 2026-09-01
+        # End, the quarter to 09-30 being cut at the End). The tail below
+        # repeats the last row only after the frame's last figure, so such a
+        # chart's curves stopped at the figure before, and one drawing no
+        # yield and no debt ended its subtitle there (decision 143).
+        edges = [last_yield_date]
+    missing = [edge for edge in edges if not (data[DATE_COLUMN] == edge).any()]
+    if missing:
+        data = pd.concat([data, pd.DataFrame({DATE_COLUMN: missing})], ignore_index=True).sort_values(DATE_COLUMN)
 
     def held(column: str, kind: SeriesKind) -> pd.Series:
         """One column carried onto every row (``joins.carried``): held to the next value, or filled in with Daily values."""
