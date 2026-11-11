@@ -448,12 +448,12 @@ def check_german_interest() -> None:
 
 
 def check_german_interest_before_1970() -> None:
-    """16.7: West Germany's interest of 1950 to 1969, typed from Fachserie 18 Reihe S.7's table 23 (2026-11-11), its bake, its join before Reihe S.29's and its population."""
+    """16.7: West Germany's interest of 1950 to 1969, typed from Fachserie 18 Reihe S.7's table 23 (2026-11-11), its bake, its join to Reihe S.29's (the ramp, at Terry's word) and its population."""
     rows = csv_rows("destatis_fs18_s7_interest.csv")
-    early, at_1970 = bake.parse_west_german_interest_before_1970(rows)
-    check("early interest: every year 1950-1969, 560 to 5,840 million DM; 1959's without the Saarland and West Berlin (1,980), 1960's with them (2,190); 1970 6,550",
-          list(early.index.year) == list(range(1950, 1970)) and early.loc["1950-12-31"] == 560 and early.loc["1959-12-31"] == 1980
-          and early.loc["1960-12-31"] == 2190 and early.loc["1969-12-31"] == 5840 and at_1970 == 6550, len(early))
+    early = bake.parse_west_german_interest_before_1970(rows)
+    check("early interest: every year 1950-1970, 560 to 6,550 million DM; 1959's without the Saarland and West Berlin (1,980), 1960's with them (2,190)",
+          list(early.index.year) == list(range(1950, 1971)) and early.loc["1950-12-31"] == 560 and early.loc["1959-12-31"] == 1980
+          and early.loc["1960-12-31"] == 2190 and early.loc["1969-12-31"] == 5840 and early.loc["1970-12-31"] == 6550, len(early))
     # The table's own arithmetic on the typed figures: its index rows (1960 = 100, the change of territory
     # taken out at 1960) and its average yearly changes.
     narrow_1960 = float(next(row[2] for row in rows if row[:2] == ["1960", "ohne Saarland und Berlin"]))
@@ -486,11 +486,18 @@ def check_german_interest_before_1970() -> None:
     check("early interest: a 1970 more than 1 % from Reihe S.29's is refused",
           raises(bake._west_german_interest_before_1970, None, pd.Series({pd.Timestamp("1970-12-31"): 3.40})) is not None
           and raises(bake._west_german_interest_before_1970, None, pd.Series({pd.Timestamp("1970-12-31"): 3.33})) is None)
-    # The join: end to end before Reihe S.29's 1970, nothing scaled; the total alone.
+    # The join: decision 118's ramp to Reihe S.29's 1970 (at Terry's word), the total alone: the ratio at
+    # 1970, 3.33 billion over 6,550 million DM at 1.95583, reached in equal steps of the logarithm over
+    # 1965 to 1969, so 1970's growth is the older edition's own.
     older = de_data._older_interest(de_data.GENERAL_GOVERNMENT)
-    check("join: 1950 to 1969 the transcription in euros at 1.95583, then Reihe S.29's 3.33 billion in 1970, nothing scaled (11.5 % that year)",
-          abs(older.loc["1950-12-31"] - 560e6 / 1.95583) < 1 and abs(older.loc["1969-12-31"] - 5840e6 / 1.95583) < 1 and older.loc["1970-12-31"] == 3.33e9
-          and round(older.loc["1970-12-31"] / older.loc["1969-12-31"] - 1, 4) == 0.1152, older.loc["1969-12-31"])
+    ratio = 3.33e9 / (6550e6 / 1.95583)
+    ramped = {year: value * 1e6 / 1.95583 * ratio ** (max(year - 1965, 0) / 4)
+              for year, value in ((1950, 560), (1964, 2900), (1965, 3230), (1966, 4120), (1967, 5190), (1968, 5380), (1969, 5840))}
+    check("join: 1950 to 1965 the transcription in euros at 1.95583, 1966 to 1969 lowered towards Reihe S.29's level (1969 by 0.57 %), then its 3.33 billion in 1970",
+          all(abs(older.loc[f"{year}-12-31"] - value) < 1 for year, value in ramped.items()) and older.loc["1970-12-31"] == 3.33e9
+          and round(1 - ratio, 4) == 0.0057, {year: round(older.loc[f"{year}-12-31"] / (value / ratio ** (max(year - 1965, 0) / 4)) - 1, 5) for year, value in ramped.items()})
+    check("join: 1970's growth the older edition's own, 6,550 over 5,840 million DM (12.2 %)",
+          abs(older.loc["1970-12-31"] / older.loc["1969-12-31"] - 6550 / 5840) < 1e-9, older.loc["1970-12-31"] / older.loc["1969-12-31"] - 1)
     check("join: the step at 1960 kept, 1,980 to 2,190 million DM", round(older.loc["1960-12-31"] / older.loc["1959-12-31"], 4) == round(2190 / 1980, 4))
     check("join: no level before 1970", all(de_data._older_interest(sector).index[0] == pd.Timestamp("1970-12-31") for sector in ("S1311", "S1312", "S1313")))
     # Per person: 1955's over GDP's people of the same narrow territory, 1965's over the population drawn.

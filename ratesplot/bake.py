@@ -2160,9 +2160,10 @@ def parse_german_interest(sheets: dict[str, list]) -> dict[str, pd.Series]:
 # image into a transcription kept with the extracts, checked against the same column in table 14.3
 # and the table's own index rows. The bake reads only the transcription. 1950 to 1959 without the
 # Saarland and West Berlin, 1960 both ways: kept, the narrow years to 1959 and the whole territory
-# from 1960 to 1969, the year before Reihe S.29's begin; 1970 only for the check that the two editions
-# meet there (6,550 against 6,513 million DM, 0.57 %; later years differ by up to 10 %, the 2005
-# revision's concepts, which the join never reaches).
+# from 1960 to 1970. Its 1970, the first year of Reihe S.29, only for the ratio by which de_data
+# bridges the older years to the revised level (decision 118's ramp, at Terry's word) and for the
+# check that the two editions meet there (6,550 against 6,513 million DM, 0.57 %; later years differ
+# by up to 10 %, the 2005 revision's concepts, which the join never reaches).
 DE_EARLY_INTEREST_TRANSCRIPTION = Path(__file__).resolve().parents[1] / "tools" / "de_fixtures" / "raw" / "destatis_fs18_s7_interest.csv"
 _DE_EARLY_INTEREST_HEADER = ["Jahr", "Gebiet", "Mill. DM"]
 _DE_EARLY_INTEREST_NARROW = "ohne Saarland und Berlin"
@@ -2173,8 +2174,8 @@ _DE_EARLY_INTEREST_YEARS = (1950, 1970)
 _DE_EARLY_INTEREST_MEETS_WITHIN = 0.01
 
 
-def parse_west_german_interest_before_1970(rows: list[list[str]]) -> tuple[pd.Series, float]:
-    """Return ``(West Germany's interest paid 1950 to 1969, its 1970)`` from the transcription's rows: millions of DM, each year dated by 31 December.
+def parse_west_german_interest_before_1970(rows: list[list[str]]) -> pd.Series:
+    """Return West Germany's interest paid 1950 to 1970 from the transcription's rows: millions of DM, each year dated by 31 December.
 
     Lines starting with ``#`` are the transcription's notes. Every year from 1950 to
     1970 once without the Saarland and West Berlin up to 1960 and once with them from
@@ -2198,15 +2199,16 @@ def parse_west_german_interest_before_1970(rows: list[list[str]]) -> tuple[pd.Se
         read[key] = float(row[2])
     if list(read) != expected:
         raise RuntimeError(f"West Germany's interest before 1970: the rows {list(read)} are not {expected}; data module not modified.")
-    kept = {pd.Timestamp(year, 12, 31): value for (year, territory), value in read.items() if year < last and (territory == _DE_EARLY_INTEREST_WHOLE) == (year >= _DE_EARLY_INTEREST_WHOLE_FROM)}
-    return pd.Series(kept, dtype=float).rename_axis(DATE_COLUMN), read[(last, _DE_EARLY_INTEREST_WHOLE)]
+    kept = {pd.Timestamp(year, 12, 31): value for (year, territory), value in read.items() if (territory == _DE_EARLY_INTEREST_WHOLE) == (year >= _DE_EARLY_INTEREST_WHOLE_FROM)}
+    return pd.Series(kept, dtype=float).rename_axis(DATE_COLUMN)
 
 
 def _west_german_interest_before_1970(saved: Path | None, west_total: pd.Series) -> tuple[pd.Series, str]:
-    """Return ``(West Germany's interest 1950 to 1969, where it was read from)``: the transcription, checked against Reihe S.29's 1970 (``west_total``, billions of euros)."""
+    """Return ``(West Germany's interest 1950 to 1970, where it was read from)``: the transcription, its 1970 checked against Reihe S.29's (``west_total``, billions of euros)."""
     saved = Path(saved or DE_EARLY_INTEREST_TRANSCRIPTION)
     with saved.open(encoding="utf-8", newline="") as file:
-        early, at_1970 = parse_west_german_interest_before_1970(list(csv.reader(file)))
+        early = parse_west_german_interest_before_1970(list(csv.reader(file)))
+    at_1970 = early.loc[pd.Timestamp(_DE_EARLY_INTEREST_YEARS[1], 12, 31)]
     revised = west_total.loc[pd.Timestamp(_DE_EARLY_INTEREST_YEARS[1], 12, 31)] * THOUSAND * DEM_PER_EUR
     if abs(at_1970 / revised - 1) > _DE_EARLY_INTEREST_MEETS_WITHIN:
         raise RuntimeError(f"West Germany's interest of 1970: {at_1970:,.0f} million DM in the transcription against {revised:,.0f} in Reihe S.29, more than {_DE_EARLY_INTEREST_MEETS_WITHIN:.0%} apart; data module not modified.")
@@ -2508,7 +2510,8 @@ def bake_german_archives(
             "EMBEDDED_DE_WEST_INTEREST_BEFORE_1970",
             "West Germany's interest on public debt, general government's as a whole (Fachserie 18 Reihe\n"
             "S.7, 1950 bis 1984, table 23, typed from its page), millions of DM as published, each year\n"
-            "dated by 31 December: without the Saarland and West Berlin to 1959, with them from 1960, to 1969.",
+            "dated by 31 December: without the Saarland and West Berlin to 1959, with them from 1960, to 1970,\n"
+            "whose figure is only for the ratio to Reihe S.29's.",
             interests["EMBEDDED_DE_WEST_INTEREST_BEFORE_1970"],
             "value",
         )

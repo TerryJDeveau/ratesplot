@@ -41,7 +41,8 @@ reach them; ``tools/de_fixtures/README.md`` holds the measurements):
   West Germany's from 1970 (Reihe S.29), unification kept as a step at 1991,
   and the total before it from 1950 (``west_german_interest_before_1970``, Reihe
   S.7 of 1985, typed from its table), without the Saarland and West Berlin to
-  1959, a step at 1960. Each level the same from 1970 (no older source splits
+  1959, a step at 1960, its 1965 to 1969 bridged to the revised level at 1970 as
+  GDP's are. Each level the same from 1970 (no older source splits
   it), the Office's years until Eurostat's quarters begin (2002).
 * GDP: at market prices, current prices, not seasonally adjusted, quarterly
   from 1991 (Eurostat namq_10_gdp), summed over four quarters, from 1991-12-31.
@@ -1061,7 +1062,7 @@ def _interest_in_euros(rows: list[tuple[str, float]]) -> pd.Series:
 
 
 def west_german_interest_before_1970() -> pd.Series:
-    """Return West Germany's interest on public debt, 1950 to 1969, general government's as a whole, in euros at the mark's fixed rate, each year at its end.
+    """Return West Germany's interest on public debt, 1950 to 1970, general government's as a whole, in euros at the mark's fixed rate, each year at its end; its 1970 only for the ratio to Reihe S.29's.
 
     The Office's Fachserie 18 Reihe S.7 (1985), typed from its table (``bake``): without
     the Saarland and West Berlin to 1959, with them from 1960, a step of 3.8 % there
@@ -1082,12 +1083,22 @@ def _older_interest(sector: str) -> pd.Series:
     level's quarters) are Eurostat's, value for value (measured 2026-11-10, Eurostat's
     in national currency): the live series follow on with no step and nothing scaled.
     The total's years before 1970 (``west_german_interest_before_1970``, an older
-    edition) are laid before them end to end too, nothing scaled: the two editions'
-    1970 differ by 0.57 % (6,550 against 6,513 million DM). Before 1970 no level apart.
+    edition) are a revision apart, not a change of territory, so they reach Reihe
+    S.29's level as GDP's older basis does (decision 118, ``joins.splice_archived_series``,
+    at Terry's word for 16.7): the ratio at 1970, 6,513 over 6,550 million DM (0.9943),
+    by a geometric ramp over 1965 to 1969, so 1969 is lowered 0.57 % and 1970's growth is
+    the older edition's own, 12.2 %; 1965 and before as published. Before 1970 no level apart.
     """
     west, unified = _DE_INTEREST_OF_SECTOR[sector]
     older = _before(_interest_in_euros(west), _interest_in_euros(unified))
-    return _before(west_german_interest_before_1970(), older) if sector == GENERAL_GOVERNMENT else older
+    if sector != GENERAL_GOVERNMENT:
+        return older
+    return splice_archived_series(
+        west_german_interest_before_1970().to_frame(DE_INTEREST_COLUMN),
+        older.to_frame(DE_INTEREST_COLUMN),
+        DE_INTEREST_COLUMN,
+        annual_historical=True,
+    )[DE_INTEREST_COLUMN]
 
 
 @downloads_of("Eurostat interest outlays")
