@@ -141,7 +141,9 @@ from .prices import consumer_prices, no_index_note
 from .rates import (
     INFLATION_KEY,
     RateCurve,
+    cut_to,
     draws_announced,
+    filled_through,
     held_steps,
     in_window,
     legend_label,
@@ -242,11 +244,16 @@ def add_macro_line(
     value_format: ValueFormatter,
     projected_from: pd.Timestamp | None = None,
     axis: str = MACRO_AXIS,
+    filled: bool = False,
 ) -> Line2D | None:
     """Plot one macro series if it is enabled and has data; return the (legend) line or ``None``.
 
     ``axis``: the axis Export chart names its unit by, the amounts' unless
     given (the consumer price index's, ``INDEX_AXIS``, batch 13.4).
+
+    ``filled`` (Daily values, batch 42.2): the series is filled in between
+    its observations (``joins.carried``, ``rates.filled_through``), so it is
+    drawn straight through its rows, not in steps, and read day by day.
 
     With ``projected_from`` (--projections, ``latest.project_to_now``) the rows after
     that date are a projection, not data: they are drawn as a straight,
@@ -258,9 +265,11 @@ def add_macro_line(
     """
     if not enabled or data.empty or column not in data.columns or not data[column].notna().any():
         return None
+    if filled:
+        style = {key: value for key, value in style.items() if key != "drawstyle"}
     if projected_from is None:
         (line,) = ax.plot(data[DATE_COLUMN], data[column], label=label, **style)
-        mark_reading(line, value_format)
+        mark_reading(line, value_format, daily=filled)
         return mark_series(line, label, axis)
 
     observed = data.loc[data[DATE_COLUMN] <= projected_from]
@@ -277,7 +286,7 @@ def add_macro_line(
         return mark_series(line, label, MACRO_AXIS)
     (line,) = ax.plot(observed[DATE_COLUMN], observed[column], label=label, **style)
     mark_series(line, label, MACRO_AXIS)
-    mark_reading(line, value_format)
+    mark_reading(line, value_format, daily=filled)
     (projection,) = ax.plot(ahead[DATE_COLUMN], ahead[column], label="_projection", **faint)
     mark_series(projection, label, MACRO_AXIS)
     mark_reading(projection, projected_format, projected=True)
@@ -447,7 +456,14 @@ def add_rate_lines(
     yield_colours = {line.get_label(): line.get_color() for line in yield_lines}
     drawn: list[tuple[Line2D, RateCurve]] = []
     for curve in rates:
-        values = in_window(curve.values, config) if curve.holds is None else held_steps(curve, config)
+        # Daily values (batch 42.2): a smooth curve (inflation) filled in
+        # between its months' middles, drawn straight and read day by day.
+        kind = SERIES_KINDS.get(curve.key)
+        filled = config.daily and kind is not None and kind.filled_in
+        if filled:
+            values = filled_through(curve.values, curve.key, config)
+        else:
+            values = in_window(curve.values, config) if curve.holds is None else held_steps(curve, config)
         if values.empty:
             before = curve.values.loc[curve.values.index < config.start]
             if curve.holds is not None and not before.empty:
@@ -455,6 +471,8 @@ def add_rate_lines(
                       f"{format_yield(before.iloc[-1])} on {before.index[-1]:%Y-%m-%d}; not drawn.")
             continue
         style = curve.style
+        if filled:
+            style = {key: value for key, value in style.items() if key != "drawstyle"}
         if curve.color_of is not None and f"{curve.color_of} Yield" in yield_colours:
             style = style | {"color": yield_colours[f"{curve.color_of} Yield"]}
         reading = _reading(curve)
@@ -479,7 +497,7 @@ def add_rate_lines(
             (drawn_line,) = ax.plot(part.index, part.to_numpy(), label=label, **(part_style | colour))
             mark_series(drawn_line, exported, YIELD_AXIS)
             # A spread runs on to the day's quotes, as the yields it is taken from do.
-            mark_reading(drawn_line, part_reading, quoted=curve.spread)
+            mark_reading(drawn_line, part_reading, quoted=curve.spread, daily=filled)
             first = first or drawn_line
             setattr(first, _LAST_PIECE_ATTR, drawn_line)  # where its end label starts (``last_piece``)
             if curve.spread:
@@ -736,12 +754,14 @@ def draw_country(
             style=MACRO_PLOT_STYLES[style_key],
             value_format=macro_format,
             projected_from=projected.get(column),
+            filled=config.daily and SERIES_KINDS[style_key].filled_in,
         )
         if line is not None:
             macro_lines.append(line)
             macro_keys_drawn.append(style_key)
             macro_columns_drawn.append(column)
-    _shade_payments_gap(ax_macro, macro_in_range, macro_columns_drawn, projected)
+    _shade_payments_gap(ax_macro, macro_in_range, macro_columns_drawn, projected,
+                        filled=config.daily and SERIES_KINDS["payments_credits"].filled_in)
 
     # The extra axis's curve (``ExtraCurve``): the right axis's when no curve
     # of it is chosen, else on an axis of its own outside it; drawn the same
@@ -750,11 +770,23 @@ def draw_country(
     extra_line: Line2D | None = None
     extra_axis: ExtraAxis | None = None
     if extra is not None:
-        extra_frame = pd.DataFrame({DATE_COLUMN: extra.values.index, extra.label: extra.values.to_numpy()})
         ax_extra = ax_yield.twinx() if config.has_macro_series else ax_macro
-        extra_in_range = filter_to_date_range(extra_frame, DATE_COLUMN, config)
-        if extra.held_across_month:
-            extra_in_range = _held_across_its_month(extra_in_range, extra.label, config)
+        # Daily values (batch 42.2): the price index filled in between its
+        # months' middles, the population (a count on a date, drawn through its
+        # points either way) carried to the window's edges on its line.
+        extra_kind = SERIES_KINDS[extra.kind]
+        extra_filled = config.daily and extra_kind.filled_in
+        extra_frame = pd.DataFrame({DATE_COLUMN: extra.values.index, extra.label: extra.values.to_numpy()})  # its observations, --reg's
+        if extra_filled:
+            points = (
+                filled_through(extra.values, extra.kind, config) if extra_kind.period is not None
+                else cut_to(extra.values.dropna().sort_index(), config.start, config.end)
+            )
+            extra_in_range = pd.DataFrame({DATE_COLUMN: points.index, extra.label: points.to_numpy()})
+        else:
+            extra_in_range = filter_to_date_range(extra_frame, DATE_COLUMN, config)
+            if extra.held_across_month:
+                extra_in_range = _held_across_its_month(extra_in_range, extra.label, config)
         extra_line = add_macro_line(
             ax_extra,
             extra_in_range,
@@ -764,6 +796,7 @@ def draw_country(
             style=extra.style,
             value_format=extra.value_format,
             axis=extra.export_axis,
+            filled=extra_filled,
         )
         if extra_line is not None:
             extra_axis = ExtraAxis(ax_extra, extra.axis_label, extra.tick_format)
@@ -859,7 +892,7 @@ def draw_country(
     )
 
 
-def _shade_payments_gap(ax: Axes, macro: pd.DataFrame, columns_drawn: list[str], projected: dict) -> None:
+def _shade_payments_gap(ax: Axes, macro: pd.DataFrame, columns_drawn: list[str], projected: dict, *, filled: bool = False) -> None:
     """Shade the gap between the balance of payments' two curves (batch 23): light green where credits are above debits, light pink where below.
 
     Plan 23 (Terry, 2026-10-24): "the area between them shaded light green
@@ -867,7 +900,9 @@ def _shade_payments_gap(ax: Axes, macro: pd.DataFrame, columns_drawn: list[str],
     steps, as the curves are, behind them; to the end of their observations,
     not across a projection to today (--projections), which is drawn faint.
     Not fitted by --reg (decision 62), not marked for Export chart or the
-    hover read-out, and not in the legend.
+    hover read-out, and not in the legend. ``filled`` (Daily values, batch
+    42.2): the curves are straight between their rows, and so is the
+    shading, which changes colour where they cross.
     """
     if not all(column in columns_drawn for column in PAYMENTS_COLUMNS):
         return
@@ -877,6 +912,17 @@ def _shade_payments_gap(ax: Axes, macro: pd.DataFrame, columns_drawn: list[str],
     if observed_until is not None:
         rows = rows.loc[rows[DATE_COLUMN] <= observed_until]
     if rows.empty:
+        return
+    if filled:
+        x = rows[DATE_COLUMN].to_numpy()
+        credits = rows[credits_column].to_numpy(dtype=float)
+        debits = rows[debits_column].to_numpy(dtype=float)
+        for name, where in (("surplus", credits >= debits), ("deficit", credits <= debits)):
+            if where.any():
+                ax.fill_between(
+                    x, credits, debits, where=where, interpolate=True,
+                    color=PAYMENTS_SHADING[name], alpha=PAYMENTS_SHADING_ALPHA, linewidth=0, zorder=1, label=f"_payments_{name}",
+                )
         return
     # Each value held from its date to the next, as two points (the steps
     # written out): matplotlib's own steps with ``where`` leave out the last
@@ -1042,6 +1088,7 @@ class ExtraCurve:
     value_format: ValueFormatter  # its end label and read-out
     tick_format: ValueFormatter
     export_axis: str  # what Export chart names its unit by (``export._unit``)
+    kind: str  # its key of ``config.SERIES_KINDS`` (batch 42.1)
     held_across_month: bool = False  # a monthly figure in steps: its last drawn across its month (``_held_across_its_month``)
 
 
@@ -1088,6 +1135,7 @@ def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
         value_format=format_index,
         tick_format=format_index_tick,
         export_axis=INDEX_AXIS,
+        kind="price_index",
         held_across_month=SERIES_KINDS["price_index"].period == "month",  # its kind's period (batch 42.1)
     )
 
@@ -1111,6 +1159,7 @@ def _extra_curve(key: str, config: PlotConfig, population: pd.Series | None) -> 
         value_format=format_population,
         tick_format=format_population,
         export_axis=POPULATION_AXIS,
+        kind="population",
     )
 
 

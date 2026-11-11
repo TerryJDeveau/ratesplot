@@ -315,6 +315,11 @@ CASES: list[list[str]] = [
     ["--pay:none"], ["--pay:"], ["--pay:goods"], ["--us:pay:trade"], ["--pay", "--gdp"], ["--pay:trade", "--no-pay"],
     ["--pay", "-r"], ["--pay", "-p", "--con"], ["--pay", "--reg"], ["--pay", "--t:5t", "--b:10b"], ["--pay", "-r", "--t:30%"],
     ["--pay", "--debt", "--interest", "--gdp", "--yield"],
+    # Batch 42.2 (decisions 125 and 129): --daily, Daily values, on by default; at least "da", since "--d:" is
+    # --debt's levels; a value refused; idle (greyed) with no smooth series, written all the same.
+    ["--da"], ["--dai"], ["--daily"], ["--DAILY"], ["--no-da"], ["--no-daily"], ["--No-Daily"], ["--d"], ["--da:1"],
+    ["daily"], ["--no-da", "--da"], ["--no-da", "-r", "-u"], ["--no-da", "--no-debt", "--no-gdp", "--no-interest"],
+    ["--no-da", "--inf", "--no-debt", "--no-gdp", "--no-interest"],
 ]
 
 

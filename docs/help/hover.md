@@ -5,8 +5,9 @@ On by default. The pointer resting on a line for half a second shows a small box
 ## What it reads
 
 - **Every line within 3 screen pixels** of the pointer, the nearest first, each once, with a ring on the point read; the box's border is in the nearest line's colour. Where lines cross, all of them are read in the one box.
-- **A line drawn through observations** (the yields, the right axis's curves): the nearer observation, never a value between two.
-- **A line drawn as steps** (policy rates, mortgage rates, a quarterly figure held until the next): the value in force on the day under the pointer, with "(observed DATE)" where that value was observed earlier.
+- **A line drawn through observations** (the yields, the spreads): the nearer observation, never a value between two.
+- **A line filled in between its figures** ([Daily values](?help=daily): debt, GDP, interest, the balance of payments, inflation, the price index, the population): its value on the line on the day under the pointer.
+- **A line drawn as steps** (policy rates, mortgage rates; with Daily values unticked, a quarterly figure held until the next): the value in force on the day under the pointer, with "(observed DATE)" where that value was observed earlier.
 - **A projection** ([Projections to today](?help=projections)): its value on the day under the pointer, with "≈".
 - **A quote of the day** ([Latest values](?help=latest-values)): its time, as the subtitle gives it. A policy rate drawn from its bank's announcement adds "(announced)".
 

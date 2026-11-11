@@ -1277,7 +1277,9 @@ def _made_up_chart():
     step 3 px above it, 2020-01-20 to 2020-03-20. A line through 2020-01-01
     (3), 2020-01-11 (3.4), 2020-03-01 (3), quoted, with the quote on
     2020-03-01. A projection from 2020-10-01 (0.5) to 2020-10-11 (1.5). A line
-    over the y axis's top (3.6), shown only up to it.
+    over the y axis's top (3.6), shown only up to it. A series filled in
+    (Daily values, batch 42.2) from 2020-05-01 (0.3) to 2020-05-31 (0.6), broken,
+    then 2020-06-10 (0.6) to 2020-06-20 (0.8).
     """
     figure = Figure(figsize=(8, 6), dpi=100)
     FigureCanvasAgg(figure)
@@ -1293,10 +1295,11 @@ def _made_up_chart():
     line, = ax.plot(days(["2020-01-01", "2020-01-11", "2020-03-01"]), [3.0, 3.4, 3.0])
     projection, = ax.plot(days(["2020-10-01", "2020-10-11"]), [0.5, 1.5])
     high, = ax.plot(days(["2020-05-01", "2020-06-01"]), [3.5, 3.9])  # crosses the axis's top
+    filled, = ax.plot(days(["2020-05-01", "2020-05-31", "2020-06-05", "2020-06-10", "2020-06-20"]), [0.3, 0.6, np.nan, 0.6, 0.8])
     two = lambda value: f"{value:.2f}"  # noqa: E731
     for drawn, name, how in (
         (steps, "Steps", {}), (twin, "Twin", {}), (line, "Line", {"quoted": True}),
-        (projection, "Projection", {"projected": True}), (high, "High", {}),
+        (projection, "Projection", {"projected": True}), (high, "High", {}), (filled, "Filled", {"daily": True}),
     ):
         export.mark_series(drawn, name, export.YIELD_AXIS)
         hover.mark(drawn, (lambda value: "≈" + two(value)) if how.get("projected") else two, **how)
@@ -1371,6 +1374,9 @@ def check_hover(check: Check) -> None:
     check("a projection and the observation it starts from read once there, as the observation",
           names(read("2020-10-01", 1.0)).count("Projection") <= 1 and len(set(names(read("2020-10-01", 1.0)))) == len(names(read("2020-10-01", 1.0))),
           names(read("2020-10-01", 1.0)))
+    check("a series filled in (42.2): the value on its line on the day under the pointer, that day's date",
+          says(read("2020-05-16", 0.45)) == ("Filled", "0.45", "2020-05-16"), says(read("2020-05-16", 0.45)))
+    check("a series filled in: its break stays a break", read("2020-06-05", 0.6) is None, says(read("2020-06-05", 0.6)))
     check("a line past the axis's top: read inside the axes, nothing where it runs above them",
           read("2020-05-04", 3.5 + 0.4 * 3 / 31) is not None and read("2020-05-25", 3.5 + 0.4 * 24 / 31) is None)
     check("outside the axes: nothing", lines.reading(lines.box[0] - 10, (lines.box[1] + lines.box[3]) / 2, 3) is None)
@@ -1470,8 +1476,12 @@ def check_hover(check: Check) -> None:
         found_debt = chart.reading(flat_x, float(run_debt.y[middle]), 3)
         observed = hover.date_text(int(run_debt.day[middle]))
         nearest_debt = found_debt.each[0] if found_debt is not None else None
-        check("the debt, a step: its value in force and its observation's date", nearest_debt is not None and nearest_debt.name == debt.name
-              and (nearest_debt.when == observed or nearest_debt.when.endswith(f"(observed {observed})")), (found_debt, observed))
+        # With Daily values (on by default, batch 42.2) the debt is filled in: read day by day on its line, a
+        # weekend among its days (the frame's rows are the yields' business days), no observation's date.
+        weekend = any(pd.Timestamp(hover.date_text(int(day))).dayofweek >= 5 for each in debt.runs for day in each.day)
+        check("the debt, filled in: not steps, read on the day under the pointer, weekends among its days",
+              nearest_debt is not None and nearest_debt.name == debt.name and not debt.steps and "(observed" not in nearest_debt.when
+              and weekend, (found_debt, observed, debt.steps, weekend))
 
         # The window itself: the pointer on the 10-year yield's point, at the scale the chart is shown.
         scale, left, top = app.placement["us"]

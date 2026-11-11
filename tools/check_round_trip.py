@@ -123,6 +123,9 @@ VALUES = (
     # (not idle with it alone on the right axis), with --reg and a limit; the pair kept while it is off; the "no" form.
     "--payments", "--pay:trade", "--pay:trade --yield --reg", "--pay --no-gdp --no-debt --no-interest -r", "--pay:tr -p --con",
     "--pay --top:5t", "--pay -r --top:30%", "--no-pay", "--pay:trade --no-pay", "--gdp --debt --interest --yield --pay:trade",
+    # Daily values (batch 42.2): off, on, with the measures and the extra axis; greyed with no smooth series, kept.
+    "--no-da", "--da", "--no-daily -r", "--no-da -p --con", "--no-da --cpi --no-gdp --no-debt --no-interest",
+    "--no-da --inf --no-y --no-gdp --no-debt --no-interest", "--no-da --no-gdp --no-debt --no-interest --po",
 )
 
 

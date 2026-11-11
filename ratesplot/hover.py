@@ -95,11 +95,14 @@ class _Mark:
     value_format: Callable[[float], str]
     projected: bool
     quoted: bool
+    daily: bool = False
 
 
-def mark(line: Line2D, value_format: Callable[[float], str], *, projected: bool = False, quoted: bool = False) -> Line2D:
-    """Record how the read-out writes ``line``'s values; ``projected``: a projection to today; ``quoted``: a yield or spread, which an intraday quote can end."""
-    setattr(line, _MARK_ATTR, _Mark(value_format, projected, quoted))
+def mark(
+    line: Line2D, value_format: Callable[[float], str], *, projected: bool = False, quoted: bool = False, daily: bool = False
+) -> Line2D:
+    """Record how the read-out writes ``line``'s values; ``projected``: a projection to today; ``quoted``: a yield or spread, which an intraday quote can end; ``daily``: a series filled in between its observations (Daily values, batch 42.2), read day by day."""
+    setattr(line, _MARK_ATTR, _Mark(value_format, projected, quoted, daily))
     return line
 
 
@@ -348,6 +351,36 @@ def _daily(days: np.ndarray, values: np.ndarray, log: bool) -> tuple[np.ndarray,
     return every, np.interp(every, days, values)
 
 
+def _daily_stretches(days: np.ndarray, values: np.ndarray, log: bool) -> tuple[np.ndarray, np.ndarray]:
+    """``_daily`` for each stretch of a line between its breaks (a missing value), a missing value kept between two stretches; a lone point as it is.
+
+    A point drawn a second before a day ends (a month's last value, held to
+    its end, ``rates.filled_through``) falls on that day, as the steps' do.
+    """
+    order = np.argsort(days, kind="stable")
+    days, values = days[order], values[order]
+    valid = np.isfinite(days) & np.isfinite(values)
+    pieces_days: list[np.ndarray] = []
+    pieces_values: list[np.ndarray] = []
+    for start, stop in _stretches(valid):
+        stretch_days, stretch_values = np.floor(days[start:stop]), values[start:stop]
+        # One point a day: the last on a day it has two (a value held to a second before midnight).
+        last_of_day = np.r_[stretch_days[1:] != stretch_days[:-1], True]
+        stretch_days, stretch_values = stretch_days[last_of_day], stretch_values[last_of_day]
+        if len(stretch_days) > 1:
+            stretch_days, stretch_values = _daily(stretch_days, stretch_values, log)
+        if pieces_days:
+            # A point with no value between the two stretches, on a day between them, so the sort that
+            # follows (``_curve``) keeps it there and the line breaks there.
+            pieces_days.append(np.array([(pieces_days[-1][-1] + stretch_days[0]) / 2]))
+            pieces_values.append(np.array([np.nan]))
+        pieces_days.append(stretch_days.astype(float))
+        pieces_values.append(stretch_values)
+    if not pieces_days:
+        return np.array([]), np.array([])
+    return np.concatenate(pieces_days), np.concatenate(pieces_values)
+
+
 def _curve(line: Line2D, name: str, how: _Mark, height: float) -> Curve | None:
     """``line`` as the read-out sees it, or None if it draws nothing."""
     xy = np.asarray(line.get_xydata(), dtype=float)
@@ -361,6 +394,12 @@ def _curve(line: Line2D, name: str, how: _Mark, height: float) -> Curve | None:
         if valid.sum() < 2:
             return None
         days, values = _daily(days[valid], values[valid], line.axes.get_yscale() == "log")
+    elif how.daily:
+        # A series filled in (batch 42.2) is read day by day on its line, as a
+        # projection is, within each stretch: a break stays a break.
+        days, values = _daily_stretches(days, values, line.axes.get_yscale() == "log")
+        if not len(days):
+            return None
     order = np.argsort(days, kind="stable")
     days, values = days[order], values[order]
     transform = line.get_transform()

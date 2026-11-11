@@ -1932,6 +1932,11 @@ class PlotConfig:
     # between controlling projections with --projections and current quotes
     # with --current"); --cur turned both on and off before.
     projections: bool = True
+    # --daily (on unless --no-daily, batch 42.2; Terry, decision 125): each
+    # smooth series (``SeriesKind.filled_in``) filled in between its
+    # observations, drawn straight through them and read day by day; off,
+    # drawn as before, each value held to the next.
+    daily: bool = True
     # --hover (on unless --no-hover, batch 11.2): the read-out by the pointer
     # resting on a line, in the window, on the web page and in the plain
     # matplotlib windows (ratesplot.hover). It draws nothing on the chart, so
