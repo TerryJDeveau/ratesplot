@@ -371,13 +371,23 @@ CASES: dict[str, list[str]] = {
     "de_interest_levels1970_p": ["--na:de", "--interest", "--debt:fnm", "--no-debt", "-p", "-l", "-s:1965", "--e:2005"],
     # Batch 23: the balance of payments: the U.S. current account from 1960 across its join at 1999 (the
     # surplus green, the deficit pink), over GDP, per person at constant prices, and trade fitted by --reg with
-    # end labels beside debt and GDP; the other nations' charts with a note and no pair (until their stages).
+    # end labels beside debt and GDP; Germany's chart with a note and no pair (until its stage).
     "u_pay1960": ["-u", "--pay", "-s:1960"],
     "u_pay_r": ["-u", "--pay", "-r", "-s:1960"],
     "u_pay_pc": ["-u", "--pay", "-p", "--con", "-s:1985"],
     "u_pay_trade_reg": ["-u", "--pay:trade", "--reg", "-l", "-s:1990"],
     "u_pay_mix": ["-u", "--pay", "--gdp", "--debt", "-l", "-s:1995"],
     "pay_all4": ["--na:ca,us,gb,de", "--pay:trade", "--gdp", "-s:2000"],
+    # Batch 23's second stage: Canada's current account from 1946 across its join at 1981, trade over GDP,
+    # per person fitted by --reg; the UK's from 1955, trade over GDP with end labels, in U.S. dollars as the
+    # master currency; the two side by side with debt and GDP.
+    "c_pay1946": ["-c", "--pay", "-s:1946"],
+    "c_pay_trade_r": ["-c", "--pay:trade", "-r", "-s:1960"],
+    "c_pay_pc_reg": ["-c", "--pay", "-p", "--reg", "-s:1975"],
+    "uk_pay1955": ["--na:gb", "--pay", "-s:1955"],
+    "uk_pay_trade_r": ["--na:gb", "--pay:trade", "-r", "-l", "-s:1970"],
+    "uk_pay_master": ["--na:gb,us", "--pay", "--master:USD", "-s:1990"],
+    "c_uk_pay_mix": ["--na:ca,gb", "--pay", "--gdp", "--debt", "-l", "-s:1995"],
 }
 
 

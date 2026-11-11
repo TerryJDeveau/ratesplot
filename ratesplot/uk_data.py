@@ -177,6 +177,15 @@ ONS_SERIES = {
     # (batch 13.2, --constant; measured 2026-11-03): the millennium index
     # (uk_archive_data, also 2015 = 100) before it, within 0.04 % where they meet.
     "D7BT": ("/economy/inflationandpriceindices/timeseries/d7bt/mm23", "Index, base year = 100", 1.0),
+    # The balance of payments (batch 23, --payments; ``ratesplot.payments``),
+    # dataset PNBP, quarterly from 1955 Q1, seasonally adjusted, £m a quarter
+    # (not at annual rates): the current account's credits and debits (HBON
+    # less HBOO is the balance, HBOP, exactly) and total trade's exports and
+    # imports of goods and services. Measured 2026-11-11.
+    "HBON": ("/economy/nationalaccounts/balanceofpayments/timeseries/hbon/pnbp", "m", MILLION),
+    "HBOO": ("/economy/nationalaccounts/balanceofpayments/timeseries/hboo/pnbp", "m", MILLION),
+    "IKBH": ("/economy/nationalaccounts/balanceofpayments/timeseries/ikbh/pnbp", "m", MILLION),
+    "IKBI": ("/economy/nationalaccounts/balanceofpayments/timeseries/ikbi/pnbp", "m", MILLION),
 }
 # The frequency the program reads of each ONS series (``ons_series``): a
 # debt at the end of each month where the ONS has months (BKPX, BKPW and
@@ -198,6 +207,10 @@ ONS_SERIES_READ = {
     "EBAQ": "quarters",
     "D7G7": "months",
     "D7BT": "months",
+    "HBON": "quarters",
+    "HBOO": "quarters",
+    "IKBH": "quarters",
+    "IKBI": "quarters",
 }
 ONS_BAKED_SOURCE = "ons"
 UK_DEBT_SERIES = "BKPX"

@@ -77,8 +77,8 @@ from ratesplot.version import version_text  # noqa: E402
 DEFAULT_CASES = (
     "default", "c_reg1867", "u_reg_r", "c_lv_r", "c_p", "uk_rates", "de_rates", "policy_both", "all4", "constant_master",
     "cpi", "cpi_long", "population", "population_long", "real_alone",
-    # Batch 23: the balance of payments' pair, beside debt and GDP, with end labels.
-    "u_pay_mix",
+    # Batch 23: the balance of payments' pair, beside debt and GDP, with end labels; the UK's in U.S. dollars.
+    "u_pay_mix", "uk_pay_master",
 )
 # --save is run from the command line on these: two nations, then four with their own levels.
 SAVE_CASES = ("default", "nat_levels")
