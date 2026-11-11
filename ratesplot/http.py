@@ -18,7 +18,7 @@ import traceback
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterator, Sequence, TypeVar
 from urllib.parse import urlsplit
@@ -85,8 +85,47 @@ _download_cache_lock = threading.Lock()
 # quote of another moment is not the day's. On the web page's server the disk
 # lasts only while the app runs (a Reboot or a sleep starts it empty); the
 # baked history of batch 19.2 is what lasts there.
+#
+# Pruned (batch 41.2). Most requests carry a start date, the recent part's of
+# batch 19.2 (the bake's last date less two or 24 months), which moves with
+# each re-bake: each re-bake filed a request's next copy under a new key, and
+# the one before was never read again. Measured 2026-11-11: 339 copies,
+# 8.8 MB, written since 2026-10-21; 217 of them (3.0 MB) had a later start's
+# copy of the same request beside them. So a copy is removed once a copy of
+# the same request from a later start is kept: at once when this program
+# keeps it (``_keep_copy``), and in one pass over the folder when the copies
+# are turned on (``enable_last_good_copies``), for those another window or an
+# earlier run left. Never by age: a source down for weeks still needs its
+# last copy. Measured the same day, from the copies' own times: no drawing
+# asks one request from two starts (310 copies of 93 such requests, none of
+# them two starts fetched within two minutes), so the copy removed is one no
+# drawing asks for. A request with no start date (a whole series, a feed) is
+# never pruned: nothing marks a copy of it as replaced.
 
 _copies_folder: Path | None = None
+
+# The query parameters that carry a request's start date (batch 41.2), as each source names them.
+_START_PARAMETERS = (
+    "start_date",  # the Bank of Canada's Valet (cdn_data): 2026-09-04
+    "startPeriod",  # the Bundesbank's and the ECB's SDMX services (de_data): 2026-09-05, 2026-08, 2023
+    "sinceTimePeriod",  # Eurostat's (de_data): 2024-Q3, 2023
+    "startRefPeriod",  # Statistics Canada's WDS (cdn_data): 2024-04-01
+    "Datefrom",  # the Bank of England's database (uk_data.iadb_date): 03/Sep/2026
+)
+# Treasury's Debt to the Penny asks from a day by a filter (latest.py): record_date:gte:2026-06-30.
+_FILTER_FROM = re.compile(r"(\w+):gte:(\d{4}-\d{2}-\d{2})")
+# The Bank of England's months, in English whatever the machine's locale (as uk_data writes them).
+_ENGLISH_MONTHS = {name: number for number, name in enumerate(
+    ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), start=1)}
+# A copy's temporary file (``_keep_copy``) left by a program stopped while writing it: removed
+# when more than a day old, so it cannot be one a window is writing now.
+_STRAY_COPY_SECONDS = 24 * 60 * 60
+
+# Each request's copies by start day (``_request_and_start``), for the folder they are in:
+# built by ``_prune_copies``, kept up to date by ``_keep_copy``.
+_copies_by_request: dict[tuple, dict[date, Path]] = {}
+_indexed_folder: Path | None = None
+_copies_lock = threading.Lock()
 
 
 def last_good_folder() -> Path:
@@ -98,7 +137,10 @@ def last_good_folder() -> Path:
 def enable_last_good_copies(folder: Path | None = None) -> None:
     """Keep the last good copy of every cached download in ``folder`` (``last_good_folder``), and use it when its source fails.
 
-    A folder that cannot be made leaves the copies off, with a note.
+    A folder that cannot be made leaves the copies off, with a note. When
+    the copies are turned on in a folder, its copies replaced by a later
+    start's are removed, once (``_prune_copies``, batch 41.2): the window, the
+    web page and the command line each turn them on as they start.
     """
     global _copies_folder
     folder = folder or last_good_folder()
@@ -107,7 +149,116 @@ def enable_last_good_copies(folder: Path | None = None) -> None:
     except OSError as exc:
         print(f"  Note: no copies of the downloads can be kept in {folder} ({exc}); a source that fails is not drawn.")
         return
+    if folder != _copies_folder:  # the command line opening the window turns them on twice: one pass
+        _prune_copies(folder)
     _copies_folder = folder
+
+
+def _start_day(text: str) -> date | None:
+    """The day a start parameter names: 2026-09-04, 2026-08, 2023, 2024-Q3, or the Bank of England's 03/Sep/2026; None for any other text."""
+    try:
+        if match := re.fullmatch(r"(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?", text):
+            return date(int(match[1]), int(match[2] or 1), int(match[3] or 1))
+        if match := re.fullmatch(r"(\d{4})-Q([1-4])", text):
+            return date(int(match[1]), 3 * int(match[2]) - 2, 1)
+        if (match := re.fullmatch(r"(\d{1,2})/([A-Z][a-z]{2})/(\d{4})", text)) and match[2] in _ENGLISH_MONTHS:
+            return date(int(match[3]), _ENGLISH_MONTHS[match[2]], int(match[1]))
+    except ValueError:  # 2026-13, 31/Feb/2026: no day
+        return None
+    return None
+
+
+def _request_and_start(key: tuple) -> tuple[tuple, date] | None:
+    """A download's key with its start date set aside, and the day it starts (batch 41.2); None for a request with no start date.
+
+    FRED's ``("fred", ID, "2026-09-03")`` (``fetch_fred_csv``); a GET's
+    ``(tag, address, parameters)`` (``_session_get``) whose parameters hold
+    one of ``_START_PARAMETERS`` or Treasury's filter from a day. The
+    parameter's name stays in what is returned, its value emptied, so two
+    keys come out the same only if they differ by their start alone.
+    """
+    if key[0] == "fred":
+        day = _start_day(key[2]) if len(key) == 3 and isinstance(key[2], str) else None
+        return (key[:2], day) if day is not None else None
+    if len(key) != 3 or not isinstance(key[2], tuple):  # a POST's key holds its JSON as text: no start read from it
+        return None
+    for position, item in enumerate(key[2]):
+        if not (isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], str)):
+            continue
+        name, value = item
+        if name in _START_PARAMETERS:
+            day, emptied = _start_day(value), (name, "")
+        elif name == "filter" and (match := _FILTER_FROM.fullmatch(value)):
+            day, emptied = _start_day(match[2]), (name, f"{match[1]}:gte:")
+        else:
+            continue
+        if day is not None:
+            return (key[0], key[1], key[2][:position] + (emptied,) + key[2][position + 1:]), day
+    return None
+
+
+def _prune_copies(folder: Path) -> tuple[int, int]:
+    """One pass over ``folder`` (batch 41.2): each request's copies from a start earlier than its latest removed, and stray temporary files more than a day old; return how many of each.
+
+    Every copy's key is read (339 copies, 8.8 MB, in 0.08 s, measured
+    2026-11-11). A copy that cannot be read is left as it is: its reader
+    says so if it is ever needed. Builds the index ``_keep_copy`` keeps up
+    to date. A file another program holds open is left for the next pass.
+    """
+    global _indexed_folder
+    by_request: dict[tuple, dict[date, Path]] = {}
+    strays = 0
+    now = time.time()
+    try:
+        paths = list(folder.iterdir())
+    except OSError:
+        paths = []
+    for path in paths:
+        if path.suffix == ".tmp":
+            with contextlib.suppress(OSError):
+                if now - path.stat().st_mtime > _STRAY_COPY_SECONDS:
+                    path.unlink()
+                    strays += 1
+            continue
+        if path.suffix != ".pickle":
+            continue
+        try:
+            key = pickle.loads(path.read_bytes())[0]
+            found = _request_and_start(key) if isinstance(key, tuple) and key else None
+        except Exception:  # a damaged copy: left for its reader to name
+            continue
+        if found is not None:
+            by_request.setdefault(found[0], {})[found[1]] = path
+    replaced = 0
+    for copies in by_request.values():
+        latest = max(copies)
+        for day in [day for day in copies if day < latest]:
+            with contextlib.suppress(OSError):
+                copies.pop(day).unlink()
+                replaced += 1
+    with _copies_lock:
+        _copies_by_request.clear()
+        _copies_by_request.update(by_request)
+        _indexed_folder = folder
+    return replaced, strays
+
+
+def _replace_earlier(path: Path, request: tuple, day: date) -> None:
+    """Note ``path`` as ``request``'s copy from ``day``, and remove its copies from earlier starts (batch 41.2).
+
+    A copy from a later start is kept: this program then asks an earlier one
+    (a window started before a re-bake), and the next pass removes this one.
+    """
+    global _indexed_folder
+    with _copies_lock:
+        if _indexed_folder != path.parent:  # copies kept in a folder no pass has read: an index of its own
+            _copies_by_request.clear()
+            _indexed_folder = path.parent
+        copies = _copies_by_request.setdefault(request, {})
+        for earlier in [earlier for earlier in copies if earlier < day]:
+            with contextlib.suppress(OSError):  # gone already (another window's pass), or held: the next pass
+                copies.pop(earlier).unlink()
+        copies[day] = path
 
 
 def _copy_label(key: tuple) -> str:
@@ -124,7 +275,7 @@ def _copy_path(key: tuple) -> Path:
 
 
 def _keep_copy(key: tuple, result: object) -> None:
-    """Write ``result`` as ``key``'s last good copy, replacing the one before (atomically)."""
+    """Write ``result`` as ``key``'s last good copy, replacing the one before (atomically); its copies from earlier starts then removed (batch 41.2)."""
     path = _copy_path(key)
     temporary = path.with_name(f"{path.stem}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
@@ -134,6 +285,10 @@ def _keep_copy(key: tuple, result: object) -> None:
         print(f"  Note: {_copy_label(key)}: no new copy kept ({exc}).")
         with contextlib.suppress(OSError):
             temporary.unlink()
+        return
+    found = _request_and_start(key)
+    if found is not None:
+        _replace_earlier(path, *found)
 
 
 def _last_good_copy(key: tuple) -> tuple[float, object] | None:

@@ -37,19 +37,29 @@ refusing the connection, is asked nothing more in the drawing after its first re
 which is not retried (only a connection dropped part way or a server error is asked once
 more): every series of it is then drawn from its copy or its bake, as if it had been asked.
 
+First (batch 41.2), the copies pruned, in a made-up folder: a copy replaced by one of the
+same request from a later start removed, by the pass when the copies are turned on and at
+once when a later copy is kept; a copy with no later one kept however old; a whole series,
+a feed, a damaged copy and a fresh temporary file left alone.
+
 Usage (from the project root)::
 
     python tools/check_last_good.py
+    python tools/check_last_good.py --keep   # a failed check keeps the run's temporary folders
 
-The exit code is 1 if any check fails. No network is used.
+The exit code is 1 if any check fails. No network is used. The run's four folders in
+Temp (about 30 MB) are removed at its end, and ``ratesplot_…`` folders more than a day old
+at its start (``tools/temp_folders.py``, batch 41.1).
 """
 
 from __future__ import annotations
 
+import os
+import pickle
 import re
 import shutil
 import sys
-import tempfile
+import time
 from collections import Counter
 import urllib.request
 from pathlib import Path
@@ -65,6 +75,7 @@ import requests  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 import synthetic_sources  # noqa: E402
+import temp_folders  # noqa: E402
 from ratesplot import baked, cdn_data, cli, http  # noqa: E402
 from ratesplot import web  # noqa: E402  (imported first: it turns on the page's caches, undone below)
 from ratesplot.console import this_thread_output_to  # noqa: E402
@@ -256,7 +267,7 @@ def check_not_drawn() -> None:
     case's charts cannot be drawn: the page names each in one line, without a traceback. Then
     a chart that fails for an unexpected reason (a stand-in that raises) keeps its traceback.
     """
-    none_baked = Path(tempfile.mkdtemp(prefix="ratesplot_baked_none_"))
+    none_baked = temp_folders.make("baked_none")
     with_bake, baked.DATA_FOLDER = baked.DATA_FOLDER, none_baked
     baked.forget_read_files()
     config = cli.parse_args(["--no-gui", *CASES["default"], "-s:2000"])
@@ -285,6 +296,80 @@ def check_not_drawn() -> None:
     check("an unexpected error: its traceback, then its one line (19.4)",
           lines == ["NOT DRAWN: the United States chart: RuntimeError: raised by check_last_good"]
           and "Traceback" in drawing.log and drawing.log.index("Traceback") < drawing.log.index(lines[0]), lines)
+
+
+def check_pruning() -> None:
+    """Batch 41.2: a copy replaced by one of the same request from a later start removed; never by age alone.
+
+    A made-up folder holds copies as earlier runs left them, written straight to disk with
+    times weeks old; the copies are turned on there (the pass at a program's start), then
+    later copies kept through the program's own path (``http._keep_copy``).
+    """
+    folder = temp_folders.make("pruning")
+    weeks_ago = time.time() - 40 * 24 * 3600
+    boe = "https://www.bankofengland.co.uk/boeapps/database/_iadb-fromshowcolumns.asp"
+    eurostat = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/namq_10_gdp"
+    penny = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny"
+    valet = "https://www.bankofcanada.ca/valet/observations/V122530/csv"
+    copies = {
+        "fred X 08-01": ("fred", "X", "2026-08-01"),
+        "fred X 09-01": ("fred", "X", "2026-09-01"),
+        "fred X whole": ("fred", "X"),
+        "fred Y 07-01, its source down for weeks": ("fred", "Y", "2026-07-01"),
+        "fred Z 09-05": ("fred", "Z", "2026-09-05"),
+        "boe A 30/Aug": ("uk", boe, (("Datefrom", "30/Aug/2026"), ("SeriesCodes", "A"))),
+        "boe A 02/Sep": ("uk", boe, (("Datefrom", "02/Sep/2026"), ("SeriesCodes", "A"))),
+        "boe B 01/Aug": ("uk", boe, (("Datefrom", "01/Aug/2026"), ("SeriesCodes", "B"))),
+        "eurostat 2024-Q2": ("de", eurostat, (("geo", "DE"), ("sinceTimePeriod", "2024-Q2"))),
+        "eurostat 2024-Q3": ("de", eurostat, (("geo", "DE"), ("sinceTimePeriod", "2024-Q3"))),
+        "penny 06-30": ("latest", penny, (("fields", "record_date"), ("filter", "record_date:gte:2026-06-30"))),
+        "penny 09-30": ("latest", penny, (("fields", "record_date"), ("filter", "record_date:gte:2026-09-30"))),
+        "valet 1900": ("canadian", valet, (("start_date", "1900-01-01"),)),
+        "valet 2026-08-01": ("canadian", valet, (("start_date", "2026-08-01"),)),
+        "a feed, no start": ("canadian", "https://www.bankofcanada.ca/content_type/press-releases/feed/", ()),
+    }
+
+    def path_of(key: tuple) -> Path:
+        """The file the program keeps ``key``'s copy in, in the made-up folder (``http._copy_path``)."""
+        real, http._copies_folder = http._copies_folder, folder
+        try:
+            return http._copy_path(key)
+        finally:
+            http._copies_folder = real
+
+    for label, key in copies.items():
+        path = path_of(key)
+        path.write_bytes(pickle.dumps((key, weeks_ago, label)))
+        os.utime(path, (weeks_ago, weeks_ago))
+    damaged = folder / ("0" * 64 + ".pickle")
+    damaged.write_bytes(b"not a pickle")
+    stray, fresh = folder / "x.1.2.tmp", folder / "y.1.2.tmp"
+    stray.write_bytes(b"left by a program stopped while writing")
+    fresh.write_bytes(b"a window writing it now")
+    os.utime(stray, (weeks_ago, weeks_ago))
+
+    def left() -> set[str]:
+        return {label for label, key in copies.items() if path_of(key).exists()}
+
+    replaced = {"fred X 08-01", "boe A 30/Aug", "eurostat 2024-Q2", "penny 06-30", "valet 1900"}
+    http.enable_last_good_copies(folder)
+    check("the pass at the start: each copy replaced by a later start removed (02/Sep later than 30/Aug, 2024-Q3 than Q2)",
+          left() == set(copies) - replaced, sorted(set(copies) - replaced - left()) or sorted(left() & replaced))
+    check("and a copy with no later one kept however old (its source down for weeks), a whole series and a feed kept",
+          {"fred Y 07-01, its source down for weeks", "fred X whole", "a feed, no start"} <= left())
+    check("and a damaged copy left for its reader; a stray temporary file a day old removed, a fresh one kept",
+          damaged.exists() and not stray.exists() and fresh.exists(), (damaged.exists(), sorted(path.name for path in folder.glob("*.tmp"))))
+    http._keep_copy(("fred", "Y", "2026-08-01"), "Y's next copy")
+    check("a later start's copy kept: the earlier removed at once, the new one read back",
+          "fred Y 07-01, its source down for weeks" not in left()
+          and http._last_good_copy(("fred", "Y", "2026-08-01"))[1] == "Y's next copy")
+    http._keep_copy(("fred", "Z", "2026-09-01"), "an earlier start asked (a window started before a re-bake)")
+    check("an earlier start's copy kept: the later one kept too",
+          "fred Z 09-05" in left() and path_of(("fred", "Z", "2026-09-01")).exists())
+    http._keep_copy(("uk", boe, (("Datefrom", "03/Sep/2026"), ("SeriesCodes", "B"))), "B's next copy")
+    check("a later start of one series: only that series' earlier copies removed",
+          "boe B 01/Aug" not in left() and "boe A 02/Sep" in left())
+    http._copies_folder = None
 
 
 def refused_post(_session, url, json=None, **_kwargs):
@@ -338,10 +423,13 @@ def main() -> int:
     # web's import turned on the page's memory cache, which would answer pass 2 from pass 1.
     http._download_cache = None
     requests.Session.post = refused_post  # type: ignore[assignment]
-    folder = Path(tempfile.mkdtemp(prefix="ratesplot_last_good_"))
+    temp_folders.begin(temp_folders.keep_asked())
+    print("[last good] the copies pruned (41.2), in a made-up folder")
+    check_pruning()
+    folder = temp_folders.make("last_good")
     http.enable_last_good_copies(folder)
     print(f"[last good] copies in {folder}")
-    synthetic_sources.install_synthetic_bake(Path(tempfile.mkdtemp(prefix="ratesplot_baked_")))
+    synthetic_sources.install_synthetic_bake(temp_folders.make("baked"))
 
     print("[last good] pass 1: every source answers")
     requests.Session.get = answering_get  # type: ignore[assignment]
@@ -459,7 +547,7 @@ def main() -> int:
         flat.update((f"{name}, {curve}", days) for curve, days in case_flat.items())
     # The UK's chart without the ONS's bake too, as before 19.2's ONS stage: its gross debt is not drawn, so the
     # national debt runs on alone to 2016, past 1975.
-    without_ons = Path(tempfile.mkdtemp(prefix="ratesplot_baked_no_ons_"))
+    without_ons = temp_folders.make("baked_no_ons")
     shutil.copytree(baked.DATA_FOLDER, without_ons, dirs_exist_ok=True)
     shutil.rmtree(without_ons / "ons")
     with_ons, baked.DATA_FOLDER = baked.DATA_FOLDER, without_ons
@@ -484,6 +572,7 @@ def main() -> int:
     check_not_drawn()
 
     print(f"[last good] {'all checks passed' if not failures else f'{failures} FAILED'}")
+    temp_folders.end(failed=bool(failures))
     return 1 if failures else 0
 
 

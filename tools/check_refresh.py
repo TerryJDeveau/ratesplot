@@ -34,8 +34,10 @@ window's and the page's timers are checked by ``tools/verify_gui.py`` (group
 Usage (from the project root)::
 
     python tools/check_refresh.py
+    python tools/check_refresh.py --keep   # a failed check keeps the run's temporary folders
 
-Exit code 1 on any FAIL.
+Exit code 1 on any FAIL. The run's two folders in Temp are removed at its end, and
+``ratesplot_…`` folders more than a day old at its start (``tools/temp_folders.py``, batch 41.1).
 """
 
 from __future__ import annotations
@@ -43,9 +45,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import shutil
 import sys
-import tempfile
 from dataclasses import replace
 from pathlib import Path
 
@@ -55,6 +55,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "tools")]
 import verify_charts  # noqa: E402,F401  (unused but first: it sets the Agg backend before pyplot is imported)
 
 del verify_charts
+import temp_folders  # noqa: E402
 import pandas as pd  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
@@ -183,107 +184,104 @@ def check_ticker(check) -> None:
 
 def check_saved_files(check) -> None:
     """The saved files (batches 11.3, 33): a temporary file swapped in; a file this job wrote replaced, any other kept and "_n" written."""
-    folder = Path(tempfile.mkdtemp(prefix="ratesplot_check_refresh_"))
+    folder = temp_folders.make("check_refresh")
+    files = export.SavedFiles()
+    target = str(folder / "rates_ca.png")
+
+    def write(saving: export.SavedFiles, data: bytes, name: str = target, chosen: bool = False) -> tuple[str, str]:
+        """The name written, and what was said."""
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            return saving.write(name, data, chosen=chosen), printed.getvalue()
+
+    first, said = write(files, b"one")
+    check("a new file: under its name, nothing said", first == target and Path(target).read_bytes() == b"one" and not said,
+          (first, said))
+    first, said = write(files, b"two")
+    check("written again by the same job: replaced without a word", first == target and Path(target).read_bytes() == b"two"
+          and not said, (first, said))
+
+    # The case Terry met (2026-10-28): --save:a.xlsx over the a.xlsx of an earlier run.
+    workbook = str(folder / "a.xlsx")
+    Path(workbook).write_bytes(b"an earlier run's")
+    run = export.SavedFiles()
+    written, said = write(run, b"this run's", workbook)
+    check("a file there the job did not write: kept, the new one a_1, and said", written == str(folder / "a_1.xlsx")
+          and Path(workbook).read_bytes() == b"an earlier run's"
+          and said == f"  {workbook} is already there; written as {written}.\n", (written, said))
+    again, said = write(run, b"refreshed", workbook)
+    check("the run's next refresh: a_1 replaced without a word", again == written and Path(written).read_bytes() == b"refreshed"
+          and not said, (again, said))
+    third, said = write(export.SavedFiles(), b"a third run's", workbook)
+    check("another run: a and a_1 there, so a_2, both named", third == str(folder / "a_2.xlsx")
+          and f"{workbook}, {written} are already there" in said, (third, said))
+    (folder / "a_3.xlsx").write_bytes(b"numbered by hand")
+    counted, said = write(export.SavedFiles(), b"mine", str(folder / "a_3.xlsx"))
+    check("a name ending in _3: counted on, a_4", counted == str(folder / "a_4.xlsx")
+          and (folder / "a_3.xlsx").read_bytes() == b"numbered by hand", counted)
+    (folder / "a_99.xlsx").write_bytes(b"two digits")
+    check("a_99 there: counted on past it, a_100", write(export.SavedFiles(), b"mine", str(folder / "a_99.xlsx"))[0]
+          == str(folder / "a_100.xlsx"))
+    # The program's own names end in a date or a time: never counted on from them.
+    chart = folder / "cdn_rates_1981-09-01_2026-09-29.png"
+    chart.write_bytes(b"theirs")
+    check("a chart's name ending in its date: _1 added, the date left alone",
+          write(export.SavedFiles(), b"mine", str(chart))[0] == str(folder / "cdn_rates_1981-09-01_2026-09-29_1.png"))
+    log = folder / "ratesplot_log_2026-10-28_1507.txt"
+    log.write_bytes(b"theirs")
+    check("the log's name ending in its time (four digits): _1 added",
+          write(export.SavedFiles(), b"mine", str(log))[0] == str(folder / "ratesplot_log_2026-10-28_1507_1.txt"))
+    dated = folder / "report_20261028.xlsx"
+    dated.write_bytes(b"theirs")
+    check("a date without dashes (eight digits): _1 added, never the next day's",
+          write(export.SavedFiles(), b"mine", str(dated))[0] == str(folder / "report_20261028_1.xlsx"))
+    names = {
+        "a.xlsx": "a_1.xlsx", "a_9.xlsx": "a_10.xlsx", "a_007.xlsx": "a_008.xlsx",
+        "a_2026.xlsx": "a_2026_1.xlsx", "a_0001.xlsx": "a_0001_1.xlsx", "a_9999.xlsx": "a_9999_1.xlsx",
+        "a_999.xlsx": "a_01000.xlsx", "a_01000.xlsx": "a_01001.xlsx", "a_09999.xlsx": "a_10000.xlsx",
+        "a_99999.xlsx": "a_0100000.xlsx", "a_261028.xlsx": "a_261028_1.xlsx", "a_9999999.xlsx": "a_010000000.xlsx",
+        "a_b_.xlsx": "a_b__1.xlsx", "_3.xlsx": "_3_1.xlsx", "a.b_3.xlsx": "a.b_4.xlsx",
+        str(folder / "_3.xlsx"): str(folder / "_3_1.xlsx"), str(folder / "run_7" / "12.xlsx"): str(folder / "run_7" / "12_1.xlsx"),
+    }
+    after = {name: export.next_path(name) for name in names}
+    check("the name after each: four, six and eight digits never counted on, a number reaching one of them given a zero",
+          after == names, {name: next_name for name, next_name in after.items() if next_name != names[name]})
+
+    # A name picked in the window's Save As dialog, which asked before replacing it.
+    picked = folder / "picked.png"
+    picked.write_bytes(b"theirs")
+    window = export.SavedFiles()
+    check("a name picked and confirmed: replaced under its name",
+          write(window, b"mine", str(picked), chosen=True)[0] == str(picked) and picked.read_bytes() == b"mine")
+    check("and counted as the window's", window.wrote(str(picked)) and window.wrote(str(picked).upper()))
+    check("the dialog offers a name no file has: the window's own counts as taken",
+          window.free_path(str(picked)) == str(folder / "picked_1.png")
+          and window.free_path(str(folder / "new.png")) == str(folder / "new.png"))
+
+    held = open(target, "rb")  # Python opens without sharing deletion: Windows refuses to replace it
     try:
-        files = export.SavedFiles()
-        target = str(folder / "rates_ca.png")
-
-        def write(saving: export.SavedFiles, data: bytes, name: str = target, chosen: bool = False) -> tuple[str, str]:
-            """The name written, and what was said."""
-            printed = io.StringIO()
-            with contextlib.redirect_stdout(printed):
-                return saving.write(name, data, chosen=chosen), printed.getvalue()
-
-        first, said = write(files, b"one")
-        check("a new file: under its name, nothing said", first == target and Path(target).read_bytes() == b"one" and not said,
-              (first, said))
-        first, said = write(files, b"two")
-        check("written again by the same job: replaced without a word", first == target and Path(target).read_bytes() == b"two"
-              and not said, (first, said))
-
-        # The case Terry met (2026-10-28): --save:a.xlsx over the a.xlsx of an earlier run.
-        workbook = str(folder / "a.xlsx")
-        Path(workbook).write_bytes(b"an earlier run's")
-        run = export.SavedFiles()
-        written, said = write(run, b"this run's", workbook)
-        check("a file there the job did not write: kept, the new one a_1, and said", written == str(folder / "a_1.xlsx")
-              and Path(workbook).read_bytes() == b"an earlier run's"
-              and said == f"  {workbook} is already there; written as {written}.\n", (written, said))
-        again, said = write(run, b"refreshed", workbook)
-        check("the run's next refresh: a_1 replaced without a word", again == written and Path(written).read_bytes() == b"refreshed"
-              and not said, (again, said))
-        third, said = write(export.SavedFiles(), b"a third run's", workbook)
-        check("another run: a and a_1 there, so a_2, both named", third == str(folder / "a_2.xlsx")
-              and f"{workbook}, {written} are already there" in said, (third, said))
-        (folder / "a_3.xlsx").write_bytes(b"numbered by hand")
-        counted, said = write(export.SavedFiles(), b"mine", str(folder / "a_3.xlsx"))
-        check("a name ending in _3: counted on, a_4", counted == str(folder / "a_4.xlsx")
-              and (folder / "a_3.xlsx").read_bytes() == b"numbered by hand", counted)
-        (folder / "a_99.xlsx").write_bytes(b"two digits")
-        check("a_99 there: counted on past it, a_100", write(export.SavedFiles(), b"mine", str(folder / "a_99.xlsx"))[0]
-              == str(folder / "a_100.xlsx"))
-        # The program's own names end in a date or a time: never counted on from them.
-        chart = folder / "cdn_rates_1981-09-01_2026-09-29.png"
-        chart.write_bytes(b"theirs")
-        check("a chart's name ending in its date: _1 added, the date left alone",
-              write(export.SavedFiles(), b"mine", str(chart))[0] == str(folder / "cdn_rates_1981-09-01_2026-09-29_1.png"))
-        log = folder / "ratesplot_log_2026-10-28_1507.txt"
-        log.write_bytes(b"theirs")
-        check("the log's name ending in its time (four digits): _1 added",
-              write(export.SavedFiles(), b"mine", str(log))[0] == str(folder / "ratesplot_log_2026-10-28_1507_1.txt"))
-        dated = folder / "report_20261028.xlsx"
-        dated.write_bytes(b"theirs")
-        check("a date without dashes (eight digits): _1 added, never the next day's",
-              write(export.SavedFiles(), b"mine", str(dated))[0] == str(folder / "report_20261028_1.xlsx"))
-        names = {
-            "a.xlsx": "a_1.xlsx", "a_9.xlsx": "a_10.xlsx", "a_007.xlsx": "a_008.xlsx",
-            "a_2026.xlsx": "a_2026_1.xlsx", "a_0001.xlsx": "a_0001_1.xlsx", "a_9999.xlsx": "a_9999_1.xlsx",
-            "a_999.xlsx": "a_01000.xlsx", "a_01000.xlsx": "a_01001.xlsx", "a_09999.xlsx": "a_10000.xlsx",
-            "a_99999.xlsx": "a_0100000.xlsx", "a_261028.xlsx": "a_261028_1.xlsx", "a_9999999.xlsx": "a_010000000.xlsx",
-            "a_b_.xlsx": "a_b__1.xlsx", "_3.xlsx": "_3_1.xlsx", "a.b_3.xlsx": "a.b_4.xlsx",
-            str(folder / "_3.xlsx"): str(folder / "_3_1.xlsx"), str(folder / "run_7" / "12.xlsx"): str(folder / "run_7" / "12_1.xlsx"),
-        }
-        after = {name: export.next_path(name) for name in names}
-        check("the name after each: four, six and eight digits never counted on, a number reaching one of them given a zero",
-              after == names, {name: next_name for name, next_name in after.items() if next_name != names[name]})
-
-        # A name picked in the window's Save As dialog, which asked before replacing it.
-        picked = folder / "picked.png"
-        picked.write_bytes(b"theirs")
-        window = export.SavedFiles()
-        check("a name picked and confirmed: replaced under its name",
-              write(window, b"mine", str(picked), chosen=True)[0] == str(picked) and picked.read_bytes() == b"mine")
-        check("and counted as the window's", window.wrote(str(picked)) and window.wrote(str(picked).upper()))
-        check("the dialog offers a name no file has: the window's own counts as taken",
-              window.free_path(str(picked)) == str(folder / "picked_1.png")
-              and window.free_path(str(folder / "new.png")) == str(folder / "new.png"))
-
-        held = open(target, "rb")  # Python opens without sharing deletion: Windows refuses to replace it
-        try:
-            first, said = write(files, b"three")
-            check("held by another program: written as _1, and said", first == str(folder / "rates_ca_1.png")
-                  and said == f"  Held by another program: {target}; written as {first} instead.\n", (first, said))
-            check("the held file left as it was", Path(target).read_bytes() == b"two")
-            chosen, said = write(window, b"picked", target, chosen=True)
-            check("a name picked but held: the next free name, both said", chosen == str(folder / "rates_ca_2.png")
-                  and said == f"  Held by another program: {target}; {first} is already there; written as {chosen} instead.\n",
-                  (chosen, said))
-        finally:
-            held.close()
-        check("the next refresh keeps _1, though the first is free again", write(files, b"four")[0] == first
-              and Path(first).read_bytes() == b"four")
-        held = open(first, "rb")
-        try:
-            second = write(files, b"five")[0]
-        finally:
-            held.close()
-        check("_1 held too: _2 is there already (the window's), so _3", second == str(folder / "rates_ca_3.png")
-              and (folder / "rates_ca_2.png").read_bytes() == b"picked", second)
-        check("and _3 kept", write(files, b"six")[0] == second)
-        check("no temporary file left", not list(folder.glob("*.tmp")), sorted(path.name for path in folder.iterdir()))
-        check("no file held open: each can be removed", all(_removable(path) for path in folder.iterdir()))
+        first, said = write(files, b"three")
+        check("held by another program: written as _1, and said", first == str(folder / "rates_ca_1.png")
+              and said == f"  Held by another program: {target}; written as {first} instead.\n", (first, said))
+        check("the held file left as it was", Path(target).read_bytes() == b"two")
+        chosen, said = write(window, b"picked", target, chosen=True)
+        check("a name picked but held: the next free name, both said", chosen == str(folder / "rates_ca_2.png")
+              and said == f"  Held by another program: {target}; {first} is already there; written as {chosen} instead.\n",
+              (chosen, said))
     finally:
-        shutil.rmtree(folder, ignore_errors=True)
+        held.close()
+    check("the next refresh keeps _1, though the first is free again", write(files, b"four")[0] == first
+          and Path(first).read_bytes() == b"four")
+    held = open(first, "rb")
+    try:
+        second = write(files, b"five")[0]
+    finally:
+        held.close()
+    check("_1 held too: _2 is there already (the window's), so _3", second == str(folder / "rates_ca_3.png")
+          and (folder / "rates_ca_2.png").read_bytes() == b"picked", second)
+    check("and _3 kept", write(files, b"six")[0] == second)
+    check("no temporary file left", not list(folder.glob("*.tmp")), sorted(path.name for path in folder.iterdir()))
+    check("no file held open: each can be removed", all(_removable(path) for path in folder.iterdir()))
 
 
 def _removable(path: Path) -> bool:
@@ -426,7 +424,8 @@ def main() -> int:
         shown = f"  [{detail}]" if not condition and detail != "" else ""
         print(f"{'ok  ' if condition else 'FAIL'} {label}{shown}", flush=True)
 
-    os.chdir(tempfile.mkdtemp(prefix="ratesplot_check_refresh_cwd_"))  # cli.main's stand-in writes nothing, but just in case
+    temp_folders.begin(temp_folders.keep_asked())
+    os.chdir(temp_folders.make("check_refresh_cwd"))  # cli.main's stand-in writes nothing, but just in case
     for group in (check_rule, check_hours, check_quote_state, check_ticker, check_saved_files, check_command_line, check_plain_window):
         print(f"-- {group.__doc__.splitlines()[0]}")
         try:
@@ -434,6 +433,7 @@ def main() -> int:
         except Exception as exc:  # the group stops; its failure is counted and shown
             check(f"{group.__name__} ran to its end", False, f"{type(exc).__name__}: {exc}")
     print(f"[refresh] {sum(results)} of {len(results)} checks passed")
+    temp_folders.end(failed=not all(results))
     return 0 if all(results) else 1
 
 

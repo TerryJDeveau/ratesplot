@@ -19,7 +19,8 @@
 
     python tools/check_wait.py
 
-Exit status 0 only if every check passes.
+Exit status 0 only if every check passes. The last good copies its made-up requests
+leave are kept in a folder of its own in Temp, removed at its end (batch 41.2).
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ import matplotlib  # noqa: E402
 
 matplotlib.use("Agg")
 
+import temp_folders  # noqa: E402  (tools/, the script's own folder)
 from ratesplot import http, web, wait  # noqa: E402
 from ratesplot.cli import parse_args  # noqa: E402
 from ratesplot.config import DEFAULT_CANVAS_PX  # noqa: E402
@@ -407,6 +409,10 @@ def main() -> int:
         shown = f"  [{detail}]" if not condition and detail != "" else ""
         print(f"{'ok  ' if condition else 'FAIL'} {label}{shown}", flush=True)
 
+    # web's import turned the last good copies on in the person's own folder, where the made-up
+    # requests of check_noted (a.example, b.example) were kept until batch 41.2: a folder of its own.
+    temp_folders.begin(temp_folders.keep_asked())
+    http.enable_last_good_copies(temp_folders.make("check_wait_copies"))
     for group in (check_words, check_figures, check_sum, check_steady, check_noted, check_line_of_drawings):
         print(f"-- {group.__doc__.splitlines()[0]}")
         try:
@@ -414,6 +420,7 @@ def main() -> int:
         except Exception as exc:  # the group stops; its failure is counted and shown
             check(f"{group.__name__} ran to its end", False, f"{type(exc).__name__}: {exc}")
     print(f"[wait] {sum(results)} of {len(results)} checks passed")
+    temp_folders.end(failed=not all(results))
     return 0 if all(results) else 1
 
 

@@ -131,7 +131,9 @@ When a source does not answer (it is down, or sends a web page such as its maint
 in place of its data), the chart is drawn from the last good copy of that download, which is
 kept on disk each time the download succeeds (`%LOCALAPPDATA%\ratesplot\last_good` on Windows,
 `~/.cache/ratesplot/last_good` elsewhere); the web page says so above the charts, and the window
-in its status line. A Bank of England, Bank of Canada, FRED, ECB, Eurostat, ONS, Bundesbank or
+in its status line. Each copy replaces the one before, and any of the same request asked from an
+earlier date (where a request starts moves on as the history built in grows); none is removed for
+its age, since a source may be down for weeks. A Bank of England, Bank of Canada, FRED, ECB, Eurostat, ONS, Bundesbank or
 Statistics Canada series with no copy kept is drawn from its history built into the code, to its
 last date. A source that does not answer (it times out, refuses the connection, or sends an outage
 page or a bot check, as the Bundesbank may behind a VPN) is asked nothing more in that drawing:
@@ -277,7 +279,9 @@ last good copies with every source cut off, `check_requests.py`, which failed re
 asked again and when a source is asked nothing more, against a server on the same machine,
 `check_monitors.py`, a window kept on its monitor, `check_help.py`, the help beside each control: its texts, its topics' files, and a reason given
 exactly where a control is greyed, and
-`check_baked.py`, the built-in history's files and how a drawing joins them to what it asks for)
+`check_baked.py`, the built-in history's files and how a drawing joins them to what it asks for;
+`temp_folders.py`, which the checks that make folders in Temp use, removing them as they end,
+and `check_temp_folders.py`, its check)
 and the bake of the historical data (`bake_archives.py`), which also writes `ratesplot/data/`:
 the live sources' history, one file per series (`bake_archives.py --only boe`, `--only boc`,
 `--only fred`, `--only ecb`, `--only eurostat`, `--only ons`, `--only bbk`, `--only statcan`), re-baked by running it again or by the daily job
