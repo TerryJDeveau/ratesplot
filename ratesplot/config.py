@@ -538,6 +538,10 @@ THOUSAND = 1_000
 MILLION = 1_000_000
 BILLION = 1_000_000_000
 
+# The rate fixed when the euro replaced the mark (1998-12-31): marks per euro. Here, not in
+# ``fx``, so the data modules may convert a source's marks without importing it.
+DEM_PER_EUR = 1.95583
+
 # ---------------------------------------------------------------------------
 # Column names shared across data and plotting layers
 # ---------------------------------------------------------------------------
