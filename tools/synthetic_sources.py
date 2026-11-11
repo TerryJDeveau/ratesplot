@@ -632,6 +632,12 @@ _BUNDESBANK_TERMS = {
     "R05XX": (5, "1972-09", "1997-08-01"), "R07XX": (7, "1972-09", "1997-08-01"), "R10XX": (10, "1972-09", "1997-08-01"),
     "R15XX": (15, "1986-06", "1997-08-01"), "R20XX": (20, "1986-06", "1997-08-01"), "R30XX": (30, "2000-01", "2000-08-01"),
 }
+# The balance of payments' monthly items (batch 23), millions of euros a month: (side, item) -> first and
+# last month's level, near the Bundesbank's own (measured 2026-11-11).
+_DE_PAYMENTS_LEVELS = {
+    ("C", "G"): (4_600, 106_000), ("C", "S"): (860, 37_000), ("C", "IN1"): (590, 21_000), ("C", "IN2"): (100, 5_200),
+    ("D", "G"): (3_900, 93_000), ("D", "S"): (1_170, 48_000), ("D", "IN1"): (340, 12_000), ("D", "IN2"): (520, 9_500),
+}
 # The inflation-linked Federal bonds' real yields (batch 13.3): ISIN -> first day, last day.
 _DE_LINKED_BONDS = {
     "DE0001030542": ("2012-03-22", "2023-04-12"), "DE0001030567": ("2015-03-10", "2026-04-10"), "DE0001030559": ("2014-04-08", "2026-10-02"),
@@ -656,6 +662,14 @@ def bundesbank(url: str) -> bytes:
         lines = [f'"",{key},{key}_FLAGS', '"",synthetic consumer price index,', "unit,2020=100,", "unit multiplier,One,"]
         lines += [f"{day:%Y-%m},{value:.1f}," for day, value in zip(months, values)]
         return ("\ufeff" + "\n".join(lines)).encode()
+    if key.startswith("BBFBOPV."):
+        # A balance of payments item (batch 23), monthly from 1971-01, millions of euros a month, to three places.
+        side, item = key.split(".")[8], key.split(".")[9]
+        months = pd.date_range("1971-01-31", "2026-08-31", freq="ME")
+        values = _growth(months, *_DE_PAYMENTS_LEVELS[(side, item)], "de_bop" + side + item)
+        lines = [f'"",{key},{key}_FLAGS', f'"",synthetic Current account / {item} / {side},', "unit,Euro,", "unit multiplier,Millions,"]
+        lines += [f"{day:%Y-%m},{value:.3f}," for day, value in zip(months, values)]
+        return ("﻿" + "\n".join(lines)).encode()
     if key.startswith("BBSSY."):
         # An inflation-linked bond's real yield (batch 13.3), each business day of its life.
         isin = key.split(".")[5]
@@ -945,6 +959,11 @@ def install_synthetic_bake(folder: Path) -> bool:
             flow, key = de_data.DE_LINKED_BOND_FLOW, de_data.linked_bond_key(isin)
             answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
             bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer))
+    # The balance of payments' items (batch 23's third stage; a tree before it reads no such file).
+    for flow, key in getattr(de_data, "DE_PAYMENTS_SERIES", {}).values():
+        answer = bundesbank(f"https://api.statistiken.bundesbank.de/rest/data/{flow}/{key}").decode()
+        units, multiplier = de_data._BUNDESBANK_UNITS[(flow, key)], de_data._BUNDESBANK_MULTIPLIERS[(flow, key)]
+        bake(de_data.BUNDESBANK_BAKED_SOURCE, f"{flow}.{key}", de_data.parse_bundesbank_csv(answer, units, multiplier))
     # Statistics Canada's live tables, each vector read, selected by the program's own labels (a tree before
     # 19.2's Statistics Canada stage has no STATCAN_SERIES_READ, and reads no Statistics Canada file).
     cdn_data = importlib.import_module("ratesplot.cdn_data")
