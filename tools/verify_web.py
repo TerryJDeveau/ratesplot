@@ -1934,14 +1934,20 @@ def check_batch31(check: Check) -> None:
           and exports[0].proto.label == "Export chart" and exports[0].proto.help == web.EXPORT_HELP,
           [(b.proto.label, b.proto.help) for b in exports])
     # 31.1: the sidebar width's keeper, whose script puts back the width kept while the box is unticked (AppTest runs no script).
-    check("31.1: the sidebar width's keeper laid out, told the box is ticked", sidebar_keeper(at) == {"remember": True, "key": "sidebarWidth"},
-          sidebar_keeper(at))
+    # 2026-11-11 (Terry): the keeper also widens the sidebar past Streamlit's 600 px, to 800.
+    wider = {"widerKey": "ratesplotSidebarWidth", "streamlitWidest": 600, "widest": 800}
+    check("31.1: the sidebar width's keeper laid out, told the box is ticked",
+          sidebar_keeper(at) == {"remember": True, "key": "sidebarWidth", **wider}, sidebar_keeper(at))
     at.checkbox(key="remember").uncheck().run()
-    check("the box unticked: the keeper told so, nothing drawn", not at.exception and sidebar_keeper(at) == {"remember": False, "key": "sidebarWidth"},
-          sidebar_keeper(at))
+    check("the box unticked: the keeper told so, nothing drawn", not at.exception
+          and sidebar_keeper(at) == {"remember": False, "key": "sidebarWidth", **wider}, sidebar_keeper(at))
     at.checkbox(key="remember").check().run()
-    check("ticked again: told so", sidebar_keeper(at) == {"remember": True, "key": "sidebarWidth"}, sidebar_keeper(at))
+    check("ticked again: told so", sidebar_keeper(at) == {"remember": True, "key": "sidebarWidth", **wider}, sidebar_keeper(at))
     check("the line under the box names the width", any("sidebar's width" in caption.value for caption in at.sidebar.caption))
+    rules = [element.proto.body for element in at.get("html") if "stSidebar" in element.proto.body]
+    check("the open sidebar's widest raised to 800 px (2026-11-11)", len(rules) == 1
+          and 'section[data-testid="stSidebar"][aria-expanded="true"] { max-width: min(800px, 90vw) !important; }' in rules[0],
+          [rule[-160:] for rule in rules])
     bad = new_page("-c --start:nonsense")
     check("laid out with no chart drawn too", sidebar_keeper(bad) is not None, sidebar_keeper(bad))
 

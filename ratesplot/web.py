@@ -1056,40 +1056,113 @@ export default function (component) {
 # the visit keeps the width dragged to. Ticked again, nothing is put back:
 # the width shown stays kept, as the window keeps its column's. The note is
 # the page's own (``window``), so a new visit starts with none.
+#
+# The sidebar wider than Streamlit allows (Terry, 2026-11-11: "allow it to be
+# enlarged an additional 33% more than at present", to squeeze the charts
+# for a while): Streamlit 1.64 stops the sidebar at 600 px twice, in its
+# style (max-width: the lesser of 600 px and 90 % of the window) and when a
+# drag ends (its width snapped back to 600 and 600 kept), read in its
+# frontend's script. The page raises the first to SIDEBAR_WIDEST_PX
+# (``_INFO_ICON_STYLE``) and the same script undoes the second: the width a
+# drag ends at, read before Streamlit's own handler (``pointerup`` comes
+# before ``mouseup``), is put back once Streamlit has snapped it, and kept
+# under SIDEBAR_WIDER_KEY while it is past Streamlit's widest; a visit then
+# starts at it while Streamlit's own record is at its widest (a width set
+# since by its means wins, as does a double click on the edge, which puts
+# its default back). Kept or put back as the visit ends with Streamlit's own,
+# by the box. Measured in headless Chrome against a scratch page: a drag to
+# 1100 px stops at 800, one to 760 keeps 758, both through a reload; one
+# back to 448 is Streamlit's alone again.
 SIDEBAR_WIDTH_KEY = "sidebarWidth"
+SIDEBAR_WIDER_KEY = "ratesplotSidebarWidth"
+STREAMLIT_SIDEBAR_WIDEST_PX = 600
+SIDEBAR_WIDEST_PX = 800  # Streamlit's 600 and a third more
 _SIDEBAR_JS = """
 export default function (component) {
-  const { remember, key } = component.data;
+  const { remember, key, widerKey, streamlitWidest, widest } = component.data;
+  const names = [key, widerKey];
   if (remember) {
     window.ratesplotSidebarKept = undefined;
   } else if (window.ratesplotSidebarKept === undefined) {
-    let width = null;
+    let kept = null;
     try {
-      width = localStorage.getItem(key);
+      kept = names.map((name) => localStorage.getItem(name));
     } catch (error) {
-      return;  // the browser keeps nothing for this page: nothing to put back
+      return;  // the browser keeps nothing for this page: nothing to put back, nothing kept to widen it to
     }
-    window.ratesplotSidebarKept = { width };
+    window.ratesplotSidebarKept = kept;
   }
   if (window.ratesplotSidebarPutBack === undefined) {
     window.ratesplotSidebarPutBack = () => {
       const kept = window.ratesplotSidebarKept;
       if (kept === undefined) return;
-      try {
-        if (kept.width === null) localStorage.removeItem(key);
-        else localStorage.setItem(key, kept.width);
-      } catch (error) {}
+      names.forEach((name, index) => {
+        try {
+          if (kept[index] === null) localStorage.removeItem(name);
+          else localStorage.setItem(name, kept[index]);
+        } catch (error) {}
+      });
     };
     window.addEventListener("pagehide", window.ratesplotSidebarPutBack);
+  }
+  // Wider than Streamlit's widest: once a visit.
+  const wider = (window.ratesplotSidebarWider ??= {});
+  const sidebar = () => document.querySelector('section[data-testid="stSidebar"]');
+  const onEdge = (event) => event.target instanceof Element && event.target.closest('[data-testid="stSidebarResizeHandle"]');
+  const keep = (width) => {
+    try {
+      if (width > streamlitWidest) localStorage.setItem(widerKey, String(width));
+      else localStorage.removeItem(widerKey);
+    } catch (error) {}
+  };
+  const widen = (width) => {
+    const section = sidebar();
+    if (section && width > streamlitWidest) {
+      section.style.setProperty("width", `${Math.min(width, widest, Math.floor(window.innerWidth * 0.9))}px`, "important");
+    }
+  };
+  if (!wider.listening) {
+    wider.listening = true;
+    document.addEventListener("pointerdown", (event) => { wider.dragging = Boolean(onEdge(event)); }, true);
+    window.addEventListener("pointerup", () => {
+      if (!wider.dragging) return;
+      wider.dragging = false;
+      const section = sidebar();
+      if (!section) return;
+      const width = Math.round(section.getBoundingClientRect().width);
+      keep(width);
+      setTimeout(() => widen(width), 50);  // after Streamlit has snapped it back
+    }, true);
+    document.addEventListener("dblclick", (event) => { if (onEdge(event)) keep(0); }, true);
+  }
+  if (!wider.started) {
+    wider.started = true;
+    let width = 0;
+    try {
+      if (localStorage.getItem(key) === String(streamlitWidest)) width = Number(localStorage.getItem(widerKey)) || 0;
+    } catch (error) {}
+    if (width) {
+      let tries = 40;  // the sidebar may not be built yet: every 0.1 s for 4 s
+      const attempt = () => (sidebar() ? widen(width) : tries-- > 0 && setTimeout(attempt, 100));
+      attempt();
+    }
   }
 }
 """
 
 
+def _sidebar_keeper_data(remember: bool) -> dict[str, object]:
+    """What the sidebar width's keeper is told (``_SIDEBAR_JS``)."""
+    return {
+        "remember": remember, "key": SIDEBAR_WIDTH_KEY, "widerKey": SIDEBAR_WIDER_KEY,
+        "streamlitWidest": STREAMLIT_SIDEBAR_WIDEST_PX, "widest": SIDEBAR_WIDEST_PX,
+    }
+
+
 def _keep_sidebar_width(remember: bool) -> None:
-    """Lay out the sidebar width's keeper (``_SIDEBAR_JS``): with the box unticked, the width kept is put back as the visit ends."""
+    """Lay out the sidebar width's keeper (``_SIDEBAR_JS``): with the box unticked, the width kept is put back as the visit ends; a width past Streamlit's widest kept."""
     keeper = st.components.v2.component("ratesplot_sidebar", js=_SIDEBAR_JS)
-    keeper(key="sidebar_width", data={"remember": remember, "key": SIDEBAR_WIDTH_KEY})
+    keeper(key="sidebar_width", data=_sidebar_keeper_data(remember))
 
 
 # The screen's width (batch 28.4): a component with nothing to show, whose
@@ -2718,6 +2791,8 @@ def _auto_refresh_tick(config: PlotConfig) -> None:
 # greyed out"): a greyed control's label colour, the text colour at 40 %,
 # reaches the ⓘ, which takes it back at full strength, in either theme.
 # The wait line's icon (batch 35.2): a ring turning in the text's colour, in either theme.
+# The open sidebar's widest raised from Streamlit's 600 px (SIDEBAR_WIDEST_PX, ``_SIDEBAR_JS``);
+# a folded one keeps Streamlit's style, which hides it.
 _INFO_ICON_STYLE = """<style>
 [data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"]) svg { display: none; }
 [data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"])::after {
@@ -2729,7 +2804,8 @@ _INFO_ICON_STYLE = """<style>
   animation: ratesplot-wait-turn 1s linear infinite;
 }
 @keyframes ratesplot-wait-turn { to { transform: rotate(360deg); } }
-</style>"""
+section[data-testid="stSidebar"][aria-expanded="true"] { max-width: min(SIDEBAR_WIDEST_PXpx, 90vw) !important; }
+</style>""".replace("SIDEBAR_WIDEST_PX", str(SIDEBAR_WIDEST_PX))
 _WAIT_ICON = f'<div class="ratesplot-wait-icon" style="color: {WAIT_COLOUR}"></div>'
 
 
@@ -2793,6 +2869,9 @@ def main() -> None:
         # Not ready, the next run loads them again, with their values.
         state[_READY] = True
     _read_width()
+    # The sidebar's width, kept only while the box is ticked (batch 31.1): on every run, so its script knows the box;
+    # before the drawing, so a width past Streamlit's widest is put back at a visit's start without waiting for it.
+    _keep_sidebar_width(bool(state.get(_REMEMBER)))
     st.header(PAGE_TITLE)
     st.caption(PAGE_SUMMARY)
     if state.get(_ADDRESS_PROBLEMS):
@@ -2860,7 +2939,4 @@ def main() -> None:
     # the address's. On every run, so its script knows the box. At the page's
     # foot, not the sidebar's: a folded sidebar (a phone's, at first) runs no
     # script of its own (measured 2026-10-27, Streamlit 1.64: no cookie written).
-    remember = bool(state.get(_REMEMBER))
-    _remember_settings(kept_line(drawing), remember)
-    # The sidebar's width, kept only while the box is ticked (batch 31.1): on every run, so its script knows the box.
-    _keep_sidebar_width(remember)
+    _remember_settings(kept_line(drawing), bool(state.get(_REMEMBER)))
