@@ -133,6 +133,20 @@ _GROWTH = {  # id -> (start, freq, first, last), FRED's units
     "B230RC0Q173SBEA": ("1947-01-01", "QS", 144_000.0, 343_000.0),
     "NGDPSAXDCCAQ": ("1961-01-01", "QS", 40_000.0, 3_200_000.0),
 }
+# The balance of payments (batch 23, ``ratesplot.payments``): id -> (start, end, first, last, sign), quarterly, FRED's
+# units: BPM6 in millions from 1999; BPM5 in billions 1960 to 2014-Q1 (stopped), its debits negative. BOPBCA,
+# the older balance, is made from BOPX and BOPM in ``fred``, with net transfers paid of a billion a quarter.
+_PAYMENTS = {
+    "IEAX": ("1999-01-01", "2026-04-01", 330_000.0, 1_300_000.0, 1),
+    "IEAM": ("1999-01-01", "2026-04-01", 370_000.0, 1_500_000.0, 1),
+    "IEAXGS": ("1999-01-01", "2026-04-01", 240_000.0, 790_000.0, 1),
+    "IEAMGS": ("1999-01-01", "2026-04-01", 280_000.0, 1_000_000.0, 1),
+    # Their last values aimed so that each path meets its BPM6 series' first value at the join, 1999-Q1.
+    "BOPX": ("1960-01-01", "2014-01-01", 7.0, 1_390.0, 1),
+    "BOPM": ("1960-01-01", "2014-01-01", 5.5, 1_870.0, -1),
+    "BOPXGS": ("1960-01-01", "2014-01-01", 6.0, 990.0, 1),
+    "BOPMGS": ("1960-01-01", "2014-01-01", 5.0, 1_320.0, -1),
+}
 
 
 def _quarter_points(values: np.ndarray) -> np.ndarray:
@@ -152,6 +166,7 @@ _FX = {
 # Every FRED series ``fred`` answers.
 _FRED_IDS = (
     "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", "CPIAUCNS", "CPIAUCSL", *_GROWTH, *_DAILY_START, *_FX,
+    *_PAYMENTS, "BOPBCA",
 )
 
 
@@ -184,6 +199,13 @@ def fred(series_id: str) -> pd.DataFrame:
         end = "2026-07-01" if freq == "QS" else "2025-01-01"
         dates = pd.date_range(start, end, freq=freq)
         values = np.round(_growth(dates, first, last, series_id), 1)
+    elif series_id in _PAYMENTS:
+        start, end, first, last, sign = _PAYMENTS[series_id]
+        dates = pd.date_range(start, end, freq="QS")
+        values = sign * np.round(_growth(dates, first, last, series_id), 3 if first < 1_000 else 0)
+    elif series_id == "BOPBCA":
+        credits, debits = (fred(code).set_index("DATE")[code] for code in ("BOPX", "BOPM"))
+        dates, values = credits.index, np.round((credits + debits - 1.0).to_numpy(), 3)
     elif series_id in _FX:
         start, end, freq, first, last = _FX[series_id]
         dates = pd.bdate_range(start, end) if freq == "B" else pd.date_range(start, end, freq=freq)
@@ -328,9 +350,25 @@ _STATCAN_GFS_VECTORS = {
     ("Local government", "Insurance and pension schemes, liabilities"): "v52531221",
     ("Local government", "Other accounts payable, liabilities"): "v52531222",
 }
+# The balance of payments' (batch 23): table -> (its quarters, {(side, account): (vector, first, last value)}),
+# millions a quarter, the real vectors (config.STATCAN_CDN_PAYMENTS_VECTORS and the archived table's).
+_STATCAN_PAYMENTS = {
+    "36100018": (("1981-01-01", "2026-04-01"), {
+        ("Receipts, seasonally adjusted", "Total current account"): ("v61915244", 26_400, 330_000),
+        ("Payments, seasonally adjusted", "Total current account"): ("v61915273", 30_000, 338_000),
+        ("Receipts, seasonally adjusted", "Goods and services"): ("v61915245", 23_700, 270_000),
+        ("Payments, seasonally adjusted", "Goods and services"): ("v61915274", 23_000, 276_000),
+    }),
+    "36100047": (("1946-01-01", "2012-04-01"), {
+        ("Receipts, seasonally adjusted", "Total current account"): ("v114364", 900, 160_000),
+        ("Payments, seasonally adjusted", "Total current account"): ("v114397", 800, 176_000),
+        ("Receipts, seasonally adjusted", "Goods and services"): ("v114365", 800, 140_000),
+        ("Payments, seasonally adjusted", "Goods and services"): ("v114398", 700, 150_000),
+    }),
+}
 _MILLIONS = {"UOM": "Dollars", "SCALAR_FACTOR": "millions", "SCALAR_ID": 6}
 _UNITS = {"SCALAR_FACTOR": "units", "SCALAR_ID": 0}
-_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145", "18100004", "18100006")
+_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145", "18100004", "18100006", *_STATCAN_PAYMENTS)
 
 
 def statcan(table_id: str) -> bytes:
@@ -418,6 +456,18 @@ def statcan(table_id: str) -> bytes:
             "UOM": "Percent", **_UNITS, "VECTOR": "v122553", "VALUE": np.where(months >= pd.Timestamp("1991-11-01"), values, np.nan),
         })
         return _zip(table_id, frame)
+    if table_id in _STATCAN_PAYMENTS:
+        # The balance of payments (batch 23): 36-10-0018 from 1981, the archived 36-10-0047 1946 to 2012-Q2.
+        (first, last), lines = _STATCAN_PAYMENTS[table_id]
+        q = pd.date_range(first, last, freq="QS")
+        rows = [
+            pd.DataFrame({
+                "REF_DATE": [f"{d:%Y-%m}" for d in q], "GEO": "Canada", "Receipts, payments and balances": side,
+                "Current account": account, **_MILLIONS, "VECTOR": vector, "VALUE": np.round(_growth(q, low, high, table_id + vector), 0),
+            })
+            for (side, account), (vector, low, high) in lines.items()
+        ]
+        return _zip(table_id, pd.concat(rows))
     raise KeyError(f"no synthetic StatCan table {table_id}")
 
 
@@ -483,6 +533,11 @@ _ONS_SERIES = {
     "D7G7": ("%", "1989-01-01", "rate", 2.5, 2.5, True),
     # The CPI's index (batch 13.2), 2015 = 100, monthly from 1988 (``ons``).
     "D7BT": ("Index, base year = 100", "1988-01-01", "stock", 48.4, 144.1, True),
+    # The balance of payments (batch 23): the current account's credits and debits, exports and imports, £m a quarter.
+    "HBON": ("m", "1955-01-01", "flow", 1_200, 362_755, False),
+    "HBOO": ("m", "1955-01-01", "flow", 1_150, 382_687, False),
+    "IKBH": ("m", "1955-01-01", "flow", 900, 244_417, False),
+    "IKBI": ("m", "1955-01-01", "flow", 950, 257_191, False),
 }
 
 
