@@ -57,7 +57,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from .cdn_archive_data import EMBEDDED_CDN_PER_USD_HISTORY
-from .config import DATE_COLUMN
+from .config import DATE_COLUMN, DEM_PER_EUR
 from .uk_archive_data import (
     EMBEDDED_UK_CAD_PER_GBP_HISTORY,
     EMBEDDED_UK_DEM_PER_GBP_HISTORY,
@@ -72,8 +72,6 @@ FX_DEM_PER_USD = "EXGEUS"
 # EXGEUS's last month (FRED, measured 2026-10-23): the mark gave way to the
 # euro, so the series has stopped and is read from its bake alone (19.3).
 FX_DEM_ENDED = pd.Timestamp("2001-12-01")
-# The rate fixed when the euro replaced the mark (1998-12-31): marks per euro.
-DEM_PER_EUR = 1.95583
 # Every FRED series read here, for the bake (``bake.fred_baked_codes``).
 FX_SERIES = (FX_CAD_PER_USD, FX_USD_PER_GBP, FX_USD_PER_EUR, FX_DEM_PER_USD)
 

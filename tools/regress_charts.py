@@ -361,7 +361,7 @@ CASES: dict[str, list[str]] = {
     "de_debt1950_r": ["--na:de", "--debt", "-r", "-s:1950"],
     "de_levels1950": ["--na:de", "--debt:fpm", "-l", "-s:1950"],
     "de_levels1950_p": ["--na:de", "--debt:fnm", "-p", "-l", "-s:1950", "--e:2005"],
-    # Batch 16 (16.6): Germany's interest from 1970, West Germany's to 1990, the Office's for all of
+    # Batch 16 (16.6): Germany's interest from 1970 (the total from 1950 since 16.7), West Germany's to 1990, the Office's for all of
     # Germany to 1994, Eurostat's after: in euros beside GDP, per person (West Germany's people at
     # 1990) and over GDP; and each level, in euros and per person, across its join at 2002.
     "de_interest1970": ["--na:de", "--interest", "--gdp", "-l", "-s:1965"],
@@ -369,6 +369,11 @@ CASES: dict[str, list[str]] = {
     "de_interest1970_r": ["--na:de", "--interest", "-r", "-s:1965"],
     "de_interest_levels1970": ["--na:de", "--interest", "--debt:fpm", "--no-debt", "-l", "-s:1965"],
     "de_interest_levels1970_p": ["--na:de", "--interest", "--debt:fnm", "--no-debt", "-p", "-l", "-s:1965", "--e:2005"],
+    # 16.7: Germany's interest from 1950, the older edition's years to 1969 (the step at 1960),
+    # in euros beside GDP, per person (GDP's people of the same narrow territory to 1959) and over GDP.
+    "de_interest1950": ["--na:de", "--interest", "--gdp", "-l", "-s:1950", "--e:1980"],
+    "de_interest1950_p": ["--na:de", "--interest", "--gdp", "-p", "-l", "-s:1950", "--e:1980"],
+    "de_interest1950_r": ["--na:de", "--interest", "-r", "-s:1950", "--e:1980"],
     # Batch 23: the balance of payments: the U.S. current account from 1960 across its join at 1999 (the
     # surplus green, the deficit pink), over GDP, per person at constant prices, and trade fitted by --reg with
     # end labels beside debt and GDP; Germany's chart with a note and no pair (until its stage).

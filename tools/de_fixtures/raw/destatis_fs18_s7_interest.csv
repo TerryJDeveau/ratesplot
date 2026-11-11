@@ -1,0 +1,29 @@
+# West Germany's interest on public debt: Statistisches Bundesamt, Fachserie 18 Reihe S.7, "Lange Reihen 1950 bis 1984" (1985)
+# Table 23 "Ausgaben des Staates nach Ausgabearten" (printed page 111), column 11 "Zinsen auf oeffentliche Schulden", Staat, Mill. DM
+# Typed by hand from the page image on 2026-11-11: the PDF's table pages have no usable text layer
+# Checked against the same series in table 14.3 column 7 (printed page 95), every year, whose column 5 is its columns 6 and 7 added up, and table 23's index rows (1960 = 100: 1950 27, 1970 299)
+# The file: FS-18-S-7-1950-1984.pdf on www.statistischebibliothek.de, 8693418 bytes, md5 56b3ce8f487827451e532dff00ffac73
+# 1950 to 1960 without the Saarland and West Berlin, 1960 to 1970 with them; 1970 only for the check against Reihe S.29
+Jahr,Gebiet,Mill. DM
+1950,ohne Saarland und Berlin,560
+1951,ohne Saarland und Berlin,730
+1952,ohne Saarland und Berlin,790
+1953,ohne Saarland und Berlin,860
+1954,ohne Saarland und Berlin,1330
+1955,ohne Saarland und Berlin,1420
+1956,ohne Saarland und Berlin,1540
+1957,ohne Saarland und Berlin,1590
+1958,ohne Saarland und Berlin,1750
+1959,ohne Saarland und Berlin,1980
+1960,ohne Saarland und Berlin,2110
+1960,mit Saarland und Berlin,2190
+1961,mit Saarland und Berlin,2210
+1962,mit Saarland und Berlin,2410
+1963,mit Saarland und Berlin,2650
+1964,mit Saarland und Berlin,2900
+1965,mit Saarland und Berlin,3230
+1966,mit Saarland und Berlin,4120
+1967,mit Saarland und Berlin,5190
+1968,mit Saarland und Berlin,5380
+1969,mit Saarland und Berlin,5840
+1970,mit Saarland und Berlin,6550

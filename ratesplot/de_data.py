@@ -38,9 +38,11 @@ reach them; ``tools/de_fixtures/README.md`` holds the measurements):
   the sums of their quarters exactly where both exist. Before them the Federal
   Statistical Office's years, baked (``_older_interest``): all of Germany's from
   1991 (Fachserie 18 Reihe 1.4), which from 1995 are Eurostat's exactly, and
-  West Germany's from 1970 (Reihe S.29), unification kept as a step at 1991.
-  None found before 1970 on a host that allows scripts. Each level the same,
-  the Office's years until Eurostat's quarters begin (2002).
+  West Germany's from 1970 (Reihe S.29), unification kept as a step at 1991,
+  and the total before it from 1950 (``west_german_interest_before_1970``, Reihe
+  S.7 of 1985, typed from its table), without the Saarland and West Berlin to
+  1959, a step at 1960. Each level the same from 1970 (no older source splits
+  it), the Office's years until Eurostat's quarters begin (2002).
 * GDP: at market prices, current prices, not seasonally adjusted, quarterly
   from 1991 (Eurostat namq_10_gdp), summed over four quarters, from 1991-12-31.
   Before it West Germany's, baked (``west_german_gdp``): the Federal Statistical
@@ -96,6 +98,7 @@ from .config import (
     DATE_COLUMN,
     DE_DEBT_COLUMN,
     DE_INTEREST_COLUMN,
+    DEM_PER_EUR,
     ECB_SERIES_URL,
     EUROSTAT_DATASET_URL,
     GDP_COLUMN,
@@ -126,6 +129,7 @@ from .de_archive_data import (
     EMBEDDED_DE_WEST_GDP_OLD_BASIS,
     EMBEDDED_DE_WEST_GDP_PER_PERSON,
     EMBEDDED_DE_WEST_GDP_QUARTERS,
+    EMBEDDED_DE_WEST_INTEREST_BEFORE_1970,
     EMBEDDED_DE_WEST_INTEREST_FEDERAL,
     EMBEDDED_DE_WEST_INTEREST_LOCAL,
     EMBEDDED_DE_WEST_INTEREST_STATES,
@@ -319,7 +323,7 @@ _QUARTER_MIDDLE_DAYS = 45
 DE_SERIES_EARLIEST = {
     "German General Government Debt (West Germany's from 1950, the ECB's year ends from 1991)": pd.Timestamp("1950-03-31"),
     "TTM Nominal GDP (West Germany's from 1950, Eurostat's quarters from 1991)": pd.Timestamp("1950-12-31"),
-    "TTM German Interest Payable (West Germany's from 1970, the Office's from 1991, Eurostat's from 1995)": pd.Timestamp("1970-12-31"),
+    "TTM German Interest Payable (West Germany's from 1950, the Office's from 1991, Eurostat's from 1995)": pd.Timestamp("1950-12-31"),
 }
 
 # Where Germany's GDP covers another territory than the population drawn, so has a
@@ -963,8 +967,9 @@ def west_german_debt_population() -> pd.Series:
 def west_german_own_populations() -> dict[str, pd.Series]:
     """Return each column's own population for -p (``measures.per_person``): West Germany's GDP's, and its debt's and interest's, in total and for every level.
 
-    The interest's is GDP's (``west_german_gdp_population``): its years begin in 1970,
-    after the narrow territory's, and West Germany's 1990 is over West Germany's people
+    The interest's is GDP's (``west_german_gdp_population``): to 1959 the total's
+    territory is the narrow one GDP's population there counts (without the Saarland and
+    West Berlin; the levels begin in 1970), and West Germany's 1990 is over West Germany's people
     on its own date, where the population drawn has run up towards all of Germany's
     (about 20 % too many by the end of 1990); all of Germany's from 1991 over the
     population drawn.
@@ -1055,8 +1060,19 @@ def _interest_in_euros(rows: list[tuple[str, float]]) -> pd.Series:
     return embedded_frame(rows, DE_INTEREST_COLUMN)[DE_INTEREST_COLUMN] * BILLION
 
 
+def west_german_interest_before_1970() -> pd.Series:
+    """Return West Germany's interest on public debt, 1950 to 1969, general government's as a whole, in euros at the mark's fixed rate, each year at its end.
+
+    The Office's Fachserie 18 Reihe S.7 (1985), typed from its table (``bake``): without
+    the Saarland and West Berlin to 1959, with them from 1960, a step of 3.8 % there
+    (2,110 to 2,190 million DM in 1960), kept as GDP's and debt's are.
+    """
+    rows = embedded_frame(EMBEDDED_DE_WEST_INTEREST_BEFORE_1970, DE_INTEREST_COLUMN)[DE_INTEREST_COLUMN]
+    return rows * MILLION / DEM_PER_EUR
+
+
 def _older_interest(sector: str) -> pd.Series:
-    """Return the Federal Statistical Office's interest paid by a Eurostat sector (``_DE_INTEREST_OF_SECTOR``), in euros, each year at its end: West Germany's from 1970, all of Germany's from 1991.
+    """Return the Federal Statistical Office's interest paid by a Eurostat sector (``_DE_INTEREST_OF_SECTOR``), in euros, each year at its end: West Germany's from 1970 (the total from 1950), all of Germany's from 1991.
 
     Laid end to end, unification a step at 1991 (34.35 billion in 1990, West Germany,
     to 42.65 in 1991, all of Germany, the total), as GDP's and debt's are: West
@@ -1065,14 +1081,18 @@ def _older_interest(sector: str) -> pd.Series:
     years are the Office's current figures, which from 1995 (the total) and 2002 (each
     level's quarters) are Eurostat's, value for value (measured 2026-11-10, Eurostat's
     in national currency): the live series follow on with no step and nothing scaled.
+    The total's years before 1970 (``west_german_interest_before_1970``, an older
+    edition) are laid before them end to end too, nothing scaled: the two editions'
+    1970 differ by 0.57 % (6,550 against 6,513 million DM). Before 1970 no level apart.
     """
     west, unified = _DE_INTEREST_OF_SECTOR[sector]
-    return _before(_interest_in_euros(west), _interest_in_euros(unified))
+    older = _before(_interest_in_euros(west), _interest_in_euros(unified))
+    return _before(west_german_interest_before_1970(), older) if sector == GENERAL_GOVERNMENT else older
 
 
 @downloads_of("Eurostat interest outlays")
 def fetch_de_interest(config: PlotConfig) -> pd.DataFrame | None:
-    """Return trailing-twelve-month general government interest payable: the Office's years from 1970 (``_older_interest``), Eurostat's annual figures (1995-), then four-quarter sums (2002-).
+    """Return trailing-twelve-month general government interest payable: the Office's years from 1950 (``_older_interest``), Eurostat's annual figures (1995-), then four-quarter sums (2002-).
 
     Either of Eurostat's alone, with a warning, if the other fails; None if both
     do. The Office's years only with Eurostat's annual figures: with the quarters

@@ -219,14 +219,21 @@ CASES: dict[str, list[str]] = {
     "de_debt_levels": ["--na:de", "-s:1950", "--e:2003", "--debt:fpm"],
     "de_debt_levels_pc": ["--na:de", "-s:1950", "--e:2003", "--debt:fpm", "-p"],
     # Batch 16 (16.6): Germany's interest from 1970, in total and by level, each figure worked out here across every
-    # join (1991, 1995, 2002), in euros, per person (West Germany's population at 1990) and over GDP; starting
-    # before the first figure, which must not be drawn early; and per person beside a yield.
+    # join (1991, 1995, 2002), in euros, per person (West Germany's population at 1990) and over GDP; and per person
+    # beside a yield. Since 16.7 the total's start in 1965 draws the older edition's years to 1969.
     "de_interest_1970": ["--na:de", "-s:1965", "--e:2005", "--interest"],
     "de_interest_1970_pc": ["--na:de", "-s:1965", "--e:2005", "--interest", "-p"],
     "de_interest_1970_r": ["--na:de", "-s:1965", "--e:2005", "--interest", "-r"],
     "de_interest_1970_pc_yield": ["--na:de", "-s:1965", "--e:2005", "--interest", "-p", "--y:10"],
     "de_interest_levels": ["--na:de", "-s:1965", "--e:2005", "--interest", "--debt:fpm", "--no-debt"],
     "de_interest_levels_pc": ["--na:de", "-s:1965", "--e:2005", "--interest", "--debt:fpm", "--no-debt", "-p"],
+    # 16.7: the total from 1950, across the older edition's years (the step at 1960) and its join at 1970, in euros,
+    # per person (over GDP's people of the same narrow territory to 1959) and over GDP; starting before the first
+    # figure, which must not be drawn early; and per person beside a yield.
+    "de_interest_1950": ["--na:de", "-s:1950", "--e:1975", "--interest"],
+    "de_interest_1950_pc": ["--na:de", "-s:1950", "--e:1975", "--interest", "-p"],
+    "de_interest_1950_r": ["--na:de", "-s:1950", "--e:1975", "--interest", "-r"],
+    "de_interest_1950_pc_yield": ["--na:de", "-s:1950", "--e:1975", "--interest", "-p", "--y:10"],
 }
 
 
@@ -971,7 +978,8 @@ def german_interest() -> dict[str, pd.Series]:
 
     From the saved extracts of the Federal Statistical Office's two publications, read
     by this tool and not by the bake (the spending side's line 40, "Vermögenseinkommen",
-    under its year headings), and Eurostat's whole series: West Germany's years to 1990;
+    under its year headings), and Eurostat's whole series: the total's years 1950 to 1969
+    from the transcription of an older edition (16.7); West Germany's years to 1990;
     all of Germany's from 1991 until Eurostat's begin (the total's years from 1995, a
     level's four-quarter sums from 2002); then Eurostat's, the total's years until its
     quarters' first sum (2002).
@@ -996,7 +1004,14 @@ def german_interest() -> dict[str, pd.Series]:
     found = {word: joined(sheet, sums(sector)) for word, sheet, sector in (("Federal", "3.4.3.4", "S1311"), ("Länder", "3.4.3.5", "S1312"), ("Local", "3.4.3.6", "S1313"))}
     quarters = sums("S13")
     annual = de_data.eurostat_series("gov_10dd_edpt1", sector="S13", na_item="D41PAY")
-    found["TTM Interest Payable"] = joined("3.4.3.2", pd.concat([annual.loc[annual.index < quarters.index[0]], quarters]))
+    # The total's years before 1970 (16.7): the transcription of Fachserie 18 Reihe S.7's table 23, in
+    # millions of DM, read here on its own: without the Saarland and West Berlin to 1959, with them
+    # from 1960; at 1.95583 marks per euro.
+    with (raw / "destatis_fs18_s7_interest.csv").open(encoding="utf-8", newline="") as file:
+        typed = [row for row in csv.reader(file) if row and re.fullmatch(r"\d{4}", row[0])]
+    early = pd.Series({pd.Timestamp(int(year), 12, 31): float(value) * 1e6 / 1.95583 for year, territory, value in typed
+                       if int(year) < 1970 and (territory == "mit Saarland und Berlin") == (int(year) >= 1960)})
+    found["TTM Interest Payable"] = pd.concat([early, joined("3.4.3.2", pd.concat([annual.loc[annual.index < quarters.index[0]], quarters]))])
     return found
 
 
@@ -1008,10 +1023,15 @@ def check_german_debt(key: str, line: Drawn, config) -> bool:
 
 
 def check_german_interest(key: str, line: Drawn, config) -> bool:
-    """Germany's interest or a level's drawn from 1970 (batch 16, 16.6), each point the latest figure on or before it (``german_interest``), in euros, per person or over GDP; True if so (``_check_german_amount``)."""
+    """Germany's interest drawn from 1950, or a level's from 1970 (batch 16, 16.6 and 16.7), each point the latest figure on or before it (``german_interest``), in euros, per person or over GDP; True if so (``_check_german_amount``).
+
+    Per person to 1959 over the people GDP's published figures per person imply: the
+    interest leaves out the Saarland and West Berlin there, as that GDP does.
+    """
     with this_thread_output_to(None):
         interest = german_interest()
-    return _check_german_amount(key, line, config, interest, None, "interest")
+        gdp, each, _averages = german_gdp()
+    return _check_german_amount(key, line, config, interest, gdp.loc[each.index] / each, "interest")
 
 
 def _check_german_amount(key: str, line: Drawn, config, amounts: dict[str, pd.Series], office_people: pd.Series | None, what: str) -> bool:
@@ -1032,7 +1052,11 @@ def _check_german_amount(key: str, line: Drawn, config, amounts: dict[str, pd.Se
         print(f"  {key:4} {line.label[:44]:44} FAIL  no such {what} among those worked out here")
         return False
     figures = amounts[word]
-    figures = figures.loc[(figures.index >= pd.Timestamp(config.start)) & (figures.index <= pd.Timestamp(config.end))]
+    # A chart starting after a figure draws it carried from its start (16.5): the last on or before
+    # the start is in the window too, its value expected on the first date drawn.
+    before = figures.index[figures.index <= pd.Timestamp(config.start)]
+    first = before[-1] if len(before) else pd.Timestamp(config.start)
+    figures = figures.loc[(figures.index >= first) & (figures.index <= pd.Timestamp(config.end))]
     if config.relative:  # no GDP before the first: no ratio there
         figures = figures.loc[figures.index >= gdp.index[0]]
     drawn_dates = line.values.index

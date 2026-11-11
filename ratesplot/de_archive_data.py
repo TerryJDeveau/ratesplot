@@ -1,4 +1,4 @@
-"""Baked historical German observations: the yield on public debt securities before 1972, the discount rate before 1999, West Germany's consumer prices before 1991, its population before 1960.
+"""Baked historical German observations: the yield on public debt securities before 1972, the discount rate before 1999, West Germany's consumer prices before 1991, its population before 1960, and the older GDP, debt and interest.
 
 The Bundesbank's monthly average yield on public debt securities
 outstanding (BBK01.WU0004, from 1956) is a series of its former database
@@ -28,13 +28,19 @@ Germany's debt in total and by level (batch 16), the Federal Statistical Office'
 Fachserie 14 Reihe 5: West Germany's from 1950, all of Germany's from 1991, the total
 to 1991 and the levels to 2000. ``de_data`` joins them to the ECB's and Eurostat's.
 
+Germany's interest paid (batch 16), the Federal Statistical Office's national accounts:
+West Germany's total 1950 to 1969 from Fachserie 18 Reihe S.7 (1985), typed from its
+table, in millions of marks; West Germany's 1970 to 1990 (Reihe S.29) and all of
+Germany's from 1991 (Reihe 1.4), in total and by level, in billions of euros.
+``de_data._older_interest`` joins them to Eurostat's.
+
 The block between the BEGIN/END markers is regenerated in place by
 ``tools/bake_archives.py --only de`` (see :mod:`ratesplot.bake`). Do not
 hand-edit it.
 """
 
 # BEGIN AUTO-GENERATED GERMAN ARCHIVE DATA
-# Generated on 2026-11-10 from the Deutsche Bundesbank and the Federal Statistical Office, read from:
+# Generated on 2026-11-11 from the Deutsche Bundesbank and the Federal Statistical Office, read from:
 # bbk01_WU0004.csv (saved from https://www.bundesbank.de/statistic-rmi/StatisticDownload?tsId=BBK01.WU0004)
 # bbin1_BBKDIS.csv (saved from https://api.statistiken.bundesbank.de/rest/download/BBIN1/M.DE.BBK.BBKDIS.DEM.ME?format=csv&lang=en)
 # destatis_vpi_lange_reihen.xlsx (saved from https://www.destatis.de/DE/Themen/Wirtschaft/Preise/Verbraucherpreisindex/Publikationen/Downloads-Verbraucherpreise/verbraucherpreisindex-lange-reihen-xlsx-5611103.xlsx?__blob=publicationFile)
@@ -46,6 +52,7 @@ hand-edit it.
 # destatis_fs14_r5_debt.csv (extracted from sheet 1.1.1 of https://www.destatis.de/DE/Themen/Staat/Oeffentliche-Finanzen/Schulden-Finanzvermoegen/Publikationen/Downloads-Schulden/schulden-oeffentlicher-haushalte-2140500217005.xlsx?__blob=publicationFile)
 # destatis_fs18_s29_interest.csv (extracted from sheets 3.4.3.2, 3.4.3.4, 3.4.3.5, 3.4.3.6 of https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/Downloads-Inlandsprodukt/inlandsprodukt-revidiert-jahr-2189029919005.xlsx?__blob=publicationFile)
 # destatis_fs18_r14_interest.csv (extracted from sheets 3.4.3.2, 3.4.3.4, 3.4.3.5, 3.4.3.6 of https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/Downloads-Inlandsprodukt/inlandsprodukt-endgueltig-xlsx-2180140.xlsx?__blob=publicationFile)
+# destatis_fs18_s7_interest.csv (typed from table 23 of Fachserie 18 Reihe S.7, 1950 bis 1984, its 1970 +0.57% from Reihe S.29's)
 # Historical observations in the source's own terms; de_data and rates join
 # them to the live series at run time.
 
@@ -2355,6 +2362,32 @@ EMBEDDED_DE_DEBT_LOCAL = [
     ("1998-12-31", 101355.95),
     ("1999-12-31", 101922.46),
     ("2000-12-31", 98011.07),
+]
+
+# West Germany's interest on public debt, general government's as a whole (Fachserie 18 Reihe
+# S.7, 1950 bis 1984, table 23, typed from its page), millions of DM as published, each year
+# dated by 31 December: without the Saarland and West Berlin to 1959, with them from 1960, to 1969.
+EMBEDDED_DE_WEST_INTEREST_BEFORE_1970 = [
+    ("1950-12-31", 560),
+    ("1951-12-31", 730),
+    ("1952-12-31", 790),
+    ("1953-12-31", 860),
+    ("1954-12-31", 1330),
+    ("1955-12-31", 1420),
+    ("1956-12-31", 1540),
+    ("1957-12-31", 1590),
+    ("1958-12-31", 1750),
+    ("1959-12-31", 1980),
+    ("1960-12-31", 2190),
+    ("1961-12-31", 2210),
+    ("1962-12-31", 2410),
+    ("1963-12-31", 2650),
+    ("1964-12-31", 2900),
+    ("1965-12-31", 3230),
+    ("1966-12-31", 4120),
+    ("1967-12-31", 5190),
+    ("1968-12-31", 5380),
+    ("1969-12-31", 5840),
 ]
 
 # West Germany's interest paid, general government's, consolidated, the Federal Statistical Office's (Fachserie 18

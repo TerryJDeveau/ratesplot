@@ -26,11 +26,16 @@ the BEGIN/END markers of
   page's text is given) and the Bundesbank's older mortgage rates, 1982 to 2003
   (flow BBIB1, batch 16) and West Germany's GDP, 1950 to 1991 (the Federal
   Statistical Office's table 81000-117 and its revised quarters, batch 16; needs
-  ``openpyxl``). ``--de-csv FILE``, ``--de-discount-csv FILE``,
+  ``openpyxl``) and Germany's debt from 1950 and interest from 1950, its levels
+  from 1970 (Fachserie 14 Reihe 5, Fachserie 18 Reihe S.7, S.29 and Reihe 1.4). ``--de-csv FILE``, ``--de-discount-csv FILE``,
   ``--de-cpi-workbook FILE``, ``--de-population-text FILE``,
   ``--de-mortgage-5y-csv FILE``, ``--de-mortgage-10y-csv FILE``,
-  ``--de-gdp-annual-csv FILE``, ``--de-gdp-quarterly-csv FILE`` and ``--de-debt-csv FILE`` read the
-  downloads, or the extracts of them, already saved (tools/de_fixtures).
+  ``--de-gdp-annual-csv FILE``, ``--de-gdp-quarterly-csv FILE``, ``--de-debt-csv FILE``,
+  ``--de-interest-west-csv FILE`` and ``--de-interest-csv FILE`` read the
+  downloads, or the extracts of them, already saved (tools/de_fixtures). West
+  Germany's interest of 1950 to 1969 (Fachserie 18 Reihe S.7, a PDF on a host that
+  refuses scripts) is always read from its transcription,
+  ``tools/de_fixtures/raw/destatis_fs18_s7_interest.csv``, typed from the page.
 * ``ratesplot/data/boe/``: the Bank of England database's series, every value
   of each, one file per series (batch 19.2: the live sources' history, of
   which a drawing then asks only for the recent part; ``ratesplot/baked.py``).
@@ -71,7 +76,7 @@ Usage (from the project root)::
     python tools/bake_archives.py            # every nation, and boe, boc, fred, ecb, eurostat, ons, bbk and statcan
     python tools/bake_archives.py --only us  # or cdn, uk, de, boe, boc, fred, ecb, eurostat, ons, bbk, statcan
     python tools/bake_archives.py --only uk --uk-workbook a-millennium-of-macroeconomic-data-for-the-uk.xlsx
-    python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv --de-cpi-workbook tools/de_fixtures/raw/destatis_vpi_lange_reihen.xlsx --de-population-text tools/de_fixtures/raw/bbk_lange_zeitreihen_V1.txt --de-mortgage-5y-csv tools/de_fixtures/raw/bbib1_HYP_F05J.csv --de-mortgage-10y-csv tools/de_fixtures/raw/bbib1_HYP_F10J.csv --de-gdp-annual-csv tools/de_fixtures/raw/destatis_81000_117_gdp.csv --de-gdp-quarterly-csv tools/de_fixtures/raw/destatis_fs18_s27_gdp_q.csv --de-debt-csv tools/de_fixtures/raw/destatis_fs14_r5_debt.csv
+    python tools/bake_archives.py --only de --de-csv tools/de_fixtures/raw/bbk01_WU0004.csv --de-discount-csv tools/de_fixtures/raw/bbin1_BBKDIS.csv --de-cpi-workbook tools/de_fixtures/raw/destatis_vpi_lange_reihen.xlsx --de-population-text tools/de_fixtures/raw/bbk_lange_zeitreihen_V1.txt --de-mortgage-5y-csv tools/de_fixtures/raw/bbib1_HYP_F05J.csv --de-mortgage-10y-csv tools/de_fixtures/raw/bbib1_HYP_F10J.csv --de-gdp-annual-csv tools/de_fixtures/raw/destatis_81000_117_gdp.csv --de-gdp-quarterly-csv tools/de_fixtures/raw/destatis_fs18_s27_gdp_q.csv --de-debt-csv tools/de_fixtures/raw/destatis_fs14_r5_debt.csv --de-interest-west-csv tools/de_fixtures/raw/destatis_fs18_s29_interest.csv --de-interest-csv tools/de_fixtures/raw/destatis_fs18_r14_interest.csv
 """
 
 from __future__ import annotations
