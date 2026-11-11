@@ -3,7 +3,7 @@
 # Typed by hand from the page image on 2026-11-11: the PDF's table pages have no usable text layer
 # Checked against the same series in table 14.3 column 7 (printed page 95), every year, whose column 5 is its columns 6 and 7 added up, and table 23's index rows (1960 = 100: 1950 27, 1970 299)
 # The file: FS-18-S-7-1950-1984.pdf on www.statistischebibliothek.de, 8693418 bytes, md5 56b3ce8f487827451e532dff00ffac73
-# 1950 to 1960 without the Saarland and West Berlin, 1960 to 1970 with them; 1970 only for the check against Reihe S.29
+# 1950 to 1960 without the Saarland and West Berlin, 1960 to 1970 with them; 1970 only for the ratio to Reihe S.29's and the check against it
 Jahr,Gebiet,Mill. DM
 1950,ohne Saarland und Berlin,560
 1951,ohne Saarland und Berlin,730

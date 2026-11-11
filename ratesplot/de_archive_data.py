@@ -2366,7 +2366,8 @@ EMBEDDED_DE_DEBT_LOCAL = [
 
 # West Germany's interest on public debt, general government's as a whole (Fachserie 18 Reihe
 # S.7, 1950 bis 1984, table 23, typed from its page), millions of DM as published, each year
-# dated by 31 December: without the Saarland and West Berlin to 1959, with them from 1960, to 1969.
+# dated by 31 December: without the Saarland and West Berlin to 1959, with them from 1960, to 1970,
+# whose figure is only for the ratio to Reihe S.29's.
 EMBEDDED_DE_WEST_INTEREST_BEFORE_1970 = [
     ("1950-12-31", 560),
     ("1951-12-31", 730),
@@ -2388,6 +2389,7 @@ EMBEDDED_DE_WEST_INTEREST_BEFORE_1970 = [
     ("1967-12-31", 5190),
     ("1968-12-31", 5380),
     ("1969-12-31", 5840),
+    ("1970-12-31", 6550),
 ]
 
 # West Germany's interest paid, general government's, consolidated, the Federal Statistical Office's (Fachserie 18

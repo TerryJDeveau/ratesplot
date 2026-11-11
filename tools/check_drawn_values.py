@@ -979,7 +979,8 @@ def german_interest() -> dict[str, pd.Series]:
     From the saved extracts of the Federal Statistical Office's two publications, read
     by this tool and not by the bake (the spending side's line 40, "Vermögenseinkommen",
     under its year headings), and Eurostat's whole series: the total's years 1950 to 1969
-    from the transcription of an older edition (16.7); West Germany's years to 1990;
+    from the transcription of an older edition (16.7), 1966 to 1969 by the ramp to the
+    newer one's 1970; West Germany's years to 1990;
     all of Germany's from 1991 until Eurostat's begin (the total's years from 1995, a
     level's four-quarter sums from 2002); then Eurostat's, the total's years until its
     quarters' first sum (2002).
@@ -1006,11 +1007,15 @@ def german_interest() -> dict[str, pd.Series]:
     annual = de_data.eurostat_series("gov_10dd_edpt1", sector="S13", na_item="D41PAY")
     # The total's years before 1970 (16.7): the transcription of Fachserie 18 Reihe S.7's table 23, in
     # millions of DM, read here on its own: without the Saarland and West Berlin to 1959, with them
-    # from 1960; at 1.95583 marks per euro.
+    # from 1960; at 1.95583 marks per euro; 1966 to 1969 brought towards Reihe S.29's level by the
+    # ratio of the two editions' 1970, in equal steps of the logarithm from 1965 (decision 118's ramp,
+    # as for GDP's older basis).
     with (raw / "destatis_fs18_s7_interest.csv").open(encoding="utf-8", newline="") as file:
         typed = [row for row in csv.reader(file) if row and re.fullmatch(r"\d{4}", row[0])]
-    early = pd.Series({pd.Timestamp(int(year), 12, 31): float(value) * 1e6 / 1.95583 for year, territory, value in typed
-                       if int(year) < 1970 and (territory == "mit Saarland und Berlin") == (int(year) >= 1960)})
+    typed_years = {int(year): float(value) * 1e6 / 1.95583 for year, territory, value in typed
+                   if (territory == "mit Saarland und Berlin") == (int(year) >= 1960)}
+    ratio = office("destatis_fs18_s29_interest.csv", "3.4.3.2").loc["1970-12-31"] / typed_years[1970]
+    early = pd.Series({pd.Timestamp(year, 12, 31): value * ratio ** (max(year - 1965, 0) / 4) for year, value in typed_years.items() if year < 1970})
     found["TTM Interest Payable"] = pd.concat([early, joined("3.4.3.2", pd.concat([annual.loc[annual.index < quarters.index[0]], quarters]))])
     return found
 
