@@ -418,6 +418,10 @@ def main(argv: list[str] | None = None) -> None:
     # One drawing for the message log: a line for each real download, the
     # trial pass's included (http.drawing_downloads).
     with drawing_downloads():
+        if config.show_compare:
+            # The comparison chart (batch 26) reads what the nations' charts have
+            # downloaded: keep each download for this run, so none is asked for twice.
+            enable_download_cache()
         if config.start is None or end_to_resolve(config):
             # The start, or a blank End (batch 32.4), is found from the data
             # (plotting.resolve_start), which are then prepared again from it:
