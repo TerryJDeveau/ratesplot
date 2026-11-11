@@ -58,7 +58,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from . import http
-from .axes import ExtraAxis, apply_axes_formatting, format_currency, format_percent, format_yield
+from .axes import ExtraAxis, apply_axes_formatting, format_currency, format_percent, format_population, format_yield
 from .baked import chart_ending
 from .endlabels import ValueFormatter
 from .config import (
@@ -430,6 +430,8 @@ def _draw_amount(
             value_format=macro_format,
             projected_from=projected.get(column),
             filled=own.daily and SERIES_KINDS[style_key].filled_in,
+            # A change in the read-out (batch 44), as on the nation's chart: in the amounts' currency, under -r in bp or pp.
+            amount=None if own.relative else macro_format,
         )
         if line is not None:
             lines.append((line, column))
@@ -461,6 +463,7 @@ def _draw_count(ax: Axes, macro: pd.DataFrame, own: PlotConfig, nation: Nation) 
     line = add_macro_line(
         ax, in_range, enabled=True, column=extra.label, label=extra.label, style=extra.style,
         value_format=extra.value_format, axis=extra.export_axis, filled=filled,
+        amount=format_population,  # a change in the read-out (batch 44), as on the nation's chart
     )
     if line is None:
         return None, extra
