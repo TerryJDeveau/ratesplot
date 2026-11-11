@@ -102,7 +102,7 @@ from regress_charts import CASES, PINNED_END, install_disk_cache  # noqa: E402
 
 import ratesplot  # noqa: E402
 from ratesplot import cli, export, frontend, gui, hover, http, monitors, options, wait  # noqa: E402
-from ratesplot.axes import format_yield  # noqa: E402
+from ratesplot.axes import format_population, format_yield  # noqa: E402
 from ratesplot.config import NATIONS, WEB_PAGE_ADDRESS  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
@@ -1279,7 +1279,10 @@ def _made_up_chart():
     2020-03-01. A projection from 2020-10-01 (0.5) to 2020-10-11 (1.5). A line
     over the y axis's top (3.6), shown only up to it. A series filled in
     (Daily values, batch 42.2) from 2020-05-01 (0.3) to 2020-05-31 (0.6), broken,
-    then 2020-06-10 (0.6) to 2020-06-20 (0.8).
+    then 2020-06-10 (0.6) to 2020-06-20 (0.8). Batch 44: a rate set by
+    announcement, 2.5 from the chart's 2020-07-15 (set 2019-09-18, from 2.25)
+    and 2.75 from 2020-09-01, held to 2020-10-31; an amount, 0.10 from
+    2020-01-01 and 0.12 from 2020-04-01, held to 2020-06-30.
     """
     figure = Figure(figsize=(8, 6), dpi=100)
     FigureCanvasAgg(figure)
@@ -1296,10 +1299,14 @@ def _made_up_chart():
     projection, = ax.plot(days(["2020-10-01", "2020-10-11"]), [0.5, 1.5])
     high, = ax.plot(days(["2020-05-01", "2020-06-01"]), [3.5, 3.9])  # crosses the axis's top
     filled, = ax.plot(days(["2020-05-01", "2020-05-31", "2020-06-05", "2020-06-10", "2020-06-20"]), [0.3, 0.6, np.nan, 0.6, 0.8])
+    rate, = ax.plot(days(["2020-07-15", "2020-09-01", "2020-10-31"]), [2.5, 2.75, 2.75], drawstyle="steps-post")
+    amount, = ax.plot(days(["2020-01-01", "2020-04-01", "2020-06-30"]), [0.10, 0.12, 0.12], drawstyle="steps-post")
+    history = pd.Series([2.25, 2.25, 2.5, 2.5, 2.75], index=days(["2019-03-01", "2019-06-01", "2019-09-18", "2020-01-02", "2020-09-01"]))
     two = lambda value: f"{value:.2f}"  # noqa: E731
     for drawn, name, how in (
         (steps, "Steps", {}), (twin, "Twin", {}), (line, "Line", {"quoted": True}),
         (projection, "Projection", {"projected": True}), (high, "High", {}), (filled, "Filled", {"daily": True}),
+        (rate, "Rate", {"set_rate": True, "history": history}), (amount, "Amount", {"amount": format_population}),
     ):
         export.mark_series(drawn, name, export.YIELD_AXIS)
         hover.mark(drawn, (lambda value: "≈" + two(value)) if how.get("projected") else two, **how)
@@ -1356,9 +1363,11 @@ def check_hover(check: Check) -> None:
           (says(read("2020-08-31 12:00", 1.5)), says(read("2020-09-10", 1.5))))
     check("caught within 3 px (2.9 above), not at 3.1", read("2020-01-10 12:00", 1.0, dy=-2.9) is not None and read("2020-01-10 12:00", 1.0, dy=-3.1) is None)
     check("caught 2.9 px to the left of a riser", says(read("2020-04-01", 1.5, dx=-2.9)) == ("Steps", "2.00", "2020-04-01"), says(read("2020-04-01", 1.5, dx=-2.9)))
-    check("a line: the observation nearer along it (30 %: the first, 70 %: the second)",
-          says(read("2020-01-04", 3.12)) == ("Line", "3.00", "2020-01-01") and says(read("2020-01-08", 3.28)) == ("Line", "3.40", "2020-01-11"),
-          (says(read("2020-01-04", 3.12)), says(read("2020-01-08", 3.28))))
+    # Batch 44 (decision 127): the last observation on or before the day under the pointer, never a later one.
+    check("a line: the last observation on or before the day there (30 % and 70 % along: the first; on the second's day: the second)",
+          says(read("2020-01-04", 3.12)) == ("Line", "3.00", "2020-01-01") and says(read("2020-01-08", 3.28)) == ("Line", "3.00", "2020-01-01")
+          and says(read("2020-01-11", 3.4)) == ("Line", "3.40", "2020-01-11"),
+          (says(read("2020-01-04", 3.12)), says(read("2020-01-08", 3.28)), says(read("2020-01-11", 3.4))))
     check("a quoted line on the quote's day: the quote's time",
           says(read("2020-03-01", 3.0)) == ("Line", "3.00", "2020-03-01 14:32 EST (intraday, provisional)"), says(read("2020-03-01", 3.0)))
     check("a projection: the value on the line that day, its end label's ≈, (projected)",
@@ -1383,6 +1392,55 @@ def check_hover(check: Check) -> None:
     origin, per_day = lines.days_to_x
     worst = max(float(np.max(np.abs(origin + run.day * per_day - run.x))) for curve in lines.curves for run in curve.runs)
     check("each point's x is its day's (the page works x out from the day)", worst < 0.01, worst)
+
+    # Batch 44 (decisions 127, 129 and 130): each line read gains its change, a third line.
+    def change(found, name: str) -> str | None:
+        """The change line ``found`` reads for curve ``name``; "none read" where it reads no such curve."""
+        mine = None if found is None else next((one for one in found.each if one.name == name), None)
+        return "none read" if mine is None else mine.change
+
+    cases = (
+        ("a step's first observation on the chart: no change", read("2020-02-15 12:00", 1.0, dy=2), "Steps", None),
+        ("a step's riser: from the observation before, with its date", read("2020-04-01", 1.5, dx=2), "Steps", "+1.00 pp from 2020-01-01"),
+        ("a step's flat stretch: the change of the value in force", read("2020-08-31 12:00", 1.5), "Steps", "−50 bp from 2020-04-01"),
+        ("a line: from the observation before", read("2020-01-11", 3.4), "Line", "+40 bp from 2020-01-01"),
+        ("a quoted day: from the observation before", read("2020-03-01", 3.0), "Line", "−40 bp from 2020-01-11"),
+        ("a projection: a day's change, its rate over a year", read("2020-10-06 06:00", 1.0), "Projection", "+10 bp a day (≈ +36.525 pp/yr)"),
+        ("a series filled in: a day's change, its rate over a year (0.01 × 365.25 = 3.6525, half away from zero)",
+         read("2020-05-16", 0.45), "Filled", "+1.0 bp a day (≈ +3.653 pp/yr)"),
+        ("a series filled in: the first day after a break, no change", read("2020-06-10", 0.6), "Filled", None),
+        ("a set rate on a stretch from the chart's start: its last change, from its whole series", read("2020-08-01", 2.5), "Rate",
+         "+25 bp on 2019-09-18"),
+        ("a set rate after a change on the chart: that change", read("2020-09-15", 2.75), "Rate", "+25 bp on 2020-09-01"),
+        ("an amount: in its own unit, then its percentage change (20.000 written 20.00)", read("2020-05-01", 0.12), "Amount",
+         "+0.02, +20.00% from 2020-01-01"),
+    )
+    for label, found, name, expected in cases:
+        check(label, change(found, name) == expected, (change(found, name), expected))
+    rate_read = read("2020-09-15 12:00", 2.75)
+    check("a set rate's lines: its name, its value and date, its change",
+          rate_read is not None and rate_read.each[0].lines == ("Rate", "2.75  2020-09-15 (observed 2020-09-01)", "+25 bp on 2020-09-01"),
+          None if rate_read is None else rate_read.each[0].lines)
+
+    # The figures (decision 129): bp below 1 point, to a tenth below 10 and whole from 10; pp or % from 1, three places
+    # (two where the third is 0); the unit and places chosen on the rounded figure; a sign, a true minus, none at 0.
+    written = [
+        (0.25, " pp", "+25 bp"), (-0.03, " pp", "−3.0 bp"), (0.0996, " pp", "+10 bp"), (0.996, " pp", "+0.996 pp"),
+        (0.9996, " pp", "+1.00 pp"), (1.375, " pp", "+1.375 pp"), (-1.2, " pp", "−1.20 pp"), (1.2, "%", "+1.20%"),
+        (0.0345, "%", "+3.5 bp"), (-0.0004, "%", "0.0 bp"), (123.4565, "%", "+123.457%"),
+    ]
+    got = [hover._hundredths(value, unit) for value, unit, _text in written]
+    check("changes written in bp, pp and % (decision 129)", got == [text for _value, _unit, text in written],
+          [(text, mine) for (_value, _unit, text), mine in zip(written, got) if text != mine])
+    # Rounding on the decimal digits, half away from zero (decision 130), where Python's own goes by the binary value.
+    halves = [hover.rounded(-1.235, 2), hover.rounded(1.235, 2), hover.rounded(0.125, 2), hover.rounded(4.25 - 3.015, 2),
+              hover.rounded(2.675, 2), hover.rounded(-0.004, 2)]
+    check("rounded half away from zero on the decimal digits: -1.24, 1.24, 0.13, 1.24, 2.68, 0.0",
+          halves == [-1.24, 1.24, 0.13, 1.24, 2.68, 0.0] and str(halves[-1]) == "0.0", halves)
+    check("a value through its own formatter, half away from zero: 4.1255 is 4.126%, 2.675 to two places 2.68 (Python alone: 4.125%, 2.67)",
+          format_yield(hover.for_writing(4.1255)) == "4.126%" and f"{hover.for_writing(2.675):.2f}" == "2.68"
+          and format_yield(4.1255) == "4.125%" and f"{2.675:.2f}" == "2.67",
+          (format_yield(hover.for_writing(4.1255)), f"{hover.for_writing(2.675):.2f}"))
 
     # A dense line: four points kept to a pixel's column, its first, last, highest and lowest.
     xs = np.array([10.0, 10.2, 10.4, 10.5, 10.6, 10.9, 11.1, 11.5])
@@ -1469,6 +1527,14 @@ def check_hover(check: Check) -> None:
         check("a yield read: its value as the end label writes it, the exported value that day",
               found is not None and found.each[0].value == format_yield(exported) and found.each[0].when == hover.date_text(int(run.day[k])),
               (found, exported))
+        # Its change (batch 44): from the exported value before it, with that one's date.
+        column, row = data.names.index("10-Year Yield"), data.dates.index(day)
+        earlier = next(i for i in range(row - 1, -1, -1) if data.values[i][column] is not None and not pd.isna(data.values[i][column]))
+        before = data.values[earlier][column]
+        figures = "no change" if before == exported else hover._hundredths(exported - before, " pp")
+        expected_change = f"{figures} from {data.dates[earlier]:%Y-%m-%d}"
+        check("a yield read: its change from the exported value before it, with that one's date",
+              found is not None and found.each[0].change == expected_change, (found.each[0].change if found else None, expected_change))
         debt = next(curve for curve in chart.curves if curve.name.startswith("Aggregate"))
         run_debt = max(debt.runs, key=lambda each: len(each.x))
         middle = len(run_debt.x) // 2
@@ -1490,15 +1556,20 @@ def check_hover(check: Check) -> None:
             return types.SimpleNamespace(x=left + ix * scale, y=top + iy * scale)
 
         on_line = pointer(found.each[0].x, found.each[0].y)
+        # What the chart reads where the window puts that pointer (Tk's canvas coordinates are whole pixels, so a
+        # hair left of the point, and the line reads the observation on or before the day there, batch 44).
+        at_pointer = chart.reading(*app._image_point("us", on_line), hover.reach_in_image(scale))
         app._hovered("us", on_line)
         _pump_for(w, 0.3)
         early = _hover_texts(app)
         _pump_for(w, 0.4)
-        check("the window: nothing at 0.3 s, the read-out at 0.7 s", early == [] and _hover_texts(app) == list(found.lines),
+        check("the window: nothing at 0.3 s, the read-out at 0.7 s, the 10-year's at the pointer",
+              early == [] and at_pointer is not None and at_pointer.each[0].name == "10-Year Yield" and _hover_texts(app) == list(at_pointer.lines),
               (early, _hover_texts(app)))
         canvas = app.canvases["us"]
         kinds = sorted(canvas.type(item) for item in canvas.find_withtag(gui._HOVER_TAG))
-        check("a box, the line's name and its value, a ring on the point read", kinds == ["oval", "rectangle", "text", "text"], kinds)
+        check("a box, the line's name, its value and its change (batch 44), a ring on the point read",
+              kinds == ["oval", "rectangle", "text", "text", "text"] and found.each[0].change is not None, kinds)
         name_item = next(item for item in canvas.find_withtag(gui._HOVER_TAG) if canvas.type(item) == "text")
         check("the name in the line's colour", canvas.itemcget(name_item, "fill") == found.each[0].color,
               (canvas.itemcget(name_item, "fill"), found.each[0].color))
@@ -1516,7 +1587,8 @@ def check_hover(check: Check) -> None:
             upper[3] <= lower[1] for upper, lower in zip(extents, extents[1:]))
         check("two lines read: both in the box, in order down it, each name in its colour, a ring each, the border the first's",
               _hover_texts(app) == list(two.lines) and tops == sorted(tops) and laid_out
-              and [canvas.itemcget(item, "fill") for item in texts] == [two.each[0].color, hover.BOX_TEXT, two.each[1].color, hover.BOX_TEXT]
+              and [canvas.itemcget(item, "fill") for item in texts] == [color for one in two.each for _text, color in one.shown]
+              and [color for one in two.each for _text, color in one.shown].count(hover.BOX_TEXT) == len(two.lines) - 2
               and sorted(canvas.itemcget(item, "outline") for item in items if canvas.type(item) == "oval") == sorted(one.color for one in two.each)
               and canvas.itemcget(rectangle, "outline") == two.each[0].color,
               (_hover_texts(app), tops))

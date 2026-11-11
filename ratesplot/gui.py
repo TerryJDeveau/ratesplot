@@ -2706,8 +2706,8 @@ class RatesPlotApp:
         """Show ``reading`` by the pointer at canvas point (x, y): right of it and below, kept inside the tab's view.
 
         Every line read, the nearest first (batch 11.6): its name in its own
-        colour, its value and date under it, and a ring on its point; the box
-        bordered in the nearest line's colour.
+        colour, its value and date under it, its change under that (batch 44),
+        and a ring on its point; the box bordered in the nearest line's colour.
         """
         key = self._hover_key
         if key is None or key not in self.placement:
@@ -2719,7 +2719,7 @@ class RatesPlotApp:
         for one in reading.each:
             ring_x, ring_y = left + one.x * scale, top + one.y * scale
             canvas.create_oval(ring_x - 5, ring_y - 5, ring_x + 5, ring_y + 5, outline=one.color, width=2, tags=_HOVER_TAG)
-            for text, color in zip(one.lines, (one.color, hover.BOX_TEXT)):
+            for text, color in one.shown:
                 texts.append(canvas.create_text(0, 0, text=text, anchor="nw", font="TkDefaultFont", fill=color, tags=_HOVER_TAG))
         sizes = [canvas.bbox(text) for text in texts]
         width = max(x1 - x0 for x0, _y0, x1, _y1 in sizes) + 2 * _HOVER_PAD_PX
