@@ -165,6 +165,7 @@ from .de_data import (
     TERM_STRUCTURE_FREQUENCIES,
     DE_LINKED_BOND_FLOW,
     DE_LINKED_BONDS,
+    DE_PAYMENTS_SERIES,
     bundesbank_download,
     linked_bond_key,
     ecb_download,
@@ -3209,6 +3210,9 @@ def _bbk_code(column: str, frequency: str) -> str:
 # read 2026-10-22, and what its values are. A series read but not named here
 # stops the bake (KeyError).
 _TERM_STRUCTURE_TITLE = "Term structure of interest rates on listed Federal securities (method by Svensson)"
+# The balance of payments' items and sides, as the Bundesbank's titles name them.
+_BBK_PAYMENTS_ITEM_WORDS = {"G": "Goods", "S": "Services", "IN1": "Primary income", "IN2": "Secondary income"}
+_BBK_PAYMENTS_SIDE_WORDS = {"C": "Receipts", "D": "Expenditure"}
 _END_OF_MONTH = "; end-of-month values"
 _DAILY = "; no value on weekends and holidays"
 _BBK_SERIES_TITLES = {
@@ -3234,20 +3238,27 @@ _BBK_SERIES_TITLES = {
            ("DE0001030542", "0,100", "12(23)"), ("DE0001030559", "0,500", "14(30)"), ("DE0001030567", "0,000", "15(26)"),
            ("DE0001030575", "0,000", "15(46)"), ("DE0001030583", "0,000", "21(33)"),
        )},
+    # The balance of payments (batch 23): as the CSV's second line gives them, read 2026-11-11.
+    **{".".join(DE_PAYMENTS_SERIES[(side, item)]): f"Current account / {_BBK_PAYMENTS_ITEM_WORDS[item]} / {_BBK_PAYMENTS_SIDE_WORDS[side]} / Rest of the world; unadjusted; monthly"
+       for side, item in DE_PAYMENTS_SERIES},
 }
 # The unit of each Bundesbank series baked not in percent, in words (the
-# consumer price indexes, batches 13.1 and 13.4).
-_BBK_UNIT_WORDS = {".".join(series): "index points, 2020 = 100" for series in (DE_CPI_SERIES, DE_CPI_SA_SERIES)}
+# consumer price indexes, batches 13.1 and 13.4; the balance of payments, 23).
+_BBK_UNIT_WORDS = {
+    **{".".join(series): "index points, 2020 = 100" for series in (DE_CPI_SERIES, DE_CPI_SA_SERIES)},
+    **{".".join(series): "millions of euros a month (the Deutsche Mark years at 1.95583)" for series in DE_PAYMENTS_SERIES.values()},
+}
 
 
 def bbk_baked_series() -> dict[str, tuple[str, str]]:
-    """Every Bundesbank series the program reads, by its file's name (``FLOW.KEY``): its flow and key. Each term's end-of-month and daily term structure, each inflation-linked bond's real yield, and the consumer price indexes, unadjusted and seasonally adjusted (``de_data``)."""
+    """Every Bundesbank series the program reads, by its file's name (``FLOW.KEY``): its flow and key. Each term's end-of-month and daily term structure, each inflation-linked bond's real yield, the consumer price indexes, unadjusted and seasonally adjusted, and the balance of payments' eight items (``de_data``)."""
     return dict(sorted([
         *((_bbk_code(column, frequency), (BUNDESBANK_TERM_STRUCTURE_FLOW, term_structure_key(column, frequency)))
           for column in DE_YIELD_SERIES for frequency in TERM_STRUCTURE_FREQUENCIES),
         *((f"{DE_LINKED_BOND_FLOW}.{linked_bond_key(isin)}", (DE_LINKED_BOND_FLOW, linked_bond_key(isin))) for isin in DE_LINKED_BONDS),
         (".".join(DE_CPI_SERIES), DE_CPI_SERIES),
         (".".join(DE_CPI_SA_SERIES), DE_CPI_SA_SERIES),
+        *((".".join(series), series) for series in DE_PAYMENTS_SERIES.values()),
     ]))
 
 
@@ -3261,8 +3272,9 @@ def bake_bbk_history(folder: Path | None = None, *, accept_withdrawn: bool = Fal
 
     As every live source is baked (``_bake_live_series``: ``folder``,
     ``accept_withdrawn``, what is printed and returned). Each series as
-    ``de_data.parse_bundesbank_csv`` reads it: in percent, a month dated by
-    its last day (the term structure's monthly values are end-of-month
+    ``de_data.parse_bundesbank_csv`` reads it: in percent (the price indexes
+    in index points, the balance of payments in millions of euros, each as
+    written), a month dated by its last day (the term structure's monthly values are end-of-month
     values), a day by itself, a date without a value (the "." the download
     writes on weekends and holidays) left out. The whole series is the
     download the program has always read (``de_data.bundesbank_download``).

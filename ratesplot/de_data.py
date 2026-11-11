@@ -56,6 +56,10 @@ reach them; ``tools/de_fixtures/README.md`` holds the measurements):
   Germany until 1990, so the curve steps up by 17 million at unification,
   as the UK's steps at Ireland's independence), and before it the
   Bundesbank's annual averages for 1950 to 1959, baked, each dated 1 July.
+* The balance of payments (batch 23): the Bundesbank's monthly items
+  (``DE_PAYMENTS_SERIES``), read here and added up by ``ratesplot.payments``;
+  per person its twelve-month sums of 1990 and 1991 have a population of
+  their own (``payments_population``).
 
 Every figure is dated by the day it describes: a stock at the end of its
 quarter or year, a four-quarter sum at the end of its last quarter, an
@@ -104,6 +108,8 @@ from .config import (
     EUROSTAT_DATASET_URL,
     GDP_COLUMN,
     MILLION,
+    PAYMENTS_CREDITS_COLUMN,
+    PAYMENTS_DEBITS_COLUMN,
     POPULATION_COLUMN,
     RECENT_PART_REVISED,
     RECENT_PART_UNREVISED,
@@ -242,9 +248,41 @@ DE_CPI_SERIES = ("BBDP1", "M.DE.N.VPI.C.A00000.I20.A")
 # the unadjusted index's). Revised as its seasonal factors are re-estimated,
 # so its recent part is a revised series' (``fetch_de_consumer_prices``).
 DE_CPI_SA_SERIES = ("BBDP1", "M.DE.Y.VPI.C.A00000.I20.A")
+# The balance of payments (batch 23's third stage, --payments; measured
+# 2026-11-11): the Bundesbank's monthly balance of payments (flow BBFBOPV),
+# unadjusted ("N"), Germany against the rest of the world, each item's credits
+# ("C", receipts) and debits ("D", expenditure), millions of euros a month,
+# from 1971-01: West Germany to 1990-06 and all of Germany from 1990-07 in one
+# series, the Deutsche Mark years in euros at 1.95583. Items: goods ("G"),
+# services ("S"), primary income ("IN1") and secondary income ("IN2"); credits
+# less debits over the four equal the current account balance (key
+# ...T.B.CA...) within 0.002 million every month, and from 1991 each quarter
+# equals Eurostat's bop_c6_q (MIO_NAC) exactly. Only these monthly figures are
+# unadjusted and whole (the adjusted file holds the latest quarter alone);
+# nothing monthly or quarterly before 1971, and no series of West Germany's
+# own. The key's seventeenth part, "ALL", is required: without it the
+# Bundesbank answers 404 (measured 2026-11-11). Revised as the accounts are.
+DE_PAYMENTS_FLOW = "BBFBOPV"
+_DE_PAYMENTS_KEY = "M.N.DE.W1.S1.S1.T.{side}.{item}._Z._Z._Z.EUR._T._X.N.ALL"
+DE_PAYMENTS_SIDES = ("C", "D")
+DE_PAYMENTS_ITEMS = ("G", "S", "IN1", "IN2")
+# (side, item) -> (flow, key) of each of the eight series.
+DE_PAYMENTS_SERIES = {
+    (side, item): (DE_PAYMENTS_FLOW, _DE_PAYMENTS_KEY.format(side=side, item=item))
+    for side in DE_PAYMENTS_SIDES for item in DE_PAYMENTS_ITEMS
+}
+# The first month of the balance of payments' figures for all of Germany.
+DE_PAYMENTS_UNIFIED_FROM = pd.Timestamp("1990-07-01")
 # The unit of each Bundesbank series not in percent, as its CSV gives it
 # (``parse_bundesbank_csv``), by flow and key.
-_BUNDESBANK_UNITS = {DE_CPI_SERIES: ("2020=100",), DE_CPI_SA_SERIES: ("2020=100",)}
+_BUNDESBANK_UNITS = {
+    DE_CPI_SERIES: ("2020=100",),
+    DE_CPI_SA_SERIES: ("2020=100",),
+    **{series: ("euro",) for series in DE_PAYMENTS_SERIES.values()},
+}
+# The multiplier of each Bundesbank series whose CSV gives another than one,
+# by flow and key: its figures are returned as written, in that multiple.
+_BUNDESBANK_MULTIPLIERS = {series: "millions" for series in DE_PAYMENTS_SERIES.values()}
 # A series whose CSV gives a multiplier that is not its figures': the bond of
 # 2023's says "Tens", where its figures are percent as written, as the other
 # bonds' are (0.090 on its first day, issued at about par with a coupon of
@@ -337,6 +375,10 @@ DE_SERIES_EARLIEST = {
 _DE_GDP_WHOLE_TERRITORY_FROM = pd.Timestamp("1960-12-31")
 _DE_POPULATION_STEP_REACHES_FROM = pd.Timestamp("1990-01-01")
 _DE_GDP_UNIFIED_FROM = pd.Timestamp("1991-12-31")
+# The population drawn's first count of all of Germany (Eurostat's demo_pjan on
+# 1 January 1991), held back over 1990 for the balance of payments' months of
+# all of Germany (``payments_population``).
+_DE_POPULATION_UNIFIED_FROM = pd.Timestamp("1991-01-01")
 
 # The Federal Statistical Office's debt by the Eurostat subsector it is joined to, and
 # the last year it can be compared with a live series: its figures stop at that year.
@@ -372,7 +414,7 @@ def _period_end(text: str) -> pd.Timestamp:
     raise ValueError(f"not a period: {text!r}")
 
 
-def parse_bundesbank_csv(text: str, units: tuple[str, ...] = _BUNDESBANK_PERCENT) -> pd.Series:
+def parse_bundesbank_csv(text: str, units: tuple[str, ...] = _BUNDESBANK_PERCENT, multiplier: str = "one") -> pd.Series:
     """Parse one series of a Bundesbank CSV download; a date-indexed float series in one of ``units`` (percent), named by its key.
 
     The layout: a header line ``"",KEY,KEY_FLAGS``, lines of metadata
@@ -380,8 +422,10 @@ def parse_bundesbank_csv(text: str, units: tuple[str, ...] = _BUNDESBANK_PERCENT
     "." or "-" where there is no value (weekends in a daily series). A month
     ``1972-09`` is dated by its last day (the term structure's monthly
     values are end-of-month values). The unit must be one of ``units`` and the
-    multiplier one; anything else, and an answer with no dated rows (the
-    old download's "Die Zeitreihe ... ist nicht gültig"), raises.
+    multiplier ``multiplier`` (one; millions for the balance of payments,
+    whose figures are returned as written, in millions); anything else, and an
+    answer with no dated rows (the old download's "Die Zeitreihe ... ist nicht
+    gültig"), raises.
     """
     rows = list(csv.reader(io.StringIO(text.lstrip("﻿"))))
     if not rows or len(rows[0]) < 2 or not rows[0][1].strip():
@@ -391,8 +435,8 @@ def parse_bundesbank_csv(text: str, units: tuple[str, ...] = _BUNDESBANK_PERCENT
     unit = meta.get("bbk_unit_eng", meta.get("unit", ""))
     if unit.lower() not in units:
         raise ValueError(f"Bundesbank {key}: expected {units[0]}, found unit {unit!r}")
-    if meta.get("unit multiplier", "one").lower() != "one" and key not in _BUNDESBANK_MULTIPLIER_MISWRITTEN:
-        raise ValueError(f"Bundesbank {key}: expected the multiplier one, found {meta['unit multiplier']!r}")
+    if meta.get("unit multiplier", "one").lower() != multiplier and key not in _BUNDESBANK_MULTIPLIER_MISWRITTEN:
+        raise ValueError(f"Bundesbank {key}: expected the multiplier {multiplier}, found {meta.get('unit multiplier', 'one')!r}")
     data = [row for row in rows[1:] if row and _BUNDESBANK_DATE.match(row[0].strip())]
     if not data:
         raise ValueError(f"Bundesbank {key}: no dated rows")
@@ -441,7 +485,9 @@ def bundesbank_download(flow: str, key: str, start: pd.Timestamp | None = None) 
     else:
         url = BUNDESBANK_DATA_URL.format(flow=flow, key=key)
         params["startPeriod"] = _bundesbank_start_period(key, start)
-    values = parse_bundesbank_csv(de_get(url, params).text, _BUNDESBANK_UNITS.get((flow, key), _BUNDESBANK_PERCENT))
+    values = parse_bundesbank_csv(
+        de_get(url, params).text, _BUNDESBANK_UNITS.get((flow, key), _BUNDESBANK_PERCENT), _BUNDESBANK_MULTIPLIERS.get((flow, key), "one")
+    )
     if values.name != f"{flow}.{key}":
         raise ValueError(f"the Bundesbank answered {values.name} for {flow}.{key}")
     return values
@@ -965,8 +1011,39 @@ def west_german_debt_population() -> pd.Series:
     return pd.concat([published, west_german_gdp_population().loc[_DE_GDP_WHOLE_TERRITORY_FROM:]]).rename(POPULATION_COLUMN)
 
 
-def west_german_own_populations() -> dict[str, pd.Series]:
-    """Return each column's own population for -p (``measures.per_person``): West Germany's GDP's, and its debt's and interest's, in total and for every level.
+def payments_population(population: pd.Series) -> pd.Series:
+    """Return the population the balance of payments' twelve-month sums are divided by while they cover other people than the population drawn: each sum over the mean of its twelve months' populations, in persons; from the first sum of all of Germany's months alone, the population drawn.
+
+    The Bundesbank's months are West Germany's to 1990-06 and all of Germany's from
+    1990-07 (``DE_PAYMENTS_UNIFIED_FROM``), so the sums ending 1990-07 to 1991-05
+    hold some of each, while ``population`` (the population drawn) runs from West
+    Germany's count on 1990-01-01 to all of Germany's on 1991-01-01, half a year ahead
+    of them: over it the second half of 1990 would read about 12 % low. A month counts
+    West Germany's people to 1990-06 (its annual averages, log-linear between their
+    middles, as for its GDP: ``west_german_gdp_population``) and all of Germany's from
+    1990-07 (``population``, log-linear between its figures, its first count of all of
+    Germany, 1991-01-01, held back over 1990's last six months). So the sums ending
+    1990-01 to 1990-06, West Germany's alone, are over its own people where the
+    population drawn has begun to rise; from 1991-06-30 the population drawn.
+    """
+    # The months of every sum from the first the population drawn has begun to rise on
+    # (1990-01-31) to the last holding a month of West Germany's (1991-05-31).
+    first_sum = _DE_POPULATION_STEP_REACHES_FROM + pd.offsets.MonthEnd(0)
+    months = pd.date_range(first_sum - pd.DateOffset(months=11), DE_PAYMENTS_UNIFIED_FROM + pd.DateOffset(months=11), freq="ME")
+    west_averages = embedded_frame(EMBEDDED_DE_WEST_POPULATION_AT_UNIFICATION, POPULATION_COLUMN)[POPULATION_COLUMN] * THOUSAND
+    known = population.dropna().sort_index()
+    # All of Germany's population on each month's last day, its first count held back over 1990.
+    unified_dates = pd.DatetimeIndex(np.maximum(months.as_unit("ns").asi8, _DE_POPULATION_UNIFIED_FROM.as_unit("ns").value))
+    unified = np.exp(np.interp(unified_dates.asi8, known.index.as_unit("ns").asi8, np.log(known.to_numpy(dtype=float))))
+    west = np.exp(np.interp(months.as_unit("ns").asi8, west_averages.index.as_unit("ns").asi8, np.log(west_averages.to_numpy(dtype=float))))
+    each_month = pd.Series(np.where(months < DE_PAYMENTS_UNIFIED_FROM, west, unified), index=months)
+    means = each_month.rolling(12, min_periods=12).mean().dropna()
+    drawn = pd.Series(np.nan, index=pd.DatetimeIndex([means.index[-1] + pd.offsets.MonthEnd(1)]))
+    return pd.concat([means, drawn]).rename(POPULATION_COLUMN)
+
+
+def west_german_own_populations(population: pd.Series | None = None) -> dict[str, pd.Series]:
+    """Return each column's own population for -p (``measures.per_person``): West Germany's GDP's, and its debt's and interest's, in total and for every level; with ``population`` (the population drawn) the balance of payments' too (``payments_population``).
 
     The interest's is GDP's (``west_german_gdp_population``): to 1959 the total's
     territory is the narrow one GDP's population there counts (without the Saarland and
@@ -977,13 +1054,17 @@ def west_german_own_populations() -> dict[str, pd.Series]:
     """
     debt = west_german_debt_population()
     gdp = west_german_gdp_population()
-    return {
+    own = {
         GDP_COLUMN: gdp,
         DE_DEBT_COLUMN: debt,
         DE_INTEREST_COLUMN: gdp,
         **{component_column("debt", letter): debt for letter in COMPONENT_LETTERS},
         **{component_column("interest", letter): gdp for letter in COMPONENT_LETTERS},
     }
+    if population is not None and population.notna().any():
+        payments = payments_population(population)
+        own.update({PAYMENTS_CREDITS_COLUMN: payments, PAYMENTS_DEBITS_COLUMN: payments})
+    return own
 
 
 def _in_euros(rows: list[tuple[str, float]]) -> pd.Series:
