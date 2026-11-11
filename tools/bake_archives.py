@@ -128,6 +128,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--de-gdp-annual-csv", type=Path, help="the extract of West Germany's yearly GDP from table 81000-117 already on disk")
     parser.add_argument("--de-gdp-quarterly-csv", type=Path, help="the extract of West Germany's quarterly GDP, 1970 to 1991, already on disk")
     parser.add_argument("--de-debt-csv", type=Path, help="the extract of Germany's debt by level, Fachserie 14 Reihe 5, already on disk")
+    parser.add_argument("--de-interest-west-csv", type=Path, help="the extract of West Germany's interest by level, Fachserie 18 Reihe S.29, already on disk")
+    parser.add_argument("--de-interest-csv", type=Path, help="the extract of Germany's interest by level from 1991, Fachserie 18 Reihe 1.4, already on disk")
     args = parser.parse_args(argv)
     all_baked = True
     # One pass, as a drawing: a source that does not answer is asked nothing more in it (batch 19.3).
@@ -146,6 +148,8 @@ def main(argv: list[str]) -> int:
                         saved_gdp_annual_csv=args.de_gdp_annual_csv,
                         saved_gdp_quarterly_csv=args.de_gdp_quarterly_csv,
                         saved_debt_csv=args.de_debt_csv,
+                        saved_interest_west_csv=args.de_interest_west_csv,
+                        saved_interest_csv=args.de_interest_csv,
                     )
                 else:
                     # The archives raise when they cannot be baked; a live source's

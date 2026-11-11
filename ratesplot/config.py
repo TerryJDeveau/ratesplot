@@ -419,6 +419,18 @@ DESTATIS_PUBLIC_DEBT_URL = (
     "https://www.destatis.de/DE/Themen/Staat/Oeffentliche-Finanzen/Schulden-Finanzvermoegen/Publikationen/"
     "Downloads-Schulden/schulden-oeffentlicher-haushalte-2140500217005.xlsx?__blob=publicationFile"
 )
+# Germany's interest paid, in total and by level (batch 16, 16.6), read by the German bake
+# alone: Fachserie 18 Reihe S.29, West Germany's years of 1970 to 1991 after the revision of
+# 2005; and Fachserie 18 Reihe 1.4, its 2025 edition (published 2026-09-03), all of
+# Germany's from 1991. Each workbook's sheets 3.4.3.2, 3.4.3.4, 3.4.3.5 and 3.4.3.6.
+DESTATIS_REVISED_YEARS_URL = (
+    "https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/"
+    "Downloads-Inlandsprodukt/inlandsprodukt-revidiert-jahr-2189029919005.xlsx?__blob=publicationFile"
+)
+DESTATIS_DETAILED_YEARS_URL = (
+    "https://www.destatis.de/DE/Themen/Wirtschaft/Volkswirtschaftliche-Gesamtrechnungen-Inlandsprodukt/Publikationen/"
+    "Downloads-Inlandsprodukt/inlandsprodukt-endgueltig-xlsx-2180140.xlsx?__blob=publicationFile"
+)
 # The Bundesbank's "Lange Zeitreihen" of 2020-09-01, a PDF with data to 2019,
 # read by the German bake alone, for West Germany's population before Eurostat's
 # begins (batch 16).

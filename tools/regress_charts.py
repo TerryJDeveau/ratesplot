@@ -361,6 +361,14 @@ CASES: dict[str, list[str]] = {
     "de_debt1950_r": ["--na:de", "--debt", "-r", "-s:1950"],
     "de_levels1950": ["--na:de", "--debt:fpm", "-l", "-s:1950"],
     "de_levels1950_p": ["--na:de", "--debt:fnm", "-p", "-l", "-s:1950", "--e:2005"],
+    # Batch 16 (16.6): Germany's interest from 1970, West Germany's to 1990, the Office's for all of
+    # Germany to 1994, Eurostat's after: in euros beside GDP, per person (West Germany's people at
+    # 1990) and over GDP; and each level, in euros and per person, across its join at 2002.
+    "de_interest1970": ["--na:de", "--interest", "--gdp", "-l", "-s:1965"],
+    "de_interest1970_p": ["--na:de", "--interest", "--gdp", "-p", "-l", "-s:1965", "--e:2000"],
+    "de_interest1970_r": ["--na:de", "--interest", "-r", "-s:1965"],
+    "de_interest_levels1970": ["--na:de", "--interest", "--debt:fpm", "--no-debt", "-l", "-s:1965"],
+    "de_interest_levels1970_p": ["--na:de", "--interest", "--debt:fnm", "--no-debt", "-p", "-l", "-s:1965", "--e:2005"],
 }
 
 

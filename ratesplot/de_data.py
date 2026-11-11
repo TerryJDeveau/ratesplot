@@ -35,7 +35,12 @@ reach them; ``tools/de_fixtures/README.md`` holds the measurements):
 * Interest: D.41 interest payable by general government (consolidated),
   quarterly from 2002 (Eurostat gov_10q_ggnfa), summed over four quarters,
   and before it the annual figures from 1995 (gov_10dd_edpt1), which equal
-  the sums of their quarters exactly where both exist. Levels from 2002.
+  the sums of their quarters exactly where both exist. Before them the Federal
+  Statistical Office's years, baked (``_older_interest``): all of Germany's from
+  1991 (Fachserie 18 Reihe 1.4), which from 1995 are Eurostat's exactly, and
+  West Germany's from 1970 (Reihe S.29), unification kept as a step at 1991.
+  None found before 1970 on a host that allows scripts. Each level the same,
+  the Office's years until Eurostat's quarters begin (2002).
 * GDP: at market prices, current prices, not seasonally adjusted, quarterly
   from 1991 (Eurostat namq_10_gdp), summed over four quarters, from 1991-12-31.
   Before it West Germany's, baked (``west_german_gdp``): the Federal Statistical
@@ -55,7 +60,11 @@ end-of-month yield at the month's end, a monthly average at the month's
 start. Values are in euros (and persons); each source's unit is checked
 against the one measured, so a change of unit fails rather than shifting a
 curve a thousandfold. Deutsche Mark figures before 1999 are in euros at
-1.95583, as the ECB and Eurostat publish them.
+1.95583, as the ECB publishes them in national currency (XDC) and Eurostat in
+its national-currency units (MIO_NAC, CP_MNAC). Eurostat's euro units (MIO_EUR,
+CP_MEUR) are not asked for: they convert each year before 1999 at that year's
+ECU rate instead (measured 2026-11-10: GDP 4.6 % low in 1991, interest 4.4 %
+high in 1995; from 1999 the two units agree exactly).
 
 The ECB's series (batch 19.2, ``ecb_series``): their history is in
 ``ratesplot/data/ecb/``, and a drawing asks the ECB only for the recent part,
@@ -106,6 +115,10 @@ from .de_archive_data import (
     EMBEDDED_DE_DEBT_PER_PERSON,
     EMBEDDED_DE_DEBT_STATES,
     EMBEDDED_DE_DEBT_TOTAL,
+    EMBEDDED_DE_INTEREST_FEDERAL,
+    EMBEDDED_DE_INTEREST_LOCAL,
+    EMBEDDED_DE_INTEREST_STATES,
+    EMBEDDED_DE_INTEREST_TOTAL,
     EMBEDDED_DE_PUBLIC_DEBT_YIELD_HISTORY,
     EMBEDDED_DE_WEST_CPI_ALL_HOUSEHOLDS,
     EMBEDDED_DE_WEST_CPI_FOUR_PERSON,
@@ -113,6 +126,10 @@ from .de_archive_data import (
     EMBEDDED_DE_WEST_GDP_OLD_BASIS,
     EMBEDDED_DE_WEST_GDP_PER_PERSON,
     EMBEDDED_DE_WEST_GDP_QUARTERS,
+    EMBEDDED_DE_WEST_INTEREST_FEDERAL,
+    EMBEDDED_DE_WEST_INTEREST_LOCAL,
+    EMBEDDED_DE_WEST_INTEREST_STATES,
+    EMBEDDED_DE_WEST_INTEREST_TOTAL,
     EMBEDDED_DE_WEST_POPULATION,
     EMBEDDED_DE_WEST_POPULATION_AT_UNIFICATION,
 )
@@ -250,15 +267,21 @@ _ECB_START_FORMS = {"A": "%Y", "M": "%Y-%m", "B": "%Y-%m-%d", "D": "%Y-%m-%d"}
 
 # Eurostat datasets: dataset -> (the query sent, the unit expected). The
 # query is the one measured from the laptop; one answer holds every sector.
+# Amounts in national currency (MIO_NAC, CP_MNAC), Deutsche Marks before 1999
+# at 1.95583; not in MIO_EUR or CP_MEUR, which convert those years at each
+# year's ECU rate (the module's docstring). Measured 2026-11-10: the GDP of
+# 1991 is then 1591.61 billion, the Federal Statistical Office's own, not
+# 1518.03; the interest of 1995 is 66,581 million, the Office's, not 69,497.6;
+# from 1999 every value of all four datasets the same in either unit.
 EUROSTAT_QUERIES = {
-    "gov_10q_ggdebt": ({"geo": "DE", "unit": "MIO_EUR", "na_item": "GD"}, "MIO_EUR"),
-    "gov_10q_ggnfa": ({"geo": "DE", "unit": "MIO_EUR", "na_item": "D41PAY", "s_adj": "NSA"}, "MIO_EUR"),
-    "gov_10dd_edpt1": ({"geo": "DE", "unit": "MIO_EUR"}, "MIO_EUR"),
-    "namq_10_gdp": ({"geo": "DE", "unit": "CP_MEUR", "na_item": "B1GQ", "s_adj": "NSA"}, "CP_MEUR"),
+    "gov_10q_ggdebt": ({"geo": "DE", "unit": "MIO_NAC", "na_item": "GD"}, "MIO_NAC"),
+    "gov_10q_ggnfa": ({"geo": "DE", "unit": "MIO_NAC", "na_item": "D41PAY", "s_adj": "NSA"}, "MIO_NAC"),
+    "gov_10dd_edpt1": ({"geo": "DE", "unit": "MIO_NAC"}, "MIO_NAC"),
+    "namq_10_gdp": ({"geo": "DE", "unit": "CP_MNAC", "na_item": "B1GQ", "s_adj": "NSA"}, "CP_MNAC"),
     "namq_10_pe": ({"geo": "DE", "unit": "THS_PER", "na_item": "POP_NC", "s_adj": "NSA"}, "THS_PER"),
     "demo_pjan": ({"geo": "DE", "sex": "T", "age": "TOTAL"}, "NR"),
 }
-_EUROSTAT_MULTIPLIER = {"MIO_EUR": MILLION, "CP_MEUR": MILLION, "THS_PER": THOUSAND, "NR": 1}
+_EUROSTAT_MULTIPLIER = {"MIO_NAC": MILLION, "CP_MNAC": MILLION, "THS_PER": THOUSAND, "NR": 1}
 # Each dataset's frequency (its one ``freq`` category), measured 2026-10-22;
 # an answer of another raises (``eurostat_download``), since how
 # ``sinceTimePeriod`` is written depends on it (``_eurostat_since``).
@@ -296,7 +319,7 @@ _QUARTER_MIDDLE_DAYS = 45
 DE_SERIES_EARLIEST = {
     "German General Government Debt (West Germany's from 1950, the ECB's year ends from 1991)": pd.Timestamp("1950-03-31"),
     "TTM Nominal GDP (West Germany's from 1950, Eurostat's quarters from 1991)": pd.Timestamp("1950-12-31"),
-    "TTM German Interest Payable (Eurostat, annual from 1995)": pd.Timestamp("1995-12-31"),
+    "TTM German Interest Payable (West Germany's from 1970, the Office's from 1991, Eurostat's from 1995)": pd.Timestamp("1970-12-31"),
 }
 
 # Where Germany's GDP covers another territory than the population drawn, so has a
@@ -314,6 +337,15 @@ _DE_GDP_UNIFIED_FROM = pd.Timestamp("1991-12-31")
 # the last year it can be compared with a live series: its figures stop at that year.
 _DE_DEBT_OF_SECTOR = {"S1311": EMBEDDED_DE_DEBT_FEDERAL, "S1312": EMBEDDED_DE_DEBT_STATES, "S1313": EMBEDDED_DE_DEBT_LOCAL}
 _DE_DEBT_RATIO_UNTIL_YEAR = 2000
+# The Office's interest paid by the Eurostat sector it is joined to: West Germany's years
+# (1970-1990) and all of Germany's (from 1991, the total to 1995 and each level to 2002, the
+# first year of the live series, whose figure is the live series' own and is not drawn).
+_DE_INTEREST_OF_SECTOR = {
+    GENERAL_GOVERNMENT: (EMBEDDED_DE_WEST_INTEREST_TOTAL, EMBEDDED_DE_INTEREST_TOTAL),
+    "S1311": (EMBEDDED_DE_WEST_INTEREST_FEDERAL, EMBEDDED_DE_INTEREST_FEDERAL),
+    "S1312": (EMBEDDED_DE_WEST_INTEREST_STATES, EMBEDDED_DE_INTEREST_STATES),
+    "S1313": (EMBEDDED_DE_WEST_INTEREST_LOCAL, EMBEDDED_DE_INTEREST_LOCAL),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -916,7 +948,9 @@ def west_german_debt_population() -> pd.Series:
     1952 and the Saarland until 1960, the Office's choice and no step at either; and the
     first figure, 1950-03-31, is before the first population drawn, 1950-07-01. The
     levels are over the same people, so they add up: the Office's own column for the
-    Gemeinden is over the people outside the city states. Through 1990 and 1991 the
+    Gemeinden is over fewer people (105.84 million over 2.29854 euros a head is 46.05
+    million in 1950, against 50.34 for the total), presumably those outside the city
+    states, which the table does not say. Through 1990 and 1991 the
     population drawn runs up to all of Germany's while the debt is West Germany's: the
     same population as West Germany's GDP. All of Germany's from 1991-12-31: the
     population drawn.
@@ -927,9 +961,23 @@ def west_german_debt_population() -> pd.Series:
 
 
 def west_german_own_populations() -> dict[str, pd.Series]:
-    """Return each column's own population for -p (``measures.per_person``): West Germany's GDP's, and its debt's, in total and for every level."""
+    """Return each column's own population for -p (``measures.per_person``): West Germany's GDP's, and its debt's and interest's, in total and for every level.
+
+    The interest's is GDP's (``west_german_gdp_population``): its years begin in 1970,
+    after the narrow territory's, and West Germany's 1990 is over West Germany's people
+    on its own date, where the population drawn has run up towards all of Germany's
+    (about 20 % too many by the end of 1990); all of Germany's from 1991 over the
+    population drawn.
+    """
     debt = west_german_debt_population()
-    return {GDP_COLUMN: west_german_gdp_population(), DE_DEBT_COLUMN: debt, **{component_column("debt", letter): debt for letter in COMPONENT_LETTERS}}
+    gdp = west_german_gdp_population()
+    return {
+        GDP_COLUMN: gdp,
+        DE_DEBT_COLUMN: debt,
+        DE_INTEREST_COLUMN: gdp,
+        **{component_column("debt", letter): debt for letter in COMPONENT_LETTERS},
+        **{component_column("interest", letter): gdp for letter in COMPONENT_LETTERS},
+    }
 
 
 def _in_euros(rows: list[tuple[str, float]]) -> pd.Series:
@@ -1002,11 +1050,33 @@ def fetch_de_gdp(config: PlotConfig) -> pd.DataFrame | None:
     return _before(west, unified).rename(GDP_COLUMN).to_frame()
 
 
+def _interest_in_euros(rows: list[tuple[str, float]]) -> pd.Series:
+    """Return a baked list in billions of euros as euros, on its dates."""
+    return embedded_frame(rows, DE_INTEREST_COLUMN)[DE_INTEREST_COLUMN] * BILLION
+
+
+def _older_interest(sector: str) -> pd.Series:
+    """Return the Federal Statistical Office's interest paid by a Eurostat sector (``_DE_INTEREST_OF_SECTOR``), in euros, each year at its end: West Germany's from 1970, all of Germany's from 1991.
+
+    Laid end to end, unification a step at 1991 (34.35 billion in 1990, West Germany,
+    to 42.65 in 1991, all of Germany, the total), as GDP's and debt's are: West
+    Germany's own 1991 is on the revision of 2005, all of Germany's on the current
+    basis, so no year gives a ratio that is not also unification. All of Germany's
+    years are the Office's current figures, which from 1995 (the total) and 2002 (each
+    level's quarters) are Eurostat's, value for value (measured 2026-11-10, Eurostat's
+    in national currency): the live series follow on with no step and nothing scaled.
+    """
+    west, unified = _DE_INTEREST_OF_SECTOR[sector]
+    return _before(_interest_in_euros(west), _interest_in_euros(unified))
+
+
 @downloads_of("Eurostat interest outlays")
 def fetch_de_interest(config: PlotConfig) -> pd.DataFrame | None:
-    """Return trailing-twelve-month general government interest payable: the annual figures (1995-), then four-quarter sums (2002-).
+    """Return trailing-twelve-month general government interest payable: the Office's years from 1970 (``_older_interest``), Eurostat's annual figures (1995-), then four-quarter sums (2002-).
 
-    Either alone, with a warning, if the other fails; None if both do.
+    Either of Eurostat's alone, with a warning, if the other fails; None if both
+    do. The Office's years only with Eurostat's annual figures: with the quarters
+    alone they would be drawn straight across 1995 to 2002.
     """
     if not config.include_interest:
         return None
@@ -1021,7 +1091,18 @@ def fetch_de_interest(config: PlotConfig) -> pd.DataFrame | None:
         print(f"  Warning: Eurostat quarterly German interest unavailable ({exc}); the annual figures alone.")
         quarterly = None
     joined = _before(annual, quarterly)
+    if annual is not None:
+        joined = _before(_older_interest(GENERAL_GOVERNMENT), joined)
     return joined.rename(DE_INTEREST_COLUMN).to_frame() if joined is not None else None
+
+
+def _interest_of_level(sectors: tuple[str, ...]) -> pd.Series:
+    """Return the interest paid by these subsectors together, summed over four quarters: each the Office's years from 1970 (``_older_interest``) until Eurostat's quarters' first sum (2002), then those.
+
+    Each joined on its own, so "n" is exactly the Länder and local government added up.
+    """
+    parts = [_before(_older_interest(sector), _ttm_interest((sector,))) for sector in sectors]
+    return pd.concat(parts, axis=1).sum(axis=1, min_count=len(parts)).dropna()
 
 
 @downloads_of("Eurostat debt and interest by level of government")
@@ -1029,8 +1110,9 @@ def fetch_de_components(config: PlotConfig) -> pd.DataFrame | None:
     """Return debt and TTM interest by level of government (--debt:LETTERS): federal, Länder, local, Länder and local.
 
     Eurostat's quarters (debt from 2000, interest from 2002): its annual tables
-    have the levels only lately. Debt before them from the Federal Statistical
-    Office's table (``_debt_of_level``). A level whose source fails is left out,
+    have the levels only lately. Before them the Federal Statistical Office's
+    years, debt from 1950 (``_debt_of_level``) and interest from 1970
+    (``_interest_of_level``). A level whose Eurostat series fails is left out,
     with a warning.
     """
     columns: list[pd.Series] = []
@@ -1038,7 +1120,7 @@ def fetch_de_components(config: PlotConfig) -> pd.DataFrame | None:
         if letter not in config.components:
             continue
         sectors = _LEVEL_SECTORS[letter]
-        for kind, include, fetch in (("debt", config.include_debt, _debt_of_level), ("interest", config.include_interest, _ttm_interest)):
+        for kind, include, fetch in (("debt", config.include_debt, _debt_of_level), ("interest", config.include_interest, _interest_of_level)):
             if not include:
                 continue
             try:
