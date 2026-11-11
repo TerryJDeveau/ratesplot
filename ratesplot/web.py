@@ -286,7 +286,10 @@ from .options import (  # noqa: E402
     options_in,
     parse_date_spec,
 )
-from .plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
+# Every chart, the comparison chart's too (batch 26), drawn by one call; named as the harnesses replace it.
+from .compare import CHARTS  # noqa: E402
+from .compare import build_chart as build_figure  # noqa: E402
+from .plotting import resolve_start  # noqa: E402
 from .refresh import Ticker  # noqa: E402
 from .version import version_text  # noqa: E402
 from .wait import WAIT_COLOUR, Figures, Wait  # noqa: E402
@@ -2386,7 +2389,7 @@ def _new_job(config: PlotConfig, tokens: tuple[str, ...]) -> _Job:
 
 def _nations_of(config: PlotConfig) -> list[str]:
     """The charts ``config`` shows, by key."""
-    return [country.key for country in COUNTRIES if getattr(config, country.show_field)]
+    return [country.key for country in CHARTS if getattr(config, country.show_field)]
 
 
 def _take_turn(job: _Job) -> bool:
@@ -2462,7 +2465,7 @@ def _draw(config: PlotConfig, tokens: tuple[str, ...], job: _Job | None = None) 
                 lines.extend([trace or "", http.not_drawn_line("the charts", error)])
             else:
                 job.wait.start_ended()
-                for country in COUNTRIES:
+                for country in CHARTS:
                     if not getattr(drawn, country.show_field):
                         continue
                     if job.stopped.is_set():  # left behind: the next drawing starts sooner (batch 35.2)

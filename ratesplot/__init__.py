@@ -69,6 +69,9 @@ refresh           the automatic refresh (batch 11.3): whether each tick draws ag
                   (within market hours always, outside them when a quote has
                   changed); the plain matplotlib windows' timer
 plotting         line drawing, draw_country, build_figure (no pyplot), COUNTRIES, run_cdn / run_us / run_uk / run_de
+compare           the comparison chart (batch 26, a prototype): one measure, a curve for
+                  each nation, drawn by the nations' own drawers; CHARTS, the nations'
+                  charts and it, as the front ends draw them (build_chart)
 options           the option table, value parsers/formatters, choices <-> PlotConfig, --help text
 frontend          what the window and the web page share without a GUI toolkit: starting
                   choices, remembered settings, each nation's own controls, option
@@ -94,7 +97,8 @@ plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
 regression -> occupancy; options -> config; {plotting, legend, options, cli,
 gui, web} -> export -> {config, version}; {plotting, gui, web} -> hover -> {export, legend};
-{plotting, cli, gui, web} -> refresh -> {latest, http, config}; {plotting, gui} -> monitors. Data modules never import
+{plotting, cli, gui, web} -> refresh -> {latest, http, config}; {plotting, gui} -> monitors;
+{cli, gui, web} -> compare -> {plotting and what it imports} (batch 26). Data modules never import
 plotting. Nothing imports web or gui, and cli imports gui only when the
 window is opened, so --no-gui and the web page never load tkinter.
 """

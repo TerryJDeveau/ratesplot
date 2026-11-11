@@ -320,6 +320,15 @@ CASES: list[list[str]] = [
     ["--da"], ["--dai"], ["--daily"], ["--DAILY"], ["--no-da"], ["--no-daily"], ["--No-Daily"], ["--d"], ["--da:1"],
     ["daily"], ["--no-da", "--da"], ["--no-da", "-r", "-u"], ["--no-da", "--no-debt", "--no-gdp", "--no-interest"],
     ["--no-da", "--inf", "--no-debt", "--no-gdp", "--no-interest"],
+    # Batch 26 (decision 146): --compare, at least "com" ("--co" spells nothing: --constant needs "con"); a measure by
+    # --compare:MEASURE, a yield term or a name's leading part, one at a time, never none; it turns the flag on; no
+    # nation's own; not a series of the nations' charts, which it leaves as they are; with the measures.
+    ["--compare"], ["--com"], ["--COM"], ["--co"], ["--comparex"], ["--no-compare"], ["--no-com"], ["--com:10y"],
+    ["--com:10"], ["--com:r10"], ["--com:2y"], ["--com:pol"], ["--com:inf"], ["--com:debt"], ["--com:gdp"], ["--com:int"],
+    ["--com:pop"], ["--com:p"], ["--com:i"], ["--com:10y,2y"], ["--com:debt,debt"], ["--com:none"], ["--com:"],
+    ["--com:xyz"], ["--com:40y"], ["--us:com:debt"], ["--com:debt", "--no-com"], ["--com", "--gdp"],
+    ["--com:debt", "-r"], ["--com:debt", "-p", "--con"], ["--com:debt", "--master:EUR", "--nations:ca,us,gb,de"],
+    ["--com:pol", "--nations:ca,us,gb,de", "-l", "--reg"],
 ]
 
 

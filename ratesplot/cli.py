@@ -23,7 +23,7 @@ from typing import Callable
 import pandas as pd
 
 from . import export
-from .config import NATIONS, Nation, PlotConfig, nation_by_code, nation_by_key
+from .config import COMPARE_KEY, COMPARE_TAB_TITLE, NATIONS, Nation, PlotConfig, nation_by_code, nation_by_key
 from .console import tolerant_output
 from .options import (
     OPTIONS,
@@ -40,7 +40,8 @@ from .options import (
 )
 from .http import drawing_downloads, enable_download_cache, enable_last_good_copies, not_drawn_line
 from .http import not_drawn as why_not_drawn
-from .plotting import COUNTRIES, build_figure, end_to_resolve, resolve_end, resolve_start, run_cdn, run_de, run_uk, run_us
+from .compare import CHARTS, build_chart, run_compare
+from .plotting import end_to_resolve, resolve_end, resolve_start, run_cdn, run_de, run_uk, run_us
 from .refresh import Ticker, forget_old_downloads
 
 
@@ -287,27 +288,29 @@ def save_charts(config: PlotConfig, files: export.SavedFiles | None = None) -> l
     extension = export.format_of(path)
     not_drawn: list[str] = []
     sheets: list[tuple[str, export.ChartData]] = []
-    for country in COUNTRIES:
+    for country in CHARTS:
         if not getattr(config, country.show_field):
             continue
+        # A nation's chart, or the comparison chart (batch 26): "Compare", its file "rates_compare.png".
         nation = nation_by_key(country.key)
+        name, code = (nation.name, nation.codes[0]) if nation is not None else (COMPARE_TAB_TITLE, COMPARE_KEY)
         try:
-            figure = build_figure(country, config)
+            figure = build_chart(country, config)
         except Exception as exc:  # named here and at the end, never swallowed
             why, trace = why_not_drawn(exc)
             if trace is not None:
                 sys.stderr.write(trace)
-            print(not_drawn_line(f"the {nation.name} chart", why))
-            not_drawn.append(nation.name)
+            print(not_drawn_line(f"the {name} chart", why))
+            not_drawn.append(name)
             continue
         if extension == ".xlsx":
-            sheets.append((nation.name, export.chart_data(figure, config.for_nation(country.key), country.key)))
+            sheets.append((name, export.chart_data(figure, config.for_nation(country.key), country.key)))
             continue
         if extension in export.IMAGE_FORMATS:
             data = export.image_bytes(figure, png_bytes(figure), extension)
         else:
-            data = export.data_bytes(extension, [(nation.name, export.chart_data(figure, config.for_nation(country.key), country.key))])
-        written = files.write(export.per_nation_path(path, nation.codes[0]), data)
+            data = export.data_bytes(extension, [(name, export.chart_data(figure, config.for_nation(country.key), country.key))])
+        written = files.write(export.per_nation_path(path, code), data)
         print(f"Saved {written}")
     if sheets:
         written = files.write(path, export.data_bytes(extension, sheets))
@@ -434,6 +437,8 @@ def main(argv: list[str] | None = None) -> None:
             (config.show_us, run_us, "United States"),
             (config.show_uk, run_uk, "United Kingdom"),
             (config.show_de, run_de, "Germany"),
+            # The comparison chart (batch 26), after the nations', drawn once (no automatic refresh in the prototype).
+            (config.show_compare, lambda config, _again: run_compare(config), COMPARE_TAB_TITLE),
         ):
             if not shown or config.save is not None:
                 continue
