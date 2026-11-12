@@ -401,6 +401,13 @@ CASES: dict[str, list[str]] = {
     "de_pay_trade_r": ["--na:de", "--pay:trade", "-r", "-l", "-s:1971"],
     "de_pay_pc": ["--na:de", "--pay", "-p", "-s:1985", "--e:1995"],
     "de_pay_master_reg": ["--na:de,us", "--pay", "--master:USD", "--reg", "-s:1999"],
+    # Batch 26 (decision 146): the comparison chart, after the nations' charts of each case: the 10-year yields of
+    # all four (Canada's monthly history in steps); the policy rates with end labels (the U.S. band); debt as % of
+    # GDP fitted by --reg; GDP per person in euros, the master currency.
+    "cmp_10y": ["--na:ca,us,gb,de", "--com", "--no-debt", "--no-gdp", "--no-interest", "-s:1995"],
+    "cmp_pol_l": ["--na:ca,us,gb,de", "--com:pol", "--policy", "-l", "-s:2015"],
+    "cmp_debt_r_reg": ["--na:ca,us,gb,de", "--com:debt", "-r", "--reg", "-s:1990"],
+    "cmp_gdp_eur_pc": ["--na:ca,us,gb,de", "--com:gdp", "--master:EUR", "-p", "-s:1995"],
 }
 
 

@@ -55,11 +55,14 @@ from typing import Callable, Mapping
 import pandas as pd
 
 from .config import (
+    COMPARE_MEASURES,
+    COMPARE_OTHER_MEASURES,
     COMPONENT_LETTERS,
     COMPONENT_SYNONYMS,
     CURRENCY_SYMBOLS,
     DEBT_AGGREGATES,
     DEFAULT_AUTO_REFRESH_MINUTES,
+    DEFAULT_COMPARE_MEASURES,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DEFAULT_MORTGAGE_TERMS,
     DEFAULT_PAYMENTS_ITEMS,
@@ -345,6 +348,32 @@ def parse_payments_items(spec: str) -> tuple[str, ...]:
         chosen.append(matches[0])
     if len(set(chosen)) > 1:
         raise ValueError("--payments draws one pair at a time: current or trade, not both")
+    return (chosen[0],)
+
+
+def parse_compare_measure(spec: str) -> tuple[str, ...]:
+    """Parse ``--compare:MEASURE`` (batch 26): one measure of ``config.COMPARE_MEASURES``, a yield term or a name.
+
+    A yield term as --yields writes it ("10y", "r10"; "10" for "10y" too), or
+    a leading part of a name ("pol", "inf", "pop"), as an option's name is
+    spelled. One at a time, as the balance of payments' pairs are: a list of
+    two is refused, as is "none" (--no-compare draws no comparison).
+    """
+    items = [item.strip().lower() for item in spec.split(",") if item.strip()]
+    if not items or _is_none(spec):
+        raise ValueError(f"--compare:{spec.strip()} names no measure (--no-compare draws no comparison chart)")
+    chosen = []
+    for item in items:
+        term = f"{item}y" if item.isdigit() else item
+        matches = [term] if term in COMPARE_MEASURES else [name for name in COMPARE_OTHER_MEASURES if name.startswith(item)]
+        if len(matches) != 1:
+            raise ValueError(
+                f"invalid --compare measure {item!r}: use a yield term (10y, 2y, r10 ...), "
+                f"or {', '.join(COMPARE_OTHER_MEASURES)}"
+            )
+        chosen.append(matches[0])
+    if len(set(chosen)) > 1:
+        raise ValueError("--compare draws one measure at a time")
     return (chosen[0],)
 
 
@@ -838,11 +867,35 @@ _AGGREGATE_CHOICES = (
     ("", (("gross", "Gross (general government)"),)),
     ("", (("net", "Net (public sector, ex banks)"),)),
 )
+# The comparison chart's measures (batch 26), one at a time. The boxes share
+# their columns across the rows, and the block may be no wider in one column
+# than the column's default (the regression block's two columns): eleven
+# terms on one row doubled the column's width. So the yield terms five to a
+# row at most, as their own boxes are (``_YIELD_CHOICES``), each longer name
+# in the first column, and no row captioned: the boxes name themselves ("r10"
+# the real 10-year, as --compare:r10 writes it), and a caption's column alone
+# took 45 px.
+_MORE_TERMS = tuple(term for term in NOMINAL_YIELD_TERMS if term not in DEFAULT_YIELD_TERMS)
+_COMPARE_CHOICES = (
+    ("", tuple((term, term) for term in DEFAULT_YIELD_TERMS)),
+    ("", tuple((term, term) for term in _MORE_TERMS[:3])),
+    ("", tuple((term, term) for term in _MORE_TERMS[3:])),
+    ("", tuple((term, term) for term in REAL_YIELD_TERMS)),
+    ("", (("policy", "policy rate"),)),
+    ("", (("inflation", "inflation"),)),
+    ("", (("debt", "debt"), ("gdp", "GDP"))),
+    ("", (("interest", "interest"),)),
+    ("", (("population", "population"),)),
+)
 
 # Help-listing sections, in display order: key -> heading (and any notes).
 # The GUI titles its panels with the heading up to the first " (" or ":".
 GROUPS: dict[str, str] = {
     "country": "Country selection:",
+    "compare": (
+        'Comparison chart (a prototype; one measure, a curve for each nation\n'
+        'ticked, on a chart after theirs; at least "com"):'
+    ),
     "curves": (
         "Curve selection (naming any series, one of these or a rate, the price index\n"
         "or the population below, shows *only* the series named; ``--no-`` forms hide\n"
@@ -907,6 +960,25 @@ OPTIONS: tuple[Option, ...] = (
         "nations", Kind.VALUE, (), "country", "--nations:LIST / --na:LIST",
         "the charts of these nations only, by\ncode: ca or cdn, us, gb or uk, de, ger\nor deu (--nations:ca,us,gb,de); the only\nway to name the UK's and Germany's",
         names=("nations",), shortest=2, parse=parse_nations, in_gui=False,
+    ),
+    # Batch 26 (Terry, 2026-11-11, decision 146: "Let's try your proposals. It
+    # will be like a prototype."): a chart after the nations' comparing them on
+    # one measure (``ratesplot.compare``). A flag, off until named, and its
+    # measure by --compare:MEASURE, one at a time, as the balance of payments'
+    # pair is; neither is a series of the nations' charts, which it leaves as
+    # they are. At least "com" ("--co" spells nothing: --constant needs "con").
+    Option(
+        "compare", Kind.FLAG, ("compare",), "compare", "--compare / --no-compare",
+        "a chart comparing the nations ticked on\none measure, a curve for each, after\ntheir charts (a prototype)",
+        names=("compare",), shortest=3, label="Compare the nations", topic="compare",
+    ),
+    Option(
+        "compare-measure", Kind.VALUE, ("compare_measures",), "compare", "--compare:MEASURE / --com:MEASURE",
+        "the measure compared, one at a time: a\nyield term (10y, the default; 2y, r10 ...),\n"
+        "policy, inflation, debt, gdp, interest\nor population; -r, -p and --constant act\n"
+        "on the amounts, which are in the master\ncurrency (USD if none); turns --compare on",
+        names=("compare",), shortest=3, parse=parse_compare_measure, turns_on="compare", label="Measure compared",
+        format=format_terms, editor="choices", choices=_COMPARE_CHOICES, topic="compare", one_at_a_time=True,
     ),
     # Curves. The listing order here is the help order; the selection rule is
     # in ``config_from_choices``.
@@ -1832,6 +1904,9 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # the default, as the written line leaves the pair out then.
     if not values["payments"]:
         values["payments_items"] = DEFAULT_PAYMENTS_ITEMS
+    # The comparison chart's measure with it off draws nothing (batch 26), as the pair's does.
+    if not values["compare"]:
+        values["compare_measures"] = DEFAULT_COMPARE_MEASURES
     check_macro_bound_units(payloads, values)
     values["nation_settings"] = _nation_settings(payloads, values)
     return PlotConfig(**values)

@@ -94,6 +94,8 @@ _SERIES_ATTR = "_ratesplot_export_series"
 _SUBTITLE_ATTR = "_ratesplot_export_subtitle"
 _CURRENCY_ATTR = "_ratesplot_amounts_currency"
 _PRICE_BASE_ATTR = "_ratesplot_price_base"
+# The comparison chart's (batch 26): a zoom or a pan on it moves the dates alone.
+_DATES_ONLY_ATTR = "_ratesplot_dates_only"
 YIELD_AXIS = "yield"
 MACRO_AXIS = "macro"
 # The consumer price index's (batch 13.4), whichever axis it is drawn on: its
@@ -131,6 +133,16 @@ def mark_amounts_currency(figure: Figure, currency: str | None) -> None:
 def marked_amounts_currency(figure: Figure) -> str | None:
     """The currency ``mark_amounts_currency`` recorded for ``figure``: the master's on a chart converted to it, else None."""
     return getattr(figure, _CURRENCY_ATTR, None)
+
+
+def mark_dates_only(figure: Figure) -> None:
+    """Record that a zoom or a pan on ``figure`` moves its dates alone (the comparison chart, batch 26: its y axes follow its curves, and the limits' fields are the nations')."""
+    setattr(figure, _DATES_ONLY_ATTR, True)
+
+
+def marked_dates_only(figure: Figure) -> bool:
+    """Whether ``mark_dates_only`` marked ``figure``."""
+    return getattr(figure, _DATES_ONLY_ATTR, False)
 
 
 def mark_price_base(figure: Figure, month: pd.Timestamp | None) -> None:
@@ -235,7 +247,8 @@ def _values_on(pieces: list[_Piece], days: np.ndarray) -> np.ndarray:
 
 def _macro_unit(figure: Figure, config: PlotConfig, nation_key: str) -> str:
     """The right axis's unit in a data file: "% of TTM GDP", or its amounts' currency (the master's on a chart converted to it), per person under -p, at one month's prices under --constant ("C$ at 2026-09 prices")."""
-    if config.relative:
+    # A currency marked under -r is the comparison chart's GDP, -r's divisor, compared as an amount (batch 26).
+    if config.relative and marked_amounts_currency(figure) is None:
         return "% of TTM GDP"
     code = amounts_currency(figure, nation_key)
     currency = _CURRENCY_UNITS.get(code, code)

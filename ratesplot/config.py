@@ -633,6 +633,46 @@ DE_INTEREST_COLUMN = "TTM German Interest Paid (€)"
 # columns are the same for either item (only one is drawn at a time).
 PAYMENTS_ITEMS = ("current", "trade")
 DEFAULT_PAYMENTS_ITEMS = ("current",)
+
+# The comparison chart (batch 26, a prototype; Terry, 2026-11-11, decision
+# 146): one measure, a curve for each nation ticked, on a chart of its own
+# after the nations' (``ratesplot.compare``). Each measure by the name
+# --compare:NAME spells it (a leading part will do), with the kind of curve it
+# is: a yield term ("yield"), a rate on the yield axis ("rate"), an amount on
+# the right axis, measured by -r, -p, --constant and converted to one
+# currency ("amount"), or a count ("count", never divided); and the phrase
+# that follows the nations in its title. The yield terms are YIELD_TERMS'.
+COMPARE_KEY = "compare"
+COMPARE_TAB_TITLE = "Compare"
+COMPARE_OTHER_MEASURES = {
+    "policy": ("rate", "Policy Rates"),
+    "inflation": ("rate", "Inflation"),
+    "debt": ("amount", "Aggregate Public Debt"),
+    "gdp": ("amount", "TTM GDP"),
+    "interest": ("amount", "Interest Outlays"),
+    "population": ("count", "Population"),
+}
+COMPARE_MEASURES = (*YIELD_TERMS, *COMPARE_OTHER_MEASURES)
+DEFAULT_COMPARE_MEASURES = ("10y",)
+# The currency the amounts are compared in when no master currency is chosen
+# (--master, batch 30): every nation's converted at the End's rate.
+COMPARE_DEFAULT_CURRENCY = "USD"
+# Each nation's colour on the comparison chart: red for Canada and blue for
+# the U.S., the first two of matplotlib's cycle as they are of the yields';
+# purple for the UK, near-black for Germany. A nation added later gets one.
+COMPARE_COLOURS = {"cdn": "#d62728", "us": "#1f77b4", "uk": "#7b3fa0", "de": "#2b2b2b"}
+
+
+def compare_kind(measure: str) -> str:
+    """The kind of curve a comparison measure is (``COMPARE_OTHER_MEASURES``): "yield", "rate", "amount" or "count"."""
+    return "yield" if measure in YIELD_TERMS else COMPARE_OTHER_MEASURES[measure][0]
+
+
+def compare_title(measure: str) -> str:
+    """The phrase after the nations in a comparison chart's title: "10-Year Yields", "Policy Rates", "Population"."""
+    return f"{YIELD_TERMS[measure]} Yields" if measure in YIELD_TERMS else COMPARE_OTHER_MEASURES[measure][1]
+
+
 PAYMENTS_CREDITS_COLUMN = "TTM Credits ($)"
 PAYMENTS_DEBITS_COLUMN = "TTM Debits ($)"
 PAYMENTS_COLUMNS = (PAYMENTS_CREDITS_COLUMN, PAYMENTS_DEBITS_COLUMN)
@@ -1341,6 +1381,11 @@ def _measure_suffixes(config: PlotConfig) -> tuple[str, str]:
     return legend_suffix, legend_suffix + prices
 
 
+def measure_title_suffix(config: PlotConfig) -> str:
+    """The end of a title naming amounts in the measure ``config`` asks for (``_measure_suffixes``): " as % of TTM GDP", " per Capita", "" for amounts (the comparison chart's, batch 26)."""
+    return _measure_suffixes(config)[1]
+
+
 def _with_suffix(label: str, suffix: str) -> str:
     """Add ``suffix`` to a legend label, before a closing parenthetical such as "(pre-1933)"."""
     if suffix and label.endswith(")") and " (" in label:
@@ -1878,6 +1923,11 @@ class PlotConfig:
     # persons, never with --cpi (``options.check_one_extra_curve``, decision
     # 43); never divided either.
     population: bool = False
+    # --compare[:MEASURE] (batch 26, a prototype, decision 146): a chart after
+    # the nations' comparing them on one measure of COMPARE_MEASURES, one at a
+    # time; a flag, off until named, as --payments is. It changes no nation's chart.
+    compare: bool = False
+    compare_measures: tuple[str, ...] = DEFAULT_COMPARE_MEASURES
     show_cdn: bool = True
     show_us: bool = True
     # The UK's chart (batch 3): only when asked for (--uk, --nations:gb).
@@ -1981,6 +2031,16 @@ class PlotConfig:
             if field_name not in own and getattr(self, field_name) == _LIST_DEFAULTS[field_name]:
                 own[field_name] = value
         return replace(self, **own) if own else self
+
+    @property
+    def show_compare(self) -> bool:
+        """True when the comparison chart is drawn (--compare, batch 26), as ``show_cdn`` is for Canada's: the front ends' loops read both alike (``compare.CHARTS``)."""
+        return self.compare
+
+    @property
+    def compare_measure(self) -> str:
+        """The measure the comparison chart draws (--compare:MEASURE, one at a time)."""
+        return self.compare_measures[0]
 
     def same_chart(self, other: PlotConfig | None) -> bool:
         """Whether ``other`` draws the same charts as this: it may differ in what draws nothing, the hover read-out (batch 11.2) and the automatic refresh (11.3)."""

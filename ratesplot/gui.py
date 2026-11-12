@@ -248,7 +248,10 @@ from .options import (
     parse_date_spec,
     series_named,
 )
-from .plotting import COUNTRIES, Country, build_figure, resolve_start
+# Every chart, the comparison chart's too (batch 26), drawn by one call; named as the harnesses replace it.
+from .compare import CHARTS, CompareChart
+from .compare import build_chart as build_figure
+from .plotting import Country, resolve_start
 from .refresh import Ticker
 from .version import version_text
 from .wait import WAIT_COLOUR, Figures, Wait
@@ -1206,7 +1209,7 @@ class RatesPlotApp:
         charts.columnconfigure(0, weight=1)
         self.notebook = ttk.Notebook(charts)
         self.notebook.grid(row=0, column=0, sticky="nsew")
-        for country in COUNTRIES:
+        for country in CHARTS:
             self._build_tab(country)
         self.paned.add(self.column, stretch="never")
         self.paned.add(charts, stretch="always", minsize=_MIN_CHARTS_PX)
@@ -1754,7 +1757,7 @@ class RatesPlotApp:
         self.log.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
-    def _build_tab(self, country: Country) -> None:
+    def _build_tab(self, country: Country | CompareChart) -> None:
         tab = ttk.Frame(self.notebook)
         tab.rowconfigure(0, weight=1)
         tab.columnconfigure(0, weight=1)
@@ -1778,7 +1781,9 @@ class RatesPlotApp:
         # A move with no button held (a drag's moves have the bindings above).
         canvas.bind("<Motion>", lambda event: self._hovered(key, event))
         canvas.bind("<Leave>", lambda _event: self.hover.moved(None, 0.0, 0.0))
-        self._build_nation_panel(tab, next(nation for nation in NATIONS if nation.key == key))
+        nation = next((nation for nation in NATIONS if nation.key == key), None)
+        if nation is not None:  # the comparison chart (batch 26) has no panel: no nation's own choices reach it
+            self._build_nation_panel(tab, nation)
         self.notebook.add(tab, text=TAB_TITLES.get(country.key, country.key))
         self.tabs[key] = tab
         self.canvases[key] = canvas
@@ -2195,7 +2200,7 @@ class RatesPlotApp:
     def _show_hints(self) -> None:
         """Give each blank field the value in effect, from the charts on screen (``frontend.field_hints``)."""
         drawn = self.drawn_config
-        keys = [country.key for country in COUNTRIES if drawn is not None and getattr(drawn, country.show_field)]
+        keys = [country.key for country in CHARTS if drawn is not None and getattr(drawn, country.show_field)]
         hints = field_hints(drawn, {key: self.geometry.get(key) for key in keys})
         for key, hint in self.hints.items():
             hint.set(hints.get(key, ""))
@@ -2309,18 +2314,18 @@ class RatesPlotApp:
     @staticmethod
     def _nations_of(config: PlotConfig) -> list[str]:
         """The charts ``config`` shows, by key."""
-        return [country.key for country in COUNTRIES if getattr(config, country.show_field)]
+        return [country.key for country in CHARTS if getattr(config, country.show_field)]
 
     def _start_render(self, config: PlotConfig, choices: Choices, waiting_since: float | None = None) -> None:
         """Begin drawing ``config`` on a worker thread. ``waiting_since``: a drawing queued, whose wait began with the one before it."""
         self.rendering = True
         self.target_config = config
         self.rendering_choices = choices
-        countries = [country for country in COUNTRIES if getattr(config, country.show_field)]
+        countries = [country for country in CHARTS if getattr(config, country.show_field)]
         # Tk makes the nearest tab current when the current one is hidden; the
         # first shown is made current instead (batch 17.4, as on the page).
         current = self._current_tab_key()
-        for country in COUNTRIES:
+        for country in CHARTS:
             self.notebook.tab(self.tabs[country.key], state="normal" if country in countries else "hidden")
         key = current_tab([country.key for country in countries], current)
         if key is not None and key != self._current_tab_key():
@@ -2378,7 +2383,7 @@ class RatesPlotApp:
         place = {"row": 0, "column": 1, "padx": (_WAIT_GAP_PX, 0)} if fits else {"row": 1, "column": 0, "padx": (0, 0)}
         self.wait_row.grid(sticky="w", **place)
 
-    def _render_worker(self, config: PlotConfig, countries: list[Country], wait: Wait) -> None:
+    def _render_worker(self, config: PlotConfig, countries: list[Country | CompareChart], wait: Wait) -> None:
         """Worker thread: draw each country to PNG bytes and post them. Never touches Tk.
 
         A blank Start is found first, once for all the charts (``resolve_start``).
@@ -2488,7 +2493,7 @@ class RatesPlotApp:
             if config.draws_a_curve:
                 self.kept_choices = self.rendering_choices
             not_drawn = not_drawn or {}
-            drawn = [TAB_TITLES.get(c.key, c.key) for c in COUNTRIES if getattr(config, c.show_field) and c.key not in not_drawn]
+            drawn = [TAB_TITLES.get(c.key, c.key) for c in CHARTS if getattr(config, c.show_field) and c.key not in not_drawn]
             if len(drawn) > 1:
                 names = f"{', '.join(drawn[:-1])} and {drawn[-1]}"
             else:  # one chart, or none: every chart's source failing (an IndexError here until 2026-10-22)
@@ -2935,7 +2940,7 @@ class RatesPlotApp:
                 if every and extension == ".xlsx":
                     shown = [
                         country.key
-                        for country in COUNTRIES
+                        for country in CHARTS
                         if country.key in self.figures and self.notebook.tab(self.tabs[country.key], "state") != "hidden"
                     ]
                 sheets = [

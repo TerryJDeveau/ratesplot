@@ -53,6 +53,8 @@ import pandas as pd
 from matplotlib.figure import Figure
 
 from .config import (
+    COMPARE_KEY,
+    COMPARE_TAB_TITLE,
     COMPONENT_LETTERS,
     COMPONENT_SYNONYMS,
     DEFAULT_AUTO_REFRESH_MINUTES,
@@ -65,7 +67,7 @@ from .config import (
     Nation,
     PlotConfig,
 )
-from .export import marked_amounts_currency
+from .export import marked_amounts_currency, marked_dates_only
 from .options import (
     AUTO_REFRESH_OPTIONS,
     GROUPS,
@@ -107,7 +109,8 @@ from .options import (
 _FORMER_DEFAULT_START = "1966-01-01"
 # Same PNG metadata as tools/verify_charts.py, so saved files hash identically.
 PNG_METADATA = {"Software": None}
-TAB_TITLES = {nation.key: nation.name for nation in NATIONS}
+# Each chart's tab, the nations' then the comparison chart's (batch 26).
+TAB_TITLES = {nation.key: nation.name for nation in NATIONS} | {COMPARE_KEY: COMPARE_TAB_TITLE}
 # The format of the window's remembered-settings file; a file of another version is ignored.
 STATE_VERSION = 1
 
@@ -133,6 +136,7 @@ _PANEL_LISTS = ("yield_terms", "spread_pairs", "policy_terms", "mortgage_terms",
 # keeps its sections (``options.GROUPS``), which say what each option is.
 CONTROL_BLOCKS: tuple[tuple[str, str | None, tuple[str, ...]], ...] = (
     ("country", group_title("country"), ()),
+    ("compare", group_title("compare"), ()),
     ("curves", group_title("curves"), ()),
     ("units", group_title("units"), ()),
     ("regression", None, ()),
@@ -1494,6 +1498,8 @@ class ChartGeometry:
     is wider (a small pad each side, and with -l room for the value labels).
     ``right_currency`` is the code of the currency the right axis's amounts
     are in when not its nation's own (the master's, batch 30), else "".
+    ``dates_only``: a zoom or a pan moves the dates alone (the comparison
+    chart, batch 26, ``export.mark_dates_only``).
     """
 
     box: tuple[float, float, float, float]
@@ -1504,6 +1510,7 @@ class ChartGeometry:
     left_log: bool
     right_log: bool
     right_currency: str = ""
+    dates_only: bool = False
 
     @classmethod
     def from_figure(cls, figure: Figure, config: PlotConfig) -> ChartGeometry | None:
@@ -1522,6 +1529,7 @@ class ChartGeometry:
             left_log=left.get_yscale() == "log",
             right_log=right.get_yscale() == "log",
             right_currency=marked_amounts_currency(figure) or "",
+            dates_only=marked_dates_only(figure),
         )
 
     def date_at(self, x: float) -> pd.Timestamp:
@@ -1666,7 +1674,7 @@ def zoom_updates(
     updates: dict[str, str] = {}
     if x1 - x0 >= _MIN_DRAG_PX:
         updates.update(_date_range_texts(geometry.date_at(x0), geometry.date_at(x1)))
-    if y1 - y0 >= _MIN_DRAG_PX:
+    if y1 - y0 >= _MIN_DRAG_PX and not geometry.dates_only:
         updates.update(axis_updates(geometry, config, y0, y1))
     return updates
 
@@ -1680,7 +1688,7 @@ def pan_updates(geometry: ChartGeometry, config: PlotConfig | None, dx: float, d
         # -l label room) would otherwise be added to the window at every pan.
         start_x, end_x = geometry.window_x()
         updates.update(_date_range_texts(geometry.date_at(start_x - dx), geometry.date_at(end_x - dx)))
-    if abs(dy) >= _MIN_DRAG_PX:
+    if abs(dy) >= _MIN_DRAG_PX and not geometry.dates_only:
         updates.update(axis_updates(geometry, config, top - dy, bottom - dy))
     return updates
 
