@@ -975,10 +975,13 @@ OPTIONS: tuple[Option, ...] = (
     # measure by --compare:MEASURE, one at a time, as the balance of payments'
     # pair is; neither is a series of the nations' charts, which it leaves as
     # they are. At least "com" ("--co" spells nothing: --constant needs "con").
+    # Its box under Country selection since batch 26.2 (decision 147): the
+    # comparison's own block is shown only on its tab, which exists only once
+    # the box is ticked (``frontend.block_shown``).
     Option(
         "compare", Kind.FLAG, ("compare",), "compare", "--compare / --no-compare",
         "a chart comparing the nations ticked on\none measure, a curve for each, after\ntheir charts (a prototype)",
-        names=("compare",), shortest=3, label="Compare the nations", topic="compare",
+        names=("compare",), shortest=3, label="Compare the nations", panel="country", topic="compare",
     ),
     Option(
         "compare-measure", Kind.VALUE, ("compare_measures",), "compare", "--compare:MEASURE / --com:MEASURE",

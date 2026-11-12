@@ -141,7 +141,7 @@ from PIL import Image, ImageTk
 from matplotlib.figure import Figure
 
 from . import export, hover, http, monitors
-from .config import DOWNLOAD_MAX_AGE_SECONDS, EARLIEST_DATE, NATIONS, WEB_PAGE_ADDRESS, Nation, PlotConfig
+from .config import COMPARE_KEY, DOWNLOAD_MAX_AGE_SECONDS, EARLIEST_DATE, NATIONS, WEB_PAGE_ADDRESS, Nation, PlotConfig
 from .console import this_thread_output_to
 from .export import EXPORT_CHOICES, IMAGE_FORMATS
 from .frontend import (
@@ -177,6 +177,7 @@ from .frontend import (
     all_tick,
     all_tick_offered,
     all_tick_reason,
+    block_shown,
     bound_keys,
     bounds_in_other_units,
     chart_link,
@@ -1231,6 +1232,9 @@ class RatesPlotApp:
         self.notebook.grid(row=0, column=0, sticky="nsew")
         for country in CHARTS:
             self._build_tab(country)
+        # The column's blocks follow the tab in front (batch 26.2), from the first.
+        self.notebook.bind("<<NotebookTabChanged>>", self._show_blocks, add="+")
+        self._show_blocks()
         self.paned.add(self.column, stretch="never")
         self.paned.add(charts, stretch="always", minsize=_MIN_CHARTS_PX)
 
@@ -1363,22 +1367,28 @@ class RatesPlotApp:
         style.configure("Info.TLabel", foreground=_INFO_FOREGROUND)
 
         self.flows: list[tuple[str, _Flow]] = []
+        # Each block's frame by its key, in order: those shown follow the tab in front (``_show_blocks``, batch 26.2).
+        self.block_frames: dict[str, ttk.LabelFrame] = {}
         for key, title, members in control_blocks():
             frame = ttk.LabelFrame(panel, text=title or "", padding=(8, 4))
             frame.pack(fill="x", pady=(0, 6))
+            self.block_frames[key] = frame
             flow = _Flow(frame)
             # A value that belongs to a flag (the regression tolerance) goes on
             # the flag's own row, which keeps the column short; tick boxes for
-            # a flag's list (mortgage terms, spreads) go on the rows under it.
+            # a flag's list (mortgage terms, spreads) go on the rows under it,
+            # where the flag is in the block (the comparison's is under Country
+            # selection since batch 26.2: its measure's boxes stand alone).
+            names = {option.name for option in members}
             attached = {
                 option.turns_on: option
                 for option in members
-                if option.kind is Kind.VALUE and option.turns_on and option.editor != "choices"
+                if option.kind is Kind.VALUE and option.turns_on in names and option.editor != "choices"
             }
             under = {
                 option.turns_on: option
                 for option in members
-                if option.kind is Kind.VALUE and option.turns_on and option.editor == "choices"
+                if option.kind is Kind.VALUE and option.turns_on in names and option.editor == "choices"
             }
             rows: list[Option] = []
             for option in members:
@@ -1390,7 +1400,7 @@ class RatesPlotApp:
             for option in rows:
                 cell = ttk.Frame(frame)
                 if option.kind is Kind.VALUE and option.editor == "choices":
-                    self._add_choices_control(cell, 0, option)
+                    self._add_choices_control(cell, 0, option, indent=option.turns_on in names)
                     flow.add(cell, wide=True)
                 elif option.kind is Kind.VALUE and option.editor == "size":
                     flow.add(cell)
@@ -1407,6 +1417,33 @@ class RatesPlotApp:
                         flow.add(field)
             frame.bind("<Configure>", lambda event, flow=flow: flow.fit(event.width), add="+")
             self.flows.append((key, flow))
+
+    def _show_blocks(self, _event=None) -> None:
+        """Show the column's blocks for the tab in front (``frontend.block_shown``, batch 26.2), in their order; a block left out keeps its values.
+
+        On the tab Compare its own block, without the curves' boxes and the
+        rates on the yield axis, which cannot change its chart; on a nation's,
+        without the comparison's block. A block taken out is unpacked and put
+        back before the first of the column's other widgets (the actions, the
+        log), so the order holds.
+        """
+        if not getattr(self, "block_frames", None):
+            return
+        front = self._current_tab_key()
+        frames = list(self.block_frames.values())
+        wanted = [frame for key, frame in self.block_frames.items() if block_shown(key, front)]
+        if [frame for frame in frames if frame.winfo_manager()] == wanted:
+            return
+        for frame in frames:
+            frame.pack_forget()
+        panel = frames[0].master
+        anchor = next((widget for widget in panel.pack_slaves() if widget not in frames), None)
+        for frame in wanted:
+            if anchor is None:
+                frame.pack(fill="x", pady=(0, 6))
+            else:
+                frame.pack(fill="x", pady=(0, 6), before=anchor)
+        self._fit_column()
 
     def _add_flag_control(
         self, cell: ttk.Frame, row: int, option: Option, value: Option | None = None, field: ttk.Frame | None = None
@@ -1510,12 +1547,16 @@ class RatesPlotApp:
         _Tooltip(label, tip, info=True)
         self._info_mark(head, key, option, tip).pack(side="left", padx=(3, 0))
 
-    def _add_choices_control(self, frame: ttk.LabelFrame, row: int, option: Option, nation: Nation | None = None) -> None:
+    def _add_choices_control(
+        self, frame: ttk.LabelFrame, row: int, option: Option, nation: Nation | None = None, indent: bool = True
+    ) -> None:
         """A list option as tick boxes (``Option.choices``), one row of boxes per row offered.
 
         A list that belongs to a flag (mortgage terms, spreads) sits indented
         under that flag's check box, with no label of its own, and is greyed
-        while the flag is off; one of its own (the yield terms) has its label
+        while the flag is off; ``indent`` False where the flag's box is in
+        another block (the comparison's measure, its box under Country
+        selection since batch 26.2). One of its own (the yield terms) has its label
         at the left, as the other fields do. A nation's own list (under its
         tab) has its label above, and only the boxes its chart can draw. A
         nation's box of a term drawn plus a margin (``options.margin_options``)
@@ -1538,7 +1579,7 @@ class RatesPlotApp:
             self._info_mark(head, key, option, tip).pack(side="left", padx=(3, 0))
             box.grid(row=1, column=row, sticky="nw")
         elif option.turns_on:
-            box.grid(row=row, column=0, columnspan=3, sticky="w", padx=(22, 0), pady=(0, 2))
+            box.grid(row=row, column=0, columnspan=3, sticky="w", padx=(22 if indent else 0, 0), pady=(0, 2))
         else:
             head = ttk.Frame(frame)
             head.grid(row=row, column=0, sticky="nw", padx=(0, 6), pady=(3, 1))
@@ -2064,6 +2105,12 @@ class RatesPlotApp:
             if self.flag_vars[name].get():
                 self._ticked_nation = key
             elif self._ticked_nation == key:
+                self._ticked_nation = None
+        if name == "compare":
+            # Likewise "Compare the nations" (batch 26.2): its tab once drawn, which shows the comparison's block.
+            if self.flag_vars[name].get():
+                self._ticked_nation = COMPARE_KEY
+            elif self._ticked_nation == COMPARE_KEY:
                 self._ticked_nation = None
         units = [option.name for option in options_in("units") if option.name in self.flag_vars]
         if name in units:

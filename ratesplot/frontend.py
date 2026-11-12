@@ -153,6 +153,28 @@ LIMITS = tuple(name for column in LIMIT_COLUMNS for name in column)
 _YIELD_LIMITS = LIMIT_COLUMNS[0]
 
 
+# The blocks shown by the tab in front (batch 26.2; Terry, 2026-11-12,
+# decision 147: "the whole “Comparison chart” block of controls should only be
+# in the sidebar when the “Comparison” tab is activated. Likewise, other
+# controls that have no effect on the Comparison chart can be absent from the
+# sidebar when the Comparison tab is active"). The comparison's own block on
+# its tab alone; on it, the curves' boxes and the rates on the yield axis left
+# out, which the comparison chart never reads (``compare.solo_config`` sets
+# its one curve itself). What can change it stays: the nations ticked and
+# "Compare the nations", the measure of amounts, the regression segments, the
+# line labels and the latest data, the dates and the canvas, greyed by the
+# usual rules where they change nothing. A block left out keeps its values.
+COMPARE_ONLY_BLOCKS = frozenset({"compare"})
+NATIONS_ONLY_BLOCKS = frozenset({"curves", "rates"})
+
+
+def block_shown(key: str, tab: str | None) -> bool:
+    """True when the column shows block ``key`` with tab ``tab`` (a chart's key, ``TAB_TITLES``) in front; None, no tab yet, as a nation's."""
+    if tab == COMPARE_KEY:
+        return key not in NATIONS_ONLY_BLOCKS
+    return key not in COMPARE_ONLY_BLOCKS
+
+
 def control_blocks() -> list[tuple[str, str | None, list[Option]]]:
     """Return the control column's blocks in order: each key, title and options (a nation's own left out).
 

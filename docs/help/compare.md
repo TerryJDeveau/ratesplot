@@ -1,8 +1,8 @@
 # Compare the nations
 
-A chart of its own after the nations' charts, under a tab named Compare: one measure, with a curve for each nation ticked, each in its own colour (Canada red, the United States blue, the United Kingdom purple, Germany near-black). Ticking Compare the nations adds the chart; the nations' charts are left as they are. It is a prototype (2026-11-11): what it draws and how it is laid out are open to change once it has been tried.
+A chart of its own after the nations' charts, under a tab named Compare: one measure, with a curve for each nation ticked, each in its own colour (Canada red, the United States blue, the United Kingdom purple, Germany near-black). Ticking Compare the nations, under Country selection, adds the chart and brings its tab to the front; the nations' charts are left as they are. It is a prototype (2026-11-11): what it draws and how it is laid out are open to change once it has been tried.
 
-The measure is chosen by the boxes under it, one at a time:
+The measure is chosen by the boxes of the block Comparison chart, one at a time, under three headings: Bond yields, Real bond yields (inflation-linked) and Other measures. The block is shown while the Compare tab is in front, and there the curves' boxes and the rates on the yield axis are left out, since they do not change this chart; back on a nation's tab they return as they were, and the comparison's block is left out.
 
 - **a yield term**, the 10-year by default: each nation's yield of that term, as its own chart draws it (Canada's monthly history before 2001 in steps, the daily yields after, the day's quotes with the [latest values](?help=latest-values)). A nation without the term is left off, with a note in the message log: the UK has no 2-year yield, Canada no 20-year. The [real yields](?help=yields) are terms too.
 - **Policy rate**: each central bank's [policy rate](?help=policy-rates), its target, held in steps from each change; the U.S. target range as a band.
