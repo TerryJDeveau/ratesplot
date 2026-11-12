@@ -626,6 +626,12 @@ class _LevelsEditor:
             self.syncing = False
 
 
+# The grid columns a heading, or a lone box in the column, spans in a list of
+# tick boxes (batch 26.2): more than any row's boxes, and short of column 99,
+# where a list's ⓘ ends its first row.
+_SPANNED = 8
+
+
 class _ChoicesEditor:
     """Keeps a list option's tick boxes (``Option.choices``) and its text (``"10y-2y,10y-3m"``) in step.
 
@@ -653,15 +659,29 @@ class _ChoicesEditor:
         self.payload.trace_add("write", lambda *_args: self._payload_changed())
 
     def add_row(self, caption: str, boxes: list[tuple[str, str]]) -> None:
-        """Add one row of boxes, its caption at the left."""
+        """Add one row of boxes, its caption at the left; a caption with no boxes is a heading over the rows after it (batch 26.2).
+
+        A heading, and in the column a row of one box, spans the rows' columns
+        (``_SPANNED``): the comparison's "TTM interest paid on public debt"
+        (decision 147) would otherwise widen the yield terms' first column, and
+        the column with it. Not in a nation's panel, where a margin's field may
+        stand beside a lone box.
+        """
+        if not boxes:
+            ttk.Label(self.frame, text=caption, foreground="#555555").grid(
+                row=self.rows, column=0, columnspan=_SPANNED, sticky="w", pady=(4 if self.rows else 0, 0)
+            )
+            self.rows += 1
+            return
         ttk.Label(self.frame, text=f"{caption}:" if caption else "", foreground="#555555").grid(
             row=self.rows, column=0, sticky="w", padx=(0, 4)
         )
+        span = _SPANNED if len(boxes) == 1 and self.nation is None else 1
         for column, (value, text) in enumerate(boxes, start=1):
             variable = tk.BooleanVar(value=False)
             self.boxes[value] = variable
             check = ttk.Checkbutton(self.frame, text=text, variable=variable, command=lambda v=value: self.box_changed(v))
-            check.grid(row=self.rows, column=column, sticky="w", padx=(0, 6))
+            check.grid(row=self.rows, column=column, columnspan=span, sticky="w", padx=(0, 6))
             _Tooltip(check, _tooltip_text(self.option), info=True)  # the list's ⓘ gives the same
             self.widgets.append(check)
         self.rows += 1

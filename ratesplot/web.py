@@ -2138,9 +2138,13 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     rows = [row for row in choice_rows(option, "", nation)]
     if others:
         rows.append(("other", [(value, value.replace("-", "–")) for value in others]))
+    # The first row with boxes, whose last box carries the help of a list with no label: a heading has none (batch 26.2).
+    first = next((number for number, (_caption, boxes) in enumerate(rows) if boxes), 0)
     for number, (caption, boxes) in enumerate(rows):
         if caption:
             where.caption(caption)
+        if not boxes:  # a heading over the rows after it (batch 26.2, ``options._COMPARE_CHOICES``)
+            continue
         # A nation's box of a term drawn plus a margin has the margin's field
         # beside it (batch 9.4, the prime rate's), as in the window.
         margins = margin_options() if nation is not None and option.fields == ("mortgage_terms",) else {}
@@ -2154,7 +2158,7 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
                 disabled=disabled,
                 on_change=_choice_changed,
                 args=(key, value),
-                help=_help(option, key=key) if not labelled and number == 0 and position == len(boxes) - 1 else None,
+                help=_help(option, key=key) if not labelled and number == first and position == len(boxes) - 1 else None,
             )
         if margin:
             _value_control(row, margin, key=nation_choice(nation, margin), label="margin (pts)", width=_MARGIN_FIELD_PX)

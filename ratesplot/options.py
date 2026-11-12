@@ -871,21 +871,29 @@ _AGGREGATE_CHOICES = (
 # their columns across the rows, and the block may be no wider in one column
 # than the column's default (the regression block's two columns): eleven
 # terms on one row doubled the column's width. So the yield terms five to a
-# row at most, as their own boxes are (``_YIELD_CHOICES``), each longer name
-# in the first column, and no row captioned: the boxes name themselves ("r10"
-# the real 10-year, as --compare:r10 writes it), and a caption's column alone
-# took 45 px.
+# row at most, as their own boxes are (``_YIELD_CHOICES``), and no row
+# captioned at its left: a caption's column alone took 45 px. Batch 26.2
+# (Terry, 2026-11-12, decision 147): "Say “Bond yields” in that block", "a
+# similar heading for the “r5” etc. choices so it is clear what they
+# represent", and the amounts named in full, "TTM interest paid on public
+# debt" and "Public debt". A row with no boxes is a heading over the rows
+# after it (``frontend.choice_rows``); a third, "Other measures", keeps the
+# real yields' heading from seeming to cover the rest. A row of one box spans
+# the block in the window, so a long name widens no column of the terms'.
 _MORE_TERMS = tuple(term for term in NOMINAL_YIELD_TERMS if term not in DEFAULT_YIELD_TERMS)
 _COMPARE_CHOICES = (
+    ("Bond yields", ()),
     ("", tuple((term, term) for term in DEFAULT_YIELD_TERMS)),
     ("", tuple((term, term) for term in _MORE_TERMS[:3])),
     ("", tuple((term, term) for term in _MORE_TERMS[3:])),
+    ("Real bond yields (inflation-linked)", ()),
     ("", tuple((term, term) for term in REAL_YIELD_TERMS)),
-    ("", (("policy", "policy rate"),)),
-    ("", (("inflation", "inflation"),)),
-    ("", (("debt", "debt"), ("gdp", "GDP"))),
-    ("", (("interest", "interest"),)),
-    ("", (("population", "population"),)),
+    ("Other measures", ()),
+    ("", (("policy", "Policy rate"),)),
+    ("", (("inflation", "Inflation"),)),
+    ("", (("debt", "Public debt"), ("gdp", "TTM GDP"))),
+    ("", (("interest", "TTM interest paid on public debt"),)),
+    ("", (("population", "Population"),)),
 )
 
 # Help-listing sections, in display order: key -> heading (and any notes).
