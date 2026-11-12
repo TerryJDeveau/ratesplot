@@ -983,6 +983,33 @@ def check_batch262(check: Check) -> None:
           "Curve selection" in titles and "Comparison chart" not in titles and not at.checkbox(key="flag:debt").value, titles)
 
 
+def check_batch263(check: Check) -> None:
+    """Batch 26.3 (decision 147): “Base nation” and its nations' boxes on the tab Compare, the U.S. by default, greyed until it is ticked; written."""
+    at = new_page("--com --e:2026-09-01")
+    at.session_state["tab"] = "Compare"  # as a click on its tab leaves it
+    at.run()
+    keys = [box.key for box in at.checkbox if box.key]
+    nations = [key for key in keys if key.startswith("choice:base-nation:")]
+    check("on the tab Compare, “Base nation” after the measure, its four nations under it",
+          "flag:base" in keys and keys.index("flag:base") > keys.index("choice:compare-measure:population")
+          and nations == [f"choice:base-nation:{code}" for code in ("ca", "us", "gb", "de")], keys[-12:])
+    check("the U.S. ticked by default, the boxes greyed while “Base nation” is unticked",
+          at.checkbox(key="choice:base-nation:us").value and all(at.checkbox(key=key).disabled for key in nations))
+    at.checkbox(key="flag:base").check()
+    at.run()
+    check("ticked: no exception, --base in the address, the boxes live",
+          not at.exception and "--base" in address(at).split() and not any(at.checkbox(key=key).disabled for key in nations),
+          (at.exception, address(at)))
+    at.checkbox(key="choice:base-nation:gb").check()
+    at.run()
+    check("the UK ticked: the U.S. unticked, --base:gb in the address",
+          not at.checkbox(key="choice:base-nation:us").value and "--base:gb" in address(at).split(), address(at))
+    at.session_state["tab"] = "Canada"
+    at.run()
+    keys = [box.key for box in at.checkbox if box.key]
+    check("on Canada's tab, no base nation's block; its choice kept", "flag:base" not in keys and "--base:gb" in address(at).split(), address(at))
+
+
 def check_batch15(check: Check) -> None:
     """Batch 15 (Terry, 2026-10-13 and 2026-10-14): the two ticks' wording; Save log file."""
     at = new_page("--e:2026-09-01")
@@ -2546,6 +2573,7 @@ PAGE_CHECKS = (
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
     check_batch135, check_batch133, check_batch35, check_wait_colour, check_batch37, check_batch38, check_batch262,
+    check_batch263,
 )
 
 

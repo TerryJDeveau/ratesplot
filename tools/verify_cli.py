@@ -329,6 +329,12 @@ CASES: list[list[str]] = [
     ["--com:xyz"], ["--com:40y"], ["--us:com:debt"], ["--com:debt", "--no-com"], ["--com", "--gdp"],
     ["--com:debt", "-r"], ["--com:debt", "-p", "--con"], ["--com:debt", "--master:EUR", "--nations:ca,us,gb,de"],
     ["--com:pol", "--nations:ca,us,gb,de", "-l", "--reg"],
+    # Batch 26.3 (decision 147): --base, at least "bas", the U.S. by default; --base:NATION by a code as --nations
+    # takes it, one at a time, never none; it turns the flag on; the nation back to its default with the flag off.
+    ["--com", "--base"], ["--com", "--bas"], ["--com", "--ba"], ["--com", "--b"], ["--com", "--basex"], ["--com", "--no-base"],
+    ["--com", "--base:gb"], ["--com", "--base:uk"], ["--com", "--base:ca"], ["--com", "--base:cdn"], ["--com", "--base:deu"],
+    ["--com", "--base:us,ca"], ["--com", "--base:none"], ["--com", "--base:"], ["--com", "--base:fr"],
+    ["--com", "--base:gb", "--no-base"], ["--base"], ["--base:de"], ["--com:debt", "--base:de", "-r"],
 ]
 
 

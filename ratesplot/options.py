@@ -62,6 +62,7 @@ from .config import (
     CURRENCY_SYMBOLS,
     DEBT_AGGREGATES,
     DEFAULT_AUTO_REFRESH_MINUTES,
+    DEFAULT_BASE_NATIONS,
     DEFAULT_COMPARE_MEASURES,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
     DEFAULT_MORTGAGE_TERMS,
@@ -91,6 +92,7 @@ from .config import (
     YIELD_TERMS,
     Nation,
     PlotConfig,
+    nation_by_key,
 )
 from .export import FORMATS, format_of
 
@@ -375,6 +377,26 @@ def parse_compare_measure(spec: str) -> tuple[str, ...]:
     if len(set(chosen)) > 1:
         raise ValueError("--compare draws one measure at a time")
     return (chosen[0],)
+
+
+def parse_base_nation(spec: str) -> tuple[str, ...]:
+    """Parse ``--base:NATION`` (batch 26.3): one nation's code, as --nations takes it (ca or cdn, us, gb or uk, de, ger or deu), to its key.
+
+    One at a time: a list of two is refused, as is "none" (--no-base draws
+    the comparison without a base).
+    """
+    codes = [item.strip().lower() for item in spec.split(",") if item.strip()]
+    if not codes or _is_none(spec):
+        raise ValueError(f"--base:{spec.strip()} names no nation (--no-base draws the comparison without a base)")
+    keys = parse_nations(spec)
+    if len(keys) > 1:
+        raise ValueError("--base takes one nation at a time")
+    return keys
+
+
+def format_base_nation(values: tuple, _config: PlotConfig) -> str:
+    """Format the base nation as the command line writes it: its first code, as --nations writes it ("ca", "gb")."""
+    return ",".join(nation_by_key(key).codes[0] for key in values[0])
 
 
 def parse_policy_terms(spec: str) -> tuple[str, ...]:
@@ -895,6 +917,10 @@ _COMPARE_CHOICES = (
     ("", (("interest", "TTM interest paid on public debt"),)),
     ("", (("population", "Population"),)),
 )
+# The base nation's boxes (batch 26.3; Terry, 2026-11-12: "a copy of the
+# national option boxes"), one at a time, each written by its first code.
+_BASE_CHOICES = (("", tuple((nation.codes[0], nation.name) for nation in NATIONS[:2])),
+                 ("", tuple((nation.codes[0], nation.name) for nation in NATIONS[2:])))
 
 # Help-listing sections, in display order: key -> heading (and any notes).
 # The GUI titles its panels with the heading up to the first " (" or ":".
@@ -990,6 +1016,24 @@ OPTIONS: tuple[Option, ...] = (
         "on the amounts, which are in the master\ncurrency (USD if none); turns --compare on",
         names=("compare",), shortest=3, parse=parse_compare_measure, turns_on="compare", label="Measure compared",
         format=format_terms, editor="choices", choices=_COMPARE_CHOICES, topic="compare", one_at_a_time=True,
+    ),
+    # Batch 26.3 (Terry, 2026-11-12, decision 147): "a “Base nation” option.
+    # If selected, a copy of the national option boxes goes live under it".
+    # The comparison drawn against one nation, flat at 0, the others above or
+    # below it (``compare``); a flag and its nation, one at a time, as
+    # --compare and its measure are, in a block of their own shown on the
+    # tab Compare alone (``frontend.block_shown``). At least "bas".
+    Option(
+        "base", Kind.FLAG, ("base",), "compare", "--base / --no-base",
+        "the comparison drawn against one nation,\nflat at 0, the others above or below it\n(the U.S. unless --base:NATION)",
+        names=("base",), shortest=3, label="Base nation", panel="base", topic="compare",
+    ),
+    Option(
+        "base-nation", Kind.VALUE, ("base_nations",), "compare", "--base:NATION",
+        "the base nation, by its code as --nations\ntakes it (ca, us, gb, de), one at a time;\nturns --base on",
+        names=("base",), shortest=3, parse=parse_base_nation, turns_on="base", label="Base nation's box",
+        format=format_base_nation, editor="choices", choices=_BASE_CHOICES, panel="base", topic="compare",
+        one_at_a_time=True,
     ),
     # Curves. The listing order here is the help order; the selection rule is
     # in ``config_from_choices``.
@@ -1918,6 +1962,9 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     # The comparison chart's measure with it off draws nothing (batch 26), as the pair's does.
     if not values["compare"]:
         values["compare_measures"] = DEFAULT_COMPARE_MEASURES
+    # Likewise the base nation with the base off (batch 26.3).
+    if not values["base"]:
+        values["base_nations"] = DEFAULT_BASE_NATIONS
     check_macro_bound_units(payloads, values)
     values["nation_settings"] = _nation_settings(payloads, values)
     return PlotConfig(**values)

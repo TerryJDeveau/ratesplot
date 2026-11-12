@@ -50,6 +50,7 @@ from dataclasses import dataclass, field, replace
 from functools import partial
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
@@ -90,11 +91,12 @@ from .config import (
     measure_title_suffix,
     nation_by_key,
 )
-from .export import mark_amounts_currency, mark_dates_only, mark_price_base, mark_series, series_of
+from .export import YIELD_AXIS, mark_amounts_currency, mark_dates_only, mark_price_base, mark_series, series_of
 from .frames import filter_to_date_range
 from .fx import rate
 from .hover import attach as attach_hover
-from .hover import mark_quote
+from .hover import mark_quote, rounded
+from .hover import remark as remark_reading
 from .latest import PROJECTION_ATTR, QUOTE_TIME_ATTR
 from .legend import finish_legend_and_title
 from .measures import PRICE_BASE_ATTR
@@ -260,6 +262,7 @@ class _Drawn:
     frame: pd.DataFrame | None = None  # the frame --reg fits ``fitted`` from
     projected: dict = field(default_factory=dict)  # column -> its data's last date (--projections)
     pairs: list = field(default_factory=list)  # a rate's (line, RateCurve), as ``plotting.add_rate_lines`` gives them
+    artists: set = field(default_factory=set)  # every line and band it drew (batch 26.3: each made a difference from the base's)
 
 
 def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
@@ -280,16 +283,20 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
     quotes: list[pd.Timestamp] = []
     price_base: pd.Timestamp | None = None
     extra_axis: ExtraAxis | None = None
-    for country in COUNTRIES:
-        if not getattr(config, country.show_field):
-            continue
+    # A base nation (batch 26.3): drawn first, ticked or not, and every curve on the yield axis, in percent; one that
+    # cannot be drawn leaves the comparison drawn without a base.
+    base_key = config.base_nation
+
+    def draw_one(country: Country, macro_axis: Axes) -> _Drawn | None:
+        """One nation's curve of the measure, drawn, coloured and named for it; None, with a note, where it has none."""
+        nonlocal price_base, extra_axis
         nation = nation_by_key(country.key)
         if kind == "yield" and measure not in nation.yield_terms:
             print(f"  Note: {nation.name} has no {YIELD_TERMS[measure]} yield; it is left off the comparison.")
-            continue
+            return None
         own = solo if currency is None else _in_currency(solo, nation, currency)
         if own is None:
-            continue
+            return None
         try:
             yields, macro, rates = country.prepare(own)
         except Exception as exc:  # that nation alone; the others are drawn
@@ -297,7 +304,7 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
             if trace is not None:
                 print(trace)
             print(f"  Warning: {nation.name} is left off the comparison: {why}")
-            continue
+            return None
         before = _artists(ax_yield, ax_macro)
         if kind == "yield":
             curve = _draw_yield(country, ax_yield, yields, own, nation)
@@ -307,35 +314,62 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
         elif kind == "rate":
             curve = _draw_rate(ax_yield, rates, own, nation)
         elif kind == "amount":
-            curve = _draw_amount(ax_macro, macro, own, nation, country.metadata, currency)
+            curve = _draw_amount(macro_axis, macro, own, nation, country.metadata, currency)
             if price_base is None:  # --constant: the month the amounts are in, the same for every nation
                 price_base = macro.attrs.get(PRICE_BASE_ATTR)
         else:
-            curve, extra = _draw_count(ax_macro, macro, own, nation)
-            if curve is not None and extra_axis is None:
+            curve, extra = _draw_count(macro_axis, macro, own, nation)
+            if curve is not None and extra_axis is None and macro_axis is ax_macro:
                 extra_axis = ExtraAxis(ax_macro, extra.axis_label, extra.tick_format)
         if curve is None:
             print(f"  Note: {nation.name} has no {compare_title(measure).lower()} in the window; it is left off the comparison.")
-            continue
-        _as_nation(_artists(ax_yield, ax_macro) - before, nation)
+            return None
+        curve.artists = _artists(ax_yield, ax_macro) - before
+        _as_nation(curve.artists, nation)
         if curve.pairs:
             # A rate's legend entry made now, in the nation's colour: the U.S. target range's a band's key.
             curve.handles = yield_axis_legend([], curve.pairs[:1])
         for handle in curve.handles:
             handle.set_label(nation.name)
-        drawn.append(curve)
+        return curve
 
-    # The axes as the nations' charts set them, for the one family of curves drawn.
+    if base_key is not None:
+        base_country = next(country for country in COUNTRIES if country.key == base_key)
+        base_curve = draw_one(base_country, ax_yield)
+        if base_curve is None:
+            print(f"  Note: {nation_by_key(base_key).name}, the base nation, cannot be drawn; the comparison is drawn without a base.")
+            base_key = None
+        else:
+            drawn.append(base_curve)
+    for country in COUNTRIES:
+        if getattr(config, country.show_field) and country.key != base_key:
+            curve = draw_one(country, ax_yield if base_key else ax_macro)
+            if curve is not None:
+                drawn.append(curve)
+    if base_key is not None:
+        on_left = True
+        points = kind in ("yield", "rate") or (kind == "amount" and solo.relative)
+        _against_base(ax_yield, drawn, points)
+
+    # The axes as the nations' charts set them, for the one family of curves drawn; against a base, the yield axis
+    # alone, in percent, its label saying from what.
     measured = replace(solo, price_base=price_base)
-    mark_amounts_currency(figure, currency)
+    mark_amounts_currency(figure, None if base_key else currency)
     mark_price_base(figure, price_base)
     mark_dates_only(figure)
     metadata = _METADATA_BY_CURRENCY[currency] if currency is not None else US
     if currency is not None:
         metadata = replace(metadata, currency_prefix=CURRENCY_SYMBOLS[currency])
-    apply_axes_formatting(ax_yield, ax_macro, measured, metadata, None, extra_axis)
-    # --reg: each nation's amount or population fitted by straight pieces, now that the axis limits are set.
+    if base_key is None:
+        apply_axes_formatting(ax_yield, ax_macro, measured, metadata, None, extra_axis)
+    else:
+        on_yield_axis = replace(measured, **(_EVERY_CURVE_OFF | {"include_yield": True, "yield_terms": ("10y",)}))
+        apply_axes_formatting(ax_yield, ax_macro, on_yield_axis, metadata, _base_axis_label(drawn[0].nation, points), None)
+    # --reg: each nation's amount or population fitted by straight pieces, now that the axis limits are set; none
+    # against a base, whose curves are differences, not the series the segments fit.
     rate_labels: list[RateLabel] = []
+    if measured.regression and base_key is not None and kind in ("amount", "count"):
+        print("  Note: --reg draws no segments on a comparison against a base nation.")
     if measured.regression and not on_left:
         for curve in drawn:
             rate_labels += add_regression_segments(ax_macro, curve.frame, curve.fitted, curve.projected, curve.config)
@@ -348,7 +382,7 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
     quote_time = max(quotes) if quotes else None
     if quote_time is not None:
         mark_quote(figure, quote_time, MARKET_TIMEZONE)
-    title, short_title = _titles(drawn, measure, measured)
+    title, short_title = _titles(drawn, measure, measured, drawn[0].nation if base_key else None)
     finish_legend_and_title(
         ax_yield,
         [handles, []] if on_left else [[], handles],
@@ -470,8 +504,13 @@ def _draw_count(ax: Axes, macro: pd.DataFrame, own: PlotConfig, nation: Nation) 
     return _Drawn(nation, [line], [(line, extra.value_format)], own, fitted=[(line, extra.label)], frame=frame), extra
 
 
-def _titles(drawn: list[_Drawn], measure: str, config: PlotConfig) -> tuple[str, str]:
-    """The chart's title and its short form: "Canadian, US, UK & German 10-Year Yields", "CDN, US, UK & DEU 10-Year Yields" (decision 50's words for each nation)."""
+def _titles(drawn: list[_Drawn], measure: str, config: PlotConfig, base: Nation | None = None) -> tuple[str, str]:
+    """The chart's title and its short form: "Canadian, US, UK & German 10-Year Yields", "CDN, US, UK & DEU 10-Year Yields" (decision 50's words for each nation).
+
+    Against a base nation (batch 26.3) the others are named, then the base:
+    "Canadian, UK & German 10-Year Yields (base: United States)", short
+    "(base: US)"; the base alone where no other is drawn.
+    """
     phrase = compare_title(measure) + (measure_title_suffix(config) if compare_kind(measure) == "amount" else "")
     if not drawn:
         return f"{phrase} compared: none of the nations ticked has it", f"{phrase} compared: none of the nations ticked has it"
@@ -479,6 +518,162 @@ def _titles(drawn: list[_Drawn], measure: str, config: PlotConfig) -> tuple[str,
     def joined(words: list[str]) -> str:
         return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} & {words[-1]}"
 
-    long = [_METADATA[curve.nation.key].title_nation for curve in drawn]
-    short = [_METADATA[curve.nation.key].title_short or _METADATA[curve.nation.key].title_nation for curve in drawn]
-    return f"{joined(long)} {phrase}", f"{joined(short)} {phrase}"
+    named = [curve for curve in drawn if base is None or curve.nation.key != base.key] or drawn
+    long = [_METADATA[curve.nation.key].title_nation for curve in named]
+    short = [_METADATA[curve.nation.key].title_short or _METADATA[curve.nation.key].title_nation for curve in named]
+    if base is None:
+        return f"{joined(long)} {phrase}", f"{joined(short)} {phrase}"
+    own = _METADATA[base.key]
+    return f"{joined(long)} {phrase} (base: {base.name})", f"{joined(short)} {phrase} (base: {own.title_short or own.title_nation})"
+
+
+# ---------------------------------------------------------------------------
+# Against a base nation (batch 26.3; Terry, 2026-11-12, decision 147: "That
+# nations data would then be a flat line at 0% on the chart, and all the others
+# would be % plus or minus around it")
+# ---------------------------------------------------------------------------
+
+# A band's upper limits (the U.S. target range, ``plotting._add_band``), told by how they are exported.
+_UPPER_LIMIT = ", upper limit"
+
+
+def _upper(line: Line2D) -> bool:
+    marked = series_of(line)
+    return marked is not None and marked[0].endswith(_UPPER_LIMIT)
+
+
+def _drawn_lines(curve: _Drawn) -> list[Line2D]:
+    """A curve's lines with data still drawn, in the order they start."""
+    lines = [
+        artist for artist in curve.artists
+        if isinstance(artist, Line2D) and artist.axes is not None and np.isfinite(np.asarray(artist.get_xydata(), dtype=float)[:, 0]).any()
+    ]
+    return sorted(lines, key=lambda line: float(np.nanmin(np.asarray(line.get_xydata(), dtype=float)[:, 0])))
+
+
+def _pieces(lines: list[Line2D]) -> list[tuple[np.ndarray, np.ndarray, bool]]:
+    """Each line's points and whether it is stepped, copied: what ``_value_at`` reads, unchanged when the lines are."""
+    pieces = []
+    for line in lines:
+        xy = np.array(line.get_xydata(), dtype=float)
+        pieces.append((xy[:, 0], xy[:, 1], line.get_drawstyle().startswith("steps")))
+    return pieces
+
+
+def _value_at(lines: list[Line2D] | list[tuple[np.ndarray, np.ndarray, bool]], x: np.ndarray) -> np.ndarray:
+    """What ``lines``, the pieces of one curve (or their ``_pieces``), draw at each date ``x`` (day numbers): NaN where none does.
+
+    A stepped piece holds each value to the next (the value in force), any
+    other runs straight between its points (its daily values, a projection);
+    a later piece wins where two meet. A break (NaN) stays one.
+    """
+    out = np.full(len(x), np.nan)
+    pieces = _pieces(lines) if lines and isinstance(lines[0], Line2D) else lines
+    for xs, ys, stepped in pieces:
+        inside = (x >= xs[0]) & (x <= xs[-1])
+        if not inside.any():
+            continue
+        if stepped:
+            values = ys[np.searchsorted(xs, x[inside], side="right") - 1]
+        else:
+            values = np.interp(x[inside], xs, ys)  # NaN beside a break, as drawn
+        out[inside] = np.where(np.isfinite(values), values, out[inside])
+    return out
+
+
+def _signed_percent(value: float, places: int) -> str:
+    """A difference as the chart writes it: "+0.85%", "−12.3%" (a true minus, decision 129), rounded half away from zero (decision 130)."""
+    figure = rounded(value, places)
+    sign = "+" if figure > 0 else "−" if figure < 0 else ""
+    return f"{sign}{abs(figure):.{places}f}%"
+
+
+def _base_axis_label(base: Nation, points: bool) -> str:
+    """The yield axis's label against a base nation: "Difference from United States (percentage points)", "% above or below Germany"."""
+    return f"Difference from {base.name} (percentage points)" if points else f"% above or below {base.name}"
+
+
+def _against_base(ax: Axes, drawn: list[_Drawn], points: bool) -> None:
+    """Make every curve of ``drawn`` its difference from the first's, the base nation's, which is drawn flat at 0.
+
+    ``points``: a measure in percent (a yield, a rate, a share of GDP under
+    -r), its difference in percentage points; otherwise (an amount in a
+    currency, GDP, the population) the percentage above or below the base's.
+    At each date a curve's value less the base's then in force; before the
+    base's first value, or past its last, nothing. Each curve keeps its
+    pieces and their steps: a piece is given the base's dates within its own,
+    so a change of the base's shows where it falls. The U.S. target range as
+    the base: its midpoint; as another's curve, both limits made differences
+    and the band between them shaded again. The read-out, Export chart and
+    the line labels write the differences ("+0.85%", "Canada: 10-Year Yield,
+    less United States").
+    """
+    base = drawn[0]
+    base_lines = _drawn_lines(base)
+    # The base's values copied before any line is changed: its own are made 0 first.
+    lower = _pieces([line for line in base_lines if not _upper(line)])
+    upper = _pieces([line for line in base_lines if _upper(line)])
+    base_dates = np.unique(np.concatenate([xs for xs, _ys, _stepped in lower]))
+
+    def base_at(x: np.ndarray) -> np.ndarray:
+        low = _value_at(lower, x)
+        high = _value_at(upper, x) if upper else np.full(len(x), np.nan)
+        return np.where(np.isfinite(high), (low + high) / 2.0, low)
+
+    places = 2 if points else 1
+    writer = partial(_signed_percent, places=places)
+    phrase = "less" if points else "% above or below"
+    for curve in drawn:
+        shading = [artist for artist in curve.artists if not isinstance(artist, Line2D)]
+        uppers = {line for line in _drawn_lines(curve) if _upper(line)}  # told before their names change below
+        for line in _drawn_lines(curve):
+            if curve is base and line in uppers:
+                line.remove()  # the base is one line, at its midpoint
+                continue
+            xy = np.asarray(line.get_xydata(), dtype=float)
+            if curve is base:
+                x = xy[:, 0]
+                y = np.where(np.isfinite(xy[:, 1]) & np.isfinite(base_at(x)), 0.0, np.nan)
+            else:
+                x = np.union1d(xy[:, 0], base_dates[(base_dates >= xy[0, 0]) & (base_dates <= xy[-1, 0])])
+                own, at_base = _value_at([line], x), base_at(x)
+                with np.errstate(invalid="ignore", divide="ignore"):
+                    y = own - at_base if points else np.where(at_base > 0, (own / at_base - 1.0) * 100.0, np.nan)
+            line.set_data(x, y)
+            remark_reading(line, writer)
+            marked = series_of(line)
+            if marked is not None:
+                said = "the base" if curve is base else f"{phrase} {base.nation.name}"
+                name = marked[0].replace(", lower limit", ", midpoint") if curve is base and uppers else marked[0]  # a range as base
+                mark_series(line, f"{name}, {said}", YIELD_AXIS)
+        for band in shading:  # a band's shading (the U.S. target range), drawn again between its limits as they now are
+            colour, alpha = band.get_facecolor()[0][:3], band.get_alpha()
+            band.remove()
+            if curve is base:
+                continue
+            lines = _drawn_lines(curve)
+            limits = [line for line in lines if line in uppers]
+            if not limits:
+                continue
+            lows = [line for line in lines if line not in uppers]
+            x = np.unique(np.concatenate([np.asarray(line.get_xydata(), dtype=float)[:, 0] for line in lines]))
+            low, high = _value_at(lows, x), _value_at(limits, x)
+            ax.fill_between(x, low, high, where=np.isfinite(high), step="post", color=colour, alpha=alpha,
+                            linewidth=0, label="_nolegend_")
+        # The line labels write the differences, a projected amount's still marked "≈" (PROJECTION_LABEL_PREFIX).
+        curve.end_labels = [
+            (line, (lambda value: PROJECTION_LABEL_PREFIX + writer(value)) if _says_projected(formatter) else writer)
+            for line, formatter in curve.end_labels if line.axes is not None
+        ]
+    # The base's legend entry a plain line in its colour (a band's key no longer stands for anything drawn).
+    first = next((line for line in _drawn_lines(base)), None)
+    if first is not None:
+        base.handles = [Line2D([], [], color=first.get_color(), linewidth=first.get_linewidth(), label=base.nation.name)]
+
+
+def _says_projected(formatter) -> bool:
+    """True for a line label's formatter that marks a projection to today (``_draw_amount``'s, "≈" first)."""
+    try:
+        return formatter(1.0).startswith(PROJECTION_LABEL_PREFIX)
+    except Exception:  # noqa: BLE001 - a formatter that takes no plain number marks nothing
+        return False

@@ -2838,7 +2838,8 @@ def check_batch262(check: Check) -> None:
             return [key for frame in packed for key, own in frames.items() if own is frame]
 
         every = list(frames)
-        check("on a nation's tab every block but the comparison's, in order", shown() == [key for key in every if key != "compare"], shown())
+        nations_tab = [key for key in every if key not in frontend.COMPARE_ONLY_BLOCKS]  # the base nation's too since 26.3
+        check("on a nation's tab every block but the comparison's, in order", shown() == nations_tab, shown())
         box = app.flag_boxes["compare"]
         check("“Compare the nations” in Country selection's block", str(box).startswith(str(frames["country"]) + "."), str(box))
         w.tick("debt", False)
@@ -2857,7 +2858,43 @@ def check_batch262(check: Check) -> None:
         app.notebook.select(app.tabs["cdn"])
         w.pump(5)
         check("back on Canada's tab: the curves' block again, debt still unticked; no comparison block",
-              shown() == [key for key in every if key != "compare"] and not app.flag_vars["debt"].get(), shown())
+              shown() == nations_tab and not app.flag_vars["debt"].get(), shown())
+
+
+def check_batch263(check: Check) -> None:
+    """Batch 26.3 (decision 147): “Base nation” and its nations' boxes on the tab Compare, the U.S. by default; the chart against it, flat at 0."""
+    with window(f"-c -u -s:2015 --com {END}") as w:
+        app = w.app
+        app.notebook.select(app.tabs["compare"])
+        w.pump(5)
+        frames = app.block_frames
+        check("on the tab Compare, the base nation's block after the comparison's", "base" in frames and frames["base"].winfo_manager()
+              and frames["country"].master.pack_slaves().index(frames["base"]) == frames["country"].master.pack_slaves().index(frames["compare"]) + 1)
+        editor = app.choice_editors["base-nation"]
+        check("its four nations' boxes, the U.S. ticked, greyed while “Base nation” is unticked",
+              [widget.cget("text") for widget in editor.widgets] == ["Canada", "United States", "United Kingdom", "Germany"]
+              and [value for value, variable in editor.boxes.items() if variable.get()] == ["us"]
+              and not any(enabled(widget) for widget in editor.widgets))
+        w.tick("base", True)
+        w.settle()
+        title = app.figures["compare"][0].axes[0].get_title() or " ".join(text.get_text() for text in app.figures["compare"][0].texts)
+        check("ticked: --base written, its boxes live, the title naming the U.S.", "--base" in w.command_tokens()
+              and all(enabled(widget) for widget in editor.widgets) and "(base: United States)" in title, (w.command_tokens(), title))
+        editor.boxes["gb"].set(True)
+        editor.box_changed("gb")
+        w.settle()
+        check("the UK ticked: the U.S. unticked, --base:gb written", [value for value, variable in editor.boxes.items() if variable.get()] == ["gb"]
+              and "--base:gb" in w.command_tokens(), w.command_tokens())
+        figure = app.figures["compare"][0]
+        flat = list(figure.axes[0].get_lines())
+        uk = [line for line in flat if (export.series_of(line) or ("",))[0].startswith("United Kingdom")]
+        check("the UK's curve flat at 0, its exported name saying against whom", uk and all(
+            np.nanmax(np.abs(np.asarray(line.get_xydata(), dtype=float)[:, 1])) == 0 for line in uk)
+              and all("less United Kingdom" in export.series_of(line)[0] for line in flat if export.series_of(line)),
+              [export.series_of(line) for line in flat][:4])
+        w.tick("compare", False)
+        w.settle()
+        check("“Compare the nations” unticked: “Base nation” greyed", not enabled(app.flag_boxes["base"]))
 
 
 def check_batch134(check: Check) -> None:
@@ -3329,6 +3366,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch38": check_batch38,
     "batch23": check_batch23,
     "batch262": check_batch262,
+    "batch263": check_batch263,
 }
 
 

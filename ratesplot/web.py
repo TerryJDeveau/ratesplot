@@ -1568,7 +1568,12 @@ def _country_changed(name: str) -> None:
 
 
 def _compare_changed(name: str) -> None:
-    """"Compare the nations" ticked by hand: its tab is shown once its chart is drawn, as a nation's is (batch 17.4), and with it the comparison's block (batch 26.2)."""
+    """"Compare the nations" ticked by hand: its tab is shown once its chart is drawn, as a nation's is (batch 17.4), and with it the comparison's block (batch 26.2).
+
+    The help group's other box, "Base nation" (batch 26.3), changes no tab.
+    """
+    if name != "compare":
+        return
     if st.session_state[_FLAG + name]:
         st.session_state[_TICKED] = COMPARE_KEY
     elif st.session_state.get(_TICKED) == COMPARE_KEY:
@@ -2230,9 +2235,6 @@ def _controls() -> None:
         }
         values = [option for option in members if option.kind is Kind.VALUE and option not in attached.values()]
         flags = [option for option in members if option.kind is not Kind.VALUE]
-        for option in values:
-            if option.editor == "choices":
-                _choices_control(bar, option)
         if key in _TWO_COLUMN_BLOCKS and not attached:
             # As many to a row as fit, as in the window (Terry, 2026-10-08):
             # two at the sidebar's default width, more when it is dragged
