@@ -1568,7 +1568,12 @@ def _country_changed(name: str) -> None:
 
 
 def _compare_changed(name: str) -> None:
-    """"Compare the nations" ticked by hand: its tab is shown once its chart is drawn, as a nation's is (batch 17.4), and with it the comparison's block (batch 26.2)."""
+    """"Compare the nations" ticked by hand: its tab is shown once its chart is drawn, as a nation's is (batch 17.4), and with it the comparison's block (batch 26.2).
+
+    The help group's other box, "Base nation" (batch 26.3), changes no tab.
+    """
+    if name != "compare":
+        return
     if st.session_state[_FLAG + name]:
         st.session_state[_TICKED] = COMPARE_KEY
     elif st.session_state.get(_TICKED) == COMPARE_KEY:

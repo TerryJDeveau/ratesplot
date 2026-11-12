@@ -137,6 +137,8 @@ _PANEL_LISTS = ("yield_terms", "spread_pairs", "policy_terms", "mortgage_terms",
 CONTROL_BLOCKS: tuple[tuple[str, str | None, tuple[str, ...]], ...] = (
     ("country", group_title("country"), ()),
     ("compare", group_title("compare"), ()),
+    # The base nation (batch 26.3): its box and the nations' under it, after the measure, untitled: the box names it.
+    ("base", None, ()),
     ("curves", group_title("curves"), ()),
     ("units", group_title("units"), ()),
     ("regression", None, ()),
@@ -164,7 +166,7 @@ _YIELD_LIMITS = LIMIT_COLUMNS[0]
 # "Compare the nations", the measure of amounts, the regression segments, the
 # line labels and the latest data, the dates and the canvas, greyed by the
 # usual rules where they change nothing. A block left out keeps its values.
-COMPARE_ONLY_BLOCKS = frozenset({"compare"})
+COMPARE_ONLY_BLOCKS = frozenset({"compare", "base"})  # the base nation's since batch 26.3
 NATIONS_ONLY_BLOCKS = frozenset({"curves", "rates"})
 
 
@@ -795,6 +797,10 @@ def idle_control_reasons(flags: Mapping[str, bool]) -> dict[str, str]:
     master = master_idle_reason("", flags)
     if master is not None:
         reasons[MASTER] = master
+    # The base nation (batch 26.3; Terry, 2026-11-12: "greyed-out until
+    # “Compare” is activated"): its box and its nations' while no comparison is drawn.
+    if not flags.get("compare", False):
+        reasons |= dict.fromkeys(("base", "base-nation"), unticked("compare"))
     if not flags.get("yield", True):
         reasons["yields"] = unticked("yield")
         if not any(flags.get(name, False) for name in _LEFT_AXIS_RATES):
@@ -829,7 +835,7 @@ def idle_choice_reasons(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
 # nation's aggregate debts, by its key (``idle_nation_keys``).
 GREYABLE_OPTIONS = (
     frozenset(idle_option_reasons(False, False, False))
-    | {"gdp", "aggregate", "yields", "min", "max", "current", "master", "cpi-adjustment"}
+    | {"gdp", "aggregate", "yields", "min", "max", "current", "master", "cpi-adjustment", "base", "base-nation"}
     | AUTO_REFRESH_OPTIONS
 )
 

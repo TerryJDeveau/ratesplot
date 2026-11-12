@@ -662,6 +662,12 @@ COMPARE_DEFAULT_CURRENCY = "USD"
 # the U.S., the first two of matplotlib's cycle as they are of the yields';
 # purple for the UK, near-black for Germany. A nation added later gets one.
 COMPARE_COLOURS = {"cdn": "#d62728", "us": "#1f77b4", "uk": "#7b3fa0", "de": "#2b2b2b"}
+# The base nation (batch 26.3; Terry, 2026-11-12, decision 147: "a “Base
+# nation” option ... One of the nations should be “on” by default"): drawn
+# flat at 0, the others "% plus or minus around it". The U.S. by default, the
+# comparison's amounts being in its dollar by default; a choice remembered as
+# every choice is.
+DEFAULT_BASE_NATIONS = ("us",)
 
 
 def compare_kind(measure: str) -> str:
@@ -1929,6 +1935,11 @@ class PlotConfig:
     # time; a flag, off until named, as --payments is. It changes no nation's chart.
     compare: bool = False
     compare_measures: tuple[str, ...] = DEFAULT_COMPARE_MEASURES
+    # --base[:NATION] (batch 26.3, decision 147): the comparison drawn against
+    # one nation, flat at 0, the others above or below it; a flag, off until
+    # named, with its nation, one at a time (the U.S. by default).
+    base: bool = False
+    base_nations: tuple[str, ...] = DEFAULT_BASE_NATIONS
     show_cdn: bool = True
     show_us: bool = True
     # The UK's chart (batch 3): only when asked for (--uk, --nations:gb).
@@ -2042,6 +2053,11 @@ class PlotConfig:
     def compare_measure(self) -> str:
         """The measure the comparison chart draws (--compare:MEASURE, one at a time)."""
         return self.compare_measures[0]
+
+    @property
+    def base_nation(self) -> str | None:
+        """The nation the comparison chart is drawn against, by key (--base:NATION, batch 26.3); None without a base or a comparison."""
+        return self.base_nations[0] if self.compare and self.base else None
 
     def same_chart(self, other: PlotConfig | None) -> bool:
         """Whether ``other`` draws the same charts as this: it may differ in what draws nothing, the hover read-out (batch 11.2) and the automatic refresh (11.3)."""

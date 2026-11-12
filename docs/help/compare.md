@@ -14,6 +14,15 @@ The dates, the [line labels](?help=end-labels), the [regression segments](?help=
 
 The chart reads what the nations' charts have already downloaded, so it asks no source for anything new.
 
+## Against a base nation
+
+Ticking **Base nation**, in the block under the measure, draws the chart against one nation, chosen by the boxes under it, one at a time: the United States unless another is ticked. Its curve is drawn flat at 0, whether or not it is ticked under Country selection, and each other nation's curve becomes its difference from it, at each date from the base nation's value then in force:
+
+- a measure in percent (a yield, the policy rate, inflation, debt or interest as a share of GDP under [As % of GDP](?help=percent-of-gdp)): the difference in percentage points, "+0.85%" where the nation's is 0.85 point above the base's;
+- an amount in a currency, GDP, or the population: the percentage above or below the base's, "+12.3%".
+
+Everything is then drawn on the left axis, its label naming the base, and the title ends with it ("(base: United States)"). The U.S. target range as the base is its midpoint; as another nation's curve, both its limits are made differences. Before the base nation's first value, a curve has nothing to be measured from, and is not drawn there. The [regression segments](?help=regression) are not drawn against a base. The read-out, Export chart and the line labels give the differences.
+
 ## On the command line
 
-`--compare`, at least `--com`, draws the 10-year yields compared; `--no-compare` takes the chart off. `--compare:MEASURE` chooses the measure and turns the chart on: a yield term as `--yields` writes it (`--compare:2y`, `--compare:r10`; `--compare:10` is the 10-year), or `policy`, `inflation`, `debt`, `gdp`, `interest` or `population`, each spelled by a leading part (`--com:pol`, `--com:pop`). One measure at a time: `--compare:10y,2y` is refused. The nations compared are those ticked (`--nations:ca,us,gb,de`). With `--save` the chart has a file of its own, `_compare` added to the name, or a sheet named Compare in a workbook: [Command line](?help=command-line).
+`--compare`, at least `--com`, draws the 10-year yields compared; `--no-compare` takes the chart off. `--compare:MEASURE` chooses the measure and turns the chart on: a yield term as `--yields` writes it (`--compare:2y`, `--compare:r10`; `--compare:10` is the 10-year), or `policy`, `inflation`, `debt`, `gdp`, `interest` or `population`, each spelled by a leading part (`--com:pol`, `--com:pop`). One measure at a time: `--compare:10y,2y` is refused. `--base` draws it against the United States, `--base:NATION` against another by its code as `--nations` takes it (`--base:gb`, at least `--bas:`), one at a time; `--no-base` draws it without one. The nations compared are those ticked (`--nations:ca,us,gb,de`). With `--save` the chart has a file of its own, `_compare` added to the name, or a sheet named Compare in a workbook: [Command line](?help=command-line).

@@ -170,6 +170,20 @@ def mark(
     return line
 
 
+def remark(line: Line2D, value_format: Callable[[float], str]) -> Line2D:
+    """Record a new way of writing ``line``'s values, kept a projection's, a quote's and a daily series' marks (batch 26.3).
+
+    The comparison against a base nation makes each curve a difference
+    ("+0.85%"), whose change is read in bp or pp from the observation before,
+    as a series in percent's is: an amount's way of writing a change, and a
+    set rate's last change, no longer apply. A line with no mark keeps none.
+    """
+    old: _Mark | None = getattr(line, _MARK_ATTR, None)
+    if old is not None:
+        setattr(line, _MARK_ATTR, _Mark(value_format, old.projected, old.quoted, old.daily))
+    return line
+
+
 def mark_quote(figure: Figure, quote_time: pd.Timestamp, zone: str | None) -> None:
     """Record when ``figure``'s intraday quotes were taken (``latest``): their day (Toronto's, as they are dated) and their time in ``zone``."""
     day = quote_time.tz_localize(None).normalize()
