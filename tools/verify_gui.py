@@ -2826,6 +2826,40 @@ def check_batch23(check: Check) -> None:
               and not any(token.startswith("--pay") for token in w.command_tokens()), w.command_tokens())
 
 
+def check_batch262(check: Check) -> None:
+    """Batch 26.2 (decision 147): “Compare the nations” under Country selection; the comparison's block, headed, on its tab alone; there, no curves or rates, their values kept."""
+    with window(f"-c -u -s:2015 {END}") as w:
+        app = w.app
+        frames = app.block_frames
+
+        def shown() -> list[str]:
+            """The blocks packed now, in the column's order."""
+            packed = frames["country"].master.pack_slaves()
+            return [key for frame in packed for key, own in frames.items() if own is frame]
+
+        every = list(frames)
+        check("on a nation's tab every block but the comparison's, in order", shown() == [key for key in every if key != "compare"], shown())
+        box = app.flag_boxes["compare"]
+        check("“Compare the nations” in Country selection's block", str(box).startswith(str(frames["country"]) + "."), str(box))
+        w.tick("debt", False)
+        w.settle()
+        w.tick("compare", True)
+        w.settle()
+        check("“Compare the nations” ticked: its tab current once drawn", app._current_tab_key() == "compare", app._current_tab_key())
+        check("on it, the comparison's block; no curves' or rates' block, the order kept",
+              shown() == [key for key in every if key not in ("curves", "rates")], shown())
+        editor = app.choice_editors["compare-measure"]
+        labels = {widget.cget("text") for widget in editor.widgets}
+        check("its boxes named in full", {"Public debt", "TTM GDP", "TTM interest paid on public debt"} <= labels, sorted(labels))
+        headings = ["Bond yields", "Real bond yields (inflation-linked)", "Other measures"]
+        texts = [child.cget("text") for child in editor.frame.winfo_children() if isinstance(child, ttk.Label)]
+        check("its three headings, in order", [text for text in texts if text in headings] == headings, texts[:8])
+        app.notebook.select(app.tabs["cdn"])
+        w.pump(5)
+        check("back on Canada's tab: the curves' block again, debt still unticked; no comparison block",
+              shown() == [key for key in every if key != "compare"] and not app.flag_vars["debt"].get(), shown())
+
+
 def check_batch134(check: Check) -> None:
     """Batch 13.4: "Seas. adj." under "Price index (CPI)", greyed while that is unticked and with the UK alone, ticked and unticked freely; its ⓘ."""
     with window(f"-c -s:2015 {END}") as w:
@@ -3294,6 +3328,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch37": check_batch37,
     "batch38": check_batch38,
     "batch23": check_batch23,
+    "batch262": check_batch262,
 }
 
 

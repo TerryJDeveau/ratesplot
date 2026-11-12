@@ -649,7 +649,8 @@ COMPARE_OTHER_MEASURES = {
     "inflation": ("rate", "Inflation"),
     "debt": ("amount", "Aggregate Public Debt"),
     "gdp": ("amount", "TTM GDP"),
-    "interest": ("amount", "Interest Outlays"),
+    # Named in full since batch 26.2 (Terry, 2026-11-12: "Just “Interest” is too vague"; was "Interest Outlays").
+    "interest": ("amount", "TTM Interest Paid on Public Debt"),
     "population": ("count", "Population"),
 }
 COMPARE_MEASURES = (*YIELD_TERMS, *COMPARE_OTHER_MEASURES)

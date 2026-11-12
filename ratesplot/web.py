@@ -174,6 +174,7 @@ from matplotlib.figure import Figure  # noqa: E402
 from . import export, hover, http  # noqa: E402
 from .cli import sort_tokens  # noqa: E402
 from .config import (  # noqa: E402
+    COMPARE_KEY,
     DEFAULT_AUTO_REFRESH_MINUTES,
     DEFAULT_CANVAS_PX,
     DEFAULT_REGRESSION_TOLERANCE_PCT,
@@ -219,6 +220,7 @@ from .frontend import (  # noqa: E402
     Choices,
     all_tick,
     all_tick_reason,
+    block_shown,
     bound_keys,
     bounds_in_other_units,
     chart_link,
@@ -1565,6 +1567,14 @@ def _country_changed(name: str) -> None:
         del st.session_state[_TICKED]
 
 
+def _compare_changed(name: str) -> None:
+    """"Compare the nations" ticked by hand: its tab is shown once its chart is drawn, as a nation's is (batch 17.4), and with it the comparison's block (batch 26.2)."""
+    if st.session_state[_FLAG + name]:
+        st.session_state[_TICKED] = COMPARE_KEY
+    elif st.session_state.get(_TICKED) == COMPARE_KEY:
+        del st.session_state[_TICKED]
+
+
 def _measure_changed(name: str) -> None:
     """% of GDP alone, per capita and constant prices together or alone (``excluded_measures``); Top and Bottom are in the measure's units, so they are cleared."""
     units = [option.name for option in options_in("units") if option.in_gui and option.kind is not Kind.VALUE]
@@ -1838,7 +1848,10 @@ def _now(key: str, blank: object = False) -> object:
 
 
 def _flag_control(where, option: Option) -> None:
-    callbacks = {"country": _country_changed, "units": _measure_changed, "curves": _curve_changed, "extra": _extra_curve_changed}
+    callbacks = {
+        "country": _country_changed, "units": _measure_changed, "curves": _curve_changed, "extra": _extra_curve_changed,
+        "compare": _compare_changed,
+    }
     callback = callbacks.get(option.group)
     where.checkbox(
         option.label,
@@ -2138,9 +2151,13 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     rows = [row for row in choice_rows(option, "", nation)]
     if others:
         rows.append(("other", [(value, value.replace("-", "–")) for value in others]))
+    # The first row with boxes, whose last box carries the help of a list with no label: a heading has none (batch 26.2).
+    first = next((number for number, (_caption, boxes) in enumerate(rows) if boxes), 0)
     for number, (caption, boxes) in enumerate(rows):
         if caption:
             where.caption(caption)
+        if not boxes:  # a heading over the rows after it (batch 26.2, ``options._COMPARE_CHOICES``)
+            continue
         # A nation's box of a term drawn plus a margin has the margin's field
         # beside it (batch 9.4, the prime rate's), as in the window.
         margins = margin_options() if nation is not None and option.fields == ("mortgage_terms",) else {}
@@ -2154,7 +2171,7 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
                 disabled=disabled,
                 on_change=_choice_changed,
                 args=(key, value),
-                help=_help(option, key=key) if not labelled and number == 0 and position == len(boxes) - 1 else None,
+                help=_help(option, key=key) if not labelled and number == first and position == len(boxes) - 1 else None,
             )
         if margin:
             _value_control(row, margin, key=nation_choice(nation, margin), label="margin (pts)", width=_MARGIN_FIELD_PX)
@@ -2193,14 +2210,24 @@ def _controls() -> None:
     st.session_state[_IDLE] = idle_choices(*_snapshot())
     every = _snapshot()
     st.session_state[_REASONS] = greyed_reasons([*every[0], *every[1]], *every)
+    front = _tab_in_front()
     for key, title, members in control_blocks():
+        if not block_shown(key, front):
+            # Left out for the tab in front (batch 26.2), its values kept.
+            _keep_block(members)
+            continue
         if title:
             bar.subheader(title, divider="gray")
         else:
             bar.divider()
         # A value that belongs to a flag goes right under it (the tolerance
-        # under "Regression segments"), as on the window's row.
-        attached = {option.turns_on: option for option in members if option.kind is Kind.VALUE and option.turns_on}
+        # under "Regression segments"), as on the window's row; where the flag
+        # is in another block (the comparison's measure, its box under Country
+        # selection since batch 26.2), its boxes stand alone.
+        names = {option.name for option in members}
+        attached = {
+            option.turns_on: option for option in members if option.kind is Kind.VALUE and option.turns_on in names
+        }
         values = [option for option in members if option.kind is Kind.VALUE and option not in attached.values()]
         flags = [option for option in members if option.kind is not Kind.VALUE]
         if key in _TWO_COLUMN_BLOCKS and not attached:
@@ -2251,6 +2278,30 @@ def _controls() -> None:
             _nation_controls(bar, nation)
         else:
             _keep_section(nation)
+
+
+def _tab_in_front() -> str | None:
+    """The chart whose tab is in front, by key, as the sidebar is laid out (batch 26.2); None before any is shown.
+
+    The tab the page keeps (``_TAB``, its title), unless a chart ticked by
+    hand is to take the front once drawn (``_TICKED``, batch 17.4), as
+    "Compare the nations" does; the comparison's tab is not in front once
+    its box is unticked.
+    """
+    by_title = {title: key for key, title in TAB_TITLES.items()}
+    front = st.session_state.get(_TICKED) or by_title.get(st.session_state.get(_TAB))
+    if front == COMPARE_KEY and not st.session_state.get(_FLAG + "compare", False):
+        return None
+    return front
+
+
+def _keep_block(members: list[Option]) -> None:
+    """Keep the values of a block's controls through a run that does not lay it out (batch 26.2), as ``_keep_section`` keeps a nation's."""
+    names = [option.name for option in members]
+    exact = {prefix + name for name in names for prefix in (_FLAG, _VALUE, _CHOICE_OTHERS)}
+    prefixes = tuple(_CHOICE + name + ":" for name in names)
+    for key in [key for key in st.session_state if key in exact or key.startswith(prefixes)]:
+        st.session_state[key] = st.session_state[key]
 
 
 def _keep_section(nation: Nation) -> None:

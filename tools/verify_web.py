@@ -904,8 +904,9 @@ def check_layout(check: Check) -> None:
     at = new_page("--e:2026-09-01")
     check("no exception", not at.exception, at.exception)
     titles = [header.value for header in at.subheader]
+    # The comparison's block on its tab alone since batch 26.2 (``check_batch262``).
     wanted = [
-        "Country selection", "Comparison chart", "Curve selection", "Measure of debt, GDP, and interest", "Rates on the yield axis",
+        "Country selection", "Curve selection", "Measure of debt, GDP, and interest", "Rates on the yield axis",
         "Date window", "Final canvas size in pixels",
     ]
     check("the titled blocks in order", titles[: len(wanted)] == wanted, titles)
@@ -938,11 +939,48 @@ def check_layout(check: Check) -> None:
     # "Seas. adj." (batch 13.4), a list with no label under its flag, has it
     # on its one box instead, as the window's ⓘ ends its row; so has the
     # balance of payments' pair (batch 23), on its row's last box, "trade";
-    # so has the comparison chart's measure (batch 26), on its first row's last, "30y".
+    # so has the comparison chart's measure (batch 26), on its tab alone since
+    # 26.2, on its first row of boxes' last, "30y" (``check_batch262``).
     helped = [box.key for box in at.checkbox if box.key and box.key.startswith("choice:") and box.help]
     check("a list's tick boxes carry no help of their own (it is on the list's label), but those under their flag with none: "
-          "“30y” of the comparison's measure, “trade” of the balance of payments' pair and “Seas. adj.”",
-          helped == ["choice:compare-measure:30y", "choice:payments-items:trade", "choice:cpi-adjustment:sa"], helped[:4])
+          "“trade” of the balance of payments' pair and “Seas. adj.”",
+          helped == ["choice:payments-items:trade", "choice:cpi-adjustment:sa"], helped[:4])
+
+
+def check_batch262(check: Check) -> None:
+    """Batch 26.2 (Terry, 2026-11-12, decision 147): the comparison's box under Country selection; its block, headed, on its tab alone; there, no curves or rates, their values kept."""
+    at = new_page("--e:2026-09-01")
+    check("no exception", not at.exception, at.exception)
+    keys = [box.key for box in at.checkbox if box.key]
+    check("“Compare the nations” with the nations, after Germany", keys.index("flag:compare") == keys.index("flag:germany") + 1, keys[:6])
+    titles = [header.value for header in at.subheader]
+    check("on a nation's tab, no comparison block", "Comparison chart" not in titles and "Curve selection" in titles, titles)
+    at.checkbox(key="flag:debt").uncheck()  # a curve's box, its value to be kept through the tab Compare
+    at.run()
+    at.checkbox(key="flag:compare").check()
+    at.run()
+    check("ticked: no exception, the tab Compare current once drawn", not at.exception and at.session_state["tab"] == "Compare",
+          (at.exception, at.session_state["tab"]))
+    titles = [header.value for header in at.subheader]
+    check("on it, the comparison's block; the curves and the rates on the yield axis left out",
+          "Comparison chart" in titles and "Curve selection" not in titles and "Rates on the yield axis" not in titles, titles)
+    captions = [block.value for block in at.caption]
+    headings = ["Bond yields", "Real bond yields (inflation-linked)", "Other measures"]
+    check("its three headings, in order", [caption for caption in captions if caption in headings] == headings, captions[:12])
+    labels = {box.key.rsplit(":", 1)[1]: box.label for box in at.checkbox if box.key and box.key.startswith("choice:compare-measure:")}
+    check("the amounts named in full", (labels.get("debt"), labels.get("gdp"), labels.get("interest")) == (
+        "Public debt", "TTM GDP", "TTM interest paid on public debt"), labels)
+    helped = [box.key for box in at.checkbox if box.key and box.key.startswith("choice:compare-measure:") and box.help]
+    check("its help on its first row of boxes' last, “30y”", helped == ["choice:compare-measure:30y"], helped)
+    at.checkbox(key="choice:compare-measure:interest").check()
+    at.run()
+    check("interest chosen: no exception, written in the address", not at.exception and ":interest" in address(at)
+          and "--com" in address(at), address(at))
+    at.session_state["tab"] = "Canada"  # as a click on its tab leaves it
+    at.run()
+    titles = [header.value for header in at.subheader]
+    check("back on Canada's tab: the curves' block again, debt still unticked; no comparison block",
+          "Curve selection" in titles and "Comparison chart" not in titles and not at.checkbox(key="flag:debt").value, titles)
 
 
 def check_batch15(check: Check) -> None:
@@ -2507,7 +2545,7 @@ PAGE_CHECKS = (
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
-    check_batch135, check_batch133, check_batch35, check_wait_colour, check_batch37, check_batch38,
+    check_batch135, check_batch133, check_batch35, check_wait_colour, check_batch37, check_batch38, check_batch262,
 )
 
 
