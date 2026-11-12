@@ -408,6 +408,15 @@ CASES: dict[str, list[str]] = {
     "cmp_pol_l": ["--na:ca,us,gb,de", "--com:pol", "--policy", "-l", "-s:2015"],
     "cmp_debt_r_reg": ["--na:ca,us,gb,de", "--com:debt", "-r", "--reg", "-s:1990"],
     "cmp_gdp_eur_pc": ["--na:ca,us,gb,de", "--com:gdp", "--master:EUR", "-p", "-s:1995"],
+    # Batch 26.3 (decision 147): against a base nation, flat at 0: the 10-year yields against the U.S., in points;
+    # the policy rates against Canada with end labels (the U.S. band made differences); the policy rates against the
+    # U.S. unticked (its target range's midpoint); debt against Germany unticked, in US$, as % above or below; debt
+    # as % of GDP against the UK, in points, --reg drawing no segments.
+    "cmp_10y_base": ["--na:ca,us,gb,de", "--com", "--base", "--no-debt", "--no-gdp", "--no-interest", "-s:1995"],
+    "cmp_pol_base_ca_l": ["--na:ca,us,gb,de", "--com:pol", "--base:ca", "--policy", "-l", "-s:2015"],
+    "cmp_pol_base_us": ["--na:ca,gb", "--com:pol", "--base", "--policy", "-s:2015"],
+    "cmp_debt_base_de": ["--na:ca,us,gb", "--com:debt", "--base:de", "-s:1995"],
+    "cmp_debt_r_base_gb": ["--na:ca,us,gb,de", "--com:debt", "-r", "--base:gb", "--reg", "-s:1990"],
 }
 
 
