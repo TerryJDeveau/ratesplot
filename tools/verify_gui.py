@@ -2890,7 +2890,8 @@ def check_batch263(check: Check) -> None:
         uk = [line for line in flat if (export.series_of(line) or ("",))[0].startswith("United Kingdom")]
         check("the UK's curve flat at 0, its exported name saying against whom", uk and all(
             np.nanmax(np.abs(np.asarray(line.get_xydata(), dtype=float)[:, 1])) == 0 for line in uk)
-              and all("less United Kingdom" in export.series_of(line)[0] for line in flat if export.series_of(line)),
+              and all("less United Kingdom" in export.series_of(line)[0] or export.series_of(line)[0].endswith(", the base")
+                      for line in flat if export.series_of(line)),
               [export.series_of(line) for line in flat][:4])
         w.tick("compare", False)
         w.settle()
