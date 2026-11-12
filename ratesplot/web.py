@@ -2230,9 +2230,6 @@ def _controls() -> None:
         }
         values = [option for option in members if option.kind is Kind.VALUE and option not in attached.values()]
         flags = [option for option in members if option.kind is not Kind.VALUE]
-        for option in values:
-            if option.editor == "choices":
-                _choices_control(bar, option)
         if key in _TWO_COLUMN_BLOCKS and not attached:
             # As many to a row as fit, as in the window (Terry, 2026-10-08):
             # two at the sidebar's default width, more when it is dragged
