@@ -34,8 +34,8 @@ from .config import (
     PlotConfig,
 )
 
-# Largest-first so the first matching scale wins.
-_CURRENCY_SCALES = ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K"))
+# Largest-first so the first matching scale wins; the last, no suffix, below a thousand.
+_CURRENCY_SCALES = ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K"), (1.0, ""))
 
 
 def format_currency(value: float, prefix: str = "$") -> str:
@@ -43,20 +43,50 @@ def format_currency(value: float, prefix: str = "$") -> str:
 
     Up to three significant figures are shown and trailing zeros dropped, so
     ``2e9 -> "$2B"``, ``1.5e12 -> "$1.5T"``, ``1.6e10 -> "$16B"``.
+
+    Never in exponent form (8.18), which ``.3g`` alone writes at either end: a
+    figure that rounds to 1,000 of its unit is 1 of the next (999.6e3 ->
+    ``"$1M"``, not ``"$1e+03K"``), and from 1,000T up whole trillions,
+    comma-grouped (``"$1,250T"``); a figure below 0.0001 is written in plain
+    decimals to three figures (1.04e-6 -> ``"$0.00000104"``, not
+    ``"$1.04e-06"``: a day's change of a debt per person in 1867). Below zero,
+    its size with a hyphen first (``"-$5B"``).
     """
-    for scale, suffix in _CURRENCY_SCALES:
-        if value >= scale:
-            return f"{prefix}{value / scale:.3g}{suffix}"
-    return f"{prefix}{value:.3g}"
+    if value < 0:
+        return "-" + format_currency(-value, prefix)
+    index = next((i for i, (scale, _suffix) in enumerate(_CURRENCY_SCALES) if value >= scale), len(_CURRENCY_SCALES) - 1)
+    scale, suffix = _CURRENCY_SCALES[index]
+    size = value / scale
+    text = f"{size:.3g}"
+    if "e" in text:
+        if size >= 1.0:  # rounded up to 1,000 of its unit
+            if index == 0:
+                return f"{prefix}{size:,.0f}{suffix}"
+            return f"{prefix}1{_CURRENCY_SCALES[index - 1][1]}"
+        text = _plain_decimals(size)
+    return f"{prefix}{text}{suffix}"
+
+
+def _plain_decimals(size: float) -> str:
+    """A figure below 0.0001 to three significant figures in plain decimals, trailing zeros dropped: 1.04e-06 to ``"0.00000104"``."""
+    places = 2 - math.floor(math.log10(size))
+    return f"{size:.{places}f}".rstrip("0").rstrip(".")
 
 
 def format_percent(value: float) -> str:
     """Format a percentage with up to three significant figures: ``0.25%``, ``1.5%``, ``120%``.
 
     From 1000 up, whole numbers with thousands separators (``.3g`` would
-    switch to scientific notation there).
+    switch to scientific notation there), and from a figure that rounds to
+    1000 (999.6 -> ``1,000%``, 8.18); below 0.0001 in plain decimals to three
+    figures (``0.0000123%``), never in exponent form.
     """
-    return f"{value:,.0f}%" if value >= 1000 else f"{value:.3g}%"
+    text = f"{value:.3g}"
+    if "e" not in text:
+        return text + "%"
+    if abs(value) >= 1.0:
+        return f"{value:,.0f}%"
+    return ("-" if value < 0 else "") + _plain_decimals(abs(value)) + "%"
 
 
 def format_spread(value: float) -> str:

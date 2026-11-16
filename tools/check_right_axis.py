@@ -212,7 +212,9 @@ def main(argv: list[str]) -> int:
         check(name, left >= 0 and right <= figure.bbox.width, (round(left, 1), round(right, 1), figure.bbox.width))
 
     print("The price index's last month")
-    index_axis = "-u --cpi --yields:10"
+    # Daily values off: since 8.11 the index is filled in day by day between its months' middles, and batch 40's
+    # holding across its month is what a chart without them draws.
+    index_axis = "-u --cpi --yields:10 --no-daily"
     def last_two(end: str) -> tuple[tuple[str, str], bool]:
         """The chart's last two points on the index's line, and whether they hold one value."""
         line = next(line for line in drawn([*index_axis.split(), end])[0]["us"].axes[1].get_lines() if not line.get_label().startswith("_"))
