@@ -410,7 +410,7 @@ def check_plain_window(check) -> None:
         callbacks = sum(len(handlers) for handlers in figure.canvas.callbacks.callbacks.values())
         hover.detach(figure)
         left = sum(len(handlers) for handlers in figure.canvas.callbacks.callbacks.values())
-        check("the read-out taken off: its three callbacks gone", callbacks - left == 3 and not hasattr(figure, "_ratesplot_hover_window"),
+        check("the read-out taken off: its three callbacks gone", callbacks - left == 3 and not hasattr(figure, "_hover_window"),
               (callbacks, left))
     finally:
         plotting.forget_old_downloads = original
