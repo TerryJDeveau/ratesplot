@@ -95,8 +95,8 @@ from .export import YIELD_AXIS, mark_amounts_currency, mark_dates_only, mark_pri
 from .frames import filter_to_date_range
 from .fx import rate
 from .hover import attach as attach_hover
-from .hover import mark_quote, rounded
 from .hover import remark as remark_reading
+from .hover import rounded
 from .latest import PROJECTION_ATTR, QUOTE_TIME_ATTR
 from .legend import finish_legend_and_title
 from .measures import PRICE_BASE_ATTR
@@ -109,6 +109,7 @@ from .plotting import (
     add_rate_lines,
     drawn_date_span,
     last_piece,
+    mark_quote_time,
     yield_axis_legend,
 )
 from .plotting import build_figure as build_nation_figure
@@ -381,7 +382,7 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
         handles.append(regression_legend_entry(measured))
     quote_time = max(quotes) if quotes else None
     if quote_time is not None:
-        mark_quote(figure, quote_time, MARKET_TIMEZONE)
+        mark_quote_time(figure, quote_time, MARKET_TIMEZONE)
     title, short_title = _titles(drawn, measure, measured, drawn[0].nation if base_key else None)
     finish_legend_and_title(
         ax_yield,

@@ -134,7 +134,7 @@ from .latest import (
     observed_through,
     project_to_now,
 )
-from .legend import finish_legend_and_title
+from .legend import finish_legend_and_title, quote_time_text
 from .measures import PRICE_BASE_ATTR, express
 from .payments import fetch_payments, payments_earliest
 from .prices import consumer_prices, no_index_note
@@ -715,6 +715,11 @@ def drawn_date_span(axes: Iterable[Axes]) -> tuple[pd.Timestamp, pd.Timestamp] |
     return tuple(pd.Timestamp(mdates.num2date(value).replace(tzinfo=None)).normalize() for value in (first, last))
 
 
+def mark_quote_time(figure: Figure, quote_time: pd.Timestamp, zone: str | None) -> None:
+    """Record for the hover read-out when ``figure``'s intraday quotes were taken: their day (Toronto's, as they are dated) and their time in ``zone``, as the subtitle writes it."""
+    mark_quote(figure, quote_time, quote_time_text(quote_time, quote_time.tz_localize(None).normalize(), zone))
+
+
 # ---------------------------------------------------------------------------
 # Chart assembly
 # ---------------------------------------------------------------------------
@@ -901,7 +906,7 @@ def draw_country(
     short_title = metadata.title_for(**title_parts, short=True)
     if quote_time is not None and yield_lines:
         # The hover read-out gives a quote's time on its day, as the subtitle does.
-        mark_quote(ax_yield.figure, quote_time, nation_by_key(metadata.key).market_timezone)
+        mark_quote_time(ax_yield.figure, quote_time, nation_by_key(metadata.key).market_timezone)
     finish_legend_and_title(
         ax_yield,
         [yield_axis_legend(yield_lines, rate_lines), legend_macro],

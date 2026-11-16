@@ -105,7 +105,7 @@ from ratesplot import cli, export, frontend, gui, hover, http, monitors, options
 from ratesplot.axes import format_population, format_yield  # noqa: E402
 from ratesplot.config import COMPARE_KEY, NATIONS, WEB_PAGE_ADDRESS  # noqa: E402
 from ratesplot.console import this_thread_output_to  # noqa: E402
-from ratesplot.plotting import COUNTRIES, build_figure, resolve_start  # noqa: E402
+from ratesplot.plotting import COUNTRIES, build_figure, mark_quote_time, resolve_start  # noqa: E402
 from ratesplot.version import version_text  # noqa: E402
 
 # Regression cases drawn both ways: the defaults, a later start, -r with --reg,
@@ -1314,7 +1314,7 @@ def _made_up_chart():
     ):
         export.mark_series(drawn, name, export.YIELD_AXIS)
         hover.mark(drawn, (lambda value: "≈" + two(value)) if how.get("projected") else two, **how)
-    hover.mark_quote(figure, pd.Timestamp("2020-03-01 14:32", tz="America/Toronto"), "America/Toronto")
+    mark_quote_time(figure, pd.Timestamp("2020-03-01 14:32", tz="America/Toronto"), "America/Toronto")
     figure.savefig(io.BytesIO(), format="png", dpi=figure.dpi)
     return figure, ax
 
@@ -1658,7 +1658,7 @@ def check_hover(check: Check) -> None:
         hover.attach(figure)
         canvas.draw()
         root.update()
-        plain = figure._ratesplot_hover_window
+        plain = figure._hover_window
         x, y = _image_point(figure, ax, "2020-02-15 12:00", 1.0)
         height = figure.bbox.height
         canvas.callbacks.process("motion_notify_event", MouseEvent("motion_notify_event", canvas, x, height - y))
@@ -1709,7 +1709,7 @@ def check_hover(check: Check) -> None:
     attached, _ax = _made_up_chart()
     hover.attach(attached)
     attached.canvas.draw()
-    attached._ratesplot_hover_window._show(lines.reading(*_image_point(attached, _ax, "2020-02-15 12:00", 1.0), 3), 100, 100)
+    attached._hover_window._show(lines.reading(*_image_point(attached, _ax, "2020-02-15 12:00", 1.0), 3), 100, 100)
     saved, clean = io.BytesIO(), io.BytesIO()
     attached.savefig(saved, format="png", dpi=attached.dpi)
     _made_up_chart()[0].savefig(clean, format="png", dpi=100)

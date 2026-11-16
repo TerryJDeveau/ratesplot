@@ -64,7 +64,10 @@ export            Export chart (batch 11.1): a chart as an image, or the data it
                   marked as plotting draws it
 hover             the hover read-out (batch 11.2): where each line runs on the picture
                   and what it says by the pointer, the nearest line within 3 px; its
-                  timing; the plain matplotlib windows' (the window and the page read it)
+                  timing; the plain matplotlib windows' (the window and the page read it).
+                  A copy of the master shared with NG_analysis (batch 45):
+                  hover.py in a folder "shared" beside this repository on Buddug;
+                  changed there, not here
 refresh           the automatic refresh (batch 11.3): whether each tick draws again
                   (within market hours always, outside them when a quote has
                   changed); the plain matplotlib windows' timer
@@ -96,7 +99,7 @@ Canadian GDP); plotting -> fx -> {us_data, cdn_archive_data, uk_archive_data};
 plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
 regression -> occupancy; options -> config; {plotting, legend, options, cli,
-gui, web} -> export -> {config, version}; {plotting, gui, web} -> hover -> {export, legend};
+gui, web} -> export -> {config, version}; {plotting, compare, gui, web} -> hover -> export;
 {plotting, cli, gui, web} -> refresh -> {latest, http, config}; {plotting, gui} -> monitors;
 {cli, gui, web} -> compare -> {plotting and what it imports} (batch 26). Data modules never import
 plotting. Nothing imports web or gui, and cli imports gui only when the
