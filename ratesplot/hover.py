@@ -153,9 +153,12 @@ _EPOCH = mdates.date2num(np.datetime64("1970-01-01"))
 # publish decimals, so the decimal digits decide. A figure is first moved away from zero by this fraction of the
 # largest figure it was worked out from (itself, or a change's two figures, whose noise it carries): far more than the
 # binary noise of a few sums, subtractions and divisions (about 1e-16 of their size each), far less than any digit the
-# data could hold. At the merge ratesplot's 1e-12, which its copy nudged by (NG_analysis's was 1e-10), until a test of
-# both on both programs' charts chooses one (batch 45).
-_NUDGE = 1e-12
+# data could hold. Chosen by test at the merge (batch 45, 2026-11-16), NG_analysis's 1e-10 against ratesplot's 1e-12:
+# on ratesplot's 331 regression charts 1e-12 wrote 528 changes a day of amounts filled in between figures low, exact
+# halves held a hair below by the noise of the interpolation on a log axis (-C$111.5M a day as -C$111M), which 1e-10
+# writes as decision 130 asks; on NG_analysis's charts 1e-10 writes every text as its copy did, where 1e-12 would write
+# 299 of its Daily's rates over a year one lower in the last digit.
+_NUDGE = 1e-10
 # A change's sign on a chart of dates: a true minus (decision 129), and a plus.
 _MINUS = "−"
 # A change a day as a rate over a year (decision 129): a year's mean length, leap years counted.
