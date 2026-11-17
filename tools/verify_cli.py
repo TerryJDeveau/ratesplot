@@ -335,6 +335,10 @@ CASES: list[list[str]] = [
     ["--com", "--base:gb"], ["--com", "--base:uk"], ["--com", "--base:ca"], ["--com", "--base:cdn"], ["--com", "--base:deu"],
     ["--com", "--base:us,ca"], ["--com", "--base:none"], ["--com", "--base:"], ["--com", "--base:fr"],
     ["--com", "--base:gb", "--no-base"], ["--base"], ["--base:de"], ["--com:debt", "--base:de", "-r"],
+    # Batch 47.3 (decision 154): --ttm, the whole name its shortest; a flag, no value; with a base and the amounts.
+    ["--com", "--ttm"], ["--com", "--TTM"], ["--com", "--tt"], ["--com", "--ttmx"], ["--com", "--ttm:yes"],
+    ["--com", "--no-ttm"], ["--com", "--ttm", "--no-ttm"], ["--ttm"], ["--com:debt", "--ttm", "-r", "--base:de"],
+    ["--com:pop", "--ttm", "-s:2000"],
 ]
 
 

@@ -1037,6 +1037,17 @@ OPTIONS: tuple[Option, ...] = (
         format=format_base_nation, editor="choices", choices=_BASE_CHOICES, panel="base", topic="compare",
         one_at_a_time=True,
     ),
+    # Batch 47.3 (Terry's item 4 of 2026-11-17, decision 154): "TTM % change",
+    # each nation's change over the twelve months to each date compared in
+    # place of the measure (``compare._ttm_change``); a flag, off until named,
+    # first in the comparison's block (a block's boxes come before its lists,
+    # in the window and on the page). At least "ttm".
+    Option(
+        "ttm", Kind.FLAG, ("ttm",), "compare", "--ttm / --no-ttm",
+        "each nation's change over the twelve\nmonths to each date compared: % for an\n"
+        "amount, the price index or the\npopulation, percentage points for a rate",
+        names=("ttm",), shortest=3, label="TTM % change", topic="compare",
+    ),
     # Curves. The listing order here is the help order; the selection rule is
     # in ``config_from_choices``.
     Option(

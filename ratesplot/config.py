@@ -1940,6 +1940,10 @@ class PlotConfig:
     # named, with its nation, one at a time (the U.S. by default).
     base: bool = False
     base_nations: tuple[str, ...] = DEFAULT_BASE_NATIONS
+    # --ttm (batch 47.3, decision 154): each nation's change over the twelve
+    # months to each date compared, in % or in percentage points; a flag, off
+    # until named.
+    ttm: bool = False
     show_cdn: bool = True
     show_us: bool = True
     # The UK's chart (batch 3): only when asked for (--uk, --nations:gb).
@@ -2058,6 +2062,11 @@ class PlotConfig:
     def base_nation(self) -> str | None:
         """The nation the comparison chart is drawn against, by key (--base:NATION, batch 26.3); None without a base or a comparison."""
         return self.base_nations[0] if self.compare and self.base else None
+
+    @property
+    def ttm_change(self) -> bool:
+        """True where the comparison chart draws each nation's TTM change (--ttm, batch 47.3), not the measure itself."""
+        return self.compare and self.ttm
 
     def same_chart(self, other: PlotConfig | None) -> bool:
         """Whether ``other`` draws the same charts as this: it may differ in what draws nothing, the hover read-out (batch 11.2) and the automatic refresh (11.3)."""
