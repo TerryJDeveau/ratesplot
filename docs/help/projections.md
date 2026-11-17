@@ -1,13 +1,20 @@
 # Projections to today
 
-On by default. GDP, debt and interest are published weeks or months after the period they describe, so their curves end well before today. With this box ticked, each curve on the right axis is carried on from its last figure to the chart's End in a straight line, at its own pace over the year before that figure, as a debt clock does. The projections are not data: each is drawn faint, at 40 % strength, in its curve's own colour and dashes; the legend's grey entry reads "Projected at the past year's pace"; and the [latest value](?help=end-labels) at a line's end and the [hover read-out](?help=hover) write a projected value with "≈" (≈C$4.22T).
+On by default. GDP, debt and interest are published weeks or months after the period they describe, so their curves end well before today; so do the population, the price index and inflation. With this box ticked, each curve on the right axis is carried on from its last figure to the chart's End in a straight line, at its own pace over the year before that figure, as a debt clock does, and so are the population, the price index and inflation (below). The projections are not data: each is drawn faint, at 40 % strength, in its curve's own colour and dashes; the legend's grey entry reads "Projected at the past year's pace"; and the [latest value](?help=end-labels) at a line's end and the [hover read-out](?help=hover) write a projected value with "≈" (≈C$4.22T).
 
 ## How a curve is carried on
 
 - **From** the date its last figure describes: a quarter's figure is dated by the quarter's last day.
-- **At** the curve's change over the 365 days before that figure, as so much a day: the line is the last figure plus that much for each day since. The pace is measured on the curve's whole history, so a chart whose Start is later than that year still gets it.
+- **At** the curve's change since its figure a year before, as so much a day: the line is the last figure plus that much for each day since. Where no figure falls exactly a year before, the one before that is taken, and the change is divided by the days between the two (the U.S. aggregate debt's last daily figure is measured from a quarter's end, more than a year back). The pace is measured on the curve's whole history, so a chart whose Start is later than that year still gets it.
 - **Not projected:** a curve whose last figure is more than 400 days before the End, such as the dotted line of Canada's federal debt before 1933.
-- **Population** is held at its last estimate, not projected. Under [Per capita](?help=per-capita) and [As % of GDP](?help=percent-of-gdp) the projected figures are divided as the published ones are; GDP is projected too.
+- Under [Per capita](?help=per-capita) and [As % of GDP](?help=percent-of-gdp) the projected figures are divided as the published ones are, by the projected population and the projected GDP.
+
+## The population, the price index and inflation
+
+- **The [population](?help=population)** is carried on from its last estimate to the End by the same rule. [Per capita](?help=per-capita) divides by it, so a projected amount is divided by the projected population.
+- **The [price index](?help=price-index)** gets a figure for each month after its last, at its pace over the year before; a faint straight line runs through them from its last published month to the End, through each month's middle with [Daily values](?help=daily), its first day without.
+- **[Inflation](?help=inflation)** gets no formula of its own: each projected month's rise is the projected index against the published index a year before, so the line bends as the months a year back drop out. For the UK, whose curve is the ONS's own rate, its index D7BT is the one carried on.
+- **[Inflation adjusted](?help=constant-prices)** stays in the prices of the index's last published month; an amount after it is divided by its own month's projected index.
 
 ## Canada's debt follows market debt
 
@@ -15,7 +22,7 @@ The Bank of Canada publishes the Government of Canada's marketable debt, its tre
 
 ## When it adds nothing
 
-The projections are drawn only on a chart whose End is no more than four days before today, the rule for the day's quotes ([Latest values](?help=latest-values)). The box is greyed when the End is earlier, and while none of debt, GDP, interest and the balance of payments is ticked.
+The projections are drawn only on a chart whose End is no more than four days before today, the rule for the day's quotes ([Latest values](?help=latest-values)). The box is greyed when the End is earlier, and while none of debt, GDP, interest, the balance of payments, inflation, the price index and the population is ticked.
 
 It has been a box of its own since 2026-10-27; until then "Intraday quotes on end date" turned both on and off. The quotes draw values published since the regular sources' last figures; this box draws an estimate.
 

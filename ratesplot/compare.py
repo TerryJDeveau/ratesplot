@@ -108,6 +108,7 @@ from .plotting import (
     add_macro_line,
     add_rate_lines,
     drawn_date_span,
+    extra_points,
     last_piece,
     mark_quote_time,
     yield_axis_legend,
@@ -116,7 +117,6 @@ from .plotting import build_figure as build_nation_figure
 # The nations' charts' own helpers, shared rather than copied: how a rate's end
 # label is written (a band as its range), and a plain window kept on its monitor.
 from .plotting import _end_label_format, _kept_on_its_monitor
-from .rates import cut_to, filled_through
 from .regression import RateLabel, add_regression_segments
 from .regression import legend_entry as regression_legend_entry
 
@@ -262,6 +262,7 @@ class _Drawn:
     fitted: list[tuple[Line2D, str]] = field(default_factory=list)  # (line, column) for --reg: an amount's or the population's
     frame: pd.DataFrame | None = None  # the frame --reg fits ``fitted`` from
     projected: dict = field(default_factory=dict)  # column -> its data's last date (--projections)
+    projection_drawn: bool = False  # a projection to today drawn faint: the legend's grey entry says what it is
     pairs: list = field(default_factory=list)  # a rate's (line, RateCurve), as ``plotting.add_rate_lines`` gives them
     artists: set = field(default_factory=set)  # every line and band it drew (batch 26.3: each made a difference from the base's)
 
@@ -375,7 +376,7 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
         for curve in drawn:
             rate_labels += add_regression_segments(ax_macro, curve.frame, curve.fitted, curve.projected, curve.config)
     handles = [handle for curve in drawn for handle in curve.handles]
-    if any(column in curve.projected for curve in drawn for _line, column in curve.fitted) and kind == "amount":
+    if any(curve.projection_drawn for curve in drawn):
         width = max(style["linewidth"] for style in MACRO_PLOT_STYLES.values()) * measured.line_scale
         handles.append(Line2D([], [], color=PROJECTION_KEY_COLOR, linewidth=width, alpha=PROJECTION_ALPHA, label=PROJECTION_LABEL))
     if rate_labels:
@@ -438,7 +439,8 @@ def _draw_rate(ax: Axes, rates: list, own: PlotConfig, nation: Nation) -> _Drawn
     if not pairs:
         return None
     line, curve = pairs[0]
-    return _Drawn(nation, [], [(last_piece(line), _end_label_format(curve, own))], own, pairs=pairs)
+    return _Drawn(nation, [], [(last_piece(line), _end_label_format(curve, own))], own, pairs=pairs,
+                  projection_drawn=curve.projected is not None)  # inflation carried on (batch 43.1)
 
 
 def _draw_amount(
@@ -476,33 +478,30 @@ def _draw_amount(
         (line, (lambda value, fmt=macro_format: PROJECTION_LABEL_PREFIX + fmt(value)) if column in projected else macro_format)
         for line, column in lines
     ]
-    return _Drawn(nation, [lines[0][0]], end_labels, own, fitted=lines, frame=macro, projected=projected)
+    return _Drawn(nation, [lines[0][0]], end_labels, own, fitted=lines, frame=macro, projected=projected,
+                  projection_drawn=any(column in projected for _line, column in lines))
 
 
 def _draw_count(ax: Axes, macro: pd.DataFrame, own: PlotConfig, nation: Nation) -> tuple[_Drawn | None, ExtraCurve | None]:
-    """The population, by ``plotting.add_macro_line``, as the nation's chart draws it on its extra axis: through its points, filled in with daily values."""
+    """The population, by ``plotting.add_macro_line``, as the nation's chart draws it on its extra axis (``plotting.extra_points``): through its points, filled in with daily values, carried on to today faint (batch 43.1)."""
     extra: ExtraCurve | None = macro.attrs.get(EXTRA_CURVE_ATTR)
     if extra is None:
         return None, None
-    kind = SERIES_KINDS[extra.kind]
-    filled = own.daily and kind.filled_in
-    frame = pd.DataFrame({DATE_COLUMN: extra.values.index, extra.label: extra.values.to_numpy()})  # its observations, --reg's
-    if filled:
-        points = (
-            filled_through(extra.values, extra.kind, own) if kind.period is not None
-            else cut_to(extra.values.dropna().sort_index(), own.start, own.end)
-        )
-        in_range = pd.DataFrame({DATE_COLUMN: points.index, extra.label: points.to_numpy()})
-    else:
-        in_range = filter_to_date_range(frame, DATE_COLUMN, own)
+    frame = pd.DataFrame({DATE_COLUMN: extra.values.index, extra.label: extra.values.to_numpy()})  # its figures, --reg's
+    in_range, drawn_from = extra_points(extra, own)
     line = add_macro_line(
         ax, in_range, enabled=True, column=extra.label, label=extra.label, style=extra.style,
-        value_format=extra.value_format, axis=extra.export_axis, filled=filled,
+        value_format=extra.value_format, projected_from=drawn_from, axis=extra.export_axis,
+        filled=own.daily and SERIES_KINDS[extra.kind].filled_in,
         amount=format_population,  # a change in the read-out (batch 44), as on the nation's chart
     )
     if line is None:
         return None, extra
-    return _Drawn(nation, [line], [(line, extra.value_format)], own, fitted=[(line, extra.label)], frame=frame), extra
+    end_label = extra.value_format if drawn_from is None else (lambda value: PROJECTION_LABEL_PREFIX + extra.value_format(value))
+    # Its figures alone fitted by --reg; the legend's grey entry where a projection is drawn.
+    projected = {} if extra.projected_from is None else {extra.label: extra.projected_from}
+    return _Drawn(nation, [line], [(line, end_label)], own, fitted=[(line, extra.label)], frame=frame, projected=projected,
+                  projection_drawn=drawn_from is not None), extra
 
 
 def _titles(drawn: list[_Drawn], measure: str, config: PlotConfig, base: Nation | None = None) -> tuple[str, str]:

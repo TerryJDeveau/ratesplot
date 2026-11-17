@@ -42,6 +42,11 @@ straight line of its own change over the year before
 label reads "≈" (plotting). Quarterly figures are dated by the quarter's
 last day, the day they describe (``frames.at_quarter_end``), so a
 projection starts where the data really end (``observed_through``).
+The population and the consumer price index, which each nation's
+preparation fetches apart from that frame, are carried on by the same
+rule (``project_series``, batch 43.1), and the inflation curve's projected
+stretch is the twelve-month rise of the projected index
+(``rates.projected_inflation``).
 
 Canadian debt (the aggregate and the federal level) is not projected blind:
 the Bank of Canada counts the Government of Canada's market debt (bills and
@@ -75,6 +80,7 @@ from .config import (
     TREASURY_DEBT_TO_PENNY_URL,
     TREASURY_YIELD_CURVE_URL,
     YIELD_COLUMNS,
+    SERIES_KINDS,
     PlotConfig,
     component_column,
     macro_column_kind,
@@ -206,20 +212,16 @@ def project_to_now(
     for column, start in starts.items():
         if column not in history.columns:
             continue
-        series = history[column].sort_index()
-        base = series.loc[:start].dropna()
-        earlier = series.loc[: start - pd.Timedelta(days=_PROJECTION_RATE_DAYS)].dropna()
-        if base.empty or earlier.empty:
+        found = _year_before(history[column], start)
+        if found is None:
             continue
-        value = float(base.iloc[-1])
-        per_day = (value - float(earlier.iloc[-1])) / _PROJECTION_RATE_DAYS
+        (_base_date, value), earlier = found
+        per_day = _per_day(found[0], earlier)
         later = (data[DATE_COLUMN] > start) & data[column].notna()
         elapsed = (data.loc[later, DATE_COLUMN] - start).dt.days
         steered = None
         if market is not None and column in _MARKET_STEERED_COLUMNS:
-            steered = _market_steered(
-                data.loc[later, DATE_COLUMN], start, value, (earlier.index[-1], float(earlier.iloc[-1])), market
-            )
+            steered = _market_steered(data.loc[later, DATE_COLUMN], start, value, earlier, market)
             if steered is None:
                 print(f"  Warning: Government of Canada market debt does not cover the year to {start:%Y-%m-%d}; {column} goes on at its own pace alone.")
         projected[column] = start
@@ -237,6 +239,71 @@ def project_to_now(
     return data
 
 
+def project_series(values: pd.Series, config: PlotConfig, kind_key: str, name: str) -> tuple[pd.Series, pd.Timestamp | None]:
+    """``values``, a lone smooth series (date-indexed), carried past its last figure as ``project_to_now`` carries a curve; with that figure's date, or None where it is not carried (batch 43.1).
+
+    The population and the consumer price index, which each nation's
+    preparation fetches apart from the macro frame (for -p, --population,
+    --cpi and --constant), and through the index the inflation curve
+    (``rates.projected_inflation``). The same rule: only with --projections,
+    on a chart reaching today, a series whose last figure is less than
+    ``_PROJECTION_MAX_AGE_DAYS`` before the End; from that figure in a
+    straight line at its pace over the year before it (``_year_before``,
+    ``_per_day``). ``kind_key`` its kind (``config.SERIES_KINDS``): a series
+    observed a month at a time (the price index) gets a figure for each month
+    after its last, dated by the month's first day as its own figures are,
+    through the month after the End's, so that the line through the months'
+    points (their middles with Daily values) reaches the End; a series of
+    moments (the population), one figure, on the End. ``name`` says which in
+    the message log, with its pace.
+    """
+    known = values.dropna().sort_index()
+    end = config.end
+    if not config.projections or known.empty or not SERIES_KINDS[kind_key].projected or not _quotes_can_reach(config):
+        return values, None
+    start = pd.Timestamp(known.index[-1])
+    if start >= end or (end - start).days > _PROJECTION_MAX_AGE_DAYS:
+        return values, None
+    found = _year_before(known, start)
+    if found is None:
+        return values, None
+    base, earlier = found
+    per_day = _per_day(base, earlier)
+    if SERIES_KINDS[kind_key].period == "month":
+        dates = pd.date_range(start + pd.DateOffset(months=1), end.to_period("M").to_timestamp() + pd.DateOffset(months=1), freq="MS")
+    else:
+        dates = pd.DatetimeIndex([end])
+    ahead = pd.Series(base[1] + per_day * (dates - start).days.to_numpy(), index=dates, name=values.name)
+    pace = per_day * 365 / base[1] if base[1] else float("nan")
+    print(f"Projecting {name} to {end:%Y-%m-%d} from {start:%Y-%m-%d}, {pace:+.1%} a year (--projections).")
+    return pd.concat([values.loc[values.index <= start], ahead]), start
+
+
+def _year_before(series: pd.Series, start: pd.Timestamp) -> tuple[tuple[pd.Timestamp, float], tuple[pd.Timestamp, float]] | None:
+    """A curve's figure on or before ``start`` and its figure on or before a year (``_PROJECTION_RATE_DAYS``) before that, each ``(date, value)``; None without both.
+
+    A projection runs from the first at the pace between the two (``_per_day``).
+    """
+    series = series.sort_index()
+    base = series.loc[:start].dropna()
+    earlier = series.loc[: start - pd.Timedelta(days=_PROJECTION_RATE_DAYS)].dropna()
+    if base.empty or earlier.empty:
+        return None
+    return (pd.Timestamp(base.index[-1]), float(base.iloc[-1])), (pd.Timestamp(earlier.index[-1]), float(earlier.iloc[-1]))
+
+
+def _per_day(base: tuple[pd.Timestamp, float], earlier: tuple[pd.Timestamp, float]) -> float:
+    """The pace a projection goes on at: the change between two figures (``_year_before``), a day.
+
+    By the days between them, not a year's 365 (batch 43.1): a figure missing a
+    year before the last moves the earlier one back, and the change counts the
+    longer span (the U.S. price index has no 2025-10, so its 2026-10 is measured
+    from 2025-09, 395 days before). A quarter-end figure's year is 365 or 366
+    days, a daily one's up to three days more over a weekend.
+    """
+    return (base[1] - earlier[1]) / (base[0] - earlier[0]).days
+
+
 def _market_steered(
     dates: pd.Series, start: pd.Timestamp, value: float, earlier: tuple[pd.Timestamp, float], market: pd.Series
 ) -> tuple[pd.Series, str] | None:
@@ -247,8 +314,8 @@ def _market_steered(
     on after it at its own pace over the year before that day. The rest goes
     on from ``start``, where the curve's data end at ``value``, at its own
     pace over the year to it, from ``earlier`` (the curve's date and value a
-    year before). Paces are over ``_PROJECTION_RATE_DAYS``, as in
-    ``project_to_now``. None when market debt is not known close to
+    year before), by the days between the two (``_per_day``); market debt's
+    over ``_PROJECTION_RATE_DAYS``, read on those days. None when market debt is not known close to
     ``start``, to that earlier date, or to a year before its own last day.
     """
     known = market.dropna().sort_index()
@@ -267,7 +334,7 @@ def _market_steered(
     year_before_last = on(last_day - pd.Timedelta(days=_PROJECTION_RATE_DAYS))
     if at_start is None or at_earlier is None or year_before_last is None:
         return None
-    rest_per_day = ((value - at_start) - (earlier_value - at_earlier)) / _PROJECTION_RATE_DAYS
+    rest_per_day = _per_day((start, value - at_start), (earlier_date, earlier_value - at_earlier))
     market_per_day = (last_value - year_before_last) / _PROJECTION_RATE_DAYS
 
     when = pd.DatetimeIndex(dates)
