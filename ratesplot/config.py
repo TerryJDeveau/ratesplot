@@ -646,15 +646,37 @@ COMPARE_KEY = "compare"
 COMPARE_TAB_TITLE = "Compare"
 COMPARE_OTHER_MEASURES = {
     "policy": ("rate", "Policy Rates"),
+    # Batch 47.4 (Terry's item 5 of 2026-11-17, decision 154): each nation's
+    # headline mortgage rate (COMPARE_MORTGAGE_TERMS), on the yield axis.
+    "mortgage": ("rate", "Mortgage Rates"),
     "inflation": ("rate", "Inflation"),
+    # Batch 47.4: each nation's consumer price index, not seasonally adjusted,
+    # rebased to 100 at the window's first common date ("index", on the log
+    # axis the nations' charts give it).
+    "cpi": ("index", "Consumer Price Indexes"),
     "debt": ("amount", "Aggregate Public Debt"),
     "gdp": ("amount", "TTM GDP"),
     # Named in full since batch 26.2 (Terry, 2026-11-12: "Just “Interest” is too vague"; was "Interest Outlays").
     "interest": ("amount", "TTM Interest Paid on Public Debt"),
     "population": ("count", "Population"),
+    # Batch 47.4: the balance of payments as each nation's balance, money in
+    # less money out over the trailing year, the pair --payments draws
+    # ("balance": an amount that changes sign, on a linear axis with 0 marked).
+    "current": ("balance", "TTM Current Account Balances"),
+    "trade": ("balance", "TTM Trade Balances"),
 }
 COMPARE_MEASURES = (*YIELD_TERMS, *COMPARE_OTHER_MEASURES)
 DEFAULT_COMPARE_MEASURES = ("10y",)
+# Each nation's headline mortgage rate on the comparison chart (batch 47.4, decision 154: no term is common to all
+# four), its MORTGAGE_TERMS key and the words the legend gives it: "United Kingdom (2-year fixed)". Canada's 5-year
+# conventional (posted) rate, the U.S. 30-year fixed, the UK's 2-year fixed at 75 % loan to value, Germany's fixed
+# for over 5 and up to 10 years.
+COMPARE_MORTGAGE_TERMS = {
+    "cdn": ("5", "5-year conventional"),
+    "us": ("30", "30-year fixed"),
+    "uk": ("2f", "2-year fixed"),
+    "de": ("5-10", "fixed 5 to 10 years"),
+}
 # The currency the amounts are compared in when no master currency is chosen
 # (--master, batch 30): every nation's converted at the End's rate.
 COMPARE_DEFAULT_CURRENCY = "USD"
@@ -671,7 +693,7 @@ DEFAULT_BASE_NATIONS = ("us",)
 
 
 def compare_kind(measure: str) -> str:
-    """The kind of curve a comparison measure is (``COMPARE_OTHER_MEASURES``): "yield", "rate", "amount" or "count"."""
+    """The kind of curve a comparison measure is (``COMPARE_OTHER_MEASURES``): "yield", "rate", "amount", "count", "index" or "balance"."""
     return "yield" if measure in YIELD_TERMS else COMPARE_OTHER_MEASURES[measure][0]
 
 
