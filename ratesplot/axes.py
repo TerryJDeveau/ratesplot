@@ -439,10 +439,16 @@ def set_macro_ylim(ax: Axes, config: PlotConfig) -> None:
 
 # Tick spacing (days) from which ticks are monthly or longer, not daily.
 _SHORTEST_MONTH_DAYS = 28
+# The least gap between two neighbouring date labels, in ems of the labels' own
+# font (25 px on the default canvas). See _DateLocator, batch 48.
+_DATE_LABEL_GAP_EM = 1.0
+# The most choices of ticks one locator keeps (each a few numbers), bounded for
+# the long-running web server.
+_SPACED_CHOICES_KEPT = 64
 
 
 class _DateLocator(mdates.AutoDateLocator):
-    """AutoDateLocator that takes its own fallback without warning about it.
+    """AutoDateLocator that takes its own fallback without warning about it, and keeps its labels apart.
 
     AutoDateLocator uses the coarsest frequency (years, months, days, hours …)
     that gives at least ``minticks`` ticks, then the first interval in that
@@ -459,7 +465,8 @@ class _DateLocator(mdates.AutoDateLocator):
     minor ticks it lands every 1 January, on top of the major ticks, and the
     chart loses its minor ticks and grid altogether. So the fallback is kept,
     and only that one warning is suppressed. Tick positions are exactly
-    matplotlib's for every span (checked from 7 days to 120 years).
+    matplotlib's for every span (checked from 7 days to 120 years), but for
+    the two changes to the labelled major ticks below.
 
     With ``thin_month_ends`` (the labelled major ticks) one more thing is
     changed. Daily ticks every 2 or 4 days are laid on days of the month
@@ -473,16 +480,112 @@ class _DateLocator(mdates.AutoDateLocator):
     month. Checked over 2,580 windows from 7 days to 120 years: only such
     ticks go (windows of 10 to 42 days), nothing is added, no short gap is
     left, and the minor ticks are untouched.
+
+    And the labels are kept apart (batch 48). Where the axis's major ticks
+    would put two neighbouring labels less than ``_DATE_LABEL_GAP_EM`` of
+    their font apart, the choice is made again with fewer ticks allowed:
+    maxticks lowered (a longer interval within the frequency: 1, 2, 4, 7,
+    14 days; 1, 2, 3, 4, 6 months …), then minticks (a coarser frequency:
+    months for days, years for months), until they stand apart, or, where
+    none does, the choice with the widest gap. A window with fewer than six
+    month starts (about 4.6 to 6 months) falls from months to days, and the
+    longest daily interval, 14 days, gave up to 13 labels of ten characters:
+    "2026-06-012026-06-15" on the default 2048 px chart (found by
+    NG_analysis, 2026-11-17); on the page's 800 px phone canvas nearly every
+    span from one month to a year overlapped. The labels are measured as
+    drawn: written by the axis's own formatter, in their font, on the
+    figure's canvas, each centred on its tick. Only the axis's major locator
+    does this (it finds that for itself, so no caller passes anything new),
+    on a level x axis drawn on a canvas that measures text (Agg's, Tk's);
+    the minor ticks, and any window whose labels already stand apart, keep
+    matplotlib's choice.
     """
 
     def __init__(self, *, minticks: int, maxticks: int, thin_month_ends: bool = False) -> None:
         super().__init__(minticks=minticks, maxticks=maxticks)
         self.thin_month_ends = thin_month_ends
+        # The (minticks, maxticks) that keeps the labels apart, None for this
+        # locator's own, by what that depends on (``_labels_key``).
+        self._spaced_choices: dict[tuple, tuple[int, int] | None] = {}
 
     def get_locator(self, dmin, dmax):
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="AutoDateLocator was unable to pick an appropriate interval")
-            return super().get_locator(dmin, dmax)
+        key = self._labels_key(dmin, dmax)
+        if key is None:
+            return self._locator(dmin, dmax)
+        if key not in self._spaced_choices:
+            if len(self._spaced_choices) >= _SPACED_CHOICES_KEPT:
+                self._spaced_choices.clear()
+            self._spaced_choices[key] = self._spaced(dmin, dmax, key)
+        return self._locator(dmin, dmax, self._spaced_choices[key])
+
+    def _locator(self, dmin, dmax, choice: tuple[int, int] | None = None):
+        """Matplotlib's locator for the span, with ``choice``, a (minticks, maxticks), in place of this one's own."""
+        own = self.minticks, self.maxticks
+        if choice is not None:
+            self.minticks, self.maxticks = choice[0], dict.fromkeys(own[1], choice[1])
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="AutoDateLocator was unable to pick an appropriate interval")
+                return super().get_locator(dmin, dmax)
+        finally:
+            self.minticks, self.maxticks = own
+
+    def _labels_key(self, dmin, dmax) -> tuple | None:
+        """What the labels' spacing depends on; None where it is not looked at (see the class docstring)."""
+        axis = self.axis
+        if axis is None or axis.axis_name != "x" or axis.get_major_locator() is not self:
+            return None
+        figure = axis.get_figure(root=True)
+        if figure is None or not hasattr(figure.canvas, "get_renderer"):
+            return None
+        label = axis.majorTicks[0].label1
+        if label.get_rotation() != 0:
+            return None
+        length = axis.axes.get_window_extent().width
+        if not length > 0:
+            return None
+        return (
+            float(mdates.date2num(dmin)), float(mdates.date2num(dmax)), float(length),
+            hash(label.get_fontproperties()), float(figure.dpi), id(axis.get_major_formatter()),
+        )
+
+    def _spaced(self, dmin, dmax, key: tuple) -> tuple[int, int] | None:
+        """The first choice, from this locator's own on to ever fewer ticks, whose labels stand apart (see the class docstring)."""
+        vmin, vmax, length = key[0], key[1], key[2]
+        figure = self.axis.get_figure(root=True)
+        renderer = figure.canvas.get_renderer()
+        font = self.axis.majorTicks[0].label1.get_fontproperties()
+        formatter = self.axis.get_major_formatter()
+        least = _DATE_LABEL_GAP_EM * font.get_size_in_points() * figure.dpi / 72.0
+        most = max(self.maxticks.values())
+        choices = [None, *((minticks, maxticks) for minticks in range(self.minticks, 0, -1) for maxticks in range(most, 1, -1))]
+        seen = set()
+        widest, widest_gap = None, -math.inf
+        for choice in choices:
+            ticks = np.asarray(self._thinned(self._locator(dmin, dmax, choice).tick_values(dmin, dmax)), dtype=float)
+            if tuple(ticks) in seen:
+                continue
+            seen.add(tuple(ticks))
+            # The formatter writes each label as this choice's frequency does (AutoDateFormatter reads this locator's).
+            gap = self._least_gap(ticks, formatter.format_ticks(ticks), vmin, vmax, length, renderer, font)
+            if gap >= least:
+                return choice
+            if gap > widest_gap:
+                widest, widest_gap = choice, gap
+        return widest
+
+    @staticmethod
+    def _least_gap(ticks, labels, vmin: float, vmax: float, length: float, renderer, font) -> float:
+        """The least gap in pixels between two neighbouring labels, each centred on its tick; inf for fewer than two."""
+        drawn = [
+            (float((tick - vmin) / (vmax - vmin) * length), renderer.get_text_width_height_descent(text, font, ismath=False)[0])
+            for tick, text in zip(ticks, labels)
+            if text and vmin <= tick <= vmax
+        ]
+        return min(
+            ((right - right_width / 2) - (left + left_width / 2) for (left, left_width), (right, right_width) in zip(drawn, drawn[1:])),
+            default=math.inf,
+        )
 
     def __call__(self):
         return self._thinned(super().__call__())
