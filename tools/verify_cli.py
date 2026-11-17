@@ -339,6 +339,11 @@ CASES: list[list[str]] = [
     ["--com", "--ttm"], ["--com", "--TTM"], ["--com", "--tt"], ["--com", "--ttmx"], ["--com", "--ttm:yes"],
     ["--com", "--no-ttm"], ["--com", "--ttm", "--no-ttm"], ["--ttm"], ["--com:debt", "--ttm", "-r", "--base:de"],
     ["--com:pop", "--ttm", "-s:2000"],
+    # Batch 47.4 (decision 154): the mortgage rate, the price index and the two balances, each by a leading part; "c"
+    # shared by cpi and current, refused; with -r, a base and --ttm.
+    ["--com:mortgage"], ["--com:mo"], ["--com:cpi"], ["--com:cp"], ["--com:c"], ["--com:current"], ["--com:cu"],
+    ["--com:trade"], ["--com:t"], ["--com:trade", "-r"], ["--com:cur", "--base:de"], ["--com:cur", "--ttm", "-p"],
+    ["--com:cpi", "--cpi:sa"], ["--com:mort,cpi"],
 ]
 
 

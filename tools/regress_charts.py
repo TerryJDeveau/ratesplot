@@ -429,6 +429,18 @@ CASES: dict[str, list[str]] = {
     "cmp_debt_ttm_reg": ["--na:ca,us,gb,de", "--com:debt", "--ttm", "--reg", "-l", "-s:2005"],
     "cmp_debt_r_ttm_base_de": ["--na:ca,us,gb", "--com:debt", "-r", "--ttm", "--base:de", "-s:2005"],
     "cmp_pop_ttm": ["--na:ca,us,gb,de", "--com:pop", "--ttm", "-s:1990"],
+    # Batch 47.4 (decision 154): each nation's headline mortgage rate with end labels; the price index rebased to 100,
+    # against the U.S. and as TTM changes (each nation's inflation); the current account balance in US$ with end
+    # labels and --reg drawing nothing, against Germany unticked, and as TTM changes per person; the trade balance as
+    # % of GDP.
+    "cmp_mort_l": ["--na:ca,us,gb,de", "--com:mortgage", "-l", "-s:2015"],
+    "cmp_cpi_l": ["--na:ca,us,gb,de", "--com:cpi", "-l", "-s:2000"],
+    "cmp_cpi_base": ["--na:ca,us,gb,de", "--com:cpi", "--base", "-s:2000"],
+    "cmp_cpi_ttm": ["--na:ca,us,gb,de", "--com:cpi", "--ttm", "-l", "-s:2019"],
+    "cmp_cur_l_reg": ["--na:ca,us,gb,de", "--com:current", "-l", "--reg", "-s:2000"],
+    "cmp_cur_base_de": ["--na:ca,us,gb", "--com:current", "--base:de", "-l", "-s:2000"],
+    "cmp_cur_ttm_pc": ["--na:ca,us,gb,de", "--com:current", "--ttm", "-p", "-s:2010"],
+    "cmp_trade_r": ["--na:ca,us,gb,de", "--com:trade", "-r", "-l", "-s:2000"],
 }
 
 
