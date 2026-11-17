@@ -906,7 +906,7 @@ def check_layout(check: Check) -> None:
     titles = [header.value for header in at.subheader]
     # The comparison's block on its tab alone since batch 26.2 (``check_batch262``).
     wanted = [
-        "Country selection", "Curve selection", "Measure of debt, GDP, and interest", "Rates on the yield axis",
+        "Country selection", "Curve selection", "Measure of debt, GDP, interest paid, and BOP", "Rates on the yield axis",
         "Date window", "Final canvas size in pixels",
     ]
     check("the titled blocks in order", titles[: len(wanted)] == wanted, titles)
