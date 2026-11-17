@@ -421,10 +421,16 @@ _CALENDAR_FIRST = EARLIEST_DATE.date()
 _CALENDAR_LAST = datetime.date(2100, 12, 31)
 # A date field with its calendar button: room for a whole YYYY-MM-DD.
 _DATE_ROW_PX = 230
-# The blocks whose check boxes share rows (Terry, 2026-10-08: the nations,
-# the yields, spreads, policy and mortgages, the measure; Start and End are
-# on one row anyway), as in the window at its default width.
-_TWO_COLUMN_BLOCKS = ("country", "rates", "units")
+# A field under its flag's box, in the flag's cell of a block's flow (batch
+# 47.1: the regression tolerance, the refresh interval): room for its label,
+# "tolerance, % of axis", and a number.
+_FLAG_FIELD_PX = 170
+# A list under its flag (batch 47.1): its container's key starts with this,
+# which Streamlit gives the container as a class ("st-key-…"), and the page's
+# style indents it (_INFO_ICON_STYLE) by _INDENT_REM, the window's 22 px at
+# the page's 16 px to the rem: its boxes start under the flag's text.
+_INDENT_KEY = "ratesplot-indent-"
+_INDENT_REM = 1.4
 
 
 @dataclass(frozen=True)
@@ -2235,24 +2241,36 @@ def _controls() -> None:
         }
         values = [option for option in members if option.kind is Kind.VALUE and option not in attached.values()]
         flags = [option for option in members if option.kind is not Kind.VALUE]
-        if key in _TWO_COLUMN_BLOCKS and not attached:
-            # As many to a row as fit, as in the window (Terry, 2026-10-08):
-            # two at the sidebar's default width, more when it is dragged
-            # wider, one on a phone; each row filled before the next, so
-            # four may go three and one (Terry, 2026-10-14, batch 15.2). A
-            # row that wraps, each box as wide as its text: fixed columns cut
-            # "United States" to "United Sta…" there.
-            row = bar.container(horizontal=True, wrap=True)
-            for option in flags:
-                _flag_control(row, option)
-            flags = []
+        # Every block's boxes as many to a row as fit, as in the window
+        # (Terry, 2026-10-08): two at the sidebar's default width, more when
+        # it is dragged wider, one on a phone; each row filled before the
+        # next, so four may go three and one (Terry, 2026-10-14, batch 15.2).
+        # A row that wraps, each box as wide as its text: fixed columns cut
+        # "United States" to "United Sta…" there. Until batch 47.1 only the
+        # nations, the measure and the rates flowed, and only with no list or
+        # field under a flag (Terry, 2026-11-17: "the “Curve selection” block
+        # of tick boxes always seems to be a single column, unlike the window
+        # which spreads them over multiple columns if the sidebar width
+        # allows"). A flag with a list or a field of its own (the balance of
+        # payments' pair, "Seas. adj.", the base nation's boxes; the
+        # regression tolerance, the refresh interval) is one cell of the flow,
+        # the flag on top and its own control under it, indented as the
+        # window indents a list ("so they are portrayed as sub-choices"): the
+        # window's list takes a row of its own under the block's first column
+        # (gui._Flow), which on the page left it under another box.
+        row = bar.container(horizontal=True, wrap=True) if flags else None
         for option in flags:
-            _flag_control(bar, option)
-            if option.name in attached and attached[option.name].editor == "choices":
-                # Straight in the sidebar: Streamlit allows no columns inside its columns there.
-                _choices_control(bar, attached[option.name])
-            elif option.name in attached:
-                _value_control(bar.columns([1, 12])[1], attached[option.name])
+            value = attached.get(option.name)
+            if value is None:
+                _flag_control(row, option)
+                continue
+            cell = row.container(width="content", gap=None)
+            _flag_control(cell, option)
+            under = cell.container(key=_INDENT_KEY + value.name, gap=None)
+            if value.editor == "choices":
+                _choices_control(under, value)
+            else:
+                _value_control(under, value, width=_FLAG_FIELD_PX)
         # Start and End side by side when the sidebar is wide enough for
         # both to show a whole date, else one under the other (two columns
         # of the default sidebar left "2000-01-01" showing "200"); other text
@@ -2868,6 +2886,7 @@ def _auto_refresh_tick(config: PlotConfig) -> None:
 # The wait line's icon (batch 35.2): a ring turning in the text's colour, in either theme.
 # The open sidebar's widest raised from Streamlit's 600 px (SIDEBAR_WIDEST_PX, ``_SIDEBAR_JS``);
 # a folded one keeps Streamlit's style, which hides it.
+# A list under its flag indented (batch 47.1, ``_INDENT_KEY``).
 _INFO_ICON_STYLE = """<style>
 [data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"]) svg { display: none; }
 [data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"])::after {
@@ -2880,7 +2899,8 @@ _INFO_ICON_STYLE = """<style>
 }
 @keyframes ratesplot-wait-turn { to { transform: rotate(360deg); } }
 section[data-testid="stSidebar"][aria-expanded="true"] { max-width: min(SIDEBAR_WIDEST_PXpx, 90vw) !important; }
-</style>""".replace("SIDEBAR_WIDEST_PX", str(SIDEBAR_WIDEST_PX))
+[class*="st-key-INDENT_KEY"] { padding-left: INDENT_REMrem; box-sizing: border-box; }
+</style>""".replace("SIDEBAR_WIDEST_PX", str(SIDEBAR_WIDEST_PX)).replace("INDENT_KEY", _INDENT_KEY).replace("INDENT_REM", str(_INDENT_REM))
 _WAIT_ICON = f'<div class="ratesplot-wait-icon" style="color: {WAIT_COLOUR}"></div>'
 
 
