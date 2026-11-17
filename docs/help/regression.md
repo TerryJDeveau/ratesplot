@@ -24,4 +24,4 @@ Each label is written along its piece, in the curve's colour, above or below it,
 
 ## On the command line
 
-`--reg` or `--regression` turns them on, `--no-reg` off; `--reg:TOL` sets the tolerance in % of the axis's height and turns them on (`--reg:1`). In the window and on the page the tolerance has its box beside "Regression segments" (0.3 when blank). Both are greyed while none of debt, GDP and interest is ticked, and the tolerance's box while "Regression segments" is unticked.
+`--reg` or `--regression` turns them on, `--no-reg` off; `--reg:TOL` sets the tolerance in % of the axis's height and turns them on (`--reg:1`). In the window and on the page the tolerance has its box beside "Regression segments" (0.3 when blank). Both are greyed while none of debt, GDP, interest and the balance of payments is ticked, and the tolerance's box while "Regression segments" is unticked.

@@ -15,7 +15,7 @@ The Bank of Canada publishes the Government of Canada's marketable debt, its tre
 
 ## When it adds nothing
 
-The projections are drawn only on a chart whose End is no more than four days before today, the rule for the day's quotes ([Latest values](?help=latest-values)). The box is greyed when the End is earlier, and while none of debt, GDP and interest is ticked.
+The projections are drawn only on a chart whose End is no more than four days before today, the rule for the day's quotes ([Latest values](?help=latest-values)). The box is greyed when the End is earlier, and while none of debt, GDP, interest and the balance of payments is ticked.
 
 It has been a box of its own since 2026-10-27; until then "Intraday quotes on end date" turned both on and off. The quotes draw values published since the regular sources' last figures; this box draws an estimate.
 

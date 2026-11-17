@@ -944,7 +944,9 @@ GROUPS: dict[str, str] = {
         'the two at a time, each only when named, as a series is; at least "cp",\n'
         '"pop"):'
     ),
-    "units": "Measure of debt, GDP, and interest:",
+    # Terry's words (2026-11-17, batch 47.1): the balance of payments has been
+    # one of the amounts -r, -p and --constant act on since batch 23.
+    "units": "Measure of debt, GDP, interest paid, and BOP:",
     "labels": "Line labels and regression segments (--reg needs at least \"reg\"):",
     "dates": "Date window (YYYY, YYYY-MM or YYYY-MM-DD; '/' also accepted):",
     "latest": "Latest data (at least \"cur\"; --auto-refresh \"au\"):",

@@ -1,6 +1,6 @@
 # The master currency
 
-Each chart draws its amounts (debt, GDP and interest, their levels, per person, and their projections to today) in its own nation's currency. With a master currency, every chart drawn with it draws them in that one currency instead, so that the nations' curves read in one unit.
+Each chart draws its amounts (debt, GDP, interest and the balance of payments, their levels, per person, and their projections to today) in its own nation's currency. With a master currency, every chart drawn with it draws them in that one currency instead, so that the nations' curves read in one unit.
 
 ## The box
 
