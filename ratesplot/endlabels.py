@@ -25,18 +25,37 @@ and before the legend, which then avoids them as it avoids the lines (see
    smallest size moves a little further from the curve ends, and each of its
    labels is joined to its curve's end by a thin leader line in its colour
    (all of them, so the column reads alike).
+5. A label lying across another curve is moved off it (batch 47.2, the
+   plan's item 24.2; Terry, 2026-11-17: "Some of the “last value” label still
+   overwrite other series plot lines when a leader line could easily avoid
+   it. To site one example: the US CPI on top of the Fed Funds target
+   rate."). Each label's box is tested against the other curves as drawn
+   (``_Ink``): their lines sampled every few pixels, stepped as they are
+   drawn and broken where they are, its own curve's left out (its colour's
+   lines). One that covers a curve is tried up and down from where it is, a
+   quarter of its height at a time, up to two of its heights, nearest first,
+   at a place inside the axes clear of every other curve and label; failing
+   that, it joins the column of labels past the curves' ends (the curves
+   that run to the chart's right end), and the labels are laid out again
+   with it there, provided its curve ends within a fifth of the axes' width
+   of the column: one ending further off stays where it was, as before,
+   since its leader would cross the chart. A curve that stops short of the others, the U.S. inflation
+   curve a month behind the policy rate, is the usual case. A label moved
+   more than half its height from its curve's end, or into the column, is
+   joined to it by a leader, as a crowded stack's are.
 
 Sizes are multiplied by ``PlotConfig.font_scale`` like every other text.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Sequence
 
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.backend_bases import RendererBase
+from matplotlib.cbook import STEP_LOOKUP_MAP
 from matplotlib.colors import same_color
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
@@ -70,6 +89,23 @@ _BOX_PAD = 0.15
 _BOX_ALPHA = 0.85
 # Labels this close (pixels) after spreading are touching: the same stack.
 _TOUCH_PX = 0.5
+# Batch 47.2: a label moved off another curve (``_off_other_curves``). The
+# other curves sampled this many pixels apart along each line, as the legend
+# samples them (``occupancy``), but closer: a label is small. A sample this
+# close to a label's background counts as covered: about half the widest
+# line (2-3 px), so a line grazing the background's edge counts too.
+_INK_SPACING_PX = 2.0
+_INK_CLEARANCE_PX = 1.5
+# The places tried up and down from a covering label's own: steps of this
+# share of its height, as far as this many of its heights.
+_SHIFT_STEP_HEIGHTS = 0.25
+_SHIFT_MAX_HEIGHTS = 2.0
+# A covering label with no room up or down joins the column past the curves'
+# ends only when its curve ends within this share of the axes' width of it:
+# further off, its leader would cross the chart (the UK's national debt per
+# person ending in 1975 on a chart to 2026, among the yields: tried, 47.2), so
+# it stays where it was, as before.
+_COLUMN_REACH_FRACTION = 0.2
 
 
 @dataclass(frozen=True)
@@ -80,6 +116,9 @@ class _Label:
     color: object  # the curve's colour, in any form matplotlib accepts
     axes: Axes  # the curve's axes (the yield axis or its twin)
     end: tuple[float, float]  # the curve's last point, in its axes' data coordinates
+    # Where the label's text starts, as a date number, once it has joined the column of labels past the curves'
+    # ends (batch 47.2, ``_off_other_curves``); None: just right of its curve's end, as always.
+    at_x: float | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +130,14 @@ class _Layout:
     centres: list[float]  # display y of each label's centre
     heights: list[float]  # each label's height with its background, in pixels
     stacks: list[list[int]]  # indices of labels that touch one another, bottom to top
+    lefts: list[float]  # display x of each label's background's left edge (batch 47.2)
+    widths: list[float]  # each label's width with its background, in pixels
+
+    def box(self, index: int, centre: float | None = None) -> tuple[float, float, float, float]:
+        """Label ``index``'s background as (x0, y0, x1, y1) in display pixels, at its centre or at ``centre``."""
+        y = self.centres[index] if centre is None else centre
+        half = self.heights[index] / 2
+        return self.lefts[index], y - half, self.lefts[index] + self.widths[index], y + half
 
     def shift_ok(self, index: int) -> bool:
         """True when label ``index`` sits within ``_MAX_SHIFT_HEIGHTS`` of its own height of its curve's end."""
@@ -254,12 +301,17 @@ def _lay_out(
 
     box = ax.get_window_extent(renderer)
     rooms = [gap + width + frame_px for gap, width in zip(gaps_px, widths)]
-    right = _right_limit([label.end[0] for label in labels], rooms, left, right, box.width)
+    # A label in the column past the curves' ends (batch 47.2) needs its room there, not at its curve's end.
+    starts = [label.end[0] if label.at_x is None else label.at_x for label in labels]
+    right = _right_limit(starts, rooms, left, right, box.width)
     ax.set_xlim(left, right)
 
     # Display positions under the new limits (both axes share them).
     ends = [tuple(label.axes.transData.transform(label.end)) for label in labels]
-    lefts = [x + gap for (x, _), gap in zip(ends, gaps_px)]
+    lefts = [
+        float(label.axes.transData.transform((start, label.end[1]))[0]) + gap
+        for label, start, gap in zip(labels, starts, gaps_px)
+    ]
     centres = [y for _, y in ends]
     stacks: list[list[int]] = []
     for group in _overlapping_groups(lefts, [start + width for start, width in zip(lefts, widths)]):
@@ -275,7 +327,110 @@ def _lay_out(
                 stacks[-1].append(above)
             else:
                 stacks.append([above])
-    return _Layout(right, ends, centres, heights, stacks)
+    return _Layout(right, ends, centres, heights, stacks, lefts, widths)
+
+
+# ---------------------------------------------------------------------------
+# Off other curves (batch 47.2)
+# ---------------------------------------------------------------------------
+
+
+class _Ink:
+    """Every line of a figure as drawn, sampled in display pixels, each sample with its line's colour (batch 47.2).
+
+    Read once the date limits are those of a layout: a sample's place moves
+    with them. A line is sampled along its stroke as matplotlib draws it:
+    stepped as its drawstyle steps, broken where its data has a gap (the U.S.
+    month with no consumer prices), and a line drawn without a stroke at its
+    points alone. Lines hidden, or drawn fully transparent, are left out.
+    """
+
+    def __init__(self, figure: Figure) -> None:
+        parts: list[np.ndarray] = []
+        self.colours: list[object] = []
+        owner: list[np.ndarray] = []
+        for axis in figure.axes:
+            if not axis.get_visible():
+                continue
+            for line in axis.get_lines():
+                if not line.get_visible() or line.get_alpha() == 0:
+                    continue
+                samples = _stroke_samples(line, axis)
+                if len(samples):
+                    owner.append(np.full(len(samples), len(self.colours)))
+                    parts.append(samples)
+                    self.colours.append(line.get_color())
+        self.points = np.concatenate(parts) if parts else np.empty((0, 2))
+        self.owner = np.concatenate(owner) if owner else np.empty(0, dtype=int)
+
+    def covers(self, box: tuple[float, float, float, float], colour: object) -> bool:
+        """True when a line not of ``colour`` (the label's own curve) passes through ``box`` or within ``_INK_CLEARANCE_PX`` of it."""
+        x0, y0, x1, y1 = box
+        pad = _INK_CLEARANCE_PX
+        x, y = self.points[:, 0], self.points[:, 1]
+        inside = (x >= x0 - pad) & (x <= x1 + pad) & (y >= y0 - pad) & (y <= y1 + pad)
+        if not inside.any():
+            return False
+        return any(not same_color(self.colours[index], colour) for index in np.unique(self.owner[inside]))
+
+
+def _stroke_samples(line: Line2D, axis: Axes) -> np.ndarray:
+    """Points along ``line``'s stroke as drawn, ``_INK_SPACING_PX`` apart, in display pixels (``_Ink``)."""
+    xy = np.asarray(line.get_xydata(), dtype=float)
+    if not len(xy):
+        return np.empty((0, 2))
+    try:
+        display = axis.transData.transform(xy)
+    except Exception:  # noqa: BLE001 - a line whose data the axes cannot place draws nothing either
+        return np.empty((0, 2))
+    finite = np.isfinite(display).all(axis=1)
+    if line.get_linestyle() in ("None", "", " ", "none"):
+        return display[finite]  # its markers alone
+    step = STEP_LOOKUP_MAP.get(line.get_drawstyle(), STEP_LOOKUP_MAP["default"])
+    parts: list[np.ndarray] = []
+    # Each run of finite points is a stroke of its own: a gap in the data is a gap in the line.
+    edges = np.flatnonzero(np.diff(np.concatenate([[0], finite.astype(int), [0]])))
+    for start, stop in zip(edges[::2], edges[1::2]):
+        run = display[start:stop]
+        if len(run) < 2:
+            parts.append(run)
+            continue
+        xs, ys = step(run[:, 0], run[:, 1])
+        stroke = np.column_stack([xs, ys])
+        deltas = np.diff(stroke, axis=0)
+        counts = np.maximum(1, (np.hypot(deltas[:, 0], deltas[:, 1]) / _INK_SPACING_PX).astype(int))
+        segment = np.repeat(np.arange(len(counts)), counts)
+        k = np.arange(counts.sum()) - np.repeat(np.cumsum(counts) - counts, counts)
+        parts.append(stroke[:-1][segment] + (k / counts[segment])[:, None] * deltas[segment])
+        parts.append(stroke[-1:])
+    return np.concatenate(parts) if parts else np.empty((0, 2))
+
+
+def _overlaps(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def _clear_place(
+    index: int, layout: _Layout, labels: Sequence[_Label], ink: _Ink, low: float, high: float
+) -> float | None:
+    """A centre for label ``index`` up or down from its own, nearest first, clear of other curves and labels; None if none.
+
+    Steps of ``_SHIFT_STEP_HEIGHTS`` of its height, up to ``_SHIFT_MAX_HEIGHTS``
+    of them each way, up before down at the same distance; inside ``low``..
+    ``high`` (the axes, less the frame's gap).
+    """
+    height = layout.heights[index]
+    steps = int(round(_SHIFT_MAX_HEIGHTS / _SHIFT_STEP_HEIGHTS))
+    for step in range(1, steps + 1):
+        for sign in (1, -1):
+            centre = layout.centres[index] + sign * step * _SHIFT_STEP_HEIGHTS * height
+            box = layout.box(index, centre)
+            if box[1] < low or box[3] > high or ink.covers(box, labels[index].color):
+                continue
+            if any(other != index and _overlaps(box, layout.box(other)) for other in range(len(labels))):
+                continue
+            return centre
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -309,31 +464,78 @@ def add_end_labels(ax: Axes, curves: Sequence[tuple[Line2D, ValueFormatter]], co
     def lay_out() -> _Layout:
         return _lay_out(ax, labels, fontsizes, gaps_pt, config, renderer, left, right)
 
-    # Stacks are found at the legend's size and keep one size each, so the
-    # labels of a stack match even if a smaller font lets them part.
-    layout = lay_out()
-    crowded = [stack for stack in layout.stacks if layout.crowded(stack)]
-    for reduction in _FONT_SIZE_REDUCTIONS_PT[1:]:
-        if not crowded:
-            break
-        for stack in crowded:
-            for index in stack:
-                fontsizes[index] = (LEGEND_FS - reduction) * config.font_scale
+    def sized() -> tuple[_Layout, set[int]]:
+        """Steps 1 to 4 of the module's docstring, from the legend's size: the layout, and the labels given leaders."""
+        fontsizes[:] = [LEGEND_FS * config.font_scale] * len(labels)
+        gaps_pt[:] = [_GAP_PT] * len(labels)
+        # Stacks are found at the legend's size and keep one size each, so the
+        # labels of a stack match even if a smaller font lets them part.
         layout = lay_out()
-        crowded = [stack for stack in crowded if layout.crowded(stack)]
-    # Still crowded at the smallest size: stand off, with leader lines.
-    with_leaders = {index for stack in crowded for index in stack}
-    if with_leaders:
-        for index in with_leaders:
-            gaps_pt[index] = _LEADER_GAP_PT
-        layout = lay_out()
-    # The date limits are those of the last layout, which is the one drawn.
+        crowded = [stack for stack in layout.stacks if layout.crowded(stack)]
+        for reduction in _FONT_SIZE_REDUCTIONS_PT[1:]:
+            if not crowded:
+                break
+            for stack in crowded:
+                for index in stack:
+                    fontsizes[index] = (LEGEND_FS - reduction) * config.font_scale
+            layout = lay_out()
+            crowded = [stack for stack in crowded if layout.crowded(stack)]
+        # Still crowded at the smallest size: stand off, with leader lines.
+        with_leaders = {index for stack in crowded for index in stack}
+        if with_leaders:
+            for index in with_leaders:
+                gaps_pt[index] = _LEADER_GAP_PT
+            layout = lay_out()
+        return layout, with_leaders
 
+    layout, with_leaders = sized()
+    # Step 5 (batch 47.2): a label lying across another curve moved off it,
+    # up or down where there is room, else into the column past the curves'
+    # ends, the labels then laid out again with it there; each round looks
+    # again, so a label the column's spreading pushes onto a curve is moved
+    # in its turn. Each label joins the column once at most.
     px_per_pt = figure.dpi / 72.0
+    frame_px = _FRAME_GAP_PT * config.font_scale * px_per_pt
+    column_x = max(label.end[0] for label in labels)
+    shifted: set[int] = set()
+    for _round in range(len(labels) + 1):
+        ink = _Ink(figure)
+        axes_box = ax.get_window_extent(renderer)
+        shifted = set()
+        joining: list[int] = []
+        for index in sorted(range(len(labels)), key=lambda i: (labels[i].end[0], i)):
+            if not ink.covers(layout.box(index), labels[index].color):
+                continue
+            centre = _clear_place(index, layout, labels, ink, axes_box.y0 + frame_px, axes_box.y1 - frame_px)
+            if centre is not None:
+                layout.centres[index] = centre
+                shifted.add(index)
+                continue
+            column_px = float(labels[index].axes.transData.transform((column_x, labels[index].end[1]))[0])
+            reach = column_px - layout.ends[index][0]
+            if labels[index].at_x is None and 0 < reach <= _COLUMN_REACH_FRACTION * axes_box.width:
+                joining.append(index)
+        if not joining:
+            break
+        for index in joining:
+            labels[index] = replace(labels[index], at_x=column_x)
+        layout, with_leaders = sized()
+    # The date limits are those of the last layout, which is the one drawn.
+    with_leaders = (
+        with_leaders
+        | {index for index, label in enumerate(labels) if label.at_x is not None}
+        | {index for index in shifted if not layout.shift_ok(index)}
+    )
+
     extents: list[Bbox] = []
     for index, label in enumerate(labels):
         pad_pt = _BOX_PAD * fontsizes[index]
         shift_pt = (layout.centres[index] - layout.ends[index][1]) / px_per_pt
+        # Right of its curve's end by its gap, or in the column past the curves' ends (batch 47.2).
+        offset_pt = (
+            gaps_pt[index] * config.font_scale if label.at_x is None
+            else (layout.lefts[index] - layout.ends[index][0]) / px_per_pt
+        )
         leader = None
         if index in with_leaders:
             # From the label's left edge (clipped to its background) to just short of the curve's end.
@@ -350,7 +552,7 @@ def add_end_labels(ax: Axes, curves: Sequence[tuple[Line2D, ValueFormatter]], co
             xy=label.end,
             xycoords="data",
             # The text starts one background pad inside the background's left edge.
-            xytext=(gaps_pt[index] * config.font_scale + pad_pt, shift_pt),
+            xytext=(offset_pt + pad_pt, shift_pt),
             textcoords="offset points",
             ha="left",
             va="center",
