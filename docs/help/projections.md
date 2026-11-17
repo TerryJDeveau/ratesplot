@@ -12,7 +12,7 @@ On by default. GDP, debt and interest are published weeks or months after the pe
 ## The population, the price index and inflation
 
 - **The [population](?help=population)** is carried on from its last estimate to the End by the same rule. [Per capita](?help=per-capita) divides by it, so a projected amount is divided by the projected population.
-- **The [price index](?help=price-index)** gets a figure for each month after its last, at its pace over the year before; a faint straight line runs through them from its last published month to the End, through each month's middle with [Daily values](?help=daily), its first day without.
+- **The [price index](?help=price-index)** gets a figure for each month after its last, at its pace over the year before; they are drawn faint from its last published month to the End, a straight line through each month's middle with [Daily values](?help=daily), each month's figure across its month without, as the published months are drawn.
 - **[Inflation](?help=inflation)** gets no formula of its own: each projected month's rise is the projected index against the published index a year before, so the line bends as the months a year back drop out. For the UK, whose curve is the ONS's own rate, its index D7BT is the one carried on.
 - **[Inflation adjusted](?help=constant-prices)** stays in the prices of the index's last published month; an amount after it is divided by its own month's projected index.
 
