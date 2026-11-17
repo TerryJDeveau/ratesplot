@@ -912,10 +912,18 @@ _COMPARE_CHOICES = (
     ("", tuple((term, term) for term in REAL_YIELD_TERMS)),
     ("Other measures", ()),
     ("", (("policy", "Policy rate"),)),
+    ("", (("mortgage", "Mortgage rate"),)),
     ("", (("inflation", "Inflation"),)),
+    ("", (("cpi", "Consumer price index"),)),
     ("", (("debt", "Public debt"), ("gdp", "TTM GDP"))),
     ("", (("interest", "TTM interest paid on public debt"),)),
     ("", (("population", "Population"),)),
+    # Batch 47.4: the balance of payments' two balances under a heading of their own, as the nations' charts offer
+    # the pair; one to a row, since a row of two shares its grid columns with "Public debt" and "TTM GDP" and
+    # "Current account balance" widened the window's column (verify_gui's 31.2: Refresh 273 px, Reset 274).
+    ("Balance of payments", ()),
+    ("", (("current", "Current account balance"),)),
+    ("", (("trade", "Trade balance"),)),
 )
 # The base nation's boxes (batch 26.3; Terry, 2026-11-12: "a copy of the
 # national option boxes"), one at a time, each written by its first code.
@@ -1014,7 +1022,8 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "compare-measure", Kind.VALUE, ("compare_measures",), "compare", "--compare:MEASURE / --com:MEASURE",
         "the measure compared, one at a time: a\nyield term (10y, the default; 2y, r10 ...),\n"
-        "policy, inflation, debt, gdp, interest\nor population; -r, -p and --constant act\n"
+        "policy, mortgage, inflation, cpi, debt,\ngdp, interest, population, current or\n"
+        "trade; -r, -p and --constant act\n"
         "on the amounts, which are in the master\ncurrency (USD if none); turns --compare on",
         names=("compare",), shortest=3, parse=parse_compare_measure, turns_on="compare", label="Measure compared",
         format=format_terms, editor="choices", choices=_COMPARE_CHOICES, topic="compare", one_at_a_time=True,

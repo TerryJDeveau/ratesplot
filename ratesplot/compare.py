@@ -63,6 +63,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.dates import get_epoch
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
+from matplotlib.ticker import FuncFormatter
 
 from . import http
 from .axes import ExtraAxis, apply_axes_formatting, format_currency, format_percent, format_population, format_yield
@@ -74,6 +75,7 @@ from .config import (
     COMPARE_COLOURS,
     COMPARE_DEFAULT_CURRENCY,
     COMPARE_KEY,
+    COMPARE_MORTGAGE_TERMS,
     CURRENCY_SYMBOLS,
     DATE_COLUMN,
     DE,
@@ -83,6 +85,8 @@ from .config import (
     PROJECTION_ALPHA,
     PROJECTION_KEY_COLOR,
     PROJECTION_LABEL,
+    PAYMENTS_CREDITS_COLUMN,
+    PAYMENTS_DEBITS_COLUMN,
     PROJECTION_LABEL_PREFIX,
     SERIES_KINDS,
     UK,
@@ -151,6 +155,14 @@ _EVERY_CURVE_OFF = dict(
 # curves together. Canada's federal debt alone before its aggregate keeps its
 # dots, which mark a change of what is counted, as on Canada's chart.
 _SOLID = {"linestyle": "-"}
+# The kinds of measure in a currency, which -r, -p, --constant and the master currency act on: the amounts, and the
+# balance of payments' balances (batch 47.4).
+_AMOUNTS = ("amount", "balance")
+# The words of each balance (batch 47.4): its column, its name in the legend's place and Export chart, the axis's.
+_BALANCES = {
+    "current": ("TTM Current Account Balance ($)", "TTM Current Account Balance", "TTM current account balance"),
+    "trade": ("TTM Trade Balance ($)", "TTM Trade Balance", "TTM trade balance"),
+}
 # The nations' metadata by key (their words in the title), and by currency (the
 # right axis's label and its ticks' symbol for amounts in that currency).
 _METADATA = {metadata.key: metadata for metadata in (CDN, US, UK, DE)}
@@ -205,13 +217,20 @@ def solo_config(config: PlotConfig) -> PlotConfig:
         curves |= {"include_yield": True, "yield_terms": (measure,)}
     elif measure == "policy":
         curves |= {"policy_rates": True, "policy_terms": ("target",)}
+    elif measure == "mortgage":
+        # Every nation's headline term: each nation keeps the one it has (``Nation.setting``).
+        curves |= {"mortgages": True, "mortgage_terms": tuple(term for term, _words in COMPARE_MORTGAGE_TERMS.values())}
     elif measure == "inflation":
         curves |= {"inflation": True}
+    elif kind == "index":
+        curves |= {"price_index": True, "price_index_adjusted": False}
     elif kind == "amount":
         curves |= {f"include_{measure}": True}
+    elif kind == "balance":
+        curves |= {"payments": True, "payments_items": (measure,)}
     else:
         curves |= {"population": True}
-    amounts = {} if kind == "amount" else {"relative": False, "per_capita": False, "constant_prices": False}
+    amounts = {} if kind in _AMOUNTS else {"relative": False, "per_capita": False, "constant_prices": False}
     if measure == "gdp":
         amounts = {"relative": False}
     if config.ttm_change and config.start is not None:
@@ -237,7 +256,7 @@ def solo_config(config: PlotConfig) -> PlotConfig:
 def compared_currency(config: PlotConfig) -> str | None:
     """The currency the comparison chart's amounts are in: the master's, else ``COMPARE_DEFAULT_CURRENCY``; None where it draws no amount, or a share of GDP."""
     solo = solo_config(config)
-    if compare_kind(config.compare_measure) != "amount" or solo.relative:
+    if compare_kind(config.compare_measure) not in _AMOUNTS or solo.relative:
         return None
     return config.master_currency or COMPARE_DEFAULT_CURRENCY
 
@@ -289,7 +308,8 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
     solo = solo_config(config)
     currency = compared_currency(config)
     ax_macro = ax_yield.twinx()
-    on_left = kind in ("yield", "rate")
+    # A balance (batch 47.4) on the yield axis too: linear, since it changes sign, where the amounts' axis is log.
+    on_left = kind in ("yield", "rate", "balance")
     print(f"--- the comparison chart: {compare_title(measure)}")
     drawn: list[_Drawn] = []
     quotes: list[pd.Timestamp] = []
@@ -330,7 +350,11 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
             curve = _draw_amount(macro_axis, macro, own, nation, country.metadata, currency)
             if price_base is None:  # --constant: the month the amounts are in, the same for every nation
                 price_base = macro.attrs.get(PRICE_BASE_ATTR)
-        else:
+        elif kind == "balance":
+            curve = _draw_balance(ax_yield, macro, own, nation, currency)
+            if price_base is None:
+                price_base = macro.attrs.get(PRICE_BASE_ATTR)
+        else:  # the population, or the price index (batch 47.4), each the curve of the nation's extra axis
             curve, extra = _draw_count(macro_axis, macro, own, nation)
             if curve is not None and extra_axis is None and macro_axis is ax_macro:
                 extra_axis = ExtraAxis(ax_macro, extra.axis_label, extra.tick_format)
@@ -342,8 +366,10 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
         if curve.pairs:
             # A rate's legend entry made now, in the nation's colour: the U.S. target range's a band's key.
             curve.handles = yield_axis_legend([], curve.pairs[:1])
+        # A mortgage rate named with its term (batch 47.4): "United Kingdom (2-year fixed)".
+        named = f"{nation.name} ({COMPARE_MORTGAGE_TERMS[nation.key][1]})" if measure == "mortgage" else nation.name
         for handle in curve.handles:
-            handle.set_label(nation.name)
+            handle.set_label(named)
         return curve
 
     if base_key is not None:
@@ -360,31 +386,52 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
             if curve is not None:
                 drawn.append(curve)
     # A measure in percent (a yield, a rate, a share of GDP under -r) changes, and differs, in percentage points;
-    # an amount, GDP or the population in per cent. A TTM change, in either, differs from the base's in points.
-    points = kind in ("yield", "rate") or (kind == "amount" and solo.relative)
+    # an amount, GDP, the population or the price index in per cent. A TTM change, in either, differs from the
+    # base's in points. A balance (batch 47.4) differs from the base's in its currency, and changes against the size
+    # of its year-ago value.
+    points = kind in ("yield", "rate") or (kind in _AMOUNTS and solo.relative)
+    balance_format = None
+    if kind == "balance" and not points:
+        balance_format = partial(format_currency, prefix=CURRENCY_SYMBOLS[currency])
+    rebased_on = None
+    if kind == "index" and not ttm and drawn:
+        rebased_on = _rebased(drawn)  # each index 100 at the first date every nation has one
     if ttm:
         on_left = True
-        _ttm_change(drawn, points, config.start)
+        _ttm_change(drawn, points, config.start, balance_format)
     if base_key is not None:
         on_left = True
-        _against_base(ax_yield, drawn, points or ttm)
+        _against_base(ax_yield, drawn, points or (ttm and balance_format is None), balance_format)
+    if rebased_on is not None and extra_axis is not None:
+        extra_axis = extra_axis._replace(label=f"Consumer price index ({rebased_on} = 100)")
 
     # The axes as the nations' charts set them, for the one family of curves drawn; against a base or as TTM
     # changes, the yield axis alone, in percent, its label saying what; the dates from Start, not the year before
     # --ttm prepared from.
     measured = replace(solo, price_base=price_base, start=config.start)
-    mark_amounts_currency(figure, None if base_key or ttm else currency)
+    in_currency = balance_format is not None or (not ttm and base_key is None)  # amounts, or a balance's differences
+    mark_amounts_currency(figure, currency if in_currency else None)
     mark_price_base(figure, price_base)
     mark_dates_only(figure)
     metadata = _METADATA_BY_CURRENCY[currency] if currency is not None else US
     if currency is not None:
         metadata = replace(metadata, currency_prefix=CURRENCY_SYMBOLS[currency])
-    if base_key is None and not ttm:
+    if base_key is None and not ttm and kind != "balance":
         apply_axes_formatting(ax_yield, ax_macro, measured, metadata, None, extra_axis)
     else:
         on_yield_axis = replace(measured, **(_EVERY_CURVE_OFF | {"include_yield": True, "yield_terms": ("10y",)}))
-        label = _base_axis_label(drawn[0].nation, points, ttm) if base_key else _ttm_axis_label(points)
+        in_its_currency = currency if balance_format is not None else None
+        if base_key:
+            label = _base_axis_label(drawn[0].nation, points, ttm, in_its_currency)
+        elif ttm:
+            label = _ttm_axis_label(points, in_its_currency)
+        else:
+            label = _balance_axis_label(measure, measured, currency)
         apply_axes_formatting(ax_yield, ax_macro, on_yield_axis, metadata, label, None)
+        if balance_format is not None:
+            # A balance's ticks in its currency (or in percent under -r, the yield axis's own), on both sides.
+            for ax in (ax_yield, ax_macro):
+                ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _pos: balance_format(value)))
     # --reg: each nation's amount or population fitted by straight pieces, now that the axis limits are set; none
     # against a base or as TTM changes, whose curves are not the series the segments fit.
     rate_labels: list[RateLabel] = []
@@ -392,6 +439,8 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
         print("  Note: --reg draws no segments on a comparison against a base nation.")
     elif measured.regression and ttm and kind in ("amount", "count"):
         print("  Note: --reg draws no segments on the comparison's TTM changes.")
+    elif measured.regression and kind == "balance":
+        print("  Note: --reg draws no segments on the balances, which change sign (its pieces fit a log axis).")
     if measured.regression and not on_left:
         for curve in drawn:
             rate_labels += add_regression_segments(ax_macro, curve.frame, curve.fitted, curve.projected, curve.config)
@@ -404,7 +453,8 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
     quote_time = max(quotes) if quotes else None
     if quote_time is not None:
         mark_quote_time(figure, quote_time, MARKET_TIMEZONE)
-    title, short_title = _titles(drawn, measure, measured, drawn[0].nation if base_key else None, points if ttm else None)
+    title, short_title = _titles(drawn, measure, measured, drawn[0].nation if base_key else None,
+                                 (points or balance_format is not None) if ttm else None)
     finish_legend_and_title(
         ax_yield,
         [handles, []] if on_left else [[], handles],
@@ -418,6 +468,10 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
         short_title,
         None,
     )
+    if kind == "balance" and base_key is None:
+        # 0 marked (batch 47.4), a balance changing sign; drawn last, since a line across the axes in their own
+        # fractions would count as data from 1970 in the dates the subtitle gives (``drawn_date_span``).
+        ax_yield.axhline(0.0, color="black", linewidth=0.8 * measured.line_scale, zorder=1, label="_nolegend_")
 
 
 def _artists(*axes: Axes) -> set[Artist]:
@@ -502,6 +556,83 @@ def _draw_amount(
                   projection_drawn=any(column in projected for _line, column in lines))
 
 
+def _draw_balance(ax: Axes, macro: pd.DataFrame, own: PlotConfig, nation: Nation, currency: str | None) -> _Drawn | None:
+    """A balance of payments' balance (batch 47.4): the pair --payments draws, credits less debits, by ``plotting.add_macro_line`` as the pair is drawn, solid.
+
+    Measured as the pair is (-r, -p, --constant, the currency), so the
+    balance is too; carried on to today, faint, from the earlier of its two
+    curves' last data (--projections, as GDP is). Drawn on the yield axis
+    (``draw_compare``), whose scale is linear: a balance changes sign.
+    """
+    measure = own.payments_items[0]
+    column, label, _axis = _BALANCES[measure]
+    if PAYMENTS_CREDITS_COLUMN not in macro.columns or PAYMENTS_DEBITS_COLUMN not in macro.columns:
+        return None
+    macro_format = format_percent if own.relative else partial(format_currency, prefix=CURRENCY_SYMBOLS[currency])
+    in_range = filter_to_date_range(macro, DATE_COLUMN, own)
+    frame = pd.DataFrame({DATE_COLUMN: in_range[DATE_COLUMN],
+                          column: in_range[PAYMENTS_CREDITS_COLUMN] - in_range[PAYMENTS_DEBITS_COLUMN]})
+    projected_from = [when for name, when in macro.attrs.get(PROJECTION_ATTR, {}).items() if name in (PAYMENTS_CREDITS_COLUMN, PAYMENTS_DEBITS_COLUMN)]
+    projected = {column: min(projected_from)} if projected_from else {}
+    line = add_macro_line(
+        ax,
+        frame,
+        enabled=True,
+        column=column,
+        label=label,
+        style=MACRO_PLOT_STYLES["payments_credits"] | _SOLID,
+        value_format=macro_format,
+        projected_from=projected.get(column),
+        filled=own.daily and SERIES_KINDS["payments_credits"].filled_in,
+        amount=None if own.relative else macro_format,  # a change in the read-out, as the pair's
+    )
+    if line is None:
+        return None
+    end_label = (lambda value: PROJECTION_LABEL_PREFIX + macro_format(value)) if projected else macro_format
+    return _Drawn(nation, [line], [(line, end_label)], own, projected=projected, projection_drawn=bool(projected))
+
+
+def _balance_axis_label(measure: str, config: PlotConfig, currency: str | None) -> str:
+    """The yield axis's label for the balances (batch 47.4): "TTM current account balance (US$)", "... (% of GDP)", per person, at constant prices."""
+    words = _BALANCES[measure][2]
+    if config.relative:
+        return f"{words} (% of GDP)"
+    unit = CURRENCY_SYMBOLS[currency] if currency is not None else "$"
+    per = " per person" if config.per_capita else ""
+    constant = ", constant prices" if config.constant_prices else ""
+    return f"{words}{per} ({unit}{constant})"
+
+
+def _rebased(drawn: list[_Drawn]) -> str | None:
+    """Rebase each nation's price index to 100 at the first date in the window where every nation drawn has a value (batch 47.4); that date, "2015-01-01", or None.
+
+    So the curves start together and part by their inflation since (decision
+    154; alternative: a fixed year at 100, or each index on its own base). A
+    curve is scaled whole, its projection with it; its read-out and line
+    label write the rebased index.
+    """
+    firsts = []
+    for curve in drawn:
+        points = [np.asarray(line.get_xydata(), dtype=float) for line in _drawn_lines(curve)]
+        finite = [xy[np.isfinite(xy[:, 1]), 0] for xy in points]
+        finite = [xs for xs in finite if len(xs)]
+        if finite:
+            firsts.append(min(float(xs.min()) for xs in finite))
+    if not firsts:
+        return None
+    common = max(firsts)
+    for curve in drawn:
+        lines = _drawn_lines(curve)
+        at = _value_at(lines, np.array([common]))[0] if lines else np.nan
+        if not np.isfinite(at) or at <= 0:
+            continue
+        for line in lines:
+            xy = np.asarray(line.get_xydata(), dtype=float)
+            line.set_ydata(xy[:, 1] * (100.0 / at))
+    seconds = int(round(common * 86400.0))
+    return str((np.datetime64(get_epoch(), "s") + np.timedelta64(seconds, "s")).astype("datetime64[D]"))
+
+
 def _draw_count(ax: Axes, macro: pd.DataFrame, own: PlotConfig, nation: Nation) -> tuple[_Drawn | None, ExtraCurve | None]:
     """The population, by ``plotting.add_macro_line``, as the nation's chart draws it on its extra axis (``plotting.extra_points``): through its points, filled in with daily values, carried on to today faint (batch 43.1)."""
     extra: ExtraCurve | None = macro.attrs.get(EXTRA_CURVE_ATTR)
@@ -535,7 +666,7 @@ def _titles(
     TTM changes (batch 47.3): the measure's words end ", TTM Change" for a
     measure in percent (True), ", TTM % Change" for the others (False).
     """
-    phrase = compare_title(measure) + (measure_title_suffix(config) if compare_kind(measure) == "amount" else "")
+    phrase = compare_title(measure) + (measure_title_suffix(config) if compare_kind(measure) in _AMOUNTS else "")
     if ttm_points is not None:
         phrase += ", TTM Change" if ttm_points else ", TTM % Change"
     if not drawn:
@@ -614,19 +745,30 @@ def _signed_percent(value: float, places: int) -> str:
     return f"{sign}{abs(figure):.{places}f}%"
 
 
-def _base_axis_label(base: Nation, points: bool, ttm: bool = False) -> str:
-    """The yield axis's label against a base nation: "Difference from United States (percentage points)", "% above or below Germany"; of TTM changes (batch 47.3), "TTM change, difference from United States (percentage points)"."""
+def _signed_amount(value: float, amount_format) -> str:
+    """A balance's difference as the chart writes it (batch 47.4): "+US$85.2B", "-US$12.0B" (the amount's own sign)."""
+    written = amount_format(value)
+    return f"+{written}" if value > 0 and not written.startswith("+") else written
+
+
+def _base_axis_label(base: Nation, points: bool, ttm: bool = False, currency: str | None = None) -> str:
+    """The yield axis's label against a base nation: "Difference from United States (percentage points)", "% above or below Germany"; of TTM changes (batch 47.3), "TTM change, difference from United States (percentage points)"; of balances in a currency (47.4), "Difference from Germany (US$)"."""
     if ttm:
-        return f"TTM change, difference from {base.name} (percentage points)"
+        unit = "percentage points" if currency is None else CURRENCY_SYMBOLS[currency]
+        return f"TTM change, difference from {base.name} ({unit})"
+    if currency is not None:
+        return f"Difference from {base.name} ({CURRENCY_SYMBOLS[currency]})"
     return f"Difference from {base.name} (percentage points)" if points else f"% above or below {base.name}"
 
 
-def _against_base(ax: Axes, drawn: list[_Drawn], points: bool) -> None:
+def _against_base(ax: Axes, drawn: list[_Drawn], points: bool, amount_format=None) -> None:
     """Make every curve of ``drawn`` its difference from the first's, the base nation's, which is drawn flat at 0.
 
     ``points``: a measure in percent (a yield, a rate, a share of GDP under
     -r), its difference in percentage points; otherwise (an amount in a
     currency, GDP, the population) the percentage above or below the base's.
+    ``amount_format``, a balance in a currency (batch 47.4): its difference
+    in that currency, written by it ("+US$85.2B"), its unit kept for Export.
     At each date a curve's value less the base's then in force; before the
     base's first value, or past its last, nothing. Each curve keeps its
     pieces and their steps: a piece is given the base's dates within its own,
@@ -650,7 +792,10 @@ def _against_base(ax: Axes, drawn: list[_Drawn], points: bool) -> None:
 
     places = 2 if points else 1
     writer = partial(_signed_percent, places=places)
-    phrase = "less" if points else "% above or below"
+    if amount_format is not None:
+        writer = partial(_signed_amount, amount_format=amount_format)
+    differs = points or amount_format is not None
+    phrase = "less" if differs else "% above or below"
     for curve in drawn:
         shading = [artist for artist in curve.artists if not isinstance(artist, Line2D)]
         uppers = {line for line in _drawn_lines(curve) if _upper(line)}  # told before their names change below
@@ -666,14 +811,14 @@ def _against_base(ax: Axes, drawn: list[_Drawn], points: bool) -> None:
                 x = np.union1d(xy[:, 0], base_dates[(base_dates >= xy[0, 0]) & (base_dates <= xy[-1, 0])])
                 own, at_base = _value_at([line], x), base_at(x)
                 with np.errstate(invalid="ignore", divide="ignore"):
-                    y = own - at_base if points else np.where(at_base > 0, (own / at_base - 1.0) * 100.0, np.nan)
+                    y = own - at_base if differs else np.where(at_base > 0, (own / at_base - 1.0) * 100.0, np.nan)
             line.set_data(x, y)
             remark_reading(line, writer)
             marked = series_of(line)
             if marked is not None:
                 said = "the base" if curve is base else f"{phrase} {base.nation.name}"
                 name = marked[0].replace(", lower limit", ", midpoint") if curve is base and uppers else marked[0]  # a range as base
-                mark_series(line, f"{name}, {said}", YIELD_AXIS)
+                mark_series(line, f"{name}, {said}", YIELD_AXIS if amount_format is None else marked[1])
         for band in shading:  # a band's shading (the U.S. target range), drawn again between its limits as they now are
             colour, alpha = band.get_facecolor()[0][:3], band.get_alpha()
             band.remove()
@@ -742,12 +887,14 @@ def _day_number(when: pd.Timestamp) -> float:
     return float(seconds) / 86400.0
 
 
-def _ttm_axis_label(points: bool) -> str:
-    """The yield axis's label for the TTM changes: "TTM change (percentage points)" for a measure in percent, else "TTM % change"."""
+def _ttm_axis_label(points: bool, currency: str | None = None) -> str:
+    """The yield axis's label for the TTM changes: "TTM change (percentage points)" for a measure in percent, "TTM change (US$)" for a balance (batch 47.4), else "TTM % change"."""
+    if currency is not None:
+        return f"TTM change ({CURRENCY_SYMBOLS[currency]})"
     return "TTM change (percentage points)" if points else "TTM % change"
 
 
-def _ttm_change(drawn: list[_Drawn], points: bool, start: pd.Timestamp | None) -> None:
+def _ttm_change(drawn: list[_Drawn], points: bool, start: pd.Timestamp | None, amount_format=None) -> None:
     """Make every curve of ``drawn`` its change over the twelve months to each date, from Start on.
 
     ``points``: a measure in percent (a yield, a rate, a share of GDP under
@@ -762,11 +909,18 @@ def _ttm_change(drawn: list[_Drawn], points: bool, start: pd.Timestamp | None) -
     were prepared from a year before it, ``solo_config``). The U.S. target
     range is its midpoint: the upper limit and the band are taken off. The
     read-out, Export chart and the line labels write the changes ("+3.4%",
-    "+0.25%"; "Canada: 10-Year Yield, TTM change").
+    "+0.25%"; "Canada: 10-Year Yield, TTM change"). ``amount_format``, a
+    balance in a currency (batch 47.4): its change in that currency, now less
+    then, so that a deficit narrowing reads as a rise, written by it
+    ("+US$85.2B"). Not the plan's change against the size of the year-ago
+    balance, (now − then) ÷ |then|: tried, it read −140,000 % where Canada's
+    current account had been near 0 a year before (2009, 2023).
     """
     start_x = -np.inf if start is None else _day_number(start)
     writer = partial(_signed_percent, places=2 if points else 1)
-    said = "TTM change" if points else "TTM % change"
+    if amount_format is not None:
+        writer = partial(_signed_amount, amount_format=amount_format)
+    said = "TTM change" if points or amount_format is not None else "TTM % change"
     for curve in drawn:
         lines = _drawn_lines(curve)
         if not lines:
@@ -801,7 +955,7 @@ def _ttm_change(drawn: list[_Drawn], points: bool, start: pd.Timestamp | None) -
             now = curve_at(x, _value_at([line], x))
             then = curve_at(_years_on(x, -1))
             with np.errstate(invalid="ignore", divide="ignore"):
-                y = now - then if points else np.where(then > 0, (now / then - 1.0) * 100.0, np.nan)
+                y = now - then if points or amount_format is not None else np.where(then > 0, (now / then - 1.0) * 100.0, np.nan)
             if not np.isfinite(y).any():
                 line.remove()  # a piece wholly before Start, or with no year before it
                 continue
@@ -810,7 +964,7 @@ def _ttm_change(drawn: list[_Drawn], points: bool, start: pd.Timestamp | None) -
             marked = series_of(line)
             if marked is not None:
                 name = marked[0].replace(", lower limit", ", midpoint") if uppers else marked[0]
-                mark_series(line, f"{name}, {said}", YIELD_AXIS)
+                mark_series(line, f"{name}, {said}", YIELD_AXIS if amount_format is None else marked[1])
         # The line labels write the changes, a projected stretch's still marked "≈" (PROJECTION_LABEL_PREFIX).
         curve.end_labels = [
             (line, (lambda value: PROJECTION_LABEL_PREFIX + writer(value)) if _says_projected(formatter) else writer)
