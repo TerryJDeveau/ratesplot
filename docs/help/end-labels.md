@@ -13,7 +13,11 @@ Each curve's last value written at its end, in the curve's colour, on a white gr
 
 A curve that stops before the chart's end is labelled where it stops; one whose last value lies beyond Top or Bottom has no label ([Axis limits](?help=limits)). The date axis is widened on the right only as far as the labels need, and not at all where they fit beside the curves' ends.
 
-Labels that would overlap are moved up or down as little as will separate them. Where moving them leaves a group of touching labels with one more than half its height from its curve's end, that group alone is made smaller, a point at a time from 16 points down to 12; if it is still crowded at 12, it stands a little off, and each of its labels gets a thin line to its curve's end. The other labels keep their full size. The legend is then placed so as to cover none of them ([Size and layout](?help=layout)).
+Labels that would overlap are moved up or down as little as will separate them. Where moving them leaves a group of touching labels with one more than half its height from its curve's end, that group alone is made smaller, a point at a time from 16 points down to 12; if it is still crowded at 12, it stands a little off, and each of its labels gets a thin line to its curve's end. The other labels keep their full size.
+
+A label that would lie across another curve is moved off it: up or down, as little as will clear every other curve and label, up to twice its height; failing that, when its curve ends near the chart's end, into the column of labels past the curves' ends. A label moved more than half its height from its curve's end, or into the column, gets a thin line to it. A curve that stops early is the usual case: the U.S. inflation curve ends a month or more before the policy rate, so its label would otherwise lie across the target range. One that ends far from the chart's end, with no room up or down, stays where it is.
+
+The legend is then placed so as to cover none of them ([Size and layout](?help=layout)).
 
 ## On the command line
 

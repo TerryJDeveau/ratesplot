@@ -417,6 +417,10 @@ CASES: dict[str, list[str]] = {
     "cmp_pol_base_us": ["--na:ca,gb", "--com:pol", "--base", "--policy", "-s:2015"],
     "cmp_debt_base_de": ["--na:ca,us,gb", "--com:debt", "--base:de", "-s:1995"],
     "cmp_debt_r_base_gb": ["--na:ca,us,gb,de", "--com:debt", "-r", "--base:gb", "--reg", "-s:1990"],
+    # Batch 47.2 (Terry, 2026-11-17: "the US CPI on top of the Fed Funds target rate"): the inflation curve ending a
+    # month or more before the target range, its end label moved off the range's lines (its own End, after the
+    # pinned one: at 2026-09-01 the index's month reaches the chart's end).
+    "u_pol_inf_l": ["-u", "--policy", "--inflation", "-l", "-s:2023", "--e:2026-10-15"],
 }
 
 
