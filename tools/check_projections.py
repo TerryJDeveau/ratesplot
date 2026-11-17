@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the projections to today of the population, the price index and inflation (batch 43.1), with no network.
+"""Check the projections to today of the population, the price index and inflation (batches 43.1, 43.2), with no network.
 
 Made-up series stand in for the sources, so every figure checked is worked out here:
 
@@ -16,6 +16,10 @@ Made-up series stand in for the sources, so every figure checked is worked out h
   month's projected index;
 * the drawing: the extra axis's curve split where its projection takes over (``plotting.extra_points``), drawn faint and
   marked projected on its own axis; inflation's projection faint, read day by day, its end label "≈";
+* the formulas of batch 43.2: the seasonal swing carried on exactly for a steady rise with a fixed swing, one year's
+  holding the twelve-month rise, a missing month filled from its neighbours, too little history giving none; growth,
+  the quarter's pace and the damped trend; the index not seasonally adjusted carried on by the swing of the years
+  ``latest.SEASONAL_SWING_YEARS``, the adjusted one and a short one on the straight line, and the message log saying so;
 * the box: greyed only while none of the smooth series is drawn (``options.idle_option_reasons``).
 
     python tools/check_projections.py
@@ -220,6 +224,50 @@ def main() -> int:
     check("inflation: its end label read from the projection", plotting.last_piece(pairs[0][0]) is pieces[1])
     gone = plotting.add_rate_lines(Figure().add_subplot(), [carried_on], replace(config, end=last_month + pd.Timedelta(days=10)))
     check("a projection outside the window: the curve drawn as published, not projected", gone and gone[0][1].projected is None)
+
+    # --- the formulas (batch 43.2) ------------------------------------------------------------------------------------
+    print("The formulas (latest.seasonal, growth, quarter, damped, _formula_for)")
+    ten_years = pd.date_range(end=last_month, periods=12 * 10 + 1, freq="MS")
+    swing = np.array([0.0, 0.4, 0.9, 1.1, 1.0, 0.8, 0.9, 1.0, 0.7, 0.5, 0.2, 0.3]) / 100  # by calendar month
+    pace = 0.0025  # a month, in logarithms
+    steady_logs = np.log(100.0) + pace * np.arange(len(ten_years)) + swing[ten_years.month - 1]
+    swinging = pd.Series(np.exp(steady_logs), index=ten_years)
+    later = pd.date_range(last_month + pd.DateOffset(months=1), periods=15, freq="MS")
+    truth = np.exp(steady_logs[-1] + pace * np.arange(1, 16) + swing[later.month - 1] - swing[last_month.month - 1])
+    for years in (1, 8):
+        check(f"seasonal({years}): a steady rise with a fixed swing carried on exactly, past twelve months too",
+              np.allclose(latest.seasonal(years)(swinging, later), truth), latest.seasonal(years)(swinging, later) - truth)
+    noisy = swinging * np.exp(np.random.default_rng(43).normal(0.0, 0.003, len(swinging)))
+    held = latest.seasonal(1)(noisy, later[:3])
+    last_rise = noisy.iloc[-1] / noisy.iloc[-13]
+    check("seasonal(1): the last twelve-month rise held", np.allclose(held / noisy.reindex(later[:3] - pd.DateOffset(years=1)).to_numpy(), last_rise))
+    lacking_month = ten_years[-20]
+    logs = latest._month_logs(swinging.drop(lacking_month))
+    month = lacking_month.to_period("M")
+    check("a month missing within: the middle of its neighbours' logarithms",
+          np.isclose(logs[month], (np.log(swinging.iloc[-21]) + np.log(swinging.iloc[-19])) / 2) and len(logs) == len(ten_years))
+    check("seasonal(8): too little history (40 months) gives none", latest.seasonal(8)(index, later) is None)
+    exponential = pd.Series(np.exp(np.log(100.0) + pace * np.arange(len(ten_years))), index=ten_years)
+    steady = np.exp(np.log(exponential.iloc[-1]) + pace * np.arange(1, 4))
+    for name, formula in (("growth", latest.growth), ("quarter", latest.quarter)):
+        got = formula(exponential, later[:3])
+        check(f"{name}: steady growth carried on exactly", np.allclose(got, steady, rtol=2e-4), got - steady)
+    phi = 0.8
+    damped_logs = np.log(exponential.iloc[-1]) + pace * phi * (1 - phi ** np.arange(1, 4)) / (1 - phi)
+    check("damped(0.8): each month's rate 0.8 times the month's before", np.allclose(latest.damped(phi)(exponential, later[:3]), np.exp(damped_logs)))
+    unadjusted, _from = _quietly(latest.project_series, swinging, config, "price_index", "x")
+    months_ahead = unadjusted.index[unadjusted.index > last_month]
+    check(f"the index not seasonally adjusted: by the seasonal swing of the {latest.SEASONAL_SWING_YEARS} years before",
+          np.allclose(unadjusted.loc[months_ahead].to_numpy(), latest.seasonal(latest.SEASONAL_SWING_YEARS)(swinging, months_ahead)))
+    adjusted, _from = _quietly(latest.project_series, swinging, config, "price_index", "x", adjusted=True)
+    check("the index seasonally adjusted: on the straight line",
+          np.allclose(adjusted.loc[months_ahead].to_numpy(), latest.straight(swinging, months_ahead)))
+    check("too little history for the swing: on the straight line", np.allclose(ahead.to_numpy(), latest.straight(index, ahead.index)))
+    words = io.StringIO()
+    with contextlib.redirect_stdout(words):
+        latest.project_series(swinging, config, "price_index", "the index")
+    check("the message log names the swing", f"with the seasonal swing of the {latest.SEASONAL_SWING_YEARS} years before" in words.getvalue(),
+          words.getvalue())
 
     # --- the box -----------------------------------------------------------------------------------------------------
     print("The box (options.idle_option_reasons)")

@@ -46,7 +46,10 @@ The population and the consumer price index, which each nation's
 preparation fetches apart from that frame, are carried on by the same
 rule (``project_series``, batch 43.1), and the inflation curve's projected
 stretch is the twelve-month rise of the projected index
-(``rates.projected_inflation``).
+(``rates.projected_inflation``). Batch 43.2 tested formulas against each
+series' history (tools/projection_test.py): the index not seasonally
+adjusted goes on with its seasonal swing (``seasonal``, ``_formula_for``),
+which beat the straight line for each nation.
 
 Canadian debt (the aggregate and the federal level) is not projected blind:
 the Bank of Canada counts the Government of Canada's market debt (bills and
@@ -63,8 +66,9 @@ from __future__ import annotations
 
 import io
 import time
-from typing import Iterable
+from typing import Callable, Iterable
 
+import numpy as np
 import pandas as pd
 
 from .config import (
@@ -239,7 +243,9 @@ def project_to_now(
     return data
 
 
-def project_series(values: pd.Series, config: PlotConfig, kind_key: str, name: str) -> tuple[pd.Series, pd.Timestamp | None]:
+def project_series(
+    values: pd.Series, config: PlotConfig, kind_key: str, name: str, *, adjusted: bool = False
+) -> tuple[pd.Series, pd.Timestamp | None]:
     """``values``, a lone smooth series (date-indexed), carried past its last figure as ``project_to_now`` carries a curve; with that figure's date, or None where it is not carried (batch 43.1).
 
     The population and the consumer price index, which each nation's
@@ -247,15 +253,17 @@ def project_series(values: pd.Series, config: PlotConfig, kind_key: str, name: s
     --cpi and --constant), and through the index the inflation curve
     (``rates.projected_inflation``). The same rule: only with --projections,
     on a chart reaching today, a series whose last figure is less than
-    ``_PROJECTION_MAX_AGE_DAYS`` before the End; from that figure in a
-    straight line at its pace over the year before it (``_year_before``,
-    ``_per_day``). ``kind_key`` its kind (``config.SERIES_KINDS``): a series
-    observed a month at a time (the price index) gets a figure for each month
-    after its last, dated by the month's first day as its own figures are,
-    through the month after the End's, so that the line through the months'
-    points (their middles with Daily values) reaches the End; a series of
-    moments (the population), one figure, on the End. ``name`` says which in
-    the message log, with its pace.
+    ``_PROJECTION_MAX_AGE_DAYS`` before the End, with a figure a year before
+    it (``_year_before``); from that figure by the formula batch 43.2's test
+    chose for it (``_formula_for``). ``kind_key`` its kind
+    (``config.SERIES_KINDS``): a series observed a month at a time (the price
+    index) gets a figure for each month after its last, dated by the month's
+    first day as its own figures are, through the month after the End's, so
+    that the line through the months' points (their middles with Daily
+    values) reaches the End; a series of moments (the population), one
+    figure, on the End. ``adjusted``: the series is seasonally adjusted (the
+    index --cpi:sa draws). ``name`` says which in the message log, with its
+    pace.
     """
     known = values.dropna().sort_index()
     end = config.end
@@ -267,16 +275,51 @@ def project_series(values: pd.Series, config: PlotConfig, kind_key: str, name: s
     found = _year_before(known, start)
     if found is None:
         return values, None
-    base, earlier = found
-    per_day = _per_day(base, earlier)
     if SERIES_KINDS[kind_key].period == "month":
         dates = pd.date_range(start + pd.DateOffset(months=1), end.to_period("M").to_timestamp() + pd.DateOffset(months=1), freq="MS")
     else:
         dates = pd.DatetimeIndex([end])
-    ahead = pd.Series(base[1] + per_day * (dates - start).days.to_numpy(), index=dates, name=values.name)
-    pace = per_day * 365 / base[1] if base[1] else float("nan")
-    print(f"Projecting {name} to {end:%Y-%m-%d} from {start:%Y-%m-%d}, {pace:+.1%} a year (--projections).")
+    formula, words = _formula_for(kind_key, adjusted)
+    projected = formula(known, dates)
+    if projected is None:
+        formula, words = straight, ""
+        projected = straight(known, dates)
+    ahead = pd.Series(projected, index=dates, name=values.name)
+    if formula is straight:
+        base, earlier = found
+        pace = _per_day(base, earlier) * 365 / base[1] if base[1] else float("nan")
+    else:
+        logs = _month_logs(known)
+        pace = float(np.exp(logs.iloc[-1] - logs.iloc[-13])) - 1
+    print(f"Projecting {name} to {end:%Y-%m-%d} from {start:%Y-%m-%d}, {pace:+.1%} a year{words} (--projections).")
     return pd.concat([values.loc[values.index <= start], ahead]), start
+
+
+# The years whose seasonal swing carries on a monthly index not seasonally
+# adjusted (``seasonal``): batch 43.2's test (tools/projection_test.py), which
+# tried 1, 2, 3, 5, 8 and 10.
+SEASONAL_SWING_YEARS = 8
+
+
+def _formula_for(kind_key: str, adjusted: bool) -> tuple[Formula, str]:
+    """The formula a lone series is carried on by, and the words the message log adds after its pace (batch 43.2).
+
+    Chosen by ``tools/projection_test.py``, which stood at each month from
+    2000 and again from 2015, projected the three months after with each
+    formula, and compared each with the figure published. The consumer price
+    index not seasonally adjusted (the one the inflation curve and
+    --constant read, and --cpi draws): the year's rate with the seasonal
+    swing of the eight years before, which beat the straight line for each
+    of the four nations at one, two and three months, the one-month error
+    from 2000 0.343 against 0.393 per cent (Canada), 0.326 against 0.381 (the
+    U.S.), 0.279 against 0.384 (the UK), 0.316 against 0.373 (Germany). The
+    index seasonally adjusted: the straight line, which nothing beat by more
+    than a hundredth of itself. Every other series: the straight line, until
+    the test is run on it.
+    """
+    if kind_key == "price_index" and not adjusted:
+        return seasonal(SEASONAL_SWING_YEARS), f", with the seasonal swing of the {SEASONAL_SWING_YEARS} years before"
+    return straight, ""
 
 
 def _year_before(series: pd.Series, start: pd.Timestamp) -> tuple[tuple[pd.Timestamp, float], tuple[pd.Timestamp, float]] | None:
@@ -302,6 +345,121 @@ def _per_day(base: tuple[pd.Timestamp, float], earlier: tuple[pd.Timestamp, floa
     days, a daily one's up to three days more over a weekend.
     """
     return (base[1] - earlier[1]) / (base[0] - earlier[0]).days
+
+
+# ---------------------------------------------------------------------------
+# The formulas a lone series may be carried on by (batch 43.2)
+# ---------------------------------------------------------------------------
+#
+# Each takes a series' known figures (date-indexed, sorted, the last the
+# projection's base) and the dates after it to project to, and returns the
+# projected values, or None where the series has too little history.
+# ``tools/projection_test.py`` stands at each past month of each nation's
+# history, projects the months that followed with each, and reports the
+# errors; ``_FORMULA_OF`` names the one each series is carried on by.
+# Those counting months take a monthly series dated by each month's first
+# day (``prices._by_month``).
+
+Formula = Callable[[pd.Series, pd.DatetimeIndex], "np.ndarray | None"]
+
+
+def straight(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
+    """A straight line from the last figure at its pace over the year before (``_year_before``, ``_per_day``): the debt clock's rule, and every lone series' before batch 43.2."""
+    found = _year_before(known, known.index[-1])
+    if found is None:
+        return None
+    base, earlier = found
+    return base[1] + _per_day(base, earlier) * (dates - base[0]).days.to_numpy()
+
+
+def growth(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
+    """Steady percentage growth from the last figure at its rate over the year before, by the days between (``_year_before``)."""
+    found = _year_before(known, known.index[-1])
+    if found is None or found[0][1] <= 0 or found[1][1] <= 0:
+        return None
+    (base_date, base), (earlier_date, earlier) = found
+    per_day = np.log(base / earlier) / (base_date - earlier_date).days
+    return base * np.exp(per_day * (dates - base_date).days.to_numpy())
+
+
+def _month_logs(known: pd.Series) -> pd.Series | None:
+    """A monthly series' logarithms by month (``pd.Period``), a month missing within it filled in a straight line between its neighbours'; None for a figure not above 0.
+
+    The U.S. index has no 2025-10 (``prices.MONTH_WITHOUT_INDEX``): a
+    formula reading it reads the middle of 2025-09's and 2025-11's.
+    """
+    values = known.to_numpy(dtype=float)
+    if (values <= 0).any():
+        return None
+    months = pd.DatetimeIndex(known.index).to_period("M")
+    logs = pd.Series(np.log(values), index=months)
+    return logs.reindex(pd.period_range(months[0], months[-1], freq="M")).interpolate()
+
+
+def _months_after(last: pd.Period, dates: pd.DatetimeIndex) -> np.ndarray:
+    """How many months each of ``dates`` falls after month ``last``."""
+    return np.array([(date.to_period("M") - last).n for date in dates])
+
+
+def quarter(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
+    """Steady growth from the last figure at its rate over the three months before (a monthly series, seasonally adjusted)."""
+    logs = _month_logs(known)
+    if logs is None or len(logs) < 4:
+        return None
+    pace = (logs.iloc[-1] - logs.iloc[-4]) / 3
+    return np.exp(logs.iloc[-1] + pace * _months_after(logs.index[-1], dates))
+
+
+def damped(phi: float) -> Formula:
+    """Growth at the year's rate, a month at a time, each month's rate ``phi`` times the month's before (a monthly series)."""
+
+    def formula(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
+        logs = _month_logs(known)
+        if logs is None or len(logs) < 13:
+            return None
+        pace = (logs.iloc[-1] - logs.iloc[-13]) / 12
+        months = _months_after(logs.index[-1], dates)
+        return np.exp(logs.iloc[-1] + pace * phi * (1 - phi ** months) / (1 - phi))
+
+    return formula
+
+
+def seasonal(years: int) -> Formula:
+    """Growth at the year's rate with the seasonal swing of the ``years`` before: a monthly series not seasonally adjusted.
+
+    Month by month from the last figure, each month's change in logarithms
+    is the year's rise over twelve, plus the average over the ``years``
+    before of the same month's change less that year's rise over twelve:
+    the swing around each year's own trend. With one year this is each
+    month's change a year before, which holds the twelve-month rise of the
+    last month (the inflation curve flat at its last figure). A month after
+    the twelfth reads the projected months as it goes.
+    """
+
+    def formula(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
+        logs = _month_logs(known)
+        if logs is None or len(logs) < 12 * years + 1:
+            return None
+        values = list(logs.to_numpy())
+        last = len(values) - 1
+        rises = [values[last - 12 * (j - 1)] - values[last - 12 * j] for j in range(1, years + 1)]
+        months = _months_after(logs.index[-1], dates)
+        for step in range(1, int(months.max()) + 1 if len(months) else 1):
+            month = last + step
+            swing = np.mean([values[month - 12 * j] - values[month - 1 - 12 * j] - rises[j - 1] / 12 for j in range(1, years + 1)])
+            values.append(values[month - 1] + rises[0] / 12 + swing)
+        return np.exp(np.array([values[last + n] for n in months]))
+
+    return formula
+
+
+# The formulas tools/projection_test.py tries by name, besides ``seasonal`` and
+# ``damped`` at several settings.
+PROJECTION_FORMULAS: dict[str, Formula] = {
+    "straight": straight,
+    "growth": growth,
+    "quarter": quarter,
+}
 
 
 def _market_steered(

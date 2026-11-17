@@ -1236,7 +1236,9 @@ def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
               "index not seasonally adjusted.")
     index = consumer_prices(key, adjusted=adjusted)
     warn_series_coverage(config.start, {"Consumer price index (--cpi)": index.index[0]})
-    index, projected_from = project_series(index, config, "price_index", "the consumer price index" + (" (seas. adj.)" if adjusted else ""))
+    index, projected_from = project_series(
+        index, config, "price_index", "the consumer price index" + (" (seas. adj.)" if adjusted else ""), adjusted=adjusted
+    )
     return ExtraCurve(
         index,
         label=PRICE_INDEX_ADJUSTED_LABEL if adjusted else PRICE_INDEX_LABEL,
