@@ -1985,18 +1985,17 @@ def idle_options(
 
     * -r and the levels of government apply to debt and interest (GDP is
       only -r's divisor), so they need one of the two;
-    * -p, the regression segments, the right axis's Top and Bottom and the
-      projections to today (batch 11) apply to any right-axis curve, so they
-      need debt, GDP or interest (under -r GDP is not drawn, but -r then
-      needs debt or interest, which draw).
+    * -p, the regression segments and the right axis's Top and Bottom apply
+      to any right-axis curve, so they need debt, GDP or interest (under -r
+      GDP is not drawn, but -r then needs debt or interest, which draw).
 
     Each was checked on 2026-10-13 to draw a byte-identical chart when idle,
     -r excepted: it hid GDP, which ``config_from_choices`` now stops.
 
     The extra axis's curve (``extra_curve``: the consumer price index, batch
     13.4, or the population, 13.5) is fitted by --reg, so the regression
-    segments are not idle while it is drawn; the measures, the limits and
-    the projections act on the amounts alone.
+    segments are not idle while it is drawn; the measures and the limits
+    act on the amounts alone.
 
     The balance of payments (``payments``, batch 23) is an amount on the
     right axis, measured, fitted and projected as debt and interest are: -r
@@ -2004,7 +2003,9 @@ def idle_options(
     the others; the levels of government still need debt or interest.
 
     Daily values (batch 42.2) act on the smooth series (``config.SeriesKind.filled_in``):
-    the right axis's curves, the extra axis's and the inflation curve.
+    the right axis's curves, the extra axis's and the inflation curve; so,
+    since batch 43.1, do the projections to today (``SeriesKind.projected``),
+    idle while none of them is drawn.
     """
     return frozenset(idle_option_reasons(debt, gdp, interest, extra_curve=extra_curve, payments=payments, inflation=inflation))
 
@@ -2019,12 +2020,16 @@ def idle_option_reasons(
             "it acts on the series that change steadily (debt, GDP, interest, the balance of payments, inflation, "
             "the price index and the population), and none is ticked"
         )
+        reasons["projections"] = (
+            "it carries on the series that change steadily (debt, GDP, interest, the balance of payments, inflation, "
+            "the price index and the population), and none is ticked"
+        )
     if not (debt or interest):
         reasons |= dict.fromkeys(("debt-parts", "interest-parts"), "it acts on debt and interest, and neither is ticked")
         if not payments:
             reasons["relative"] = "it acts on debt, interest and the balance of payments, and none is ticked"
     if not (debt or gdp or interest or payments):
-        amounts = ("per-capita", "constant", "top", "bottom", "projections")
+        amounts = ("per-capita", "constant", "top", "bottom")
         reasons |= dict.fromkeys(
             amounts if extra_curve else (*amounts, "regression", "regression-tolerance"),
             "it acts on the right axis's curves, and none of debt, GDP, interest and the balance of payments is ticked",

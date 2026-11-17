@@ -53,7 +53,8 @@ from .de_data import ecb_series
 from .frames import at_middle_of_month
 from .de_data import YIELD_HISTORY_ATTR as DE_YIELD_HISTORY_ATTR
 from .http import downloads_of
-from .prices import inflation
+from .latest import project_series
+from .prices import consumer_prices, inflation, twelve_month_rise
 from .uk_archive_data import EMBEDDED_UK_BANK_RATE_HISTORY, EMBEDDED_UK_MORTGAGE_HISTORY
 from .uk_data import YIELD_HISTORY_ATTR, iadb_series
 from .us_data import fred_series
@@ -333,6 +334,10 @@ class RateCurve:
     # its series (batch 32, ``with_announced``): drawn as a piece of its own,
     # named in the legend ("Announced from 2026-10-29") and the read-out.
     announced: pd.Timestamp | None = None
+    # Inflation carried on to today (batch 43.1, ``projected_inflation``): the
+    # date the price index's figures end, its values after it a projection,
+    # drawn faint from there (``plotting.add_rate_lines``).
+    projected: pd.Timestamp | None = None
 
     @property
     def first(self) -> pd.Timestamp:
@@ -472,6 +477,56 @@ def cut_to(line: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> pd.Series
     return pd.concat([inside, pd.Series(dict(edges), dtype=float)]).sort_index()
 
 
+# How a projection of a lone series is drawn (batch 43.1, ``projection_points``):
+# a month's figure at its middle, joined straight (Daily values); each month's
+# across its month (steps); each figure at its own date (the population).
+PROJECTION_FORMS = ("middles", "steps", "points")
+
+
+def projection_start(date: pd.Timestamp, form: str) -> pd.Timestamp:
+    """Where a projection takes over from a series' last figure, dated ``date``: the point at which that figure's line ends, in ``form`` (``PROJECTION_FORMS``).
+
+    A month's middle with Daily values (``filled_through`` pins it there); in
+    steps, the last instant of its month, the figure held across it as
+    ``held_steps`` holds it; else the figure's own date.
+    """
+    if form == "middles":
+        return at_middle_of_month(pd.DatetimeIndex([date]))[0]
+    if form == "steps":
+        period, _longest = OBSERVED[_OBSERVED_PERIODS["month"]]
+        return date + period - _PERIOD_END_MARGIN
+    return date
+
+
+def projection_points(last: tuple[pd.Timestamp, float] | None, ahead: pd.Series, config: PlotConfig, *, form: str) -> pd.Series:
+    """The points that draw a projection of a lone series (batch 43.1), cut at the window's edges (``cut_to``); empty where none of it falls there.
+
+    From ``last``, the point where the line of its figures ends
+    (``projection_start``), through ``ahead``, its projected figures, drawn
+    as ``form`` says (``PROJECTION_FORMS``) by straight segments, so that
+    the read-out reads them day by day as it reads any projection: in steps,
+    each month's figure held to the last instant of its month and the riser
+    there, as ``filled_through`` ends a run. ``last`` None (the curve lacks
+    the figure the projection starts from: the U.S.' 2026-10 rise, its
+    2025-10 index missing) begins a run of its own, at its first month's
+    first day, as ``filled_through`` begins one after a break.
+    """
+    known = ahead.dropna().sort_index()
+    dates, values = pd.DatetimeIndex(known.index), known.to_numpy(dtype=float)
+    points: list[tuple[pd.Timestamp, float]] = [] if last is None else [last]
+    if form == "middles":
+        if last is None and len(values):
+            points.append((dates[0], float(values[0])))
+        points += [(date, float(value)) for date, value in zip(at_middle_of_month(dates), values)]
+    elif form == "steps":
+        for date, value in zip(dates, values):
+            points += [(date, float(value)), (projection_start(date, "steps"), float(value))]
+    else:
+        points += [(date, float(value)) for date, value in zip(dates, values)]
+    line = pd.Series([value for _date, value in points], index=pd.DatetimeIndex([date for date, _value in points]), dtype=float)
+    return cut_to(line, config.start, config.end)
+
+
 def in_window(values: pd.Series, config: PlotConfig) -> pd.Series:
     """Return ``values`` from ``config.start`` to ``config.end``, the value in effect at the start carried to it.
 
@@ -525,6 +580,39 @@ def inflation_rate(country: str) -> RateCurve | None:
         print(f"  Warning: {nation_by_key(country).adjective} consumer prices unavailable ({exc}); inflation not drawn.")
         return None
     return RateCurve(INFLATION_KEY, INFLATION_LABEL, values, INFLATION_STYLE, title="Inflation", holds=holding(values, holds_of("inflation")))
+
+
+def projected_inflation(curve: RateCurve | None, country: str, config: PlotConfig) -> RateCurve | None:
+    """``curve``, the inflation curve, carried on to the chart's End by the projected price index (batch 43.1; --projections).
+
+    The plan's 43.1: the inflation curve "gets no formula of its own: its
+    projected stretch is the 12-month rise of the projected index, which
+    bends as the year-ago months drop out". The nation's index (not
+    seasonally adjusted, as the curve's rise is taken from) is carried on
+    by ``latest.project_series``; each month after its last figure gets the
+    rise of the projected index over the published one a year before
+    (``prices.twelve_month_rise``). For the UK, whose curve is the ONS's own
+    rate, the rise of its index D7BT. ``RateCurve.projected`` is the index's
+    last month, which the curve may lack (the U.S.' 2026-10, its 2025-10
+    index missing): then the projection begins at its own first month. The
+    curve as it is where nothing is carried on.
+    """
+    if curve is None or not config.projections or not config.quotes_can_reach:
+        return curve
+    try:
+        index = consumer_prices(country)
+    except Exception as exc:  # noqa: BLE001 - any source failure: the curve as published
+        print(f"  Warning: {nation_by_key(country).adjective} consumer price index unavailable ({exc}); inflation not projected.")
+        return curve
+    index, start = project_series(index, config, "price_index", "inflation (through the consumer price index)")
+    if start is None:
+        return curve
+    rise = twelve_month_rise(index)
+    ahead = rise.loc[rise.index > max(start, curve.values.index[-1])]
+    if ahead.empty:
+        return curve
+    values = pd.concat([curve.values, ahead])
+    return replace(curve, values=values, holds=holding(values, holds_of("inflation")), projected=start)
 
 
 def _parts(*named: tuple[pd.Series, str, str]) -> tuple[tuple[pd.Timestamp, str, str], ...]:
@@ -1162,7 +1250,7 @@ def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[
         # Drawn last, so its dots lie over the spreads' thick lines (the legend
         # lists it after the policy rate: plotting.yield_axis_legend).
         with downloads_of(f"{adjective} consumer prices"):
-            curves.append(inflation_rate(country))
+            curves.append(projected_inflation(inflation_rate(country), country, config))
     chosen = []
     for curve in curves:
         if curve is None:

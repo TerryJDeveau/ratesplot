@@ -42,6 +42,11 @@ straight line of its own change over the year before
 label reads "≈" (plotting). Quarterly figures are dated by the quarter's
 last day, the day they describe (``frames.at_quarter_end``), so a
 projection starts where the data really end (``observed_through``).
+The population and the consumer price index, which each nation's
+preparation fetches apart from that frame, are carried on by the same
+rule (``project_series``, batch 43.1), and the inflation curve's projected
+stretch is the twelve-month rise of the projected index
+(``rates.projected_inflation``).
 
 Canadian debt (the aggregate and the federal level) is not projected blind:
 the Bank of Canada counts the Government of Canada's market debt (bills and
@@ -75,6 +80,7 @@ from .config import (
     TREASURY_DEBT_TO_PENNY_URL,
     TREASURY_YIELD_CURVE_URL,
     YIELD_COLUMNS,
+    SERIES_KINDS,
     PlotConfig,
     component_column,
     macro_column_kind,
@@ -231,6 +237,46 @@ def project_to_now(
     data.attrs[PROJECTION_ATTR] = projected
     data.attrs[STEERED_ATTR] = steered_columns
     return data
+
+
+def project_series(values: pd.Series, config: PlotConfig, kind_key: str, name: str) -> tuple[pd.Series, pd.Timestamp | None]:
+    """``values``, a lone smooth series (date-indexed), carried past its last figure as ``project_to_now`` carries a curve; with that figure's date, or None where it is not carried (batch 43.1).
+
+    The population and the consumer price index, which each nation's
+    preparation fetches apart from the macro frame (for -p, --population,
+    --cpi and --constant), and through the index the inflation curve
+    (``rates.projected_inflation``). The same rule: only with --projections,
+    on a chart reaching today, a series whose last figure is less than
+    ``_PROJECTION_MAX_AGE_DAYS`` before the End; from that figure in a
+    straight line at its pace over the year before it (``_year_before``,
+    ``_per_day``). ``kind_key`` its kind (``config.SERIES_KINDS``): a series
+    observed a month at a time (the price index) gets a figure for each month
+    after its last, dated by the month's first day as its own figures are,
+    through the month after the End's, so that the line through the months'
+    points (their middles with Daily values) reaches the End; a series of
+    moments (the population), one figure, on the End. ``name`` says which in
+    the message log, with its pace.
+    """
+    known = values.dropna().sort_index()
+    end = config.end
+    if not config.projections or known.empty or not SERIES_KINDS[kind_key].projected or not _quotes_can_reach(config):
+        return values, None
+    start = pd.Timestamp(known.index[-1])
+    if start >= end or (end - start).days > _PROJECTION_MAX_AGE_DAYS:
+        return values, None
+    found = _year_before(known, start)
+    if found is None:
+        return values, None
+    base, earlier = found
+    per_day = _per_day(base, earlier)
+    if SERIES_KINDS[kind_key].period == "month":
+        dates = pd.date_range(start + pd.DateOffset(months=1), end.to_period("M").to_timestamp() + pd.DateOffset(months=1), freq="MS")
+    else:
+        dates = pd.DatetimeIndex([end])
+    ahead = pd.Series(base[1] + per_day * (dates - start).days.to_numpy(), index=dates, name=values.name)
+    pace = per_day * 365 / base[1] if base[1] else float("nan")
+    print(f"Projecting {name} to {end:%Y-%m-%d} from {start:%Y-%m-%d}, {pace:+.1%} a year (--projections).")
+    return pd.concat([values.loc[values.index <= start], ahead]), start
 
 
 def _year_before(series: pd.Series, start: pd.Timestamp) -> tuple[tuple[pd.Timestamp, float], tuple[pd.Timestamp, float]] | None:

@@ -132,6 +132,7 @@ from .latest import (
     extend_us_yields,
     market_debt_for_projection,
     observed_through,
+    project_series,
     project_to_now,
 )
 from .legend import finish_legend_and_title, quote_time_text
@@ -149,6 +150,8 @@ from .rates import (
     in_window,
     legend_label,
     policy_target_last,
+    projection_points,
+    projection_start,
     rate_curves,
     warn_none_drawn,
 )
@@ -289,12 +292,12 @@ def add_macro_line(
         # The window lies wholly in the projection.
         (line,) = ax.plot(ahead[DATE_COLUMN], ahead[column], label=label, **faint)
         mark_reading(line, projected_format, projected=True, amount=amount)
-        return mark_series(line, label, MACRO_AXIS)
+        return mark_series(line, label, axis)
     (line,) = ax.plot(observed[DATE_COLUMN], observed[column], label=label, **style)
-    mark_series(line, label, MACRO_AXIS)
+    mark_series(line, label, axis)
     mark_reading(line, value_format, daily=filled, amount=amount)
     (projection,) = ax.plot(ahead[DATE_COLUMN], ahead[column], label="_projection", **faint)
-    mark_series(projection, label, MACRO_AXIS)
+    mark_series(projection, label, axis)
     mark_reading(projection, projected_format, projected=True, amount=amount)
     return line
 
@@ -486,19 +489,26 @@ def add_rate_lines(
         # series, so a stretch from the chart's start gives the change before the window.
         set_rate = _set_by_announcement(curve)
         history = curve.values if set_rate else None
+        # Inflation carried on to today (batch 43.1): its figures, then the projection, faint.
+        projection = None if curve.projected is None else _apart_projected(curve, config, filled)
+        if curve.projected is not None and projection is None:
+            curve = replace(curve, projected=None)  # none of the projection in the window: drawn as published
         if curve.announced is not None:
             published, announced = _apart_at(values, curve.announced)
-            parts = [(published, style, reading), (announced, style, _announced_reading)]
+            parts = [(published, style, reading, False), (announced, style, _announced_reading, False)]
+        elif projection is not None:
+            faint = {key: value for key, value in style.items() if key != "drawstyle"} | {"alpha": PROJECTION_ALPHA}
+            parts = [(projection[0], style, reading, False), (projection[1], faint, _projected_reading(reading), True)]
         elif curve.steps_until is None:
-            parts = [(values, style, reading)]
+            parts = [(values, style, reading, False)]
         else:
             monthly = values.loc[values.index <= curve.steps_until]
             daily = values.loc[values.index > curve.steps_until]
-            parts = [(monthly, style | _MONTHLY_YIELD, reading), (daily, style, reading)]
+            parts = [(monthly, style | _MONTHLY_YIELD, reading, False), (daily, style, reading, False)]
         name = legend_label(curve, config)
         exported = f"{name}, lower limit" if curve.upper is not None else name
         first: Line2D | None = None
-        for part, part_style, part_reading in parts:
+        for part, part_style, part_reading, projected in parts:
             if part.empty:
                 continue
             # The second part in the first's colour, and only the first in the legend.
@@ -506,8 +516,9 @@ def add_rate_lines(
             label = name if first is None else "_nolegend_"
             (drawn_line,) = ax.plot(part.index, part.to_numpy(), label=label, **(part_style | colour))
             mark_series(drawn_line, exported, YIELD_AXIS)
-            # A spread runs on to the day's quotes, as the yields it is taken from do.
-            mark_reading(drawn_line, part_reading, quoted=curve.spread, daily=filled, set_rate=set_rate, history=history)
+            # A spread runs on to the day's quotes, as the yields it is taken from do; a projection is read day by day.
+            mark_reading(drawn_line, part_reading, quoted=curve.spread, daily=filled and not projected, projected=projected,
+                         set_rate=set_rate, history=history)
             first = first or drawn_line
             setattr(first, _LAST_PIECE_ATTR, drawn_line)  # where its end label starts (``last_piece``)
             if curve.spread:
@@ -538,6 +549,37 @@ def _apart_at(values: pd.Series, first: pd.Timestamp) -> tuple[pd.Series, pd.Ser
         return before, after
     held = pd.Series([before.iloc[-1]], index=pd.DatetimeIndex([after.index[0]]))
     return pd.concat([before, held]), pd.concat([held, after])
+
+
+def _apart_projected(curve: RateCurve, config: PlotConfig, filled: bool) -> tuple[pd.Series, pd.Series] | None:
+    """The points that draw a curve carried on to today (``RateCurve.projected``, batch 43.1): its figures', and its projection's; None where the projection falls outside the window.
+
+    The figures are drawn as ever (``filled_through`` with Daily values,
+    ``held_steps`` without), to the point where the last one's line ends (its
+    month's middle filled in, its month's last instant in steps:
+    ``rates.projection_start``), and the projection goes on from there in the
+    same form, through each projected month to the End
+    (``rates.projection_points``). A curve lacking the index's last month
+    (the U.S.' 2026-10) is drawn whole, its projection a run of its own.
+    """
+    start = curve.projected
+    form = "middles" if filled else "steps"
+    observed = curve.values.loc[curve.values.index <= start]
+    if filled:
+        points = filled_through(observed, curve.key, config)
+    else:
+        points = held_steps(replace(curve, values=observed, holds=curve.holds.loc[observed.index], projected=None), config)
+    last = None
+    if start in observed.index:
+        last = (projection_start(start, form), float(observed.loc[start]))
+        points = points.loc[points.index <= last[0]]
+    projection = projection_points(last, curve.values.loc[curve.values.index > start], config, form=form)
+    return None if projection.empty else (points, projection)
+
+
+def _projected_reading(reading: ValueFormatter) -> ValueFormatter:
+    """How the read-out and an end label write a projected value: "≈" before it (``config.PROJECTION_LABEL_PREFIX``)."""
+    return lambda value: PROJECTION_LABEL_PREFIX + reading(value)
 
 
 def _set_by_announcement(curve: RateCurve) -> bool:
@@ -653,7 +695,11 @@ def _end_label_format(curve: RateCurve, config: PlotConfig) -> ValueFormatter:
     """Return how a rate curve's end label (-l) writes its last value: a spread in points, a band as its range ("3.75–4.00%").
 
     The label stands at the band's lower limit, the end of its legend line.
+    A curve carried on to today (inflation, batch 43.1) ends in its
+    projection: "≈" before the value.
     """
+    if curve.projected is not None:
+        return _projected_reading(_reading(curve))
     if curve.upper is None or curve.spread:
         return _reading(curve)
     upper = held_steps(curve, config, curve.upper).dropna()
@@ -796,24 +842,12 @@ def draw_country(
     extra: ExtraCurve | None = macro.attrs.get(EXTRA_CURVE_ATTR)
     extra_line: Line2D | None = None
     extra_axis: ExtraAxis | None = None
+    extra_from: pd.Timestamp | None = None  # where its drawn projection begins (batch 43.1)
     if extra is not None:
         ax_extra = ax_yield.twinx() if config.has_macro_series else ax_macro
-        # Daily values (batch 42.2): the price index filled in between its
-        # months' middles, the population (a count on a date, drawn through its
-        # points either way) carried to the window's edges on its line.
-        extra_kind = SERIES_KINDS[extra.kind]
-        extra_filled = config.daily and extra_kind.filled_in
-        extra_frame = pd.DataFrame({DATE_COLUMN: extra.values.index, extra.label: extra.values.to_numpy()})  # its observations, --reg's
-        if extra_filled:
-            points = (
-                filled_through(extra.values, extra.kind, config) if extra_kind.period is not None
-                else cut_to(extra.values.dropna().sort_index(), config.start, config.end)
-            )
-            extra_in_range = pd.DataFrame({DATE_COLUMN: points.index, extra.label: points.to_numpy()})
-        else:
-            extra_in_range = filter_to_date_range(extra_frame, DATE_COLUMN, config)
-            if extra.held_across_month:
-                extra_in_range = _held_across_its_month(extra_in_range, extra.label, config)
+        # Daily values (batch 42.2) and a projection to today (43.1): ``extra_points``.
+        extra_frame = pd.DataFrame({DATE_COLUMN: extra.values.index, extra.label: extra.values.to_numpy()})  # its figures, --reg's
+        extra_in_range, extra_from = extra_points(extra, config)
         extra_line = add_macro_line(
             ax_extra,
             extra_in_range,
@@ -822,8 +856,9 @@ def draw_country(
             label=extra.label,
             style=extra.style,
             value_format=extra.value_format,
+            projected_from=extra_from,
             axis=extra.export_axis,
-            filled=extra_filled,
+            filled=config.daily and SERIES_KINDS[extra.kind].filled_in,
             # A change in the read-out (batch 44): a count or an index's points, to three figures as the amounts
             # are written ("+512K", "+1.96", "+0.0323"), with its percentage.
             amount=format_population,
@@ -864,8 +899,9 @@ def draw_country(
     if config.regression:
         rate_labels = add_regression_segments(ax_macro, macro, zip(macro_lines, macro_columns_drawn), projected, config)
         if extra_axis is not None:
-            # On its own axis, whose height gives its tolerance (batch 13.4).
-            rate_labels += add_regression_segments(extra_axis.axes, extra_frame, [(extra_line, extra.label)], {}, config)
+            # On its own axis, whose height gives its tolerance (batch 13.4); its figures alone, not its projection.
+            extra_projected = {} if extra.projected_from is None else {extra.label: extra.projected_from}
+            rate_labels += add_regression_segments(extra_axis.axes, extra_frame, [(extra_line, extra.label)], extra_projected, config)
     # -l: every drawn curve gets its last value at its end, written as its
     # axis writes values: yields in percent, right-axis curves as the tick
     # labels there (dollars, or percent of GDP under -r); a projected value
@@ -877,11 +913,15 @@ def draw_country(
         ] + [
             (line, (lambda value, fmt=macro_format: PROJECTION_LABEL_PREFIX + fmt(value)) if column in projected else macro_format)
             for line, column in zip(macro_lines, macro_columns_drawn)
-        ] + ([(extra_line, extra.value_format)] if extra_line is not None else [])
-    # One legend entry says what the faint stretches are. Made after the line
-    # widths are scaled (apply_axes_formatting), so it matches them.
+        ] + ([(extra_line, extra.value_format if extra_from is None else _projected_reading(extra.value_format))] if extra_line is not None else [])
+    # One legend entry says what the faint stretches are, a right-axis curve's, the extra axis's or inflation's (batch
+    # 43.1). Made after the line widths are scaled (apply_axes_formatting), so it matches them.
     legend_macro = list(macro_lines) + ([extra_line] if extra_line is not None else [])
-    if any(column in projected for column in macro_columns_drawn):
+    if (
+        any(column in projected for column in macro_columns_drawn)
+        or (extra_line is not None and extra_from is not None)
+        or any(curve.projected is not None for _line, curve in rate_lines)
+    ):
         width = max(style["linewidth"] for style in MACRO_PLOT_STYLES.values()) * config.line_scale
         steered = set(macro.attrs.get(STEERED_ATTR, [])) & set(macro_columns_drawn)
         label = PROJECTION_LABEL_STEERED if steered else PROJECTION_LABEL
@@ -1120,6 +1160,45 @@ class ExtraCurve:
     export_axis: str  # what Export chart names its unit by (``export._unit``)
     kind: str  # its key of ``config.SERIES_KINDS`` (batch 42.1)
     held_across_month: bool = False  # a monthly figure in steps: its last drawn across its month (``_held_across_its_month``)
+    # Carried on to today (batch 43.1, ``latest.project_series``): the date its
+    # figures end, its values after it a projection (``extra_points``).
+    projected_from: pd.Timestamp | None = None
+
+
+def extra_points(extra: ExtraCurve, config: PlotConfig) -> tuple[pd.DataFrame, pd.Timestamp | None]:
+    """The points that draw ``extra`` in the window, as a frame (its label the column), and the point from which they are its projection (None: none drawn).
+
+    Daily values (batch 42.2): the price index filled in between its
+    months' middles, the population (a count on a date, drawn through its
+    points either way) carried to the window's edges on its line. In steps,
+    the price index's last month held across it. A projection
+    (``ExtraCurve.projected_from``, batch 43.1) goes on from where the last
+    figure's line ends (``rates.projection_start``: a month's middle filled
+    in, its month's last instant in steps, the population's own date), in
+    the same form, to the End (``rates.projection_points``). Used by the
+    nation's chart and the comparison's (``compare._draw_count``).
+    """
+    kind = SERIES_KINDS[extra.kind]
+    filled = config.daily and kind.filled_in
+    monthly = kind.period is not None
+    start = extra.projected_from
+    values = extra.values if start is None else extra.values.loc[extra.values.index <= start]
+    if filled:
+        points = filled_through(values, extra.kind, config) if monthly else cut_to(values.dropna().sort_index(), config.start, config.end)
+        frame = pd.DataFrame({DATE_COLUMN: points.index, extra.label: points.to_numpy()})
+    else:
+        frame = filter_to_date_range(pd.DataFrame({DATE_COLUMN: values.index, extra.label: values.to_numpy()}), DATE_COLUMN, config)
+        if extra.held_across_month and start is None:
+            frame = _held_across_its_month(frame, extra.label, config)
+    if start is None:
+        return frame, None
+    form = ("middles" if filled else "steps") if monthly else "points"
+    last = (projection_start(start, form), float(extra.values.loc[start]))
+    projection = projection_points(last, extra.values.loc[extra.values.index > start], config, form=form)
+    if projection.empty:
+        return extra_points(replace(extra, projected_from=None), config)  # none of it in the window
+    ahead = pd.DataFrame({DATE_COLUMN: projection.index, extra.label: projection.to_numpy()})
+    return pd.concat([frame.loc[frame[DATE_COLUMN] < last[0]], ahead], ignore_index=True), last[0]
 
 
 def _held_across_its_month(frame: pd.DataFrame, column: str, config: PlotConfig) -> pd.DataFrame:
@@ -1146,7 +1225,8 @@ def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
     adjusted index where one is published; where none is (the UK: the ONS
     publishes none), the unadjusted one, with a note, its legend and title
     saying which it is. The coverage warning names it where the chart begins
-    before it.
+    before it. With --projections, on a chart reaching today, carried on past
+    its last month (batch 43.1, ``latest.project_series``).
     """
     if not config.draws_price_index:
         return None
@@ -1156,6 +1236,7 @@ def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
               "index not seasonally adjusted.")
     index = consumer_prices(key, adjusted=adjusted)
     warn_series_coverage(config.start, {"Consumer price index (--cpi)": index.index[0]})
+    index, projected_from = project_series(index, config, "price_index", "the consumer price index" + (" (seas. adj.)" if adjusted else ""))
     return ExtraCurve(
         index,
         label=PRICE_INDEX_ADJUSTED_LABEL if adjusted else PRICE_INDEX_LABEL,
@@ -1167,15 +1248,19 @@ def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
         export_axis=INDEX_AXIS,
         kind="price_index",
         held_across_month=SERIES_KINDS["price_index"].period == "month",  # its kind's period (batch 42.1)
+        projected_from=projected_from,
     )
 
 
-def _extra_curve(key: str, config: PlotConfig, population: pd.Series | None) -> ExtraCurve | None:
+def _extra_curve(
+    key: str, config: PlotConfig, population: pd.Series | None, population_from: pd.Timestamp | None = None
+) -> ExtraCurve | None:
     """Nation ``key``'s curve on the extra axis: the price index (--cpi) or the population (--population, batch 13.5), which -p reads too; None without either.
 
     ``population`` None or empty: its source failed, with a warning from its
     reader, and the curve is not drawn. The coverage warning names it where
-    the chart begins before it.
+    the chart begins before it. ``population_from``: the date its estimates
+    end, where it is carried on to today (batch 43.1, ``_population``).
     """
     if not config.population or population is None or population.empty:
         return _price_index(key, config)
@@ -1190,21 +1275,37 @@ def _extra_curve(key: str, config: PlotConfig, population: pd.Series | None) -> 
         tick_format=format_population,
         export_axis=POPULATION_AXIS,
         kind="population",
+        projected_from=population_from,
     )
 
 
-def _consumer_prices(key: str, config: PlotConfig) -> pd.Series | None:
-    """Nation ``key``'s consumer price index for --constant (batch 13.2; ``prices.consumer_prices``), or None without it.
+def _consumer_prices(key: str, config: PlotConfig) -> tuple[pd.Series | None, pd.Timestamp | None]:
+    """Nation ``key``'s consumer price index for --constant (batch 13.2; ``prices.consumer_prices``), or None without it; and the date its figures end where it is carried on to today (batch 43.1), else None.
 
     Read only where the amounts are drawn at constant prices: --constant is
     off when no right-axis curve is chosen (``options.config_from_choices``).
-    The coverage warning names it where the chart begins before it.
+    The coverage warning names it where the chart begins before it. Carried
+    on as the price index drawn is (``latest.project_series``): the amounts
+    projected past its last month are divided by the projected index, and
+    stay in the prices of its last month published (``measures.in_constant_prices``).
     """
     if not config.constant_prices:
-        return None
+        return None, None
     index = consumer_prices(key)
     warn_series_coverage(config.start, {"Consumer price index (for --constant)": index.index[0]})
-    return index
+    return project_series(index, config, "price_index", "the consumer price index (for --constant)")
+
+
+def _population(population: pd.Series | None, config: PlotConfig) -> tuple[pd.Series | None, pd.Timestamp | None]:
+    """A nation's population (for -p and --population) carried on to today as its other smooth series are (batch 43.1, ``latest.project_series``), and the date its estimates end; as it is, and None, where it is not.
+
+    Held after its last estimate before (``measures.population_on``); now
+    -p divides a projected amount by the projected population, as -r divides
+    by projected GDP.
+    """
+    if population is None or population.empty:
+        return population, None
+    return project_series(population, config, "population", "the population")
 
 
 def _payments(key: str, config: PlotConfig) -> pd.DataFrame | None:
@@ -1258,11 +1359,12 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
     macro = project_to_now(align_cdn_macro(yields, series, config), observed, config, history, market)
     projected = macro.attrs.get(PROJECTION_ATTR, {})
     steered = macro.attrs.get(STEERED_ATTR, [])
-    population = fetch_cdn_population() if config.per_capita or config.population else None
+    population, population_from = _population(fetch_cdn_population() if config.per_capita or config.population else None, config)
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
-    expressed = express(macro, config, CDN, population, _consumer_prices("cdn", config))
+    prices, prices_from = _consumer_prices("cdn", config)
+    expressed = express(macro, config, CDN, population, prices, prices_through=prices_from)
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("cdn", config, population)
+    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("cdn", config, population, population_from)
     expressed.attrs[STEERED_ATTR] = steered
     return yields, expressed, rates
 
@@ -1292,11 +1394,12 @@ def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     projected = macro.attrs.get(PROJECTION_ATTR, {})
     if not macro.empty:
         macro = macro.loc[macro[DATE_COLUMN] <= config.end]
-    population = fetch_us_population() if config.per_capita or config.population else None
+    population, population_from = _population(fetch_us_population() if config.per_capita or config.population else None, config)
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
-    expressed = express(macro, config, US, population, _consumer_prices("us", config))
+    prices, prices_from = _consumer_prices("us", config)
+    expressed = express(macro, config, US, population, prices, prices_through=prices_from)
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("us", config, population)
+    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("us", config, population, population_from)
     return yields, expressed, rates
 
 
@@ -1332,11 +1435,12 @@ def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
         aligned.loc[aligned[UK.debt_column].notna(), UK.federal_debt_column] = np.nan
     macro = project_to_now(aligned, observed, config, history)
     projected = macro.attrs.get(PROJECTION_ATTR, {})
-    population = fetch_uk_population() if config.per_capita or config.population else None
+    population, population_from = _population(fetch_uk_population() if config.per_capita or config.population else None, config)
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
-    expressed = express(macro, config, UK, population, _consumer_prices("uk", config))
+    prices, prices_from = _consumer_prices("uk", config)
+    expressed = express(macro, config, UK, population, prices, prices_through=prices_from)
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("uk", config, population)
+    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("uk", config, population, population_from)
     return yields, expressed, rates
 
 
@@ -1368,14 +1472,15 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     aligned = align_macro(yields, series, config)
     macro = project_to_now(aligned, observed, config, history)
     projected = macro.attrs.get(PROJECTION_ATTR, {})
-    population = fetch_de_population() if config.per_capita or config.population else None
+    population, population_from = _population(fetch_de_population() if config.per_capita or config.population else None, config)
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
     # West Germany's GDP and debt and the population drawn cover other territories before 1960 and at unification (batch 16);
     # the balance of payments' twelve-month sums mix West Germany's months and all of Germany's through 1990-91 (batch 23).
     own_populations = west_german_own_populations(population) if config.per_capita else None
-    expressed = express(macro, config, DE, population, _consumer_prices("de", config), own_populations)
+    prices, prices_from = _consumer_prices("de", config)
+    expressed = express(macro, config, DE, population, prices, own_populations, prices_through=prices_from)
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("de", config, population)
+    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("de", config, population, population_from)
     return yields, expressed, rates
 
 

@@ -32,12 +32,15 @@ def express(
     population: pd.Series | None = None,
     prices: pd.Series | None = None,
     own_populations: Mapping[str, pd.Series] | None = None,
+    *,
+    prices_through: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """Return ``macro`` in the measure ``config`` asks for (unchanged for plain dollars), in the master currency if its chart is converted.
 
     ``population`` (date-indexed, persons) and ``own_populations`` are needed only for -p, ``prices``
     (the nation's consumer price index by month, ``prices.consumer_prices``)
-    only for --constant. Per person, then at constant prices (the order is
+    only for --constant, ``prices_through`` the month its figures end where it
+    is carried on past them (batch 43.1). Per person, then at constant prices (the order is
     immaterial: each divides each amount on its date), then in the master
     currency: the conversion comes after the measure (plan 30.1), so per
     capita it divides amounts already in the master currency by people, and
@@ -48,12 +51,18 @@ def express(
         return as_percent_of_gdp(macro, metadata)
     measured = per_person(macro, metadata, population, own_populations) if config.per_capita else macro
     if config.constant_prices:
-        measured = in_constant_prices(measured, metadata, prices, config.end, filled=config.daily)
+        measured = in_constant_prices(measured, metadata, prices, config.end, filled=config.daily, published=prices_through)
     return in_master_currency(measured, config, metadata)
 
 
 def in_constant_prices(
-    macro: pd.DataFrame, metadata: CountryMetadata, prices: pd.Series | None, end: pd.Timestamp, *, filled: bool = False
+    macro: pd.DataFrame,
+    metadata: CountryMetadata,
+    prices: pd.Series | None,
+    end: pd.Timestamp,
+    *,
+    filled: bool = False,
+    published: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """Return ``macro``'s amounts at the consumer prices of one month (--constant, batch 13.2), that month in ``attrs[PRICE_BASE_ATTR]``.
 
@@ -77,13 +86,24 @@ def in_constant_prices(
     amounts are, each month's pinned at its middle (``index_on``), so an
     amount filled in between its observations is divided by prices filled
     in alike, not by a month's index held across it.
+
+    ``published`` (batch 43.1): the index carried on to today past its last
+    month published, this one (``latest.project_series``). The month the
+    amounts are in is still the last published on or before the End: a
+    projected month's prices are no base. An amount after it, a projection
+    itself, is divided by its own month's projected index rather than that
+    month's held, so its stretch ends a little lower than in current prices.
+    The projected months run past the End (``project_series``): with Daily
+    values they place the index on its line up to the End.
     """
     columns = _debt_and_interest_columns(macro, metadata)
     if metadata.gdp_column in macro.columns:
         columns.append(metadata.gdp_column)
     known = pd.Series(dtype=float) if prices is None else prices.dropna().sort_index()
-    known = known.loc[known.index <= end]
-    if known.empty:
+    if published is None:
+        known = known.loc[known.index <= end]
+    base_months = known.loc[known.index <= (end if published is None else min(end, published))]
+    if base_months.empty:
         nation = nation_by_key(metadata.key)
         print(
             f"  Warning: no {nation.adjective} consumer price index on or before {end:%Y-%m-%d}; "
@@ -92,7 +112,7 @@ def in_constant_prices(
         result = macro.copy()
         result.attrs[PRICE_BASE_ATTR] = None
         return result
-    base_month, base_index = known.index[-1], float(known.iloc[-1])
+    base_month, base_index = base_months.index[-1], float(base_months.iloc[-1])
     result = macro.copy()
     result.attrs[PRICE_BASE_ATTR] = base_month
     if macro.empty or not columns:
