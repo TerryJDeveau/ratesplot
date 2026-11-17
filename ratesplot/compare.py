@@ -42,6 +42,11 @@ whose source fails, is left off with a line in the log saying why.
 The front ends draw this chart after the nations' as one more of ``CHARTS``,
 by ``build_chart``; ``PlotConfig.show_compare`` chooses it as ``show_cdn``
 chooses Canada's.
+
+Two transforms of the curves as drawn: each nation's TTM change, --ttm
+(batch 47.3, ``_ttm_change``), and the difference from a base nation, --base
+(batch 26.3, ``_against_base``), the first before the second where both are
+asked for.
 """
 
 from __future__ import annotations
@@ -55,6 +60,7 @@ import pandas as pd
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.dates import get_epoch
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
@@ -188,7 +194,9 @@ def solo_config(config: PlotConfig) -> PlotConfig:
     amounts being converted by ``_in_currency``. -r, -p and --constant are
     kept for the amounts alone: GDP under -r is compared as an amount, and
     the rates and the population are drawn without them, so no population
-    or price index is read for them.
+    or price index is read for them. Under --ttm (batch 47.3) each nation is
+    prepared from a year before Start, so that the window's first year has
+    its change (``_ttm_change`` cuts the curves at Start again).
     """
     measure = config.compare_measure
     kind = compare_kind(measure)
@@ -206,6 +214,8 @@ def solo_config(config: PlotConfig) -> PlotConfig:
     amounts = {} if kind == "amount" else {"relative": False, "per_capita": False, "constant_prices": False}
     if measure == "gdp":
         amounts = {"relative": False}
+    if config.ttm_change and config.start is not None:
+        amounts |= {"start": config.start - pd.DateOffset(years=1)}
     return replace(
         config,
         **curves,
@@ -286,8 +296,9 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
     price_base: pd.Timestamp | None = None
     extra_axis: ExtraAxis | None = None
     # A base nation (batch 26.3): drawn first, ticked or not, and every curve on the yield axis, in percent; one that
-    # cannot be drawn leaves the comparison drawn without a base.
+    # cannot be drawn leaves the comparison drawn without a base. The TTM change (batch 47.3) on the yield axis too.
     base_key = config.base_nation
+    ttm = config.ttm_change
 
     def draw_one(country: Country, macro_axis: Axes) -> _Drawn | None:
         """One nation's curve of the measure, drawn, coloured and named for it; None, with a note, where it has none."""
@@ -345,33 +356,42 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
             drawn.append(base_curve)
     for country in COUNTRIES:
         if getattr(config, country.show_field) and country.key != base_key:
-            curve = draw_one(country, ax_yield if base_key else ax_macro)
+            curve = draw_one(country, ax_yield if base_key or ttm else ax_macro)
             if curve is not None:
                 drawn.append(curve)
+    # A measure in percent (a yield, a rate, a share of GDP under -r) changes, and differs, in percentage points;
+    # an amount, GDP or the population in per cent. A TTM change, in either, differs from the base's in points.
+    points = kind in ("yield", "rate") or (kind == "amount" and solo.relative)
+    if ttm:
+        on_left = True
+        _ttm_change(drawn, points, config.start)
     if base_key is not None:
         on_left = True
-        points = kind in ("yield", "rate") or (kind == "amount" and solo.relative)
-        _against_base(ax_yield, drawn, points)
+        _against_base(ax_yield, drawn, points or ttm)
 
-    # The axes as the nations' charts set them, for the one family of curves drawn; against a base, the yield axis
-    # alone, in percent, its label saying from what.
-    measured = replace(solo, price_base=price_base)
-    mark_amounts_currency(figure, None if base_key else currency)
+    # The axes as the nations' charts set them, for the one family of curves drawn; against a base or as TTM
+    # changes, the yield axis alone, in percent, its label saying what; the dates from Start, not the year before
+    # --ttm prepared from.
+    measured = replace(solo, price_base=price_base, start=config.start)
+    mark_amounts_currency(figure, None if base_key or ttm else currency)
     mark_price_base(figure, price_base)
     mark_dates_only(figure)
     metadata = _METADATA_BY_CURRENCY[currency] if currency is not None else US
     if currency is not None:
         metadata = replace(metadata, currency_prefix=CURRENCY_SYMBOLS[currency])
-    if base_key is None:
+    if base_key is None and not ttm:
         apply_axes_formatting(ax_yield, ax_macro, measured, metadata, None, extra_axis)
     else:
         on_yield_axis = replace(measured, **(_EVERY_CURVE_OFF | {"include_yield": True, "yield_terms": ("10y",)}))
-        apply_axes_formatting(ax_yield, ax_macro, on_yield_axis, metadata, _base_axis_label(drawn[0].nation, points), None)
+        label = _base_axis_label(drawn[0].nation, points, ttm) if base_key else _ttm_axis_label(points)
+        apply_axes_formatting(ax_yield, ax_macro, on_yield_axis, metadata, label, None)
     # --reg: each nation's amount or population fitted by straight pieces, now that the axis limits are set; none
-    # against a base, whose curves are differences, not the series the segments fit.
+    # against a base or as TTM changes, whose curves are not the series the segments fit.
     rate_labels: list[RateLabel] = []
     if measured.regression and base_key is not None and kind in ("amount", "count"):
         print("  Note: --reg draws no segments on a comparison against a base nation.")
+    elif measured.regression and ttm and kind in ("amount", "count"):
+        print("  Note: --reg draws no segments on the comparison's TTM changes.")
     if measured.regression and not on_left:
         for curve in drawn:
             rate_labels += add_regression_segments(ax_macro, curve.frame, curve.fitted, curve.projected, curve.config)
@@ -384,7 +404,7 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
     quote_time = max(quotes) if quotes else None
     if quote_time is not None:
         mark_quote_time(figure, quote_time, MARKET_TIMEZONE)
-    title, short_title = _titles(drawn, measure, measured, drawn[0].nation if base_key else None)
+    title, short_title = _titles(drawn, measure, measured, drawn[0].nation if base_key else None, points if ttm else None)
     finish_legend_and_title(
         ax_yield,
         [handles, []] if on_left else [[], handles],
@@ -504,14 +524,20 @@ def _draw_count(ax: Axes, macro: pd.DataFrame, own: PlotConfig, nation: Nation) 
                   projection_drawn=drawn_from is not None), extra
 
 
-def _titles(drawn: list[_Drawn], measure: str, config: PlotConfig, base: Nation | None = None) -> tuple[str, str]:
+def _titles(
+    drawn: list[_Drawn], measure: str, config: PlotConfig, base: Nation | None = None, ttm_points: bool | None = None
+) -> tuple[str, str]:
     """The chart's title and its short form: "Canadian, US, UK & German 10-Year Yields", "CDN, US, UK & DEU 10-Year Yields" (decision 50's words for each nation).
 
     Against a base nation (batch 26.3) the others are named, then the base:
     "Canadian, UK & German 10-Year Yields (base: United States)", short
-    "(base: US)"; the base alone where no other is drawn.
+    "(base: US)"; the base alone where no other is drawn. ``ttm_points``, as
+    TTM changes (batch 47.3): the measure's words end ", TTM Change" for a
+    measure in percent (True), ", TTM % Change" for the others (False).
     """
     phrase = compare_title(measure) + (measure_title_suffix(config) if compare_kind(measure) == "amount" else "")
+    if ttm_points is not None:
+        phrase += ", TTM Change" if ttm_points else ", TTM % Change"
     if not drawn:
         return f"{phrase} compared: none of the nations ticked has it", f"{phrase} compared: none of the nations ticked has it"
 
@@ -588,8 +614,10 @@ def _signed_percent(value: float, places: int) -> str:
     return f"{sign}{abs(figure):.{places}f}%"
 
 
-def _base_axis_label(base: Nation, points: bool) -> str:
-    """The yield axis's label against a base nation: "Difference from United States (percentage points)", "% above or below Germany"."""
+def _base_axis_label(base: Nation, points: bool, ttm: bool = False) -> str:
+    """The yield axis's label against a base nation: "Difference from United States (percentage points)", "% above or below Germany"; of TTM changes (batch 47.3), "TTM change, difference from United States (percentage points)"."""
+    if ttm:
+        return f"TTM change, difference from {base.name} (percentage points)"
     return f"Difference from {base.name} (percentage points)" if points else f"% above or below {base.name}"
 
 
@@ -677,3 +705,119 @@ def _says_projected(formatter) -> bool:
         return formatter(1.0).startswith(PROJECTION_LABEL_PREFIX)
     except Exception:  # noqa: BLE001 - a formatter that takes no plain number marks nothing
         return False
+
+
+# ---------------------------------------------------------------------------
+# The TTM change (batch 47.3; Terry's item 4 of 2026-11-17, decision 154: "TTM
+# % change -- where instead of plotting and comparing the selected series, it
+# is the TTM % change in the named series that is compared")
+# ---------------------------------------------------------------------------
+
+def _years_on(x: np.ndarray, years: int) -> np.ndarray:
+    """Each date ``x`` (matplotlib day numbers) moved ``years`` years on (back where negative), to the same calendar day and time: 29 February to 28 February.
+
+    In numpy's datetimes, in seconds, which reach before 1677 (the UK's Bank
+    Rate starts in 1694), where pandas' nanosecond timestamps do not.
+    """
+    out = np.full(len(x), np.nan)
+    finite = np.isfinite(x)
+    if not finite.any():
+        return out
+    epoch = np.datetime64(get_epoch(), "s")
+    when = epoch + np.round(x[finite] * 86400.0).astype(np.int64).astype("timedelta64[s]")
+    day = when.astype("datetime64[D]")
+    month = day.astype("datetime64[M]")
+    moved = month + np.timedelta64(12 * years, "M")
+    length = ((moved + np.timedelta64(1, "M")).astype("datetime64[D]") - moved.astype("datetime64[D]")).astype(np.int64)
+    within = np.minimum((day - month.astype("datetime64[D]")).astype(np.int64), length - 1)
+    new_day = moved.astype("datetime64[D]") + within.astype("timedelta64[D]")
+    seconds = (new_day.astype("datetime64[s]") - epoch).astype(np.int64) + (when - day.astype("datetime64[s]")).astype(np.int64)
+    out[finite] = seconds / 86400.0
+    return out
+
+
+def _day_number(when: pd.Timestamp) -> float:
+    """``when`` as a matplotlib day number, by numpy's datetimes (a Start before 1677 included)."""
+    seconds = (np.datetime64(when.to_datetime64(), "s") - np.datetime64(get_epoch(), "s")).astype(np.int64)
+    return float(seconds) / 86400.0
+
+
+def _ttm_axis_label(points: bool) -> str:
+    """The yield axis's label for the TTM changes: "TTM change (percentage points)" for a measure in percent, else "TTM % change"."""
+    return "TTM change (percentage points)" if points else "TTM % change"
+
+
+def _ttm_change(drawn: list[_Drawn], points: bool, start: pd.Timestamp | None) -> None:
+    """Make every curve of ``drawn`` its change over the twelve months to each date, from Start on.
+
+    ``points``: a measure in percent (a yield, a rate, a share of GDP under
+    -r), its change in percentage points; otherwise (an amount, GDP, the
+    population) its change in per cent, (now ÷ then − 1) × 100, nothing where
+    the year-ago value is not above zero (as the read-out's Δ%, decision 145).
+    The year-ago value is the curve's on the same calendar day a year before
+    (29 February's on 28 February), from any of its pieces, a stepped one's
+    the value then in force. Each piece keeps its steps and its faintness: it
+    is given the dates a year after the curve's own within its span, so a
+    change a year ago shows where it falls, and is cut at Start (the curves
+    were prepared from a year before it, ``solo_config``). The U.S. target
+    range is its midpoint: the upper limit and the band are taken off. The
+    read-out, Export chart and the line labels write the changes ("+3.4%",
+    "+0.25%"; "Canada: 10-Year Yield, TTM change").
+    """
+    start_x = -np.inf if start is None else _day_number(start)
+    writer = partial(_signed_percent, places=2 if points else 1)
+    said = "TTM change" if points else "TTM % change"
+    for curve in drawn:
+        lines = _drawn_lines(curve)
+        if not lines:
+            continue
+        uppers = [line for line in lines if _upper(line)]
+        lowers = [line for line in lines if not _upper(line)]
+        # The curve's values copied before any line is changed: a piece's year-ago value may be another's.
+        low, high = _pieces(lowers), _pieces(uppers)
+        dates = np.unique(np.concatenate([xs for xs, _ys, _stepped in low + high]))
+        year_on = _years_on(dates[np.isfinite(dates)], 1)
+
+        def curve_at(x: np.ndarray, own: np.ndarray | None = None) -> np.ndarray:
+            """The curve's value at ``x`` (``own``, a piece's, where given); a range's midpoint."""
+            value = _value_at(low, x) if own is None else own
+            if not high:
+                return value
+            limit = _value_at(high, x)
+            return np.where(np.isfinite(limit), (value + limit) / 2.0, value)
+
+        for band in [artist for artist in curve.artists if not isinstance(artist, Line2D)]:
+            band.remove()
+        for line in uppers:
+            line.remove()
+        for line in lowers:
+            xy = np.asarray(line.get_xydata(), dtype=float)
+            xs = xy[:, 0][np.isfinite(xy[:, 0])]
+            first, last = xs.min(), xs.max()
+            x = np.union1d(xs, year_on[(year_on >= first) & (year_on <= last)])
+            if first < start_x <= last:
+                x = np.union1d(x, [start_x])  # the value in force at Start, where the piece runs across it
+            x = x[x >= start_x]
+            now = curve_at(x, _value_at([line], x))
+            then = curve_at(_years_on(x, -1))
+            with np.errstate(invalid="ignore", divide="ignore"):
+                y = now - then if points else np.where(then > 0, (now / then - 1.0) * 100.0, np.nan)
+            if not np.isfinite(y).any():
+                line.remove()  # a piece wholly before Start, or with no year before it
+                continue
+            line.set_data(x, y)
+            remark_reading(line, writer)
+            marked = series_of(line)
+            if marked is not None:
+                name = marked[0].replace(", lower limit", ", midpoint") if uppers else marked[0]
+                mark_series(line, f"{name}, {said}", YIELD_AXIS)
+        # The line labels write the changes, a projected stretch's still marked "≈" (PROJECTION_LABEL_PREFIX).
+        curve.end_labels = [
+            (line, (lambda value: PROJECTION_LABEL_PREFIX + writer(value)) if _says_projected(formatter) else writer)
+            for line, formatter in curve.end_labels if line.axes is not None
+        ]
+        if uppers:  # a range's legend entry a plain line in its colour, the band being gone
+            first_line = next((line for line in _drawn_lines(curve)), None)
+            if first_line is not None:
+                curve.handles = [Line2D([], [], color=first_line.get_color(), linewidth=first_line.get_linewidth(),
+                                        label=curve.nation.name)]

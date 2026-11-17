@@ -800,7 +800,7 @@ def idle_control_reasons(flags: Mapping[str, bool]) -> dict[str, str]:
     # The base nation (batch 26.3; Terry, 2026-11-12: "greyed-out until
     # “Compare” is activated"): its box and its nations' while no comparison is drawn.
     if not flags.get("compare", False):
-        reasons |= dict.fromkeys(("base", "base-nation"), unticked("compare"))
+        reasons |= dict.fromkeys(("base", "base-nation", "ttm"), unticked("compare"))
     if not flags.get("yield", True):
         reasons["yields"] = unticked("yield")
         if not any(flags.get(name, False) for name in _LEFT_AXIS_RATES):
@@ -835,7 +835,7 @@ def idle_choice_reasons(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
 # nation's aggregate debts, by its key (``idle_nation_keys``).
 GREYABLE_OPTIONS = (
     frozenset(idle_option_reasons(False, False, False))
-    | {"gdp", "aggregate", "yields", "min", "max", "current", "master", "cpi-adjustment", "base", "base-nation"}
+    | {"gdp", "aggregate", "yields", "min", "max", "current", "master", "cpi-adjustment", "base", "base-nation", "ttm"}
     | AUTO_REFRESH_OPTIONS
 )
 
