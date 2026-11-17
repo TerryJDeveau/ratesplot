@@ -206,20 +206,16 @@ def project_to_now(
     for column, start in starts.items():
         if column not in history.columns:
             continue
-        series = history[column].sort_index()
-        base = series.loc[:start].dropna()
-        earlier = series.loc[: start - pd.Timedelta(days=_PROJECTION_RATE_DAYS)].dropna()
-        if base.empty or earlier.empty:
+        found = _year_before(history[column], start)
+        if found is None:
             continue
-        value = float(base.iloc[-1])
-        per_day = (value - float(earlier.iloc[-1])) / _PROJECTION_RATE_DAYS
+        (_base_date, value), earlier = found
+        per_day = _per_day(found[0], earlier)
         later = (data[DATE_COLUMN] > start) & data[column].notna()
         elapsed = (data.loc[later, DATE_COLUMN] - start).dt.days
         steered = None
         if market is not None and column in _MARKET_STEERED_COLUMNS:
-            steered = _market_steered(
-                data.loc[later, DATE_COLUMN], start, value, (earlier.index[-1], float(earlier.iloc[-1])), market
-            )
+            steered = _market_steered(data.loc[later, DATE_COLUMN], start, value, earlier, market)
             if steered is None:
                 print(f"  Warning: Government of Canada market debt does not cover the year to {start:%Y-%m-%d}; {column} goes on at its own pace alone.")
         projected[column] = start
@@ -237,6 +233,31 @@ def project_to_now(
     return data
 
 
+def _year_before(series: pd.Series, start: pd.Timestamp) -> tuple[tuple[pd.Timestamp, float], tuple[pd.Timestamp, float]] | None:
+    """A curve's figure on or before ``start`` and its figure on or before a year (``_PROJECTION_RATE_DAYS``) before that, each ``(date, value)``; None without both.
+
+    A projection runs from the first at the pace between the two (``_per_day``).
+    """
+    series = series.sort_index()
+    base = series.loc[:start].dropna()
+    earlier = series.loc[: start - pd.Timedelta(days=_PROJECTION_RATE_DAYS)].dropna()
+    if base.empty or earlier.empty:
+        return None
+    return (pd.Timestamp(base.index[-1]), float(base.iloc[-1])), (pd.Timestamp(earlier.index[-1]), float(earlier.iloc[-1]))
+
+
+def _per_day(base: tuple[pd.Timestamp, float], earlier: tuple[pd.Timestamp, float]) -> float:
+    """The pace a projection goes on at: the change between two figures (``_year_before``), a day.
+
+    By the days between them, not a year's 365 (batch 43.1): a figure missing a
+    year before the last moves the earlier one back, and the change counts the
+    longer span (the U.S. price index has no 2025-10, so its 2026-10 is measured
+    from 2025-09, 395 days before). A quarter-end figure's year is 365 or 366
+    days, a daily one's up to three days more over a weekend.
+    """
+    return (base[1] - earlier[1]) / (base[0] - earlier[0]).days
+
+
 def _market_steered(
     dates: pd.Series, start: pd.Timestamp, value: float, earlier: tuple[pd.Timestamp, float], market: pd.Series
 ) -> tuple[pd.Series, str] | None:
@@ -247,8 +268,8 @@ def _market_steered(
     on after it at its own pace over the year before that day. The rest goes
     on from ``start``, where the curve's data end at ``value``, at its own
     pace over the year to it, from ``earlier`` (the curve's date and value a
-    year before). Paces are over ``_PROJECTION_RATE_DAYS``, as in
-    ``project_to_now``. None when market debt is not known close to
+    year before), by the days between the two (``_per_day``); market debt's
+    over ``_PROJECTION_RATE_DAYS``, read on those days. None when market debt is not known close to
     ``start``, to that earlier date, or to a year before its own last day.
     """
     known = market.dropna().sort_index()
@@ -267,7 +288,7 @@ def _market_steered(
     year_before_last = on(last_day - pd.Timedelta(days=_PROJECTION_RATE_DAYS))
     if at_start is None or at_earlier is None or year_before_last is None:
         return None
-    rest_per_day = ((value - at_start) - (earlier_value - at_earlier)) / _PROJECTION_RATE_DAYS
+    rest_per_day = _per_day((start, value - at_start), (earlier_date, earlier_value - at_earlier))
     market_per_day = (last_value - year_before_last) / _PROJECTION_RATE_DAYS
 
     when = pd.DatetimeIndex(dates)
