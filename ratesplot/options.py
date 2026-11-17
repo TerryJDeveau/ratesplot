@@ -919,9 +919,11 @@ _COMPARE_CHOICES = (
     ("", (("interest", "TTM interest paid on public debt"),)),
     ("", (("population", "Population"),)),
     # Batch 47.4: the balance of payments' two balances under a heading of their own, as the nations' charts offer
-    # the pair.
+    # the pair; one to a row, since a row of two shares its grid columns with "Public debt" and "TTM GDP" and
+    # "Current account balance" widened the window's column (verify_gui's 31.2: Refresh 273 px, Reset 274).
     ("Balance of payments", ()),
-    ("", (("current", "Current account balance"), ("trade", "Trade balance"))),
+    ("", (("current", "Current account balance"),)),
+    ("", (("trade", "Trade balance"),)),
 )
 # The base nation's boxes (batch 26.3; Terry, 2026-11-12: "a copy of the
 # national option boxes"), one at a time, each written by its first code.
