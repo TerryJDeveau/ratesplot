@@ -1010,6 +1010,24 @@ def check_batch263(check: Check) -> None:
     check("on Canada's tab, no base nation's block; its choice kept", "flag:base" not in keys and "--base:gb" in address(at).split(), address(at))
 
 
+def check_batch473(check: Check) -> None:
+    """Batch 47.3 (decision 159): “TTM % change” on the tab Compare, first in the comparison's block (a block's boxes before its lists); written."""
+    at = new_page("--com --e:2026-09-01")
+    at.session_state["tab"] = "Compare"  # as a click on its tab leaves it
+    at.run()
+    keys = [box.key for box in at.checkbox if box.key]
+    check("on the tab Compare, “TTM % change” after “Compare the nations” and before the measure's boxes, unticked and live",
+          "flag:ttm" in keys and keys.index("flag:compare") < keys.index("flag:ttm") < keys.index("choice:compare-measure:10y")
+          and not at.checkbox(key="flag:ttm").value and not at.checkbox(key="flag:ttm").disabled, keys[:12])
+    at.checkbox(key="flag:ttm").check()
+    at.run()
+    check("ticked: no exception, --ttm in the address", not at.exception and "--ttm" in address(at).split(), (at.exception, address(at)))
+    at.session_state["tab"] = "Canada"
+    at.run()
+    keys = [box.key for box in at.checkbox if box.key]
+    check("on Canada's tab, no “TTM % change”; its choice kept", "flag:ttm" not in keys and "--ttm" in address(at).split(), address(at))
+
+
 def check_batch15(check: Check) -> None:
     """Batch 15 (Terry, 2026-10-13 and 2026-10-14): the two ticks' wording; Save log file."""
     at = new_page("--e:2026-09-01")
@@ -2573,7 +2591,7 @@ PAGE_CHECKS = (
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
     check_batch135, check_batch133, check_batch35, check_wait_colour, check_batch37, check_batch38, check_batch262,
-    check_batch263,
+    check_batch263, check_batch473,
 )
 
 

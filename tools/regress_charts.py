@@ -421,6 +421,14 @@ CASES: dict[str, list[str]] = {
     # month or more before the target range, its end label moved off the range's lines (its own End, after the
     # pinned one: at 2026-09-01 the index's month reaches the chart's end).
     "u_pol_inf_l": ["-u", "--policy", "--inflation", "-l", "-s:2023", "--e:2026-10-15"],
+    # Batch 47.3 (decision 154): the TTM changes compared: the 10-year yields in points; the policy rates with end
+    # labels (the U.S. target range's midpoint); debt in % with --reg drawing no segments, the projections faint;
+    # debt as % of GDP in points against Germany; the population in %.
+    "cmp_10y_ttm": ["--na:ca,us,gb,de", "--com", "--ttm", "--no-debt", "--no-gdp", "--no-interest", "-s:2015"],
+    "cmp_pol_ttm_l": ["--na:ca,us,gb,de", "--com:pol", "--ttm", "--policy", "-l", "-s:2015"],
+    "cmp_debt_ttm_reg": ["--na:ca,us,gb,de", "--com:debt", "--ttm", "--reg", "-l", "-s:2005"],
+    "cmp_debt_r_ttm_base_de": ["--na:ca,us,gb", "--com:debt", "-r", "--ttm", "--base:de", "-s:2005"],
+    "cmp_pop_ttm": ["--na:ca,us,gb,de", "--com:pop", "--ttm", "-s:1990"],
 }
 
 

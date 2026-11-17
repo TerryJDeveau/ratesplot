@@ -2898,6 +2898,30 @@ def check_batch263(check: Check) -> None:
         check("“Compare the nations” unticked: “Base nation” greyed", not enabled(app.flag_boxes["base"]))
 
 
+def check_batch473(check: Check) -> None:
+    """Batch 47.3 (decision 159): “TTM % change” in the comparison's block, first (a block's boxes before its lists); the chart's curves made TTM changes."""
+    with window(f"-c -u -s:2015 --com {END}") as w:
+        app = w.app
+        app.notebook.select(app.tabs["compare"])
+        w.pump(5)
+        box = app.flag_boxes["ttm"]
+        check("“TTM % change” in the comparison's block, unticked and live", str(box).startswith(str(app.block_frames["compare"]))
+              and not app.flag_vars["ttm"].get() and enabled(box), str(box))
+        w.tick("ttm", True)
+        w.settle()
+        figure = app.figures["compare"][0]
+        title = figure.axes[0].get_title() or " ".join(text.get_text() for text in figure.texts)
+        named = [export.series_of(line)[0] for line in figure.axes[0].get_lines() if export.series_of(line)]
+        check("ticked: --ttm written, the title ending “, TTM Change”, each curve's exported name saying so", "--ttm" in w.command_tokens()
+              and "10-Year Yields, TTM Change" in title and named and all(name.endswith(", TTM change") for name in named),
+              (w.command_tokens(), title, named[:3]))
+        check("the yield axis labelled “TTM change (percentage points)”", figure.axes[0].get_ylabel() == "TTM change (percentage points)",
+              figure.axes[0].get_ylabel())
+        w.tick("compare", False)
+        w.settle()
+        check("“Compare the nations” unticked: “TTM % change” greyed, still ticked", not enabled(box) and app.flag_vars["ttm"].get())
+
+
 def check_batch134(check: Check) -> None:
     """Batch 13.4: "Seas. adj." under "Price index (CPI)", greyed while that is unticked and with the UK alone, ticked and unticked freely; its ⓘ."""
     with window(f"-c -s:2015 {END}") as w:
@@ -3368,6 +3392,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch23": check_batch23,
     "batch262": check_batch262,
     "batch263": check_batch263,
+    "batch473": check_batch473,
 }
 
 
