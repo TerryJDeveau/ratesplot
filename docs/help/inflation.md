@@ -2,7 +2,7 @@
 
 Each nation's 12-month rise in consumer prices: each month's consumer price index against the same month's a year before, in percent, drawn on the left axis as a dotted deep-pink line, each month's rise a step across that month. Inflation draws it. Beside the bond yields it shows what a yield is worth once prices have risen: 5 % a year with prices rising 10 % a year is a loss. An end label and the read-out give the rise to one decimal, as the statistics offices publish it.
 
-The index is the all-items consumer price index, not seasonally adjusted, the one each nation's headline rate is taken from. A month's figure comes some weeks after it ends: Statistics Canada's and the ONS's for September 2026 on October 19 and 21, and the Bundesbank had Germany's first estimate for October 2026 by November 3. With [Projections to today](?help=projections), on a chart reaching today, the curve is carried on to the End, faint: each month after the index's last is the rise of the projected index over the published one a year before.
+The index is the all-items consumer price index, not seasonally adjusted, the one each nation's headline rate is taken from. A month's figure comes some weeks after it ends: Statistics Canada's and the ONS's for September 2026 on October 19 and 21, and the Bundesbank had Germany's first estimate for October 2026 by November 3. With [Projections to today](?help=projections), on a chart reaching today, the curve is carried on to the End, faint: each month after the index's last is the rise of the projected index, carried on with its seasonal swing, over the published one a year before.
 
 ## Canada
 
