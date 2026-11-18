@@ -116,6 +116,8 @@ CHART_CASES = (
     "constant_pc", "cpi_sa", "population", "real_four",
     # Batch 26: the comparison chart after the four nations', the policy rates with end labels.
     "cmp_pol_l",
+    # Batch 14.1: the price index and the population together, alone, the index mirrored on the left.
+    "cpi_pop_alone",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -3025,6 +3027,35 @@ def check_batch135(check: Check) -> None:
         check("unticked: the regression segments greyed", not enabled(app.flag_boxes["regression"]))
 
 
+def check_batch141(check: Check) -> None:
+    """Batch 14.1: two kinds of unit on the right at most: "Price index (CPI)" and "Population" together with no amount, each on an axis of its own; an amount ticked unticks the population."""
+    with window(f"-c --cpi --no-gdp --no-debt --no-interest -s:2015 {END}") as w:
+        app = w.app
+
+        def axis_of(label: str):
+            return next((line.axes for axis in app.figures["cdn"][0].axes for line in axis.get_lines() if line.get_label() == label), None)
+
+        check("the price index alone on the right", app.flag_vars["cpi"].get() and not app.flag_vars["population"].get()
+              and axis_of("Consumer price index") is not None, w.command_tokens())
+        w.tick("population", True)
+        w.settle()
+        index_axis, count_axis = axis_of("Consumer price index"), axis_of("Population")
+        check("“Population” ticked: “Price index (CPI)” kept, both written and drawn, each on an axis of its own",
+              app.flag_vars["cpi"].get() and "--cpi" in w.command_tokens() and "--population" in w.command_tokens()
+              and index_axis is not None and count_axis is not None and index_axis is not count_axis, w.command_tokens())
+        check("the population's axis outside the index's", count_axis is not None
+              and count_axis.spines["right"].get_position()[0] == "outward" and count_axis.spines["right"].get_position()[1] > 0,
+              None if count_axis is None else count_axis.spines["right"].get_position())
+        check("its chart the written line's", w.written_draws_the_same(("cdn",)))
+        w.tick("debt", True)
+        w.settle()
+        check("“Aggregate public debt” ticked beside both: “Population” unticked, the index kept", app.flag_vars["cpi"].get()
+              and not app.flag_vars["population"].get() and "--population" not in w.command_tokens()
+              and "--cpi" in w.command_tokens() and axis_of("Population") is None and axis_of("Consumer price index") is not None,
+              w.command_tokens())
+        check("its chart the written line's", w.written_draws_the_same(("cdn",)))
+
+
 def check_batch35(check: Check) -> None:
     """Batch 35.3, 35.4: the wait line beside the build line while a chart is drawn, its arc turning, under it when narrow; a queued drawing part of the wait; the figures learned and saved; Earlier, Later and Zoom out."""
     # Each chart held until the checks have looked: a drawing with its downloads kept is over in a second.
@@ -3393,6 +3424,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch262": check_batch262,
     "batch263": check_batch263,
     "batch473": check_batch473,
+    "batch141": check_batch141,
 }
 
 

@@ -112,7 +112,7 @@ from .legend import finish_legend_and_title
 from .measures import PRICE_BASE_ATTR
 from .plotting import (
     COUNTRIES,
-    EXTRA_CURVE_ATTR,
+    EXTRA_CURVES_ATTR,
     Country,
     ExtraCurve,
     add_macro_line,
@@ -417,7 +417,7 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
     if currency is not None:
         metadata = replace(metadata, currency_prefix=CURRENCY_SYMBOLS[currency])
     if base_key is None and not ttm and kind != "balance":
-        apply_axes_formatting(ax_yield, ax_macro, measured, metadata, None, extra_axis)
+        apply_axes_formatting(ax_yield, ax_macro, measured, metadata, None, () if extra_axis is None else (extra_axis,))
     else:
         on_yield_axis = replace(measured, **(_EVERY_CURVE_OFF | {"include_yield": True, "yield_terms": ("10y",)}))
         in_its_currency = currency if balance_format is not None else None
@@ -427,7 +427,7 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
             label = _ttm_axis_label(points, in_its_currency)
         else:
             label = _balance_axis_label(measure, measured, currency)
-        apply_axes_formatting(ax_yield, ax_macro, on_yield_axis, metadata, label, None)
+        apply_axes_formatting(ax_yield, ax_macro, on_yield_axis, metadata, label)
         if balance_format is not None:
             # A balance's ticks in its currency (or in percent under -r, the yield axis's own), on both sides.
             for ax in (ax_yield, ax_macro):
@@ -635,7 +635,8 @@ def _rebased(drawn: list[_Drawn]) -> str | None:
 
 def _draw_count(ax: Axes, macro: pd.DataFrame, own: PlotConfig, nation: Nation) -> tuple[_Drawn | None, ExtraCurve | None]:
     """The population, by ``plotting.add_macro_line``, as the nation's chart draws it on its extra axis (``plotting.extra_points``): through its points, filled in with daily values, carried on to today faint (batch 43.1)."""
-    extra: ExtraCurve | None = macro.attrs.get(EXTRA_CURVE_ATTR)
+    # The solo config draws the measure's curve alone, so the nation's extra axes hold that one (batch 14.1).
+    extra: ExtraCurve | None = next(iter(macro.attrs.get(EXTRA_CURVES_ATTR, ())), None)
     if extra is None:
         return None, None
     frame = pd.DataFrame({DATE_COLUMN: extra.values.index, extra.label: extra.values.to_numpy()})  # its figures, --reg's

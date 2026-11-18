@@ -271,6 +271,8 @@ from .frontend import (  # noqa: E402
     zoom_updates,
 )
 from .options import (  # noqa: E402
+    AMOUNT_BOXES,
+    EXTRA_BOXES,
     NO_VERSION_TOKEN,
     OPTIONS,
     Kind,
@@ -1633,14 +1635,21 @@ def _measure_changed(name: str) -> None:
 
 
 def _extra_curve_changed(name: str) -> None:
-    """The price index and the population, one at a time on their axis (``excluded_curves``, batch 13.5): ticking one unticks the other."""
+    """The price index or the population ticked: two kinds of unit on the right at most (``_right_side_kept``)."""
+    _right_side_kept(name)
+
+
+def _right_side_kept(name: str) -> None:
+    """Two kinds of unit on the right at most (``excluded_curves``, batch 14.1): the price index or the population ticked beside an amount unticks the other of the two; an amount ticked beside both unticks the population."""
     if st.session_state[_FLAG + name]:
-        for other in excluded_curves(name):
+        ticked = {box: bool(st.session_state.get(_FLAG + box, False)) for box in AMOUNT_BOXES + EXTRA_BOXES}
+        for other in excluded_curves(name, ticked):
             st.session_state[_FLAG + other] = False
 
 
-def _curve_changed(_name: str) -> None:
-    """A curve ticked or unticked can give -r its effect or take it away: clear Top and Bottom in the other unit."""
+def _curve_changed(name: str) -> None:
+    """A curve ticked or unticked can give -r its effect or take it away: clear Top and Bottom in the other unit. An amount ticked keeps the right side to two kinds of unit (``_right_side_kept``)."""
+    _right_side_kept(name)
     for bound in bounds_in_other_units(*_snapshot()):
         st.session_state[_VALUE + bound] = ""
 

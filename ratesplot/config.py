@@ -1594,15 +1594,16 @@ class CountryMetadata:
         macro_keys_drawn: Iterable[str],
         config: PlotConfig,
         rate_titles: Iterable[str] = (),
-        extra_title: str = "",
+        extra_titles: Iterable[str] = (),
         short: bool = False,
     ) -> str:
         """Compose the chart title from the series that were actually drawn.
 
-        ``extra_title`` names the extra axis's curve when it is drawn (batch
-        13.4), last, after the right axis's curves and outside their -r or -p
-        qualifier, which does not apply to it: "...; Aggregate Public Debt
-        per Capita; Consumer Price Index".
+        ``extra_titles`` name the extra axes' curves drawn (batch 13.4; two at
+        most, 14.1), last, after the right axis's curves and outside their -r
+        or -p qualifier, which does not apply to them: "...; Aggregate Public
+        Debt per Capita; Consumer Price Index", "Canada: Consumer Price Index
+        & Population".
 
         Parts are joined with commas and a final ampersand, e.g.
         ``"U.S. Treasury Yields, Aggregate Public Debt & TTM GDP"``.
@@ -1690,7 +1691,7 @@ class CountryMetadata:
         macro_parts += payments_parts
         levels_suffix = LEVELS_TITLE_SUFFIX if by_level else ""
         yield_parts = ([yield_phrase] if yields_drawn else []) + list(dict.fromkeys(rate_titles))
-        index_parts = [extra_title] if extra_title else []
+        index_parts = [title for title in extra_titles if title]
         parts = yield_parts + macro_parts + index_parts
         if not parts:
             return f"{self.country_name}: no series selected"
@@ -1966,9 +1967,10 @@ class PlotConfig:
     # --constant: the index is never divided.
     price_index: bool = False
     price_index_adjusted: bool = False
-    # --population (batch 13.5): each nation's population on the same axis, in
-    # persons, never with --cpi (``options.check_one_extra_curve``, decision
-    # 43); never divided either.
+    # --population (batch 13.5): each nation's population on an axis of its
+    # own, in persons; beside --cpi only where no amount is drawn, two kinds of
+    # unit on the right at most (batch 14.1, ``options.check_right_axis_kinds``;
+    # before it never with --cpi, decision 43); never divided either.
     population: bool = False
     # --compare[:MEASURE] (batch 26, a prototype, decision 146): a chart after
     # the nations' comparing them on one measure of COMPARE_MEASURES, one at a

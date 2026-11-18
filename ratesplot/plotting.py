@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, replace
 from functools import partial, wraps
-from typing import Callable, Iterable
+from typing import Callable, Iterable, NamedTuple, Sequence
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -835,15 +835,14 @@ def draw_country(
     _shade_payments_gap(ax_macro, macro_in_range, macro_columns_drawn, projected,
                         filled=config.daily and SERIES_KINDS["payments_credits"].filled_in)
 
-    # The extra axis's curve (``ExtraCurve``): the right axis's when no curve
-    # of it is chosen, else on an axis of its own outside it; drawn the same
+    # The extra axes' curves (``ExtraCurve``; two at most, nearest the chart
+    # first, batch 14.1): the first takes the right axis when no curve of it is
+    # chosen, and every other an axis of its own outside it; each drawn the same
     # either way, and under every measure (never divided).
-    extra: ExtraCurve | None = macro.attrs.get(EXTRA_CURVE_ATTR)
-    extra_line: Line2D | None = None
-    extra_axis: ExtraAxis | None = None
-    extra_from: pd.Timestamp | None = None  # where its drawn projection begins (batch 43.1)
-    if extra is not None:
-        ax_extra = ax_yield.twinx() if config.has_macro_series else ax_macro
+    drawn_extras: list[_DrawnExtra] = []
+    for extra in macro.attrs.get(EXTRA_CURVES_ATTR, ()):
+        right_free = not config.has_macro_series and all(drawn.axis.axes is not ax_macro for drawn in drawn_extras)
+        ax_extra = ax_macro if right_free else ax_yield.twinx()
         # Daily values (batch 42.2) and a projection to today (43.1): ``extra_points``.
         extra_frame = pd.DataFrame({DATE_COLUMN: extra.values.index, extra.label: extra.values.to_numpy()})  # its figures, --reg's
         extra_in_range, extra_from = extra_points(extra, config)
@@ -863,30 +862,33 @@ def draw_country(
             amount=format_population,
         )
         if extra_line is not None:
-            extra_axis = ExtraAxis(ax_extra, extra.axis_label, extra.tick_format)
+            drawn_extras.append(_DrawnExtra(extra, extra_line, ExtraAxis(ax_extra, extra.axis_label, extra.tick_format), extra_from, extra_frame))
         elif ax_extra is not ax_macro:
             ax_extra.remove()  # nothing of the curve in the window
+    extra_axes = [drawn.axis for drawn in drawn_extras]
+    outer_axes = [drawn.axis.axes for drawn in drawn_extras if drawn.axis.axes is not ax_macro]
+    extra_lines = [drawn.line for drawn in drawn_extras]
 
     # A break in the inflation curve says why, in the message log (batch 40.3).
+    price_index = next((drawn.curve for drawn in drawn_extras if drawn.curve.kind == "price_index"), None)
     index_note = no_index_note(
         metadata.key,
         config.start,
         config.end,
         next((curve.values for curve in rates if curve.key == INFLATION_KEY), None),
-        extra.values if extra_line is not None and config.draws_price_index else None,
+        price_index.values if price_index is not None and config.draws_price_index else None,
     )
     if index_note is not None:
         print(f"  Note: {index_note}.")
 
     # The left axis says "Spread" when one is drawn.
     left_label = SPREAD_AXIS_LABEL if any(curve.spread for _line, curve in rate_lines) else None
-    apply_axes_formatting(ax_yield, ax_macro, config, metadata, left_label, extra_axis)
-    if extra_axis is not None and extra_axis.axes is not ax_macro:
-        _place_outside(extra_axis.axes, ax_macro, config)
-    extra_lines = [] if extra_line is None else [extra_line]
-    on_its_own_axis = extra_axis is not None and extra_axis.axes is not ax_macro
+    apply_axes_formatting(ax_yield, ax_macro, config, metadata, left_label, extra_axes)
+    if outer_axes:
+        _place_outside(outer_axes, ax_macro, config)
     _colour_lone_axes(
-        [(ax_macro, macro_lines + ([] if on_its_own_axis else extra_lines))] + ([(extra_axis.axes, extra_lines)] if on_its_own_axis else []),
+        [(ax_macro, macro_lines + [drawn.line for drawn in drawn_extras if drawn.axis.axes is ax_macro])]
+        + [(drawn.axis.axes, [drawn.line]) for drawn in drawn_extras if drawn.axis.axes is not ax_macro],
         len(yield_lines) + len(rate_lines) + len(macro_lines) + len(extra_lines),
         None if config.has_left_axis_series else ax_yield,
     )
@@ -897,10 +899,10 @@ def draw_country(
     rate_labels: list[RateLabel] = []
     if config.regression:
         rate_labels = add_regression_segments(ax_macro, macro, zip(macro_lines, macro_columns_drawn), projected, config)
-        if extra_axis is not None:
+        for drawn in drawn_extras:
             # On its own axis, whose height gives its tolerance (batch 13.4); its figures alone, not its projection.
-            extra_projected = {} if extra.projected_from is None else {extra.label: extra.projected_from}
-            rate_labels += add_regression_segments(extra_axis.axes, extra_frame, [(extra_line, extra.label)], extra_projected, config)
+            extra_projected = {} if drawn.curve.projected_from is None else {drawn.curve.label: drawn.curve.projected_from}
+            rate_labels += add_regression_segments(drawn.axis.axes, drawn.frame, [(drawn.line, drawn.curve.label)], extra_projected, config)
     # -l: every drawn curve gets its last value at its end, written as its
     # axis writes values: yields in percent, right-axis curves as the tick
     # labels there (dollars, or percent of GDP under -r); a projected value
@@ -912,13 +914,16 @@ def draw_country(
         ] + [
             (line, (lambda value, fmt=macro_format: PROJECTION_LABEL_PREFIX + fmt(value)) if column in projected else macro_format)
             for line, column in zip(macro_lines, macro_columns_drawn)
-        ] + ([(extra_line, extra.value_format if extra_from is None else _projected_reading(extra.value_format))] if extra_line is not None else [])
-    # One legend entry says what the faint stretches are, a right-axis curve's, the extra axis's or inflation's (batch
+        ] + [
+            (drawn.line, drawn.curve.value_format if drawn.drawn_from is None else _projected_reading(drawn.curve.value_format))
+            for drawn in drawn_extras
+        ]
+    # One legend entry says what the faint stretches are, a right-axis curve's, an extra axis's or inflation's (batch
     # 43.1). Made after the line widths are scaled (apply_axes_formatting), so it matches them.
-    legend_macro = list(macro_lines) + ([extra_line] if extra_line is not None else [])
+    legend_macro = list(macro_lines) + extra_lines
     if (
         any(column in projected for column in macro_columns_drawn)
-        or (extra_line is not None and extra_from is not None)
+        or any(drawn.drawn_from is not None for drawn in drawn_extras)
         or any(curve.projected is not None for _line, curve in rate_lines)
     ):
         width = max(style["linewidth"] for style in MACRO_PLOT_STYLES.values()) * config.line_scale
@@ -939,7 +944,7 @@ def draw_country(
         macro_keys_drawn=macro_keys_drawn,
         config=config,
         rate_titles=[curve.title for _line, curve in sorted(rate_lines, key=lambda item: not item[1].spread)],
-        extra_title="" if extra_line is None else extra.title,
+        extra_titles=[drawn.curve.title for drawn in drawn_extras],
     )
     title = metadata.title_for(**title_parts)
     short_title = metadata.title_for(**title_parts, short=True)
@@ -951,13 +956,13 @@ def draw_country(
         [yield_axis_legend(yield_lines, rate_lines), legend_macro],
         title,
         config,
-        drawn_date_span((ax_yield, ax_macro) + ((extra_axis.axes,) if extra_axis is not None else ())),
+        drawn_date_span((ax_yield, ax_macro) + tuple(axis.axes for axis in extra_axes)),
         end_labels,
         quote_time if yield_lines else None,
         rate_labels,
         nation_by_key(metadata.key).market_timezone,
         short_title,
-        (lambda: _place_outside(extra_axis.axes, ax_macro, config)) if extra_axis is not None and extra_axis.axes is not ax_macro else None,
+        (lambda: _place_outside(outer_axes, ax_macro, config)) if outer_axes else None,
     )
 
 
@@ -1027,19 +1032,24 @@ def _colour_lone_axes(right_axes: list[tuple[Axes, list[Line2D]]], curves_drawn:
                     colour_axis(mirror, lines[0].get_color(), left=True)
 
 
-def _place_outside(ax_extra: Axes, ax_macro: Axes, config: PlotConfig) -> None:
-    """Set the extra curve's axis outward, past the right axis's tick labels and label (batch 13.4).
+def _place_outside(outer: Sequence[Axes], ax_macro: Axes, config: PlotConfig) -> None:
+    """Set each extra axis in ``outer`` outward: the first past the right axis's tick labels and label (batch 13.4), each other past the one before it (14.1).
 
-    By the width those take as drawn, so the two scales never overlap,
-    whatever the width of the amounts' labels, plus ``EXTRA_AXIS_GAP_PT``.
-    The axis's own extent places its label first; a label's extent read
-    alone is where it was before (measured 2026-11-03: over the ticks).
+    By the width those take as drawn, so the scales never overlap, whatever
+    the width of the amounts' labels, plus ``EXTRA_AXIS_GAP_PT``. The axis's
+    own extent places its label first; a label's extent read alone is where
+    it was before (measured 2026-11-03: over the ticks). An axis's extent
+    is read once the one before it is placed, its spine's position setting
+    where its labels are.
     """
     figure = ax_macro.figure
     renderer = figure.canvas.get_renderer()
+    edge = ax_macro.get_window_extent(renderer).x1
     right = ax_macro.yaxis.get_tightbbox(renderer).x1
-    width_pt = (right - ax_macro.get_window_extent(renderer).x1) * 72.0 / figure.dpi
-    ax_extra.spines["right"].set_position(("outward", max(width_pt, 0.0) + EXTRA_AXIS_GAP_PT * config.font_scale))
+    for ax_extra in outer:
+        width_pt = (right - edge) * 72.0 / figure.dpi
+        ax_extra.spines["right"].set_position(("outward", max(width_pt, 0.0) + EXTRA_AXIS_GAP_PT * config.font_scale))
+        right = ax_extra.yaxis.get_tightbbox(renderer).x1
 
 
 def _kept_on_its_monitor(figure: Figure, config: PlotConfig) -> PlotConfig:
@@ -1132,18 +1142,21 @@ def _with_chart_end(
     return prepared
 
 
-# The curve on the extra axis, carried from a nation's preparation to its
-# drawing in the macro frame's attrs, as the projections are: an
-# ``ExtraCurve``, or None when not drawn.
-EXTRA_CURVE_ATTR = "extra_curve"
+# The curves on the extra axes, carried from a nation's preparation to its
+# drawing in the macro frame's attrs, as the projections are: a tuple of
+# ``ExtraCurve``, nearest the chart first, empty when none is drawn (two at
+# most beside no amount, one beside an amount: ``options.check_right_axis_kinds``,
+# batch 14.1).
+EXTRA_CURVES_ATTR = "extra_curves"
 # The gap between the right axis's labels and the extra axis outside them
-# (batch 13.4), in points on the default canvas.
+# (batch 13.4), and between one extra axis's labels and the next (14.1), in
+# points on the default canvas.
 EXTRA_AXIS_GAP_PT = 6.0
 
 
 @dataclass(frozen=True, eq=False)
 class ExtraCurve:
-    """The curve on the extra axis (the consumer price index, batch 13.4; the population, 13.5; one at a time, decision 43), and how it is written.
+    """A curve on an extra axis (the consumer price index, batch 13.4; the population, 13.5; each on an axis of its own, 14.1), and how it is written.
 
     Compared by identity (``eq=False``): pandas compares a frame's attrs when
     it joins frames, and a Series has no truth value.
@@ -1162,6 +1175,16 @@ class ExtraCurve:
     # Carried on to today (batch 43.1, ``latest.project_series``): the date its
     # figures end, its values after it a projection (``extra_points``).
     projected_from: pd.Timestamp | None = None
+
+
+class _DrawnExtra(NamedTuple):
+    """An extra axis's curve as ``draw_country`` drew it (batch 14.1): the curve, its line, its axis, where its drawn projection begins (None: none drawn), and its figures as a frame, --reg's."""
+
+    curve: ExtraCurve
+    line: Line2D
+    axis: ExtraAxis
+    drawn_from: pd.Timestamp | None
+    frame: pd.DataFrame
 
 
 def extra_points(extra: ExtraCurve, config: PlotConfig) -> tuple[pd.DataFrame, pd.Timestamp | None]:
@@ -1253,10 +1276,22 @@ def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
     )
 
 
-def _extra_curve(
+def _extra_curves(
     key: str, config: PlotConfig, population: pd.Series | None, population_from: pd.Timestamp | None = None
-) -> ExtraCurve | None:
-    """Nation ``key``'s curve on the extra axis: the price index (--cpi) or the population (--population, batch 13.5), which -p reads too; None without either.
+) -> tuple[ExtraCurve, ...]:
+    """Nation ``key``'s curves on the extra axes, nearest the chart first: the price index (--cpi), then the population (--population, batch 13.5), which -p reads too; empty without either.
+
+    Both together only where no amount is drawn (batch 14.1,
+    ``options.check_right_axis_kinds``): the index on the right axis, the
+    population outside it.
+    """
+    index = _price_index(key, config)
+    count = _population_curve(config, population, population_from)
+    return tuple(curve for curve in (index, count) if curve is not None)
+
+
+def _population_curve(config: PlotConfig, population: pd.Series | None, population_from: pd.Timestamp | None) -> ExtraCurve | None:
+    """The population's curve for --population (batch 13.5); None without it.
 
     ``population`` None or empty: its source failed, with a warning from its
     reader, and the curve is not drawn. The coverage warning names it where
@@ -1264,7 +1299,7 @@ def _extra_curve(
     end, where it is carried on to today (batch 43.1, ``_population``).
     """
     if not config.population or population is None or population.empty:
-        return _price_index(key, config)
+        return None
     warn_series_coverage(config.start, {"Population (--population)": population.index[0]})
     return ExtraCurve(
         population,
@@ -1365,7 +1400,7 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
     prices, prices_from = _consumer_prices("cdn", config)
     expressed = express(macro, config, CDN, population, prices, prices_through=prices_from)
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("cdn", config, population, population_from)
+    expressed.attrs[EXTRA_CURVES_ATTR] = _extra_curves("cdn", config, population, population_from)
     expressed.attrs[STEERED_ATTR] = steered
     return yields, expressed, rates
 
@@ -1403,7 +1438,7 @@ def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     prices, prices_from = _consumer_prices("us", config)
     expressed = express(macro, config, US, population, prices, prices_through=prices_from)
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("us", config, population, population_from)
+    expressed.attrs[EXTRA_CURVES_ATTR] = _extra_curves("us", config, population, population_from)
     expressed.attrs[STEERED_ATTR] = steered
     return yields, expressed, rates
 
@@ -1447,7 +1482,7 @@ def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     prices, prices_from = _consumer_prices("uk", config)
     expressed = express(macro, config, UK, population, prices, prices_through=prices_from)
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("uk", config, population, population_from)
+    expressed.attrs[EXTRA_CURVES_ATTR] = _extra_curves("uk", config, population, population_from)
     expressed.attrs[STEERED_ATTR] = steered
     return yields, expressed, rates
 
@@ -1488,7 +1523,7 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     prices, prices_from = _consumer_prices("de", config)
     expressed = express(macro, config, DE, population, prices, own_populations, prices_through=prices_from)
     expressed.attrs[PROJECTION_ATTR] = projected
-    expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("de", config, population, population_from)
+    expressed.attrs[EXTRA_CURVES_ATTR] = _extra_curves("de", config, population, population_from)
     return yields, expressed, rates
 
 
@@ -1566,8 +1601,8 @@ def curve_first_dates(
     curves are every yield tenor, if yields are chosen, and each chosen
     right-axis curve (``metadata.macro_specs``) in the chosen measure: under
     -r debt begins where both debt and GDP do; the yield axis's other curves
-    (``rates``), which are there only when chosen; and the extra axis's
-    curve (``ExtraCurve``), there only when chosen too.
+    (``rates``), which are there only when chosen; and the extra axes'
+    curves (``ExtraCurve``), there only when chosen too.
     """
     firsts: dict[str, pd.Timestamp] = {}
 
@@ -1588,9 +1623,9 @@ def curve_first_dates(
                 note(macro, dates, column, label)
     for curve in rates:
         firsts[curve.label] = curve.first
-    extra: ExtraCurve | None = macro.attrs.get(EXTRA_CURVE_ATTR)
-    if extra is not None and not extra.values.empty:
-        firsts[extra.label] = extra.values.index[0]
+    for extra in macro.attrs.get(EXTRA_CURVES_ATTR, ()):
+        if not extra.values.empty:
+            firsts[extra.label] = extra.values.index[0]
     return firsts
 
 

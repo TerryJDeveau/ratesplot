@@ -743,15 +743,51 @@ def excluded_measures(name: str) -> tuple[str, ...]:
     return measures if name == "relative" else tuple(other for other in measures if other == "relative")
 
 
-def check_one_extra_curve(values: Mapping[str, object]) -> None:
-    """Reject --cpi with --population: their axis holds one of the two at a time until 14.1 settles the general rule (Terry, decision 43)."""
-    if values["price_index"] and values["population"]:
-        raise ValueError("--cpi and --population cannot be combined: their axis holds one of the two at a time; choose one")
+# The right side's kinds of unit (batch 14.1; Terry, 2026-10-13: "up to two kinds of unit at once, each on an axis of
+# its own"): the amounts (debt, GDP, interest and the balance of payments, in one currency, or in % of GDP under -r),
+# the consumer price index's points (13.4) and the population's persons (13.5). The amounts keep the axis next to the
+# chart; a second kind takes an axis of its own outside it (``plotting.draw_country``).
+RIGHT_AXIS_KINDS = 2
+# The boxes that draw an amount on the right axis (``PlotConfig.has_macro_series``), and those that draw a curve on an
+# extra axis, nearest the chart first (``plotting._extra_curves``).
+AMOUNT_BOXES = ("debt", "gdp", "interest", "payments")
+EXTRA_BOXES = ("cpi", "population")
 
 
-def excluded_curves(name: str) -> tuple[str, ...]:
-    """The boxes that ticking ``name`` unticks in the window and on the page: the price index and the population, one at a time (``check_one_extra_curve``)."""
-    return {"cpi": ("population",), "population": ("cpi",)}.get(name, ())
+def right_axis_kinds(values: Mapping[str, object]) -> list[str]:
+    """The kinds of unit these values draw on the right, nearest the chart first: "amounts", then "cpi" and "population" (batch 14.1)."""
+    amounts = any(values[field] for field in ("include_debt", "include_gdp", "include_interest", "payments"))
+    extras = [name for name, field in (("cpi", "price_index"), ("population", "population")) if values[field]]
+    return ["amounts"] * amounts + extras
+
+
+def check_right_axis_kinds(values: Mapping[str, object]) -> None:
+    """Reject a third kind of unit on the right (batch 14.1): the price index and the population together beside an amount.
+
+    Before 14.1 the two were refused together whatever else was drawn (decision 43).
+    """
+    if len(right_axis_kinds(values)) > RIGHT_AXIS_KINDS:
+        raise ValueError(
+            "--cpi and --population cannot both be drawn beside debt, GDP, interest or --payments: the right side holds "
+            "two kinds of unit at once, each on an axis of its own; leave one out"
+        )
+
+
+def excluded_curves(name: str, ticked: Mapping[str, bool]) -> tuple[str, ...]:
+    """The boxes that ticking ``name`` unticks in the window and on the page, ``ticked`` being every box as the click left it: two kinds of unit on the right at most (``check_right_axis_kinds``, batch 14.1).
+
+    The price index or the population ticked beside an amount unticks the
+    other of the two, as before 14.1 (decision 43); with no amount drawn the
+    two are kept, each on an axis of its own. An amount ticked while both are
+    drawn unticks the population, the outer of the two.
+    """
+    extras = [box for box in EXTRA_BOXES if ticked.get(box)]
+    amounts = any(ticked.get(box) for box in AMOUNT_BOXES)
+    if not ticked.get(name) or len(extras) + amounts <= RIGHT_AXIS_KINDS:
+        return ()
+    if name in EXTRA_BOXES:
+        return tuple(box for box in extras if box != name)
+    return (EXTRA_BOXES[-1],) if name in AMOUNT_BOXES else ()
 
 
 def check_macro_bound_units(payloads: Mapping[str, str], values: Mapping[str, object]) -> None:
@@ -1116,16 +1152,18 @@ OPTIONS: tuple[Option, ...] = (
         panel="curves", topic="price-index",
     ),
     # Batch 13.5 (Terry asked 2026-10-14; decision 43): each nation's
-    # population in persons, on the price index's axis, one of the two at a
-    # time until 14.1 (``check_one_extra_curve``; ticking one unticks the
-    # other, ``excluded_curves``). A count, so never divided: the same under
-    # -r, -p and --constant. Read by -p already, so no new source. At least
-    # "pop": "--po" is --policy.
+    # population in persons, on an axis of its own. Until 14.1 it shared the
+    # price index's axis, one of the two at a time; since then each has its
+    # own, two kinds of unit on the right at most (``check_right_axis_kinds``;
+    # in the window and on the page ``excluded_curves``). A count, so never
+    # divided: the same under -r, -p and --constant. Read by -p already, so
+    # no new source. At least "pop": "--po" is --policy.
     Option(
         "population", Kind.FLAG, ("population",), "extra", "--population / --no-population",
         "each country's population, in persons, on\na log axis of its own (outside the right\n"
-        "axis when debt, GDP or interest is drawn):\nthe UK from 1707, Canada from 1867, the\n"
-        "U.S. from 1947, Germany from 1950; not\nwith --cpi",
+        "axis when debt, GDP, interest or the\nprice index is drawn): the UK from 1707,\n"
+        "Canada from 1867, the U.S. from 1947,\nGermany from 1950; with --cpi only when\n"
+        "no debt, GDP, interest or --payments is\ndrawn (two kinds of unit on the right)",
         names=("population",), shortest=3, label="Population", panel="curves", topic="population",
     ),
     # Curve sub-options: debt and interest by level of government ("--d:" is
@@ -1953,7 +1991,7 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
         values.update({nation.show_field: nation.shown_by_default for nation in NATIONS})
 
     check_single_measure(values)
-    check_one_extra_curve(values)
+    check_right_axis_kinds(values)
     # -r divides debt and interest by GDP. With neither drawn it has nothing
     # to act on, and GDP, if chosen, is drawn in dollars, as without -r
     # (before 2026-10-13 -r hid it, leaving the right axis empty). The window
@@ -2012,10 +2050,10 @@ def idle_options(
     Each was checked on 2026-10-13 to draw a byte-identical chart when idle,
     -r excepted: it hid GDP, which ``config_from_choices`` now stops.
 
-    The extra axis's curve (``extra_curve``: the consumer price index, batch
-    13.4, or the population, 13.5) is fitted by --reg, so the regression
-    segments are not idle while it is drawn; the measures and the limits
-    act on the amounts alone.
+    The extra axes' curves (``extra_curve``: the consumer price index, batch
+    13.4, the population, 13.5, or both, 14.1) are fitted by --reg, so the
+    regression segments are not idle while one is drawn; the measures and
+    the limits act on the amounts alone.
 
     The balance of payments (``payments``, batch 23) is an amount on the
     right axis, measured, fitted and projected as debt and interest are: -r

@@ -441,6 +441,12 @@ CASES: dict[str, list[str]] = {
     "cmp_cur_base_de": ["--na:ca,us,gb", "--com:current", "--base:de", "-l", "-s:2000"],
     "cmp_cur_ttm_pc": ["--na:ca,us,gb,de", "--com:current", "--ttm", "-p", "-s:2010"],
     "cmp_trade_r": ["--na:ca,us,gb,de", "--com:trade", "-r", "-l", "-s:2000"],
+    # Batch 14.1: the price index and the population together, with no amount: the index on the right axis, the
+    # population on an axis of its own outside it; with yields on the left, end labels and --reg on the four nations;
+    # alone, the index seasonally adjusted and mirrored on the left; projected to the End on a short window.
+    "cpi_pop_reg": ["--na:ca,us,gb,de", "--cpi", "--pop", "--yield", "-l", "--reg", "-s:1990"],
+    "cpi_pop_alone": ["--na:us,gb", "--cpi:sa", "--pop", "-l", "-s:1950"],
+    "cpi_pop_proj": ["--na:ca,de", "--cpi", "--pop", "--yield", "-l", "-s:2023"],
 }
 
 

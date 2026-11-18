@@ -6,7 +6,7 @@ import bisect
 import functools
 import math
 import warnings
-from typing import Callable, Iterable, NamedTuple
+from typing import Callable, Iterable, NamedTuple, Sequence
 
 import matplotlib as mpl
 import matplotlib.dates as mdates
@@ -336,7 +336,7 @@ def configure_macro_axis(ax: Axes, metadata: CountryMetadata, config: PlotConfig
 
 
 class ExtraAxis(NamedTuple):
-    """The axis of the curve the extra axis holds (the consumer price index, batch 13.4; the population, 13.5): the axis, its label and how its ticks are written."""
+    """An extra axis and its curve's unit (the consumer price index, batch 13.4; the population, 13.5; each its own, 14.1): the axis, its label and how its ticks are written."""
 
     axes: Axes
     label: str
@@ -648,7 +648,7 @@ def apply_axes_formatting(
     config: PlotConfig,
     metadata: CountryMetadata,
     left_label: str | None = None,
-    extra_axis: ExtraAxis | None = None,
+    extra_axes: Sequence[ExtraAxis] = (),
 ) -> None:
     """Configure the shared x-axis and both y-axes after all lines are plotted.
 
@@ -656,14 +656,17 @@ def apply_axes_formatting(
     curves is selected the unused axis mirrors the other so the chart never
     shows a second, meaningless scale. ``left_label`` is the left axis's
     label when it is not ``config.left_axis_label`` (a spread drawn).
-    ``extra_axis``: the axis of the consumer price index (batch 13.4) or the
-    population (13.5), ``ax_macro`` itself when no curve of the macro axis
-    is chosen (the curve is then the right axis's, and mirrored on the left
-    when nothing is on it), else an axis of its own outside it.
+    ``extra_axes``: the axes of the consumer price index (batch 13.4) and
+    the population (13.5), nearest the chart first (two at most, 14.1): the
+    first ``ax_macro`` itself when no curve of the macro axis is chosen (the
+    curve is then the right axis's, and mirrored on the left when nothing is
+    on it), every other an axis of its own outside it.
     """
     scale = config.font_scale
-    ax_extra = extra_axis.axes if extra_axis is not None else None
-    scale_line_widths(ax_yield, ax_macro, *([ax_extra] if ax_extra not in (None, ax_macro) else []), config.line_scale)
+    first = extra_axes[0] if extra_axes else None
+    ax_extra = first.axes if first is not None else None
+    outer = [extra.axes for extra in extra_axes if extra.axes is not ax_macro]
+    scale_line_widths(ax_yield, ax_macro, *outer, config.line_scale)
     ax_yield.set_xlabel("Date", fontsize=LABEL_FS * scale)
     ax_yield.tick_params(axis="both", which="major", labelsize=TICK_FS * scale)
     ax_yield.tick_params(axis="both", which="minor", labelsize=(TICK_FS - 4) * scale)
@@ -683,16 +686,16 @@ def apply_axes_formatting(
     ax_yield.grid(True, which="minor", linestyle=":", alpha=0.22, linewidth=grid_width)
 
     label = left_label or config.left_axis_label
-    if extra_axis is not None:
-        configure_extra_axis(ax_extra, config, extra_axis)
-        set_extra_ylim(ax_extra)
+    for extra in extra_axes:
+        configure_extra_axis(extra.axes, config, extra)
+        set_extra_ylim(extra.axes)
     if ax_extra is ax_macro and ax_extra is not None:
-        # The extra curve the only right-axis curve: drawn as it would be with others.
+        # An extra curve the only right-axis curve: drawn as it would be with others.
         if config.has_left_axis_series:
             configure_yield_axis(ax_yield, font_scale=scale, label=label)
             set_yield_ylim(ax_yield, config)
         else:
-            configure_extra_axis(ax_yield, config, extra_axis)
+            configure_extra_axis(ax_yield, config, first)
             ax_yield.set_ylim(ax_extra.get_ylim())
     elif config.has_left_axis_series and config.has_macro_series:
         configure_yield_axis(ax_yield, font_scale=scale, label=label)
