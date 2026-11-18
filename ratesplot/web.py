@@ -431,6 +431,12 @@ _FLAG_FIELD_PX = 170
 # the page's 16 px to the rem: its boxes start under the flag's text.
 _INDENT_KEY = "ratesplot-indent-"
 _INDENT_REM = 1.4
+# How much of the theme's text colour a tip's background takes, set apart
+# from the sidebar's (batch 46.1, _INFO_ICON_STYLE).
+TIP_SHADE_PERCENT = 8
+# The transparent strip along a tip's edges, bridging the gap to its ⓘ
+# (batch 46.2, _INFO_ICON_STYLE): the gap measured 9.5 to 10.5 px.
+TIP_BRIDGE_PX = 11
 
 
 @dataclass(frozen=True)
@@ -1097,12 +1103,41 @@ export default function (component) {
 # by the box. Measured in headless Chrome against a scratch page: a drag to
 # 1100 px stops at 800, one to 760 keeps 758, both through a reload; one
 # back to 448 is Streamlit's alone again.
+#
+# The same script keeps a tip's links live (batch 46.2; Terry, 2026-11-12:
+# "in many cases clicking 'more' did nothing ... If the link isn't really
+# live, at least grey it out"). Measured 2026-11-18 in headless Chrome,
+# Streamlit 1.64: More opened its topic from the tips of the fields, the
+# lists and the Markdown labels (16 of 16), never from a checkbox's (0 of
+# 29). Streamlit draws a tip outside its control in the page (a layer of
+# its own under <body>), but React hands a click inside it on to the
+# control it belongs to, and the checkbox's own click handler cancels the
+# click (``preventDefault``, so that a click on its "?" does not tick it),
+# which cancels the link's opening too; the box is left as it was. Stopped
+# before React hears it (a listener on ``window`` in the capture phase,
+# once a visit), the click on a tip's link does what a link's click does:
+# its topic opens in a new tab (``target="_blank"``). Nothing else in a tip
+# takes a click. In this script, laid out on every run, rather than a
+# component of its own: each component, though nothing shows, takes the
+# column's gap (16 px, measured), which would move the heading down.
+_TIP_LINKS_JS = """
+function keepTipLinksLive() {
+  if (window.ratesplotTipLinks) return;
+  window.ratesplotTipLinks = true;
+  window.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest('[data-testid="stTooltipContent"] a[href]')) {
+      event.stopPropagation();  // React never hears it: no handler cancels the link's opening
+    }
+  }, true);
+}
+"""
 SIDEBAR_WIDTH_KEY = "sidebarWidth"
 SIDEBAR_WIDER_KEY = "ratesplotSidebarWidth"
 STREAMLIT_SIDEBAR_WIDEST_PX = 600
 SIDEBAR_WIDEST_PX = 800  # Streamlit's 600 and a third more
-_SIDEBAR_JS = """
+_SIDEBAR_JS = _TIP_LINKS_JS + """
 export default function (component) {
+  keepTipLinksLive();  // first: the lines below may return early
   const { remember, key, widerKey, streamlitWidest, widest } = component.data;
   const names = [key, widerKey];
   if (remember) {
@@ -2887,7 +2922,40 @@ def _auto_refresh_tick(config: PlotConfig) -> None:
 # The open sidebar's widest raised from Streamlit's 600 px (SIDEBAR_WIDEST_PX, ``_SIDEBAR_JS``);
 # a folded one keeps Streamlit's style, which hides it.
 # A list under its flag indented (batch 47.1, ``_INDENT_KEY``).
+# A tip set apart from the sidebar (batch 46.1; Terry, 2026-11-12: "the
+# background colour for the "i" help box is the same as the sidebar
+# background. It should be somewhat different (but still in theme)"):
+# Streamlit 1.64 draws a tip on the background of where its control stands:
+# a sidebar control's on the sidebar's own #f0f2f6, a main-area control's
+# (the buttons, the lines under the charts) on white, white on white
+# (measured 2026-11-18). The tip keeps that background and lays its own
+# text colour over it at TIP_SHADE_PERCENT %, a shade darker in a light
+# theme and lighter in a dark one: #e1e3e8 over the sidebar, #efeff0 over
+# the main area (read from the screen), with a hairline in the text colour
+# at a fifth, Streamlit's border colour (rgba(49, 51, 63, 0.2)). From the
+# tip's own colours, not Streamlit's theme variables (``--st-…``): those are
+# set on the app's container, and a tip is drawn outside it, where they are
+# empty (tried: the tip came out transparent).
+# The way from the ⓘ to its tip (batch 46.2): a tip stands about 10 px from
+# its ⓘ (9.5 to 10.5, measured), and a pointer crossing that strip over
+# another ⓘ (an indented box's, under its flag's) opened that one's tip in
+# place of the first. A transparent strip TIP_BRIDGE_PX tall along both of
+# the tip's long edges covers the gap on whichever side its ⓘ is, so the
+# pointer stays on the tip all the way. The strips hang from the tip's
+# wrapper (fixed, ``pointer-events: none``, its own taken back by the
+# strips), not from the tip itself, which scrolls (``overflow: auto``,
+# 300 px at most) and so would clip them.
 _INFO_ICON_STYLE = """<style>
+div.stTooltipContent[data-testid="stTooltipContent"] {
+  background-image: linear-gradient(rgb(from currentColor r g b / TIP_SHADE_PERCENT%), rgb(from currentColor r g b / TIP_SHADE_PERCENT%));
+  border: 1px solid rgb(from currentColor r g b / 0.2);
+}
+div[role="tooltip"]:has(> div[data-testid="stTooltipContent"])::before,
+div[role="tooltip"]:has(> div[data-testid="stTooltipContent"])::after {
+  content: ""; position: absolute; left: 0; right: 0; height: TIP_BRIDGE_PXpx; pointer-events: auto;
+}
+div[role="tooltip"]:has(> div[data-testid="stTooltipContent"])::before { bottom: 100%; }
+div[role="tooltip"]:has(> div[data-testid="stTooltipContent"])::after { top: 100%; }
 [data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"]) svg { display: none; }
 [data-testid="stTooltipIcon"] button:is([aria-label^="Help for"], [aria-label="Help"])::after {
   content: "ⓘ"; font-size: 1rem; line-height: 1; color: rgb(from currentColor r g b / 1);
@@ -2900,7 +2968,8 @@ _INFO_ICON_STYLE = """<style>
 @keyframes ratesplot-wait-turn { to { transform: rotate(360deg); } }
 section[data-testid="stSidebar"][aria-expanded="true"] { max-width: min(SIDEBAR_WIDEST_PXpx, 90vw) !important; }
 [class*="st-key-INDENT_KEY"] { padding-left: INDENT_REMrem; box-sizing: border-box; }
-</style>""".replace("SIDEBAR_WIDEST_PX", str(SIDEBAR_WIDEST_PX)).replace("INDENT_KEY", _INDENT_KEY).replace("INDENT_REM", str(_INDENT_REM))
+</style>""".replace("SIDEBAR_WIDEST_PX", str(SIDEBAR_WIDEST_PX)).replace("INDENT_KEY", _INDENT_KEY).replace("INDENT_REM", str(_INDENT_REM)).replace(
+    "TIP_SHADE_PERCENT", str(TIP_SHADE_PERCENT)).replace("TIP_BRIDGE_PX", str(TIP_BRIDGE_PX))
 _WAIT_ICON = f'<div class="ratesplot-wait-icon" style="color: {WAIT_COLOUR}"></div>'
 
 
