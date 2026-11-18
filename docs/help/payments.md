@@ -7,7 +7,7 @@ The money coming into a nation against the money going out, as two lines on the 
 
 Every nation reports these under the IMF's sixth balance of payments manual (BPM6), so the two pairs mean the same on every chart. Money in and money out over the whole statement, financing included, are not drawn: the statement is double entry, so those two totals are equal apart from errors and omissions, and their lines would lie on top of each other. The financial account, the financing itself, changes sign from quarter to quarter and so cannot take a log axis; it waits.
 
-[As % of GDP](?help=percent-of-gdp) divides both lines by GDP, the usual way the current account is compared across nations and years; [per capita](?help=per-capita) and [inflation adjusted](?help=constant-prices) measure them as the other amounts are, and the [master currency](?help=master-currency) converts them. The [regression segments](?help=regression) fit each line; the shading is not fitted. With the [projections](?help=projections) on, each line is carried on to today at the past year's pace, faint, and the shading stops at the last figures.
+[As % of GDP](?help=percent-of-gdp) divides both lines by GDP, the usual way the current account is compared across nations and years; [per capita](?help=per-capita) and [inflation adjusted](?help=constant-prices) measure them as the other amounts are, and the [master currency](?help=master-currency) converts them. The [regression segments](?help=regression) fit each line; the shading is not fitted. With the [projections](?help=projections) on, each line is carried on to today at its pace over the half year before its last figure, faint, and the shading stops at the last figures.
 
 ## Where the figures come from
 

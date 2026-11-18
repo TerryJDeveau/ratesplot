@@ -49,7 +49,10 @@ stretch is the twelve-month rise of the projected index
 (``rates.projected_inflation``). Batch 43.2 tested formulas against each
 series' history (tools/projection_test.py): the index not seasonally
 adjusted goes on with its seasonal swing (``seasonal``, ``_formula_for``),
-which beat the straight line for each nation.
+which beat the straight line for each nation; a sum over a trailing year
+(GDP, interest, the balance of payments' pair) at its pace over the half
+year before (``_pace_span``), which beat the year's for each nation, a
+year's pace lagging such a sum's turns.
 
 Canadian debt (the aggregate and the federal level) is not projected blind:
 the Bank of Canada counts the Government of Canada's market debt (bills and
@@ -86,6 +89,7 @@ from .config import (
     YIELD_COLUMNS,
     SERIES_KINDS,
     PlotConfig,
+    SeriesKind,
     component_column,
     macro_column_kind,
     nation_by_key,
@@ -135,6 +139,11 @@ STEERED_ATTR = "steered_by_market_debt"
 _PROJECTION_MAX_AGE_DAYS = 400
 # The rate of a projection is the curve's change over this many days before its last observation.
 _PROJECTION_RATE_DAYS = 365
+# A sum over a trailing year (GDP, interest, the balance of payments' pair)
+# goes on at its change over half a year instead (batch 43.2, ``_pace_span``):
+# the figure on or before this many days back is the one two quarters (six
+# months) before, whose spans run 181 to 184 days.
+_HALF_YEAR_DAYS = 181
 # The Canadian debt curves steered by market debt (``_market_steered``).
 _MARKET_STEERED_COLUMNS = (CDN_DEBT_COLUMN, component_column("debt", "f"))
 # Market debt is read as the median of each day and the two before. Once a
@@ -179,7 +188,8 @@ def project_to_now(
     the same curves over their whole span, date-indexed, since ``data`` may
     start after the year the pace is measured over. Along the way the value
     grows at the curve's own rate over that year, in a straight line as a
-    debt clock does. With ``market`` (Canadian market debt, from
+    debt clock does; a sum over a trailing year at its rate over the half
+    year (``_pace_span``, batch 43.2). With ``market`` (Canadian market debt, from
     ``market_debt_for_projection``) the Canadian debt curves follow it
     instead (``_market_steered``). Rows are added at each starting date so a
     projection begins exactly where its data end. Only with --projections,
@@ -210,7 +220,7 @@ def project_to_now(
             held = data[column].ffill().where(data[column].bfill().notna())
             data.loc[added, column] = held[added]
 
-    print(f"Projecting to {end:%Y-%m-%d} at each curve's pace over the year before its last data (--projections):")
+    print(f"Projecting to {end:%Y-%m-%d} at each curve's pace before its last data (--projections):")
     projected: dict[str, pd.Timestamp] = {}
     steered_columns: list[str] = []
     for column, start in starts.items():
@@ -220,7 +230,9 @@ def project_to_now(
         if found is None:
             continue
         (_base_date, value), earlier = found
-        per_day = _per_day(found[0], earlier)
+        days, words = _pace_span(macro_column_kind(column))
+        paced = found if days == _PROJECTION_RATE_DAYS else _year_before(history[column], start, days)
+        per_day = _per_day(*paced)
         later = (data[DATE_COLUMN] > start) & data[column].notna()
         elapsed = (data.loc[later, DATE_COLUMN] - start).dt.days
         steered = None
@@ -237,7 +249,7 @@ def project_to_now(
             continue
         data.loc[later, column] = value + per_day * elapsed
         pace = per_day * 365 / value if value else float("nan")
-        print(f"  {column}: from {start:%Y-%m-%d}, {pace:+.1%} a year")
+        print(f"  {column}: from {start:%Y-%m-%d}, {pace:+.1%} a year, {words}")
     data.attrs[PROJECTION_ATTR] = projected
     data.attrs[STEERED_ATTR] = steered_columns
     return data
@@ -289,8 +301,8 @@ def project_series(
         base, earlier = found
         pace = _per_day(base, earlier) * 365 / base[1] if base[1] else float("nan")
     else:
-        logs = _month_logs(known)
-        pace = float(np.exp(logs.iloc[-1] - logs.iloc[-13])) - 1
+        logs, period = _period_logs(known)
+        pace = float(np.exp(logs.iloc[-1] - logs.iloc[-1 - _STEPS_A_YEAR[period]])) - 1
     print(f"Projecting {name} to {end:%Y-%m-%d} from {start:%Y-%m-%d}, {pace:+.1%} a year{words} (--projections).")
     return pd.concat([values.loc[values.index <= start], ahead]), start
 
@@ -322,14 +334,36 @@ def _formula_for(kind_key: str, adjusted: bool) -> tuple[Formula, str]:
     return straight, ""
 
 
-def _year_before(series: pd.Series, start: pd.Timestamp) -> tuple[tuple[pd.Timestamp, float], tuple[pd.Timestamp, float]] | None:
-    """A curve's figure on or before ``start`` and its figure on or before a year (``_PROJECTION_RATE_DAYS``) before that, each ``(date, value)``; None without both.
+def _pace_span(kind: SeriesKind) -> tuple[int, str]:
+    """The days a right-axis curve's projection measures its pace over (``project_to_now``), and the words the message log says it in (batch 43.2).
+
+    Chosen by ``tools/projection_test.py``, standing at each figure from 2000
+    and again from 2015 and projecting the next two. A sum over a trailing
+    year (GDP, interest at every level, the balance of payments' credits
+    and debits: ``kind.period`` "12 months"): its change over the half year
+    before, ``_HALF_YEAR_DAYS``, which beat the year's for every such series
+    of the four nations at one and two figures ahead, by 19 to 21 per cent
+    of the error on average and by at least a tenth for each nation's
+    aggregate; a year's change lags such a sum's turns, its figure a year
+    back being the sum of the year before that. Debt (a stock, Canada's
+    steered by market debt) and the rest: the year's, which nothing beat by
+    a tenth.
+    """
+    if kind.period == "12 months":
+        return _HALF_YEAR_DAYS, "its pace over the half year before"
+    return _PROJECTION_RATE_DAYS, "its pace over the year before"
+
+
+def _year_before(
+    series: pd.Series, start: pd.Timestamp, days: int = _PROJECTION_RATE_DAYS
+) -> tuple[tuple[pd.Timestamp, float], tuple[pd.Timestamp, float]] | None:
+    """A curve's figure on or before ``start`` and its figure on or before a year (``_PROJECTION_RATE_DAYS``, or ``days``) before that, each ``(date, value)``; None without both.
 
     A projection runs from the first at the pace between the two (``_per_day``).
     """
     series = series.sort_index()
     base = series.loc[:start].dropna()
-    earlier = series.loc[: start - pd.Timedelta(days=_PROJECTION_RATE_DAYS)].dropna()
+    earlier = series.loc[: start - pd.Timedelta(days=days)].dropna()
     if base.empty or earlier.empty:
         return None
     return (pd.Timestamp(base.index[-1]), float(base.iloc[-1])), (pd.Timestamp(earlier.index[-1]), float(earlier.iloc[-1]))
@@ -354,11 +388,13 @@ def _per_day(base: tuple[pd.Timestamp, float], earlier: tuple[pd.Timestamp, floa
 # Each takes a series' known figures (date-indexed, sorted, the last the
 # projection's base) and the dates after it to project to, and returns the
 # projected values, or None where the series has too little history.
-# ``tools/projection_test.py`` stands at each past month of each nation's
-# history, projects the months that followed with each, and reports the
-# errors; ``_FORMULA_OF`` names the one each series is carried on by.
-# Those counting months take a monthly series dated by each month's first
-# day (``prices._by_month``).
+# ``tools/projection_test.py`` stands at each past figure of each nation's
+# history, projects the figures that followed with each, and reports the
+# errors; ``_formula_for`` names the one a lone series is carried on by, and
+# ``_pace_span`` the span a right-axis curve's pace is measured over. Those
+# counting periods take a series figured monthly or quarterly
+# (``_period_logs``); a monthly one is dated by each month's first day
+# (``prices._by_month``).
 
 Formula = Callable[[pd.Series, pd.DatetimeIndex], "np.ndarray | None"]
 
@@ -366,6 +402,15 @@ Formula = Callable[[pd.Series, pd.DatetimeIndex], "np.ndarray | None"]
 def straight(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
     """A straight line from the last figure at its pace over the year before (``_year_before``, ``_per_day``): the debt clock's rule, and every lone series' before batch 43.2."""
     found = _year_before(known, known.index[-1])
+    if found is None:
+        return None
+    base, earlier = found
+    return base[1] + _per_day(base, earlier) * (dates - base[0]).days.to_numpy()
+
+
+def half_year(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
+    """A straight line from the last figure at its pace over the half year before (``_HALF_YEAR_DAYS``): a sum over a trailing year's (``_pace_span``)."""
+    found = _year_before(known, known.index[-1], _HALF_YEAR_DAYS)
     if found is None:
         return None
     base, earlier = found
@@ -382,73 +427,122 @@ def growth(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
     return base * np.exp(per_day * (dates - base_date).days.to_numpy())
 
 
-def _month_logs(known: pd.Series) -> pd.Series | None:
-    """A monthly series' logarithms by month (``pd.Period``), a month missing within it filled in a straight line between its neighbours'; None for a figure not above 0.
+# A period's code for ``pd.Period`` and how many make a year: the periods a
+# formula counting them reads a series by (``_period_logs``).
+_STEPS_A_YEAR = {"M": 12, "Q": 4}
+
+
+def _figure_period(known: pd.Series) -> str | None:
+    """How often a series is figured, by the median spacing of its last nine figures: "M" (monthly), "Q" (quarterly), or None (yearly or less, or too few)."""
+    gaps = pd.Series(pd.DatetimeIndex(known.index[-9:])).diff().dt.days.dropna()
+    if gaps.empty:
+        return None
+    gap = float(gaps.median())
+    return "M" if gap <= 45 else "Q" if gap <= 135 else None
+
+
+def _period_logs(known: pd.Series) -> tuple[pd.Series, str] | tuple[None, None]:
+    """A series' logarithms by period (``pd.Period``: its months or its quarters, ``_figure_period``), a period missing within it filled in a straight line between its neighbours', with the period's code; ``(None, None)`` for a figure not above 0 or a series figured less often than quarterly.
 
     The U.S. index has no 2025-10 (``prices.MONTH_WITHOUT_INDEX``): a
-    formula reading it reads the middle of 2025-09's and 2025-11's.
+    formula reading it reads the middle of 2025-09's and 2025-11's. Older
+    figures a year apart (a population's before its quarters) are filled in
+    between the same way.
     """
+    period = _figure_period(known)
     values = known.to_numpy(dtype=float)
-    if (values <= 0).any():
-        return None
-    months = pd.DatetimeIndex(known.index).to_period("M")
-    logs = pd.Series(np.log(values), index=months)
-    return logs.reindex(pd.period_range(months[0], months[-1], freq="M")).interpolate()
+    if period is None or (values <= 0).any():
+        return None, None
+    periods = pd.DatetimeIndex(known.index).to_period(period)
+    logs = pd.Series(np.log(values), index=periods)
+    logs = logs[~logs.index.duplicated(keep="last")]
+    return logs.reindex(pd.period_range(periods[0], periods[-1], freq=period)).interpolate(), period
 
 
-def _months_after(last: pd.Period, dates: pd.DatetimeIndex) -> np.ndarray:
-    """How many months each of ``dates`` falls after month ``last``."""
-    return np.array([(date.to_period("M") - last).n for date in dates])
+def _steps_after(last: pd.Timestamp, period: str, dates: pd.DatetimeIndex) -> np.ndarray:
+    """How many periods (``period``: months or quarters) each of ``dates`` falls after the figure dated ``last``.
+
+    The whole periods between theirs, plus the difference of their days into
+    them over a period's average length: a whole number, kept as an integer,
+    for every date as far into its period as ``last`` (each month's first
+    day after a monthly index's, a quarter's middle after a population's).
+    """
+    last = pd.Timestamp(last)
+    length = 365.25 / _STEPS_A_YEAR[period]
+
+    def into(day: pd.Timestamp) -> int:
+        return (day - day.to_period(period).start_time).days
+
+    steps = np.array([(day.to_period(period) - last.to_period(period)).n + (into(day) - into(last)) / length for day in dates])
+    return steps.astype(int) if np.array_equal(steps, np.round(steps)) else steps
+
+
+def _carried(values: list[float], last: int, steps: np.ndarray) -> np.ndarray:
+    """The figures ``steps`` periods after position ``last`` of the logarithms ``values`` (the projected ones appended), between two periods' in a straight line."""
+    if steps.dtype.kind == "i":
+        return np.exp(np.array([values[last + n] for n in steps]))
+    return np.exp(np.interp(steps, np.arange(len(values) - last), values[last:]))
 
 
 def quarter(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
-    """Steady growth from the last figure at its rate over the three months before (a monthly series, seasonally adjusted)."""
-    logs = _month_logs(known)
-    if logs is None or len(logs) < 4:
+    """Steady growth from the last figure at its rate over the three months before (a series figured monthly or quarterly)."""
+    logs, period = _period_logs(known)
+    if logs is None:
         return None
-    pace = (logs.iloc[-1] - logs.iloc[-4]) / 3
-    return np.exp(logs.iloc[-1] + pace * _months_after(logs.index[-1], dates))
+    back = _STEPS_A_YEAR[period] // 4
+    if len(logs) < back + 1:
+        return None
+    pace = (logs.iloc[-1] - logs.iloc[-1 - back]) / back
+    return np.exp(logs.iloc[-1] + pace * _steps_after(known.index[-1], period, dates))
 
 
 def damped(phi: float) -> Formula:
-    """Growth at the year's rate, a month at a time, each month's rate ``phi`` times the month's before (a monthly series)."""
+    """Growth at the year's rate, a period (month or quarter) at a time, each period's rate ``phi`` times the period's before."""
 
     def formula(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
-        logs = _month_logs(known)
-        if logs is None or len(logs) < 13:
+        logs, period = _period_logs(known)
+        if logs is None:
             return None
-        pace = (logs.iloc[-1] - logs.iloc[-13]) / 12
-        months = _months_after(logs.index[-1], dates)
-        return np.exp(logs.iloc[-1] + pace * phi * (1 - phi ** months) / (1 - phi))
+        steps_a_year = _STEPS_A_YEAR[period]
+        if len(logs) < steps_a_year + 1:
+            return None
+        pace = (logs.iloc[-1] - logs.iloc[-1 - steps_a_year]) / steps_a_year
+        steps = _steps_after(known.index[-1], period, dates)
+        return np.exp(logs.iloc[-1] + pace * phi * (1 - phi ** steps) / (1 - phi))
 
     return formula
 
 
 def seasonal(years: int) -> Formula:
-    """Growth at the year's rate with the seasonal swing of the ``years`` before: a monthly series not seasonally adjusted.
+    """Growth at the year's rate with the seasonal swing of the ``years`` before: a series figured monthly or quarterly, not seasonally adjusted.
 
-    Month by month from the last figure, each month's change in logarithms
-    is the year's rise over twelve, plus the average over the ``years``
-    before of the same month's change less that year's rise over twelve:
-    the swing around each year's own trend. With one year this is each
-    month's change a year before, which holds the twelve-month rise of the
-    last month (the inflation curve flat at its last figure). A month after
-    the twelfth reads the projected months as it goes.
+    Period by period from the last figure, each period's change in
+    logarithms is the year's rise over the periods in a year (twelve or
+    four), plus the average over the ``years`` before of the same period's
+    change less that year's rise over them: the swing around each year's
+    own trend. With one year this is each period's change a year before,
+    which holds the twelve-month rise of the last month (the inflation
+    curve flat at its last figure). A period after the year's last reads the
+    projected periods as it goes; a date within a period, between the two
+    periods' figures.
     """
 
     def formula(known: pd.Series, dates: pd.DatetimeIndex) -> np.ndarray | None:
-        logs = _month_logs(known)
-        if logs is None or len(logs) < 12 * years + 1:
+        logs, period = _period_logs(known)
+        if logs is None:
+            return None
+        n = _STEPS_A_YEAR[period]
+        if len(logs) < n * years + 1:
             return None
         values = list(logs.to_numpy())
         last = len(values) - 1
-        rises = [values[last - 12 * (j - 1)] - values[last - 12 * j] for j in range(1, years + 1)]
-        months = _months_after(logs.index[-1], dates)
-        for step in range(1, int(months.max()) + 1 if len(months) else 1):
+        rises = [values[last - n * (j - 1)] - values[last - n * j] for j in range(1, years + 1)]
+        steps = _steps_after(known.index[-1], period, dates)
+        for step in range(1, int(np.ceil(steps.max())) + 1 if len(steps) else 1):
             month = last + step
-            swing = np.mean([values[month - 12 * j] - values[month - 1 - 12 * j] - rises[j - 1] / 12 for j in range(1, years + 1)])
-            values.append(values[month - 1] + rises[0] / 12 + swing)
-        return np.exp(np.array([values[last + n] for n in months]))
+            swing = np.mean([values[month - n * j] - values[month - 1 - n * j] - rises[j - 1] / n for j in range(1, years + 1)])
+            values.append(values[month - 1] + rises[0] / n + swing)
+        return _carried(values, last, steps)
 
     return formula
 
@@ -457,6 +551,7 @@ def seasonal(years: int) -> Formula:
 # ``damped`` at several settings.
 PROJECTION_FORMULAS: dict[str, Formula] = {
     "straight": straight,
+    "half_year": half_year,
     "growth": growth,
     "quarter": quarter,
 }
