@@ -18,7 +18,7 @@ The older accounts are scaled up by as much as 4.1 % over 1957 to 1961 to meet t
 ## The United Kingdom
 
 - **1700 to 1954: the Bank of England's dataset.** Its annual estimate of nominal GDP, from 1700, in "A millennium of macroeconomic data", version 3.1 ([research datasets](https://www.bankofengland.co.uk/statistics/research-datasets)), at each year's end. No longer updated (to 2016).
-- **1955 on.** GDP at market prices, current prices, seasonally adjusted, [YBHA at the ONS](https://www.ons.gov.uk/economy/grossdomesticproductgdp/timeseries/ybha/ukea), quarterly from 1955, millions of pounds, from the quarterly national accounts. The release of 2026-09-30 brought the second quarter of 2026; the next is on 2026-12-22.
+- **1955 on.** GDP at market prices, current prices, seasonally adjusted, [YBHA at the ONS](https://www.ons.gov.uk/economy/grossdomesticproductgdp/timeseries/ybha/ukea), quarterly from 1955, millions of pounds, from the quarterly national accounts. The release of 2026-09-30 brought the second quarter of 2026; the next is on 2026-12-22. Until the national accounts carry a quarter, it comes from the GDP first quarterly estimate ([YBHA in dataset PN2](https://www.ons.gov.uk/economy/grossdomesticproductgdp/timeseries/ybha/pn2)), about six weeks after the quarter, the same series, equal in every quarter both hold: the estimate of 2026-11-12 brought the third quarter.
 
 The two are joined as Canada's are; they differ by less than 0.1 % where they meet, so the scaling is slight.
 
