@@ -20,6 +20,11 @@ Made-up series stand in for the sources, so every figure checked is worked out h
   holding the twelve-month rise, a missing month filled from its neighbours, too little history giving none; growth,
   the quarter's pace and the damped trend; the index not seasonally adjusted carried on by the swing of the years
   ``latest.SEASONAL_SWING_YEARS``, the adjusted one and a short one on the straight line, and the message log saying so;
+* its later stage (batch 43.2, 8.27): how often a series is figured (``latest._figure_period``); the seasonal swing, the
+  quarter's pace and the damped trend on a quarterly series, a date within a quarter between two quarters' figures;
+  the half year's pace (``latest.half_year``); the right axis's span by kind (``latest._pace_span``), and
+  ``project_to_now`` carrying a sum over a trailing year at its half year's pace and debt at its year's, the message
+  log saying which;
 * the box: greyed only while none of the smooth series is drawn (``options.idle_option_reasons``).
 
     python tools/check_projections.py
@@ -46,7 +51,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from ratesplot import latest, plotting, rates  # noqa: E402
-from ratesplot.config import DATE_COLUMN, PROJECTION_ALPHA, PlotConfig  # noqa: E402
+from ratesplot.config import DATE_COLUMN, PROJECTION_ALPHA, SERIES_KINDS, PlotConfig  # noqa: E402
 from ratesplot.export import INDEX_AXIS, POPULATION_AXIS, series_of  # noqa: E402
 from ratesplot.hover import _MARK_ATTR  # noqa: E402
 from ratesplot.measures import PRICE_BASE_ATTR, in_constant_prices  # noqa: E402
@@ -242,7 +247,7 @@ def main() -> int:
     last_rise = noisy.iloc[-1] / noisy.iloc[-13]
     check("seasonal(1): the last twelve-month rise held", np.allclose(held / noisy.reindex(later[:3] - pd.DateOffset(years=1)).to_numpy(), last_rise))
     lacking_month = ten_years[-20]
-    logs = latest._month_logs(swinging.drop(lacking_month))
+    logs, _period = latest._period_logs(swinging.drop(lacking_month))
     month = lacking_month.to_period("M")
     check("a month missing within: the middle of its neighbours' logarithms",
           np.isclose(logs[month], (np.log(swinging.iloc[-21]) + np.log(swinging.iloc[-19])) / 2) and len(logs) == len(ten_years))
@@ -268,6 +273,67 @@ def main() -> int:
         latest.project_series(swinging, config, "price_index", "the index")
     check("the message log names the swing", f"with the seasonal swing of the {latest.SEASONAL_SWING_YEARS} years before" in words.getvalue(),
           words.getvalue())
+
+    # --- the later stage: quarterly series and the right axis's pace (batch 43.2, 8.27) -------------------------------
+    print("Quarterly series and the right axis's pace (latest._figure_period, half_year, _pace_span, project_to_now)")
+    check("monthly figures: counted by month", latest._figure_period(index) == "M")
+    starts = pd.date_range(end=last_month.to_period("Q").start_time, periods=4 * 10 + 1, freq="QS")  # a quarter's first days
+    check("quarterly figures: counted by quarter", latest._figure_period(pd.Series(1.0, index=starts)) == "Q")
+    years = pd.date_range(end=last_month, periods=12, freq="YS")
+    check("yearly figures: not counted", latest._figure_period(pd.Series(1.0, index=years)) is None
+          and latest.seasonal(1)(pd.Series(1.0, index=years), years[-1:] + pd.DateOffset(years=1)) is None)
+    quarter_swing = np.array([0.0, 0.6, 1.2, 0.4]) / 100  # by calendar quarter
+    quarter_pace = 0.004  # a quarter, in logarithms
+    quarter_logs = np.log(1000.0) + quarter_pace * np.arange(len(starts)) + quarter_swing[starts.quarter - 1]
+    by_quarter = pd.Series(np.exp(quarter_logs), index=starts)
+    next_quarters = pd.date_range(starts[-1] + pd.DateOffset(months=3), periods=6, freq="QS")
+    quarter_truth = np.exp(quarter_logs[-1] + quarter_pace * np.arange(1, 7) + quarter_swing[next_quarters.quarter - 1]
+                           - quarter_swing[starts[-1].quarter - 1])
+    for years_back in (1, 8):
+        got = latest.seasonal(years_back)(by_quarter, next_quarters)
+        check(f"quarterly seasonal({years_back}): a steady rise with a fixed swing carried on exactly, past four quarters too",
+              np.allclose(got, quarter_truth), got - quarter_truth)
+    within = next_quarters[0] + pd.Timedelta(days=45)
+    between = latest.seasonal(8)(by_quarter, pd.DatetimeIndex([within]))[0]
+    fraction = 45 / (365.25 / 4)
+    expected_between = np.exp((1 - fraction) * np.log(quarter_truth[0]) + fraction * np.log(quarter_truth[1]))
+    check("quarterly seasonal: a date within a quarter between two quarters' figures", np.isclose(between, expected_between), (between, expected_between))
+    steady_quarters = pd.Series(np.exp(np.log(1000.0) + quarter_pace * np.arange(len(starts))), index=starts)
+    steady_ahead = np.exp(np.log(steady_quarters.iloc[-1]) + quarter_pace * np.arange(1, 4))
+    got = latest.quarter(steady_quarters, next_quarters[:3])
+    check("quarterly quarter: steady growth carried on exactly", np.allclose(got, steady_ahead), got - steady_ahead)
+    damped_quarters = np.log(steady_quarters.iloc[-1]) + quarter_pace * phi * (1 - phi ** np.arange(1, 4)) / (1 - phi)
+    check("quarterly damped(0.8): each quarter's rate 0.8 times the quarter's before",
+          np.allclose(latest.damped(phi)(steady_quarters, next_quarters[:3]), np.exp(damped_quarters)))
+
+    # A sum over a trailing year that turns: a quarter apiece for years, then three a quarter for two quarters.
+    ends = pd.date_range(end=(end - pd.DateOffset(months=4)).to_period("Q").end_time.normalize(), periods=12, freq="QE")
+    turning = pd.Series(100.0 + np.concatenate([np.arange(10.0), 9.0 + 3.0 * np.arange(1, 3)]), index=ends)
+    half = latest.half_year(turning, pd.DatetimeIndex([end]))[0]
+    half_pace = (turning.iloc[-1] - turning.iloc[-3]) / (ends[-1] - ends[-3]).days
+    check("half_year: on the straight line at the pace since the figure two quarters before",
+          np.isclose(half, turning.iloc[-1] + half_pace * (end - ends[-1]).days), (half, half_pace))
+    check("half_year: steeper than the year's after a turn", half > latest.straight(turning, pd.DatetimeIndex([end]))[0])
+    for key, days in (("gdp", 181), ("interest", 181), ("payments_credits", 181), ("payments_debits", 181), ("debt", 365), ("net_debt", 365)):
+        check(f"_pace_span: {key} over {days} days", latest._pace_span(SERIES_KINDS[key])[0] == days, latest._pace_span(SERIES_KINDS[key]))
+    debt = pd.Series(500.0 + 2.0 * np.arange(12), index=ends)
+    history = pd.DataFrame({CDN.gdp_column: turning, CDN.debt_column: debt})
+    rows = pd.DataFrame({DATE_COLUMN: list(ends) + [end]})
+    rows[CDN.gdp_column] = list(turning) + [turning.iloc[-1]]
+    rows[CDN.debt_column] = list(debt) + [debt.iloc[-1]]
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        carried_rows = latest.project_to_now(rows, {CDN.gdp_column: ends[-1], CDN.debt_column: ends[-1]}, config, history)
+    at_end = carried_rows.loc[carried_rows[DATE_COLUMN] == end].iloc[0]
+    check("project_to_now: a sum over a trailing year at its half year's pace",
+          np.isclose(at_end[CDN.gdp_column], turning.iloc[-1] + half_pace * (end - ends[-1]).days), at_end[CDN.gdp_column])
+    year_pace = (debt.iloc[-1] - debt.iloc[-5]) / (ends[-1] - ends[-5]).days
+    check("project_to_now: debt at its year's pace, as before",
+          np.isclose(at_end[CDN.debt_column], debt.iloc[-1] + year_pace * (end - ends[-1]).days), at_end[CDN.debt_column])
+    lines = printed.getvalue().splitlines()
+    check("project_to_now: the message log says each curve's span",
+          any(CDN.gdp_column in line and line.endswith("its pace over the half year before") for line in lines)
+          and any(CDN.debt_column in line and line.endswith("its pace over the year before") for line in lines), lines)
 
     # --- the box -----------------------------------------------------------------------------------------------------
     print("The box (options.idle_option_reasons)")

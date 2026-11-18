@@ -1366,9 +1366,11 @@ MACRO_PLOT_STYLES.update(
 # is drawn straight and fainter in the curve's own colour and dashes; one grey
 # legend entry says what the faint stretches are, and their end labels read "≈".
 # Canadian debt, when steered by the Government of Canada's market debt, is
-# not straight, and the entry says so.
+# not straight, and the entry says so. "The recent pace" since batch 43.2's
+# later stage (8.27): debt at its pace over the year before, a sum over a
+# trailing year (GDP, interest, the balance of payments) over the half year.
 PROJECTION_ALPHA = 0.4
-PROJECTION_LABEL = "Projected at the past year's pace"
+PROJECTION_LABEL = "Projected at the recent pace"
 PROJECTION_LABEL_STEERED = "Projected; debt follows market debt"
 PROJECTION_KEY_COLOR = "0.35"
 PROJECTION_LABEL_PREFIX = "≈"

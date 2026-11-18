@@ -1425,7 +1425,7 @@ OPTIONS: tuple[Option, ...] = (
     # "pr" is shared with --prime-margin.
     Option(
         "projections", Kind.FLAG, ("projections",), "latest", "--pro / --projections / --no-pro",
-        "on by default: each right-axis curve\ncarried from its last value to today at\nits past year's pace, drawn faint",
+        "on by default: each right-axis curve\ncarried from its last value to today at\nits recent pace, drawn faint",
         names=("projections",), shortest=3, label="Projections to today", panel="labels", topic="projections",
     ),
     # Daily values (batch 42.2; Terry, 2026-11-10, decisions 125 and 129: on
