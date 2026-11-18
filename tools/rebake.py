@@ -57,6 +57,7 @@ import shlex
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,6 +100,10 @@ CENSUS_NAME = "U.S. Census"
 CENSUS_MODULE = ROOT / "ratesplot" / "us_archive_data.py"
 CENSUS_LEVELS = {"p": "Census state debt", "m": "Census local debt"}
 REVIEW_BRANCH = "rebake-review"
+# GitHub may refuse the review branch's push made just after the push to main, with "missing necessary
+# objects" (2026-11-18, 20 ms after it): main's new commit not yet known where the second push lands. The
+# push is tried again after this pause, longer each time.
+REVIEW_PUSH_PAUSE_S = 10
 AUTHOR = "Terry J. Deveau <terryjdeveau@gmail.com>"
 COMMITTER = {"GIT_COMMITTER_NAME": "github-actions[bot]", "GIT_COMMITTER_EMAIL": "41898282+github-actions[bot]@users.noreply.github.com"}
 
@@ -298,7 +303,15 @@ def publish(out: Path, dry_run: bool) -> int:
     run(["git", "switch", "-C", REVIEW_BRANCH], dry_run)
     run(["git", "add", "--", *to_review], dry_run)
     run(["git", "commit", "--author", AUTHOR, "-F", str(out / "review_message.txt")], dry_run)
-    run(["git", "push", "--force", "origin", f"{REVIEW_BRANCH}:{REVIEW_BRANCH}"], dry_run)
+    for attempt in range(3):
+        if attempt:
+            time.sleep(REVIEW_PUSH_PAUSE_S * attempt)  # REVIEW_PUSH_PAUSE_S says why
+        pushed = run(["git", "push", "--force", "origin", f"{REVIEW_BRANCH}:{REVIEW_BRANCH}"], dry_run, check=False)
+        if pushed is None or pushed.returncode == 0:
+            break
+    else:
+        print(f"Could not push the branch {REVIEW_BRANCH} after three tries.")
+        return 1
     title = (out / "review_message.txt").read_text(encoding="utf-8").splitlines()[0]
     listed = run(["gh", "pr", "list", "--head", REVIEW_BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"],
                  dry_run, check=False, capture=True)
