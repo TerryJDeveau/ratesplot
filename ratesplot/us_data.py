@@ -359,7 +359,10 @@ def _fetch_us_interest_levels(letters: str, config: PlotConfig) -> list[pd.DataF
 
 @downloads_of("FRED debt, GDP, and interest")
 def fetch_us_macro(
-    config: PlotConfig, last_yield_date: pd.Timestamp | None, payments: pd.DataFrame | None = None
+    config: PlotConfig,
+    last_yield_date: pd.Timestamp | None,
+    payments: pd.DataFrame | None = None,
+    trade: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Fetch the selected U.S. macro series and align them on one ``DATE`` column.
 
@@ -371,6 +374,9 @@ def fetch_us_macro(
             ``[DATE, credits, debits]`` frame of TTM sums read by
             ``ratesplot.payments`` (which reads FRED through this module, so
             ``plotting`` hands it in), or None.
+        trade: The trade pair's TTM sums, date-indexed, steering the current
+            account's projection (``payments.trade_for_projection``, batch
+            43.3), or None.
     """
     if not config.has_macro_series:
         return pd.DataFrame()
@@ -502,4 +508,4 @@ def fetch_us_macro(
         data = pd.concat([data, tail], ignore_index=True)
 
     # --cur, on a chart reaching today: carried on from the last data, as a debt clock is.
-    return project_to_now(data, observed, config, history)
+    return project_to_now(data, observed, config, history, trade=trade)

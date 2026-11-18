@@ -216,7 +216,7 @@ ONS_SERIES_READ = {
 }
 # The same series in a dataset the ONS publishes sooner (batch 43.3,
 # ``_with_sooner_quarters``): GDP (YBHA) in the GDP first quarterly estimate
-# (dataset PN2), about six weeks after each quarter, some seven weeks before
+# (dataset PN2), about six weeks after each quarter, about six weeks before
 # the quarterly national accounts (UKEA) carry it; trade's exports and
 # imports (IKBH, IKBI) in the monthly UK trade release (MRET), a quarter whole
 # with its third month, about six weeks after it, against the balance of

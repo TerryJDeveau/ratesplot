@@ -93,6 +93,7 @@ from .config import (
     PAYMENTS_DEBITS_COLUMN,
     STATCAN_CDN_PAYMENTS_TABLE,
     STATCAN_CDN_PAYMENTS_VECTORS,
+    PlotConfig,
     nation_by_key,
 )
 from .de_data import DE_PAYMENTS_SERIES, DE_PAYMENTS_SIDES, bundesbank_series
@@ -118,7 +119,7 @@ US_OLD_PAYMENTS_STOPPED = pd.Timestamp("2014-01-01")
 # ``_with_monthly_quarters``): FRED's BOPTEXP and BOPTIMP, the monthly release
 # of the Census Bureau and the BEA (FT-900), millions of dollars a month,
 # seasonally adjusted, about five weeks after each month, so a quarter's
-# three months some seven weeks before the international transactions carry
+# three months about six weeks before the international transactions carry
 # it. Measured 2026-11-18: each quarter's three months add up to IEAXGS and
 # IEAMGS within a million in all 110 quarters from 1999; BOPTEXP and BOPTIMP
 # end 2026-09, IEAXGS and IEAMGS 2026 Q2. Only the whole quarters after the
@@ -266,3 +267,32 @@ def fetch_payments(key: str, item: str) -> pd.DataFrame | None:
         return _monthly_ttm_frame(*_MONTHS[key](item))
     credits, debits = _QUARTERS[key](item)
     return _ttm_frame(credits, debits)
+
+
+# The nations whose trade runs a quarter later than their current account
+# (batch 43.3: the monthly trade releases, ``US_MONTHLY_TRADE_SERIES`` and
+# ``uk_data.ONS_SOONER``), so that it steers the current account's projection
+# (``latest._trade_steered``). Canada's would join with its monthly trade;
+# Germany's figures are monthly already, trade's and the current account's alike.
+TRADE_STEERED_NATIONS = ("us", "uk")
+
+
+def trade_for_projection(key: str, config: PlotConfig) -> pd.DataFrame | None:
+    """Nation ``key``'s trade pair as twelve-month sums, date-indexed, to steer the current account's projection (``latest.project_to_now``); else None.
+
+    Only for a chart reaching today with --projections and the current
+    account drawn (``config.payments_items``), and a nation of
+    ``TRADE_STEERED_NATIONS``: it serves the projection alone, as market debt
+    does. A failure prints a warning; the pair then goes on at its own pace.
+    """
+    if (
+        key not in TRADE_STEERED_NATIONS or not config.payments or config.payments_items[0] != "current"
+        or not config.projections or not config.quotes_can_reach
+    ):
+        return None
+    try:
+        frame = fetch_payments(key, "trade")
+    except Exception as exc:  # noqa: BLE001 - any source failure: the pair at its own pace
+        print(f"  Warning: trade unavailable ({exc}); the current account's credits and debits go on at their own pace alone.")
+        return None
+    return None if frame is None else frame.set_index(DATE_COLUMN)

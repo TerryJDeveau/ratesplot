@@ -94,9 +94,7 @@ from .config import (
     SEASONALLY_ADJUSTED_NATIONS,
     SERIES_KINDS,
     PROJECTION_KEY_COLOR,
-    PROJECTION_LABEL,
     PROJECTION_LABEL_PREFIX,
-    PROJECTION_LABEL_STEERED,
     REAL_YIELD_STYLE,
     REAL_YIELD_TERMS,
     SPREAD_AXIS_LABEL,
@@ -111,6 +109,7 @@ from .config import (
     MasterConversion,
     PlotConfig,
     nation_by_key,
+    projection_label,
 )
 from .console import this_thread_output_to
 from .endlabels import ValueFormatter
@@ -137,7 +136,7 @@ from .latest import (
 )
 from .legend import finish_legend_and_title, quote_time_text
 from .measures import PRICE_BASE_ATTR, express
-from .payments import fetch_payments, payments_earliest
+from .payments import fetch_payments, payments_earliest, trade_for_projection
 from .prices import consumer_prices, no_index_note
 from .rates import (
     HELD,
@@ -924,7 +923,7 @@ def draw_country(
     ):
         width = max(style["linewidth"] for style in MACRO_PLOT_STYLES.values()) * config.line_scale
         steered = set(macro.attrs.get(STEERED_ATTR, [])) & set(macro_columns_drawn)
-        label = PROJECTION_LABEL_STEERED if steered else PROJECTION_LABEL
+        label = projection_label(steered)
         legend_macro.append(Line2D([], [], color=PROJECTION_KEY_COLOR, linewidth=width, alpha=PROJECTION_ALPHA, label=label))
     if rate_labels:
         legend_macro.append(regression_legend_entry(config))
@@ -1392,8 +1391,11 @@ def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     warn_series_coverage(config.start, {curve.label: curve.first for curve in rates if not curve.spread})
 
     payments = _payments("us", config)
-    macro = fetch_us_macro(config, last_yield_date, None if payments is None else payments.reset_index())
+    macro = fetch_us_macro(
+        config, last_yield_date, None if payments is None else payments.reset_index(), trade_for_projection("us", config)
+    )
     projected = macro.attrs.get(PROJECTION_ATTR, {})
+    steered = macro.attrs.get(STEERED_ATTR, [])
     if not macro.empty:
         macro = macro.loc[macro[DATE_COLUMN] <= config.end]
     population, population_from = _population(fetch_us_population() if config.per_capita or config.population else None, config)
@@ -1402,6 +1404,7 @@ def prepare_us(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     expressed = express(macro, config, US, population, prices, prices_through=prices_from)
     expressed.attrs[PROJECTION_ATTR] = projected
     expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("us", config, population, population_from)
+    expressed.attrs[STEERED_ATTR] = steered
     return yields, expressed, rates
 
 
@@ -1435,14 +1438,17 @@ def prepare_uk(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     # begins, as Canada's federal debt is (cdn_data.align_cdn_macro).
     if UK.federal_debt_column in aligned.columns and UK.debt_column in aligned.columns:
         aligned.loc[aligned[UK.debt_column].notna(), UK.federal_debt_column] = np.nan
-    macro = project_to_now(aligned, observed, config, history)
+    # The current account's credits and debits steered by trade, which the monthly trade release gives a quarter sooner.
+    macro = project_to_now(aligned, observed, config, history, trade=trade_for_projection("uk", config))
     projected = macro.attrs.get(PROJECTION_ATTR, {})
+    steered = macro.attrs.get(STEERED_ATTR, [])
     population, population_from = _population(fetch_uk_population() if config.per_capita or config.population else None, config)
     yields.attrs[QUOTE_TIME_ATTR] = quote_time
     prices, prices_from = _consumer_prices("uk", config)
     expressed = express(macro, config, UK, population, prices, prices_through=prices_from)
     expressed.attrs[PROJECTION_ATTR] = projected
     expressed.attrs[EXTRA_CURVE_ATTR] = _extra_curve("uk", config, population, population_from)
+    expressed.attrs[STEERED_ATTR] = steered
     return yields, expressed, rates
 
 

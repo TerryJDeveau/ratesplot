@@ -1372,8 +1372,22 @@ MACRO_PLOT_STYLES.update(
 PROJECTION_ALPHA = 0.4
 PROJECTION_LABEL = "Projected at the recent pace"
 PROJECTION_LABEL_STEERED = "Projected; debt follows market debt"
+# The current account's credits and debits, when steered by trade (batch 43.3,
+# ``latest._trade_steered``), are not straight either.
+PROJECTION_LABEL_TRADE = "Projected; credits and debits follow trade"
 PROJECTION_KEY_COLOR = "0.35"
 PROJECTION_LABEL_PREFIX = "≈"
+
+
+def projection_label(steered: set[str] | frozenset[str]) -> str:
+    """The grey legend entry's words for a chart whose drawn curves ``steered`` are steered (``latest.STEERED_ATTR``): debt by market debt, the balance of payments' pair by trade (batch 43.3), or none."""
+    trade = set(steered) & set(PAYMENTS_COLUMNS)
+    debt = set(steered) - trade
+    if debt and trade:
+        return f"{PROJECTION_LABEL_STEERED}, credits and debits trade"
+    if trade:
+        return PROJECTION_LABEL_TRADE
+    return PROJECTION_LABEL_STEERED if debt else PROJECTION_LABEL
 
 # --spreads: a spread's inverted stretches (below zero) are shaded between it
 # and zero in its own colour, this opaque (plotting.add_rate_lines).
