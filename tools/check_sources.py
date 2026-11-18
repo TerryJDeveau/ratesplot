@@ -61,7 +61,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import announced, bake, cdn_data, de_archive_data, de_data, latest, prices, rates, uk_archive_data, uk_data, us_data  # noqa: E402
+from ratesplot import announced, bake, cdn_data, de_archive_data, de_data, latest, payments, prices, rates, uk_archive_data, uk_data, us_data  # noqa: E402
 from ratesplot.cli import parse_args  # noqa: E402
 from ratesplot.config import (  # noqa: E402
     CDN_DEBT_COLUMN,
@@ -204,6 +204,35 @@ def _cdn_population(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
 def _market_debt(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     market = latest.cdn_market_debt(TODAY - pd.Timedelta(days=400))
     return _last(market), f"C${market.iloc[-1] / 1e12:.3f} trillion, from {market.index[0]:%Y-%m-%d}"
+
+
+def _ons_sooner(cdids: tuple[str, ...]) -> Callable[[PlotConfig], tuple[pd.Timestamp | None, str]]:
+    """Batch 43.3: an ONS series in the dataset that publishes it sooner (``uk_data.ONS_SOONER``), its newest quarter, and how many quarters it shares with the main dataset differ (none until a revision there)."""
+
+    def run(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+        notes, lasts = [], []
+        for cdid in cdids:
+            sooner = uk_data.parse_ons_series(uk_data.uk_get(uk_data.ONS_TIMESERIES_URL.format(path=uk_data.ONS_SOONER[cdid])).json(), cdid, "quarters")
+            main = uk_data.ons_download(cdid, "quarters")
+            both = pd.concat([main.rename("main"), sooner.rename("sooner")], axis=1).dropna()
+            lasts.append(sooner.index[-1])
+            notes.append(f"{cdid} to {sooner.index[-1]:%Y-%m-%d} (main {main.index[-1]:%Y-%m-%d}), {int((both['main'] != both['sooner']).sum())} of {len(both)} shared quarters differ")
+        return min(lasts), "; ".join(notes)
+
+    return run
+
+
+def _fred_monthly_trade(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """Batch 43.3: FRED's monthly trade (``payments.US_MONTHLY_TRADE_SERIES``), its newest month, and how far its quarters' sums stand from the quarterly series they extend."""
+    notes, lasts = [], []
+    for monthly_id, quarterly_id in zip(payments.US_MONTHLY_TRADE_SERIES, payments.US_PAYMENTS_SERIES["trade"]):
+        months = fetch_fred_csv(monthly_id).set_index("DATE")[monthly_id].dropna()
+        quarters = fetch_fred_csv(quarterly_id).set_index("DATE")[quarterly_id].dropna()
+        whole = months.resample("QS").agg(["sum", "count"])
+        gap = (whole.loc[whole["count"] == 3, "sum"] - quarters).dropna().abs()
+        lasts.append(months.index[-1])
+        notes.append(f"{monthly_id} to {months.index[-1]:%Y-%m} ({quarterly_id} to {quarters.index[-1]:%Y-%m-%d}), quarters' sums within {gap.max():.0f} million of it over {len(gap)}")
+    return min(lasts), "; ".join(notes)
 
 
 def _us_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
@@ -577,6 +606,8 @@ CHECKS: tuple[Check, ...] = (
     Check("fred_interest_p", "FRED W756RC1A027NBEA state interest (annual)", ANNUAL, _fred("W756RC1A027NBEA", quarterly=False)),
     Check("fred_interest_m", "FRED W856RC1A027NBEA local interest (annual)", ANNUAL, _fred("W856RC1A027NBEA", quarterly=False)),
     Check("fred_population", "FRED B230RC0Q173SBEA population", QUARTERLY, _fred("B230RC0Q173SBEA", quarterly=True)),
+    # Batch 43.3: the U.S. trade each month, its quarters after the international transactions' last.
+    Check("fred_trade_monthly", "FRED BOPTEXP, BOPTIMP monthly trade (--payments:trade, steering the current account)", MONTHLY, _fred_monthly_trade),
     # Batch 9.1: each nation's official rate (--policy, --policy:target) and its market's (--policy:market).
     Check("fred_target", "FRED FEDFUNDS, DFEDTAR, DFEDTARL, DFEDTARU fed funds target (--policy)", DAILY, _rate(rates.us_policy_target)),
     Check("fred_dff", "FRED DFF effective federal funds rate (--policy:market)", DAILY, _rate(rates.us_policy_market)),
@@ -646,6 +677,9 @@ CHECKS: tuple[Check, ...] = (
     Check("ons_debt", "ONS BKPX general government gross debt (monthly)", QUARTERLY, _uk_ons(uk_data.fetch_uk_debt, UK_DEBT_COLUMN)),
     Check("ons_net_debt", "ONS HF6W public sector net debt ex banks (monthly)", QUARTERLY, _uk_ons(uk_data.fetch_uk_debt, UK_NET_DEBT_COLUMN)),
     Check("ons_gdp", "ONS YBHA GDP (four-quarter sums)", QUARTERLY, _uk_ons(uk_data.fetch_uk_gdp, GDP_COLUMN)),
+    # Batch 43.3: the same series published sooner, their quarters after the main dataset's last.
+    Check("ons_gdp_sooner", "ONS YBHA in the GDP first quarterly estimate (PN2)", QUARTERLY, _ons_sooner(("YBHA",))),
+    Check("ons_trade_sooner", "ONS IKBH, IKBI in the monthly trade release (MRET)", QUARTERLY, _ons_sooner(("IKBH", "IKBI"))),
     Check("ons_interest", "ONS NMYX general government interest (four-quarter sums)", QUARTERLY, _uk_ons(uk_data.fetch_uk_interest, UK_INTEREST_COLUMN)),
     Check("ons_central", "ONS BKPW central government debt (monthly)", QUARTERLY,
           _uk_ons(uk_data.fetch_uk_components, component_column("debt", "f"), components="fm")),

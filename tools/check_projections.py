@@ -25,6 +25,11 @@ Made-up series stand in for the sources, so every figure checked is worked out h
   the half year's pace (``latest.half_year``); the right axis's span by kind (``latest._pace_span``), and
   ``project_to_now`` carrying a sum over a trailing year at its half year's pace and debt at its year's, the message
   log saying which;
+* batch 43.3's faster figures: the current account steered by trade (``latest._trade_steered``) on trade's last
+  date, between its figures and past it, none where trade ends with the curve or is not known, through
+  ``project_to_now`` with its words; ``payments.trade_for_projection`` none where it cannot serve; the ONS's sooner
+  quarters (``uk_data._with_sooner_quarters``) and the U.S.' monthly trade (``payments._with_monthly_quarters``) with
+  their sources stood in for; the legend's words (``config.projection_label``);
 * the box: greyed only while none of the smooth series is drawn (``options.idle_option_reasons``).
 
     python tools/check_projections.py
@@ -50,8 +55,19 @@ from matplotlib.figure import Figure  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import latest, plotting, rates  # noqa: E402
-from ratesplot.config import DATE_COLUMN, PROJECTION_ALPHA, SERIES_KINDS, PlotConfig  # noqa: E402
+from ratesplot import latest, payments, plotting, rates, uk_data  # noqa: E402
+from ratesplot.config import (  # noqa: E402
+    DATE_COLUMN,
+    PAYMENTS_CREDITS_COLUMN,
+    PAYMENTS_DEBITS_COLUMN,
+    PROJECTION_ALPHA,
+    PROJECTION_LABEL,
+    PROJECTION_LABEL_STEERED,
+    PROJECTION_LABEL_TRADE,
+    SERIES_KINDS,
+    PlotConfig,
+    projection_label,
+)
 from ratesplot.export import INDEX_AXIS, POPULATION_AXIS, series_of  # noqa: E402
 from ratesplot.hover import _MARK_ATTR  # noqa: E402
 from ratesplot.measures import PRICE_BASE_ATTR, in_constant_prices  # noqa: E402
@@ -334,6 +350,95 @@ def main() -> int:
     check("project_to_now: the message log says each curve's span",
           any(CDN.gdp_column in line and line.endswith("its pace over the half year before") for line in lines)
           and any(CDN.debt_column in line and line.endswith("its pace over the year before") for line in lines), lines)
+
+    # --- faster figures (batch 43.3) ----------------------------------------------------------------------------------
+    print("Faster figures (latest._trade_steered, payments.trade_for_projection, the sooner quarters, the legend's words)")
+    trade = pd.Series(300.0 + 5.0 * np.arange(12), index=ends)
+    trade.iloc[-1] += 40.0  # the quarter only trade has: off its line, so steering differs from the pace
+    rest = pd.Series(200.0 + 1.0 * np.arange(12), index=ends)
+    credits = (trade + rest).iloc[:-1]  # the current account a quarter behind trade
+    start, earlier = ends[-2], ends[-4]
+    steer_dates = pd.Series([ends[-2] + pd.Timedelta(days=46), ends[-1], end])
+    steered, note = latest._trade_steered(steer_dates, start, float(credits.iloc[-1]), (earlier, float(credits.loc[earlier])), trade)
+    rest_per_day = (rest.loc[start] - rest.loc[earlier]) / (start - earlier).days
+    at_trade_end = credits.iloc[-1] + (trade.iloc[-1] - trade.loc[start]) + rest_per_day * (ends[-1] - start).days
+    check("trade steering: on trade's last date, trade as observed and the rest at its own pace",
+          np.isclose(steered.iloc[1], at_trade_end), (steered.iloc[1], at_trade_end))
+    middle = steer_dates.iloc[0]
+    trade_middle = trade.loc[start] + (trade.iloc[-1] - trade.loc[start]) * (middle - start).days / (ends[-1] - start).days
+    check("trade steering: between two figures, trade straight between them",
+          np.isclose(steered.iloc[0], credits.iloc[-1] + (trade_middle - trade.loc[start]) + rest_per_day * (middle - start).days), steered.iloc[0])
+    trade_per_day = (trade.iloc[-1] - trade.iloc[-3]) / (ends[-1] - ends[-3]).days
+    beyond = at_trade_end + (trade_per_day + rest_per_day) * (end - ends[-1]).days
+    check("trade steering: past trade's last, trade at its own half year's pace", np.isclose(steered.iloc[2], beyond), (steered.iloc[2], beyond))
+    check("trade steering: the note", note.startswith(f"trade as observed to {ends[-1]:%Y-%m-%d} (+0.0 billion since)"), note)
+    check("trade steering: none where trade ends with the curve",
+          latest._trade_steered(steer_dates, start, float(credits.iloc[-1]), (earlier, float(credits.loc[earlier])), trade.iloc[:-1]) is None)
+    check("trade steering: none where trade is not known at the pace's start",
+          latest._trade_steered(steer_dates, start, float(credits.iloc[-1]), (earlier, float(credits.loc[earlier])), trade.loc[ends[-3]:]) is None)
+    pair = pd.DataFrame({PAYMENTS_CREDITS_COLUMN: trade})
+    pay_rows = pd.DataFrame({DATE_COLUMN: list(ends[:-1]) + [end]})
+    pay_rows[PAYMENTS_CREDITS_COLUMN] = list(credits) + [credits.iloc[-1]]
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        steered_rows = latest.project_to_now(pay_rows, {PAYMENTS_CREDITS_COLUMN: start}, config, credits.to_frame(PAYMENTS_CREDITS_COLUMN), trade=pair)
+    check("project_to_now: the current account steered by trade",
+          np.isclose(steered_rows.loc[steered_rows[DATE_COLUMN] == end, PAYMENTS_CREDITS_COLUMN].iloc[0], beyond)
+          and steered_rows.attrs[latest.STEERED_ATTR] == [PAYMENTS_CREDITS_COLUMN], steered_rows.tail(2))
+    check("project_to_now: the message log says trade steers it", f"{PAYMENTS_CREDITS_COLUMN}: from {start:%Y-%m-%d}, trade as observed" in printed.getvalue(),
+          printed.getvalue())
+    for words, steered_set in ((PROJECTION_LABEL, set()), (PROJECTION_LABEL_STEERED, {CDN.debt_column}), (PROJECTION_LABEL_TRADE, {PAYMENTS_CREDITS_COLUMN}),
+                               (f"{PROJECTION_LABEL_STEERED}, credits and debits trade", {CDN.debt_column, PAYMENTS_DEBITS_COLUMN})):
+        check(f"the legend's words: {words!r}", projection_label(steered_set) == words, projection_label(steered_set))
+    current = replace(config, payments=True)
+    for why, key, asked in (("Canada (no sooner trade)", "cdn", current), ("Germany (monthly already)", "de", current),
+                            ("trade drawn", "us", replace(current, payments_items=("trade",))), ("--payments off", "us", config),
+                            ("--projections off", "uk", replace(current, projections=False)), ("a chart ending before today", "uk", replace(current, end=past.end))):
+        check(f"trade_for_projection: none for {why}", payments.trade_for_projection(key, asked) is None)
+
+    # The sooner quarters, with the sources stood in for.
+    class _Answer:
+        def __init__(self, data):
+            self.data = data
+
+        def json(self):
+            return self.data
+
+    def ons_answer(quarters):
+        return _Answer({"description": {"unit": "m"}, "quarters": [{"date": f"{q.year} Q{q.quarter}", "value": str(v)} for q, v in quarters.items()]})
+
+    main_ons = pd.Series([12.0, 10.0, 11.0], index=pd.DatetimeIndex(["2025-12-31", "2026-03-31", "2026-06-30"]))
+    sooner_ons = pd.Series([99.0, 11.0, 13.0], index=pd.DatetimeIndex(["2026-03-31", "2026-06-30", "2026-09-30"]))
+    real_get = uk_data.uk_get
+    try:
+        uk_data.uk_get = lambda url, *a, **k: ons_answer(sooner_ons)
+        joined = _quietly(uk_data._with_sooner_quarters, "YBHA", main_ons)
+        check("ONS sooner: its quarters after the series' last added, the earlier ones the main dataset's",
+              list(joined.index) == list(main_ons.index) + [pd.Timestamp("2026-09-30")] and joined.loc["2026-03-31"] == main_ons.loc["2026-03-31"]
+              and joined.iloc[-1] == 13.0, joined)
+
+        def refused(url, *a, **k):
+            raise ValueError("refused")
+
+        uk_data.uk_get = refused
+        warned = io.StringIO()
+        with contextlib.redirect_stdout(warned):
+            kept = uk_data._with_sooner_quarters("YBHA", main_ons)
+        check("ONS sooner: a failure leaves the series as it was, with a warning", kept is main_ons and "sooner release unavailable" in warned.getvalue(), warned.getvalue())
+    finally:
+        uk_data.uk_get = real_get
+    months = pd.date_range("2026-01-01", "2026-11-01", freq="MS")
+    monthly = pd.DataFrame({DATE_COLUMN: months, "BOPTEXP": np.arange(1.0, 12.0)})
+    quarterly = pd.Series([100.0, 200.0], index=pd.DatetimeIndex(["2026-01-01", "2026-04-01"]))
+    real_fred = payments.fred_series
+    try:
+        payments.fred_series = lambda series_id, **k: monthly
+        joined = _quietly(payments._with_monthly_quarters, quarterly, "BOPTEXP")
+        check("monthly trade: the whole quarters after the quarterly series' last, in dollars, not the quarter with two months",
+              list(joined.index) == [pd.Timestamp("2026-01-01"), pd.Timestamp("2026-04-01"), pd.Timestamp("2026-07-01")]
+              and joined.iloc[-1] == (7.0 + 8.0 + 9.0) * 1e6 and joined.iloc[0] == 100.0, joined)
+    finally:
+        payments.fred_series = real_fred
 
     # --- the box -----------------------------------------------------------------------------------------------------
     print("The box (options.idle_option_reasons)")

@@ -25,8 +25,10 @@ reach them; ``tools/uk_fixtures/README.md`` holds the measurements):
   excluding the public sector banks (ONS HF6W, the UK's headline measure),
   monthly from 1975-03 (Terry, 2026-10-06: "add net too").
 * GDP: at market prices, current prices, seasonally adjusted (ONS YBHA),
-  quarterly from 1955, summed over four quarters; before it the millennium's
-  annual composite estimate, from 1700, joined as Canada's history is.
+  quarterly from 1955, summed over four quarters, its latest quarter from the
+  GDP first quarterly estimate until the national accounts carry it
+  (``ONS_SOONER``, batch 43.3); before it the millennium's annual composite
+  estimate, from 1700, joined as Canada's history is.
 * Interest: general government interest and dividends paid to the private
   sector and the rest of the world (ONS NMYX), consolidated as Canada's and
   the U.S.'s aggregates are, quarterly from 1946, summed over four quarters.
@@ -211,6 +213,24 @@ ONS_SERIES_READ = {
     "HBOO": "quarters",
     "IKBH": "quarters",
     "IKBI": "quarters",
+}
+# The same series in a dataset the ONS publishes sooner (batch 43.3,
+# ``_with_sooner_quarters``): GDP (YBHA) in the GDP first quarterly estimate
+# (dataset PN2), about six weeks after each quarter, about six weeks before
+# the quarterly national accounts (UKEA) carry it; trade's exports and
+# imports (IKBH, IKBI) in the monthly UK trade release (MRET), a quarter whole
+# with its third month, about six weeks after it, against the balance of
+# payments (PNBP) at the end of the next quarter. Measured 2026-11-18: each
+# equal to the dataset the program reads in every quarter both hold (YBHA in
+# 286 from 1955, IKBH and IKBI in 118 from 1997), and a quarter later (2026
+# Q3, released 2026-11-12, where UKEA and PNBP end at Q2, released 2026-09-30).
+# Only its quarters after the series' last are taken: the main dataset stays
+# the record, its revisions of earlier quarters reaching the chart when it
+# carries them. Not baked: only those quarters are read.
+ONS_SOONER = {
+    "YBHA": "/economy/grossdomesticproductgdp/timeseries/ybha/pn2",
+    "IKBH": "/economy/nationalaccounts/balanceofpayments/timeseries/ikbh/mret",
+    "IKBI": "/economy/nationalaccounts/balanceofpayments/timeseries/ikbi/mret",
 }
 ONS_BAKED_SOURCE = "ons"
 UK_DEBT_SERIES = "BKPX"
@@ -466,13 +486,34 @@ def ons_series(cdid: str) -> pd.Series:
     Eurostat's do. If the ONS fails, the baked history alone, to its last
     value, with a warning; a series not baked is the ONS's whole answer, as
     before 19.2. Raises if the ONS has no values at that frequency and there
-    is no bake.
+    is no bake. A series the ONS publishes sooner in another dataset
+    (``ONS_SOONER``) goes on with that dataset's later quarters
+    (``_with_sooner_quarters``, batch 43.3).
     """
     _path, _unit, multiplier = ONS_SERIES[cdid]
     values = with_recent_part(
         ONS_BAKED_SOURCE, cdid, f"ONS {cdid}", lambda start: _ons_answer(cdid, start), RECENT_PART_REVISED
     )
+    if cdid in ONS_SOONER:
+        values = _with_sooner_quarters(cdid, values)
     return values * multiplier
+
+
+def _with_sooner_quarters(cdid: str, values: pd.Series) -> pd.Series:
+    """``values`` (ONS series ``cdid`` in its own unit) and after its last date the periods of the dataset the ONS publishes it in sooner (``ONS_SOONER``, batch 43.3).
+
+    The sooner dataset's earlier periods are not taken: the main dataset is
+    the record. If that dataset fails, ``values`` as they are, with a
+    warning naming where the series ends.
+    """
+    try:
+        sooner = parse_ons_series(uk_get(ONS_TIMESERIES_URL.format(path=ONS_SOONER[cdid])).json(), cdid, ONS_SERIES_READ[cdid])
+    except Exception as exc:  # noqa: BLE001 - any failure: the series as the main dataset has it
+        end = f"{values.index.max():%Y-%m-%d}" if len(values) else "its bake"
+        print(f"  Warning: ONS {cdid}'s sooner release unavailable ({exc}); it ends at {end}.")
+        return values
+    later = sooner.loc[sooner.index > values.index.max()] if len(values) else sooner.iloc[:0]
+    return pd.concat([values, later]) if len(later) else values
 
 
 # ---------------------------------------------------------------------------

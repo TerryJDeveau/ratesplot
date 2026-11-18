@@ -63,6 +63,17 @@ since 2010, standing at each quarter's start, this predicts the next
 quarter's debt with a root-mean-square error of 33 billion dollars for the
 federal level and 37 for the aggregate, against 45 and 48 for the pace
 alone. It is a better projection, not data: it is drawn as one.
+
+The current account's credits and debits (the balance of payments, batch 23)
+follow trade likewise where trade's figures run later (batch 43.3,
+``_trade_steered``): the U.S.' and the UK's trade comes a quarter sooner from
+their monthly trade releases (``payments``, ``uk_data.ONS_SOONER``), and is
+about two thirds of each. Trade's twelve-month sum is observed to its last
+quarter, the rest (income) goes on at its own pace. Tested from 2000,
+standing at each quarter's end with the next quarter's trade known, the next
+quarter's sums came within 0.22 to 0.53 of the half year's pace's
+root-mean-square error (the U.S.' credits 0.60 % against 1.85 %); with one
+month of the three known, within 0.72 to 0.83.
 """
 
 from __future__ import annotations
@@ -132,7 +143,7 @@ _DEBT_JOIN_TOLERANCE = 0.001
 # projected column's observations end: {column: date}; and the columns among
 # them that follow market debt (``_market_steered``): [column, ...].
 PROJECTION_ATTR = "projected_from"
-STEERED_ATTR = "steered_by_market_debt"
+STEERED_ATTR = "steered_by_market_debt"  # and since batch 43.3 the columns trade steers (``_trade_steered``)
 # A curve whose last observation is older than this is not projected: that is
 # a series that ended (federal debt alone, pre-1933) or a live source that
 # failed, leaving only the baked history.
@@ -179,6 +190,7 @@ def project_to_now(
     config: PlotConfig,
     history: pd.DataFrame,
     market: pd.Series | None = None,
+    trade: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Carry each column of ``observed`` from the date its data end to the frame's last date (see the module docstring).
 
@@ -191,7 +203,10 @@ def project_to_now(
     debt clock does; a sum over a trailing year at its rate over the half
     year (``_pace_span``, batch 43.2). With ``market`` (Canadian market debt, from
     ``market_debt_for_projection``) the Canadian debt curves follow it
-    instead (``_market_steered``). Rows are added at each starting date so a
+    instead (``_market_steered``); with ``trade`` (the trade pair's
+    twelve-month sums, date-indexed, from ``payments.trade_for_projection``)
+    the current account's credits and debits follow trade's where it runs
+    later (``_trade_steered``, batch 43.3). Rows are added at each starting date so a
     projection begins exactly where its data end. Only with --projections,
     whatever --cur is, on a chart reaching today; the columns projected, with
     their starting dates, are recorded in ``attrs[PROJECTION_ATTR]``.
@@ -240,6 +255,9 @@ def project_to_now(
             steered = _market_steered(data.loc[later, DATE_COLUMN], start, value, earlier, market)
             if steered is None:
                 print(f"  Warning: Government of Canada market debt does not cover the year to {start:%Y-%m-%d}; {column} goes on at its own pace alone.")
+        elif trade is not None and column in trade.columns:
+            # None where trade ends no later than the curve: then trade at its pace and the rest at its are the curve's own pace.
+            steered = _trade_steered(data.loc[later, DATE_COLUMN], start, value, paced[1], trade[column])
         projected[column] = start
         if steered is not None:
             values, note = steered
@@ -597,6 +615,63 @@ def _market_steered(
     values = value + (market_then - at_start) + rest_per_day * (when - start).days.to_numpy()
     note = (
         f"market debt as observed to {last_day:%Y-%m-%d} ({(last_value - at_start) / 1e9:+,.1f} billion since), "
+        f"the rest {rest_per_day * 365 / value:+.1%} of the curve a year"
+    )
+    return pd.Series(values, index=dates.index), note
+
+
+# Trade's twelve-month sum must be known this close (days) before the dates the
+# current account's is read at (``_trade_steered``): both are dated by their
+# quarters' last days, so they meet exactly.
+_TRADE_MAX_GAP_DAYS = 7
+
+
+def _trade_steered(
+    dates: pd.Series, start: pd.Timestamp, value: float, earlier: tuple[pd.Timestamp, float], trade: pd.Series
+) -> tuple[pd.Series, str] | None:
+    """Return the current account's credits or debits on ``dates`` (all after ``start``) steered by trade's, and a note; None where trade runs no later or cannot be read (batch 43.3).
+
+    The curve is trade plus the rest (income received or paid). Trade
+    (``trade``, the twelve-month sum of exports or imports in the curve's
+    currency, dated by its quarters' last days) is read as observed to its
+    last date, straight between its figures as Daily values draws it, and
+    goes on after it at its own pace over the half year before
+    (``_HALF_YEAR_DAYS``). The rest goes on from ``start``, where the curve's
+    data end at ``value``, at its own pace from ``earlier`` (the curve's date
+    and value at the start of its pace's span, ``_pace_span``). None where
+    trade's last date is not after ``start`` (trade and the rest each at its
+    own pace are then the curve's own pace, so nothing is gained), or trade
+    is not known at ``start``, at ``earlier`` or half a year before its last.
+    """
+    known = trade.dropna().sort_index()
+    if known.empty or known.index[-1] <= start:
+        return None
+
+    def on(day: pd.Timestamp) -> float | None:
+        upto = known.loc[:day]
+        if upto.empty or (day - upto.index[-1]).days > _TRADE_MAX_GAP_DAYS:
+            return None
+        return float(upto.iloc[-1])
+
+    earlier_date, earlier_value = earlier
+    last_day, last_value = known.index[-1], float(known.iloc[-1])
+    at_start, at_earlier = on(start), on(earlier_date)
+    own = _year_before(known, last_day, _HALF_YEAR_DAYS)
+    if at_start is None or at_earlier is None or own is None:
+        return None
+    rest_per_day = _per_day((start, value - at_start), (earlier_date, earlier_value - at_earlier))
+    trade_per_day = _per_day(*own)
+
+    when = pd.DatetimeIndex(dates)
+    after = known.loc[known.index > start]
+    days = np.concatenate([[0.0], (after.index - start).days.to_numpy(dtype=float)])
+    levels = np.concatenate([[at_start], after.to_numpy(dtype=float)])
+    trade_then = np.interp((when - start).days.to_numpy(dtype=float), days, levels)
+    beyond = when > last_day
+    trade_then[beyond] = last_value + trade_per_day * (when[beyond] - last_day).days.to_numpy()
+    values = value + (trade_then - at_start) + rest_per_day * (when - start).days.to_numpy()
+    note = (
+        f"trade as observed to {last_day:%Y-%m-%d} ({(last_value - at_start) / 1e9:+,.1f} billion since), "
         f"the rest {rest_per_day * 365 / value:+.1%} of the curve a year"
     )
     return pd.Series(values, index=dates.index), note

@@ -38,7 +38,9 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   1999-Q1, nothing scaled, as every join of the program's is drawn: at the
   join the older is 3.4 % under the newer for the credits (BPM5 has no
   transfers received), 1.6 % for the debits, 0.6 % for exports, 0.8 % over
-  for imports.
+  for imports. Trade's quarters after IEAXGS's and IEAMGS's last from the
+  monthly trade release, BOPTEXP and BOPTIMP, whose three months add up to
+  them (``US_MONTHLY_TRADE_SERIES``, batch 43.3).
 * Canada: Statistics Canada's international accounts, quarterly, seasonally
   adjusted, millions of dollars a quarter: 36-10-0018 (BPM6) from 1981-Q1,
   receipts and payments of the total current account and of goods and
@@ -52,7 +54,9 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   Q1, seasonally adjusted, £m a quarter, under BPM6 throughout: HBON and
   HBOO, the current account's credits and debits (HBON less HBOO is the
   balance, HBOP, exactly), and IKBH and IKBI, exports and imports of goods
-  and services. One series each, no join.
+  and services. One series each, no join; IKBH's and IKBI's quarters after
+  PNBP's last from the monthly trade release (``uk_data.ONS_SOONER``, batch
+  43.3).
 * Germany: the Bundesbank's balance of payments (``de_data.DE_PAYMENTS_SERIES``),
   monthly from 1971-01, unadjusted (its only whole monthly figures), millions
   of euros a month, the Deutsche Mark years in euros at 1.95583: West
@@ -89,6 +93,7 @@ from .config import (
     PAYMENTS_DEBITS_COLUMN,
     STATCAN_CDN_PAYMENTS_TABLE,
     STATCAN_CDN_PAYMENTS_VECTORS,
+    PlotConfig,
     nation_by_key,
 )
 from .de_data import DE_PAYMENTS_SERIES, DE_PAYMENTS_SIDES, bundesbank_series
@@ -110,6 +115,16 @@ US_PAYMENTS_SERIES = {"current": ("IEAX", "IEAM"), "trade": ("IEAXGS", "IEAMGS")
 US_OLD_PAYMENTS_SERIES = {"current": ("BOPX", "BOPM"), "trade": ("BOPXGS", "BOPMGS")}
 US_OLD_BALANCE_SERIES = "BOPBCA"
 US_OLD_PAYMENTS_STOPPED = pd.Timestamp("2014-01-01")
+# The U.S. trade in goods and services each month (batch 43.3,
+# ``_with_monthly_quarters``): FRED's BOPTEXP and BOPTIMP, the monthly release
+# of the Census Bureau and the BEA (FT-900), millions of dollars a month,
+# seasonally adjusted, about five weeks after each month, so a quarter's
+# three months about six weeks before the international transactions carry
+# it. Measured 2026-11-18: each quarter's three months add up to IEAXGS and
+# IEAMGS within a million in all 110 quarters from 1999; BOPTEXP and BOPTIMP
+# end 2026-09, IEAXGS and IEAMGS 2026 Q2. Only the whole quarters after the
+# quarterly series' last are taken. Not baked: only those quarters are read.
+US_MONTHLY_TRADE_SERIES = ("BOPTEXP", "BOPTIMP")
 # Where the BPM6 figures take over (FRED dates a quarter by its first day).
 US_PAYMENTS_JOIN = pd.Timestamp("1999-01-01")
 US_PAYMENTS_EARLIEST = pd.Timestamp("1960-01-01")
@@ -156,7 +171,27 @@ def _us_quarters(item: str) -> tuple[pd.Series, pd.Series]:
     joined = []
     for old, new in ((old_credits, credits), (old_debits, debits)):
         joined.append(pd.concat([old.loc[old.index < US_PAYMENTS_JOIN], new.loc[new.index >= US_PAYMENTS_JOIN]]))
+    if item == "trade":
+        joined = [_with_monthly_quarters(series, monthly_id) for series, monthly_id in zip(joined, US_MONTHLY_TRADE_SERIES)]
     return joined[0], joined[1]
+
+
+def _with_monthly_quarters(quarters: pd.Series, monthly_id: str) -> pd.Series:
+    """``quarters`` (a U.S. quarterly flow in dollars, indexed by the quarters' first days) and after its last the whole quarters of FRED's monthly ``monthly_id`` (``US_MONTHLY_TRADE_SERIES``, batch 43.3).
+
+    A quarter is taken only with its three months. If FRED fails, ``quarters``
+    as they are, with a warning naming where they end.
+    """
+    try:
+        frame = fred_series(monthly_id, revised=True)
+    except Exception as exc:  # noqa: BLE001 - any failure: the quarterly series alone
+        print(f"  Warning: FRED {monthly_id} (U.S. trade each month) unavailable ({exc}); trade ends at its quarterly accounts' last quarter.")
+        return quarters
+    months = pd.Series(frame[monthly_id].to_numpy(dtype=float), index=pd.DatetimeIndex(frame[DATE_COLUMN])).dropna()
+    whole = months.resample("QS").agg(["sum", "count"])
+    sums = whole.loc[whole["count"] == 3, "sum"] * MILLION
+    later = sums.loc[sums.index > quarters.index.max()] if len(quarters) else sums.iloc[:0]
+    return pd.concat([quarters, later.rename(quarters.name)]) if len(later) else quarters
 
 
 def _cdn_quarters(item: str) -> tuple[pd.Series, pd.Series]:
@@ -232,3 +267,32 @@ def fetch_payments(key: str, item: str) -> pd.DataFrame | None:
         return _monthly_ttm_frame(*_MONTHS[key](item))
     credits, debits = _QUARTERS[key](item)
     return _ttm_frame(credits, debits)
+
+
+# The nations whose trade runs a quarter later than their current account
+# (batch 43.3: the monthly trade releases, ``US_MONTHLY_TRADE_SERIES`` and
+# ``uk_data.ONS_SOONER``), so that it steers the current account's projection
+# (``latest._trade_steered``). Canada's would join with its monthly trade;
+# Germany's figures are monthly already, trade's and the current account's alike.
+TRADE_STEERED_NATIONS = ("us", "uk")
+
+
+def trade_for_projection(key: str, config: PlotConfig) -> pd.DataFrame | None:
+    """Nation ``key``'s trade pair as twelve-month sums, date-indexed, to steer the current account's projection (``latest.project_to_now``); else None.
+
+    Only for a chart reaching today with --projections and the current
+    account drawn (``config.payments_items``), and a nation of
+    ``TRADE_STEERED_NATIONS``: it serves the projection alone, as market debt
+    does. A failure prints a warning; the pair then goes on at its own pace.
+    """
+    if (
+        key not in TRADE_STEERED_NATIONS or not config.payments or config.payments_items[0] != "current"
+        or not config.projections or not config.quotes_can_reach
+    ):
+        return None
+    try:
+        frame = fetch_payments(key, "trade")
+    except Exception as exc:  # noqa: BLE001 - any source failure: the pair at its own pace
+        print(f"  Warning: trade unavailable ({exc}); the current account's credits and debits go on at their own pace alone.")
+        return None
+    return None if frame is None else frame.set_index(DATE_COLUMN)
