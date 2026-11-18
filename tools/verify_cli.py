@@ -344,6 +344,13 @@ CASES: list[list[str]] = [
     ["--com:mortgage"], ["--com:mo"], ["--com:cpi"], ["--com:cp"], ["--com:c"], ["--com:current"], ["--com:cu"],
     ["--com:trade"], ["--com:t"], ["--com:trade", "-r"], ["--com:cur", "--base:de"], ["--com:cur", "--ttm", "-p"],
     ["--com:cpi", "--cpi:sa"], ["--com:mort,cpi"],
+    # Batch 14.1: two kinds of unit on the right at most. The price index and the population together with no amount
+    # (with yields, seasonally adjusted, with -r and -p idle); refused beside debt, GDP, interest or the balance of
+    # payments, the default four included; kept where one of the three is turned off again.
+    ["--cpi", "--pop", "--yield"], ["--cpi:sa", "--pop", "-l", "--reg"], ["--cpi", "--pop", "-r"], ["--cpi", "--pop", "-p"],
+    ["--cpi", "--pop", "--debt"], ["--cpi", "--pop", "--gdp"], ["--cpi", "--pop", "--int"], ["--cpi", "--pop", "--pay"],
+    ["--cpi", "--pop", "--pay:trade"], ["--cpi", "--pop", "--debt", "--no-debt"], ["--cpi", "--pop", "--debt", "--no-pop"],
+    ["--cpi", "--pop", "--no-yield", "--no-gdp", "--no-debt", "--no-interest"], ["--debt", "--gdp", "--interest", "--cpi", "--pop"],
 ]
 
 

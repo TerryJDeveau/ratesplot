@@ -169,6 +169,8 @@ CHART_CASES = (
     "de_pay_pc",
     # Batch 26: the comparison chart after the four nations', the policy rates with end labels.
     "cmp_pol_l",
+    # Batch 14.1: the price index and the population together, each on an axis of its own, on all four, with -l and --reg.
+    "cpi_pop_reg",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -2333,7 +2335,7 @@ def check_batch134(check: Check) -> None:
 
 
 def check_batch135(check: Check) -> None:
-    """Batch 13.5: "Population", one of it and "Price index (CPI)" at a time; the regression segments not greyed with it alone; its ⓘ and page; the two together refused in an address."""
+    """Batch 13.5: "Population", one of it and "Price index (CPI)" at a time; the regression segments not greyed with it alone; its ⓘ and page; the two beside an amount refused in an address."""
 
     def ticked(page: AppTest) -> tuple[bool, bool]:
         """(“Price index (CPI)” ticked, “Population” ticked)."""
@@ -2368,11 +2370,40 @@ def check_batch135(check: Check) -> None:
     at.checkbox(key="flag:population").uncheck().run()
     check("unticked again: the regression segments greyed", not at.exception and at.checkbox(key="flag:regression").disabled)
 
-    at = new_page("-c --cpi --pop -s:2015 --e:2019")
-    check("--cpi --pop in an address: reported, as -r -p is, and the defaults drawn",
-          not at.exception and any("--cpi and --population cannot be combined" in block.value for block in at.warning)
+    # Since batch 14.1 the two together are refused only beside an amount (check_batch141).
+    at = new_page("-c --cpi --pop --debt -s:2015 --e:2019")
+    check("--cpi --pop --debt in an address: reported, as -r -p is, and the defaults drawn",
+          not at.exception and any("--cpi and --population cannot both be drawn" in block.value for block in at.warning)
           and not at.checkbox(key="flag:cpi").value and not at.checkbox(key="flag:population").value,
           [block.value for block in at.warning])
+
+
+def check_batch141(check: Check) -> None:
+    """Batch 14.1: two kinds of unit on the right at most: "Price index (CPI)" and "Population" together with no amount; an amount ticked unticks the population; the two in an address drawn."""
+
+    def ticked(page: AppTest) -> tuple[bool, bool, bool]:
+        """(“Aggregate public debt” ticked, “Price index (CPI)” ticked, “Population” ticked)."""
+        return tuple(page.checkbox(key=f"flag:{name}").value for name in ("debt", "cpi", "population"))
+
+    def drawn(page: AppTest) -> tuple[bool, bool, bool]:
+        """What the address draws: (debt, the price index, the population)."""
+        config = config_from_choices(*sort_tokens(address(page).split())[:2])
+        return config.include_debt, config.price_index, config.population
+
+    at = new_page("-c --cpi -s:2015 --e:2019")
+    check("the price index alone on the right", not at.exception and ticked(at) == (False, True, False), (address(at), ticked(at)))
+    at.checkbox(key="flag:population").check().run()
+    check("“Population” ticked: “Price index (CPI)” kept, both in the address and drawn", not at.exception
+          and ticked(at) == (False, True, True) and drawn(at) == (False, True, True)
+          and {"--cpi", "--population"} <= set(address(at).split()), (address(at), ticked(at)))
+    at.checkbox(key="flag:debt").check().run()
+    check("“Aggregate public debt” ticked beside both: “Population” unticked, the index kept", not at.exception
+          and ticked(at) == (True, True, False) and drawn(at) == (True, True, False) and "--population" not in address(at),
+          (address(at), ticked(at)))
+
+    at = new_page("-c --cpi --pop -s:2015 --e:2019")
+    check("--cpi --pop in an address: both ticked and drawn, nothing reported", not at.exception and not at.warning
+          and ticked(at) == (False, True, True) and drawn(at) == (False, True, True), [block.value for block in at.warning])
 
     view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
     view.query_params["help"] = "population"
@@ -2617,7 +2648,7 @@ PAGE_CHECKS = (
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
     check_batch135, check_batch133, check_batch35, check_wait_colour, check_batch37, check_batch38, check_batch262,
-    check_batch263, check_batch473, check_batch46,
+    check_batch263, check_batch473, check_batch46, check_batch141,
 )
 
 

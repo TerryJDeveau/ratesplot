@@ -235,6 +235,8 @@ from .frontend import (
 )
 from .monitors import Rect
 from .options import (
+    AMOUNT_BOXES,
+    EXTRA_BOXES,
     Kind,
     Option,
     by_name,
@@ -2093,10 +2095,12 @@ class RatesPlotApp:
             self.flag_vars[name].set(True)
             self.status.set("At least one country must stay selected.")
             return
-        # The price index and the population, one at a time on their axis
-        # (batch 13.5): ticking one unticks the other.
+        # Two kinds of unit on the right at most (batch 14.1): the price index
+        # or the population ticked beside an amount unticks the other of the
+        # two; an amount ticked beside both unticks the population.
         if self.flag_vars[name].get():
-            for other in excluded_curves(name):
+            ticked = {box: self.flag_vars[box].get() for box in AMOUNT_BOXES + EXTRA_BOXES if box in self.flag_vars}
+            for other in excluded_curves(name, ticked):
                 self.flag_vars[other].set(False)
         if name in nation_boxes():
             # Batch 17.4: a nation ticked by hand gets its tab once its chart is
