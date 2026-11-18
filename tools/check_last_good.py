@@ -54,6 +54,7 @@ at its start (``tools/temp_folders.py``, batch 41.1).
 
 from __future__ import annotations
 
+import json
 import os
 import pickle
 import re
@@ -71,6 +72,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import matplotlib.dates as mdates  # noqa: E402
 import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 import requests  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
@@ -222,8 +224,17 @@ def check_asked_once(name: str) -> None:
 #    Drawn from their last good copies, downloaded 2026-10-21 18:30 UTC: Treasury yields; debt, GDP, and interest."
 _BAKED_PART = re.compile(r"\d+ series drawn from (?:its|their) baked history: (.*?\d{4}-\d{2}-\d{2})\.(?= |$)")
 _COPIES_PART = re.compile(
-    r"Drawn from (?:its last good copy|their last good copies), downloaded \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC: (.*?)\.(?= Drawn from |$)"
+    r"Drawn from (?:its last good copy|their last good copies), downloaded \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC: (.*?)\.(?= Drawn from | Stand-ins asked |$)"
 )
+# Batch 49: what the stand-ins gave, the warning's last sentence.
+_STAND_INS_PART = re.compile(r" Stand-ins asked for newer periods: (.*)\.$")
+
+
+def forget_day_marks() -> None:
+    """Forget the day's marks of a host down (batch 49), so a case meets its failures as a fresh day's drawing, as it did before."""
+    http._down_today.clear()
+    if http._copies_folder is not None:
+        (http._copies_folder / http.DOWN_TODAY_FILE).unlink(missing_ok=True)
 
 
 def source_warnings(log: str) -> dict[str, list[str]]:
@@ -453,6 +464,55 @@ def draw(tokens: list[str]) -> tuple[dict[str, bytes], dict[str, str], list[str]
     return pngs, not_drawn, downloads.copies_used(), "".join(lines), flat
 
 
+def check_day_marks(first: dict[str, bytes]) -> None:
+    """Batch 49, with every source failing and the copies on: Statistics Canada checked once a day, its stand-ins asked on a day it fails.
+
+    ``first``: the default case's charts in pass 1, every source answering.
+    """
+    host = cdn_data.STATCAN_HOST
+    forget_day_marks()
+    asked.clear()
+    draw(CASES["default"])
+    statcan = sum(count for request, count in asked.items() if urlsplit(request[1]).netloc == host)
+    marks = json.loads((http._copies_folder / http.DOWN_TODAY_FILE).read_text(encoding="utf-8"))
+    check("day marks: Statistics Canada's outage page marks it down for the day, kept in the copies' folder (49)",
+          statcan >= 1 and http.host_down_today(host) is not None and marks.get(host, {}).get("day") == http.checking_day(),
+          (statcan, marks))
+    asked.clear()
+    pngs, not_drawn, _copies, log, _flat = draw(CASES["default"])
+    statcan = sum(count for request, count in asked.items() if urlsplit(request[1]).netloc == host)
+    warned = source_warnings(log).get("Statistics Canada", [])
+    given = [match.group(1) for line in warned for match in [_STAND_INS_PART.search(line)] if match]
+    check("day marks: the next drawing asks Statistics Canada nothing, draws as in pass 1, says why once (49)",
+          statcan == 0 and not not_drawn and pngs == first and len(warned) == 1
+          and warned[0].startswith("  Warning: Statistics Canada: not asked again today: it failed at "), (statcan, warned))
+    check("day marks: GDP's stand-in asked, its failure said in the same warning (49)",
+          len(given) == 1 and given[0].startswith("GDP, FRED's NGDPSAXDCCAQ (the IMF's) times 4 failed ("), given)
+    # A new process meets the day's mark in the copies' folder; a mark of another day is not today's.
+    http._down_today.clear()
+    check("day marks: a new run meets the mark in the copies' folder (49)", http._checked_down(host) is not None)
+    marks[host]["day"] = "2000-01-01"
+    (http._copies_folder / http.DOWN_TODAY_FILE).write_text(json.dumps(marks), encoding="utf-8")
+    http._down_today.clear()
+    check("day marks: another day's mark is not today's (49)", http._checked_down(host) is None)
+    # A stand-in with newer periods: they follow the vector's own, its history as it was.
+    http._mark_down_today(host, http.BotCheck(host, http.CLOUDFLARE_CHALLENGE))
+    vector = cdn_data.STATCAN_CDN_GDP_VECTOR
+    real = cdn_data.STATCAN_STAND_INS[vector]
+    own = cdn_data.statcan_table(cdn_data.STATCAN_CDN_GDP_TABLE)[vector].dropna()
+    ahead = pd.date_range(own.index[-1], periods=3, freq="QS")
+    cdn_data.STATCAN_STAND_INS[vector] = cdn_data.StandIn(real.series, "a made-up stand-in",
+                                                          lambda since: pd.Series([1.0, 2.0, 3.0], index=ahead))
+    try:
+        given = cdn_data.statcan_table(cdn_data.STATCAN_CDN_GDP_TABLE)[vector].dropna()
+    finally:
+        cdn_data.STATCAN_STAND_INS[vector] = real
+    check("day marks: a stand-in's newer periods added after the vector's own, nothing before changed (49)",
+          given.loc[own.index].equals(own) and list(given.index[len(own):]) == list(ahead[1:]) and list(given.iloc[len(own):]) == [2.0, 3.0],
+          given.tail(3).to_dict())
+    forget_day_marks()
+
+
 def main() -> int:
     # web's import turned on the page's memory cache, which would answer pass 2 from pass 1.
     http._download_cache = None
@@ -481,6 +541,7 @@ def main() -> int:
     urllib.request.urlopen = failing_urlopen  # type: ignore[assignment]
     for name, tokens in CASES.items():
         asked.clear()
+        forget_day_marks()
         pngs, not_drawn, copies, log, _flat = draw(tokens)
         check_asked_once(name)
         same = sorted(key for key in pngs if pngs[key] == first[name].get(key))
@@ -504,6 +565,7 @@ def main() -> int:
             check("rates: FRED's page named", any("Site Maintenance | St. Louis Fed" in line for line in warnings))
             check("rates: StatCan's page named", any("We're sorry!" in line for line in warnings))
             check("rates: the Bundesbank's bot check named", any("bot check" in line for line in warnings))
+    check_day_marks(first["default"])
     config = cli.parse_args(["--no-gui", *CASES["default"]])
     drawing = web._draw(config, tuple(CASES["default"]))
     check("the web page: drawn as in pass 1, its notice listing the copies",
@@ -515,6 +577,7 @@ def main() -> int:
     flat: dict[str, float] = {}
     for name, tokens in CASES.items():
         asked.clear()
+        forget_day_marks()
         pngs, not_drawn, copies, log, case_flat = draw(tokens)
         check_asked_once(name)
         warned = source_warnings(log)

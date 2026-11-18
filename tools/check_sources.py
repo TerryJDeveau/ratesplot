@@ -235,6 +235,26 @@ def _fred_monthly_trade(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     return min(lasts), "; ".join(notes)
 
 
+def _statcan_stand_ins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """Batch 49: each stand-in for a Statistics Canada vector (``cdn_data.STATCAN_STAND_INS``) against the vector as the program reads it.
+
+    Taken because each equalled the bake wherever both had a value (2026-11-18);
+    a stand-in that no longer does is a failure here, before a day it is drawn.
+    """
+    table_of = {vector: table for table, read in cdn_data.STATCAN_SERIES_READ.items() for vector in read.vectors}
+    notes = []
+    for vector, stand_in in cdn_data.STATCAN_STAND_INS.items():
+        own = cdn_data.statcan_table(table_of[vector])[vector].dropna()
+        theirs = stand_in.fetch(pd.Timestamp("1900-01-01")).dropna()
+        both = pd.concat([own.rename("own"), theirs.rename("theirs")], axis=1).dropna()
+        apart = ((both["theirs"] - both["own"]).abs() > 1e-9 * both["own"].abs()).sum()
+        if both.empty or apart:
+            raise ValueError(f"{stand_in.name} differs from {vector} in {apart} of {len(both)} periods")
+        notes.append(f"{stand_in.series} ({vector}): {stand_in.name} equal in {len(both)} periods to {both.index[-1]:%Y-%m}, "
+                     f"its last {theirs.index[-1]:%Y-%m}, Statistics Canada's {own.index[-1]:%Y-%m}")
+    return None, "; ".join(notes)
+
+
 def _us_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     return _last(_all_yields(us_data.fetch_us_yields(config).set_index("DATE"))), ""
 
@@ -595,6 +615,8 @@ CHECKS: tuple[Check, ...] = (
     Check("statcan_interest", "StatCan 10-10-0015 interest", QUARTERLY, _cdn_column(cdn_data.fetch_cdn_interest, CDN_INTEREST_COLUMN)),
     Check("statcan_levels", "StatCan 10-10-0015 debt and interest by level", QUARTERLY, _cdn_levels),
     Check("statcan_population", "StatCan 17-10-0009 population", QUARTERLY, _cdn_population),
+    # Batch 49: what stands in for Statistics Canada's vectors on a day it does not answer, against them.
+    Check("statcan_stand_ins", "Stand-ins for StatCan: Valet's CPI copies, FRED's NGDPSAXDCCAQ (a measurement)", None, _statcan_stand_ins),
     Check("fred_yields", "FRED Treasury yields (DGS3MO, DGS2, DGS5, DGS10, DGS30)", DAILY, _us_yields),
     Check("fred_yields_more", "FRED Treasury yields (DGS1MO, DGS6MO, DGS1, DGS3, DGS7, DGS20)", DAILY, _us_extra_yields),
     Check("fred_gfdebtn", "FRED GFDEBTN federal debt", QUARTERLY, _fred("GFDEBTN", quarterly=True)),
