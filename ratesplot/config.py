@@ -852,6 +852,9 @@ SERIES_KINDS = {
     # The extra axis.
     "price_index": SeriesKind(SMOOTH, "month"),
     "population": SeriesKind(SMOOTH),
+    # An exchange rate (--fx, batch 14.2): a day's rate, or before FRED's daily rates a month's or a year's
+    # average, each held to the next.
+    "fx": SeriesKind(MARKET, held=True),
 }
 
 
@@ -926,6 +929,27 @@ POPULATION_STYLE = {"color": "#b8860b", "linewidth": 2.5} | SERIES_KINDS["popula
 POPULATION_LABEL = "Population"
 POPULATION_TITLE = "Population"
 POPULATION_AXIS_LABEL = "Population (Persons, Log Scale)"
+# --fx (batch 14.2; Terry asked 2026-10-06): the exchange rates of the other
+# ticked nations' currencies against the chart's own, as units of its
+# currency per unit of each ("CAD per USD"), on a log axis of their own. One
+# currency: its rate as quoted; two or more: each at 100 on its first date
+# drawn, since the rates differ widely (the plan's 14.2: 157 yen against 0.75
+# pounds per dollar), so the axis reads "Exchange Rates (2000-01-03 = 100, Log
+# Scale)". Each currency in a colour no other curve has (the comparison
+# chart's colours for the nations are the default yields' blue, red and
+# purple; the Canadian dollar's first try, chocolate, was too near the 2-year
+# yield's orange), thinner than the amounts, a day's rate being jagged; held to
+# the next rate, in steps, so an older month's or year's average spans its period.
+FX_COLOURS = {"USD": "#008b8b", "CAD": "#283593", "GBP": "#a0336e", "EUR": "#5b6c2f"}
+FX_STYLE = {"linewidth": 1.5} | SERIES_KINDS["fx"].drawstyle
+FX_LABEL = "{own} per {other}"
+FX_TITLE = "Exchange Rate"
+FX_TITLE_REBASED = "Exchange Rates"
+FX_AXIS_LABEL = "{own} per {other} (Log Scale)"
+FX_AXIS_LABEL_REBASED = "Exchange Rates ({base} = 100, Log Scale)"
+# The base where the currencies' first dates drawn differ (one beginning
+# after the Start: the euro's rate in 1948).
+FX_REBASED_EACH = "First Date"
 # --mortgages (ratesplot.rates): the terms, as written on the command line ->
 # the countries that have them and the yield term whose colour they take (None:
 # no yield of that term, so a colour of their own, MORTGAGE_OWN_COLORS). In
@@ -1972,6 +1996,10 @@ class PlotConfig:
     # unit on the right at most (batch 14.1, ``options.check_right_axis_kinds``;
     # before it never with --cpi, decision 43); never divided either.
     population: bool = False
+    # --fx (batch 14.2): the other ticked nations' currencies against each
+    # chart's own on an axis of their own (``fx_currencies``), a third kind of
+    # unit on the right (``options.right_axis_kinds``); never divided either.
+    fx: bool = False
     # --compare[:MEASURE] (batch 26, a prototype, decision 146): a chart after
     # the nations' comparing them on one measure of COMPARE_MEASURES, one at a
     # time; a flag, off until named, as --payments is. It changes no nation's chart.
@@ -2289,7 +2317,15 @@ class PlotConfig:
     @property
     def draws_a_curve(self) -> bool:
         """True when a curve is drawn on either axis: False for a chart titled "no series selected", which neither front end remembers."""
-        return self.has_left_axis_series or self.has_macro_series or self.draws_price_index or self.population
+        return self.has_left_axis_series or self.has_macro_series or self.draws_price_index or self.population or self.fx
+
+    def fx_currencies(self, key: str) -> tuple[str, ...]:
+        """The currencies whose rates --fx draws on nation ``key``'s chart (batch 14.2): every other ticked nation's, once each, in the nations' order, the chart's own left out; none without --fx."""
+        if not self.fx:
+            return ()
+        own = nation_by_key(key).currency
+        shown = [nation for nation in NATIONS if getattr(self, nation.show_field)]
+        return tuple(dict.fromkeys(nation.currency for nation in shown if nation.currency != own))
 
     @property
     def has_explicit_macro_limits(self) -> bool:

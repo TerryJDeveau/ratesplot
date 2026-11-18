@@ -745,49 +745,65 @@ def excluded_measures(name: str) -> tuple[str, ...]:
 
 # The right side's kinds of unit (batch 14.1; Terry, 2026-10-13: "up to two kinds of unit at once, each on an axis of
 # its own"): the amounts (debt, GDP, interest and the balance of payments, in one currency, or in % of GDP under -r),
-# the consumer price index's points (13.4) and the population's persons (13.5). The amounts keep the axis next to the
-# chart; a second kind takes an axis of its own outside it (``plotting.draw_country``).
+# the consumer price index's points (13.4), the population's persons (13.5) and the exchange rates (14.2), however
+# many currencies they draw. The amounts keep the axis next to the chart; a second kind takes an axis of its own
+# outside it (``plotting.draw_country``).
 RIGHT_AXIS_KINDS = 2
 # The boxes that draw an amount on the right axis (``PlotConfig.has_macro_series``), and those that draw a curve on an
-# extra axis, nearest the chart first (``plotting._extra_curves``).
+# extra axis, nearest the chart first (``plotting._extra_curves``), with their fields and switches.
 AMOUNT_BOXES = ("debt", "gdp", "interest", "payments")
-EXTRA_BOXES = ("cpi", "population")
+EXTRA_BOXES = ("cpi", "population", "fx")
+_EXTRA_FIELDS = {"cpi": "price_index", "population": "population", "fx": "fx"}
 
 
 def right_axis_kinds(values: Mapping[str, object]) -> list[str]:
-    """The kinds of unit these values draw on the right, nearest the chart first: "amounts", then "cpi" and "population" (batch 14.1)."""
+    """The kinds of unit these values draw on the right, nearest the chart first: "amounts", then "cpi", "population" and "fx" (batch 14.1, 14.2).
+
+    --fx counts wherever it is chosen, even with one currency ticked, where it
+    draws nothing: the window's boxes keep the rule without the nations.
+    """
     amounts = any(values[field] for field in ("include_debt", "include_gdp", "include_interest", "payments"))
-    extras = [name for name, field in (("cpi", "price_index"), ("population", "population")) if values[field]]
+    extras = [name for name in EXTRA_BOXES if values[_EXTRA_FIELDS[name]]]
     return ["amounts"] * amounts + extras
 
 
 def check_right_axis_kinds(values: Mapping[str, object]) -> None:
-    """Reject a third kind of unit on the right (batch 14.1): the price index and the population together beside an amount.
+    """Reject a third kind of unit on the right (batch 14.1): two of the price index, the population and the exchange rates (14.2) beside an amount, or all three.
 
-    Before 14.1 the two were refused together whatever else was drawn (decision 43).
+    Before 14.1 the index and the population were refused together whatever else was drawn (decision 43).
     """
-    if len(right_axis_kinds(values)) > RIGHT_AXIS_KINDS:
-        raise ValueError(
-            "--cpi and --population cannot both be drawn beside debt, GDP, interest or --payments: the right side holds "
-            "two kinds of unit at once, each on an axis of its own; leave one out"
-        )
+    kinds = right_axis_kinds(values)
+    if len(kinds) <= RIGHT_AXIS_KINDS:
+        return
+    switches = [f"--{name}" for name in kinds if name != "amounts"]
+    rule = "the right side holds two kinds of unit at once, each on an axis of its own"
+    if "amounts" not in kinds:
+        raise ValueError(f"{', '.join(switches[:-1])} and {switches[-1]} cannot all be drawn: {rule}; leave one out")
+    if len(switches) == 2:
+        raise ValueError(f"{switches[0]} and {switches[1]} cannot both be drawn beside debt, GDP, interest or --payments: {rule}; leave one out")
+    raise ValueError(
+        f"{', '.join(switches[:-1])} and {switches[-1]} cannot be drawn beside debt, GDP, interest or --payments: {rule}; "
+        "leave two out"
+    )
 
 
 def excluded_curves(name: str, ticked: Mapping[str, bool]) -> tuple[str, ...]:
     """The boxes that ticking ``name`` unticks in the window and on the page, ``ticked`` being every box as the click left it: two kinds of unit on the right at most (``check_right_axis_kinds``, batch 14.1).
 
-    The price index or the population ticked beside an amount unticks the
-    other of the two, as before 14.1 (decision 43); with no amount drawn the
-    two are kept, each on an axis of its own. An amount ticked while both are
-    drawn unticks the population, the outer of the two.
+    Each ticked box of the extra axes but ``name``, the outermost first, as
+    many as take the right side past two kinds. So the price index or the
+    population ticked beside an amount unticks the other of the two, as
+    before 14.1 (decision 43); with no amount drawn two are kept, each on an
+    axis of its own; an amount ticked while two are drawn unticks the outer of
+    them; and a third ticked with no amount unticks the outer of the other two
+    (the exchange rates being the outermost kind, batch 14.2).
     """
     extras = [box for box in EXTRA_BOXES if ticked.get(box)]
     amounts = any(ticked.get(box) for box in AMOUNT_BOXES)
-    if not ticked.get(name) or len(extras) + amounts <= RIGHT_AXIS_KINDS:
+    excess = len(extras) + amounts - RIGHT_AXIS_KINDS
+    if not ticked.get(name) or excess <= 0 or name not in EXTRA_BOXES + AMOUNT_BOXES:
         return ()
-    if name in EXTRA_BOXES:
-        return tuple(box for box in extras if box != name)
-    return (EXTRA_BOXES[-1],) if name in AMOUNT_BOXES else ()
+    return tuple(reversed([box for box in extras if box != name]))[:excess]
 
 
 def check_macro_bound_units(payloads: Mapping[str, str], values: Mapping[str, object]) -> None:
@@ -1165,6 +1181,22 @@ OPTIONS: tuple[Option, ...] = (
         "Canada from 1867, the U.S. from 1947,\nGermany from 1950; with --cpi only when\n"
         "no debt, GDP, interest or --payments is\ndrawn (two kinds of unit on the right)",
         names=("population",), shortest=3, label="Population", panel="curves", topic="population",
+    ),
+    # Batch 14.2 (Terry asked 2026-10-06: "the exchange rates of all the
+    # tabbed nations against the current tab's currency, on a dimensionless
+    # log scale on the right"): on each chart, units of its currency per unit
+    # of each other ticked nation's (``PlotConfig.fx_currencies``), on an axis
+    # of their own, one kind of unit however many (``right_axis_kinds``); two or
+    # more each at 100 on its first date drawn. A flag, off until named, and a
+    # series under the series rule (batch 38.2). "--fx", since --cur already
+    # means the latest values (the plan's 14.2).
+    Option(
+        "fx", Kind.FLAG, ("fx",), "extra", "--fx / --no-fx",
+        "the exchange rates of the other nations\nticked against each chart's currency, in\n"
+        "its units per unit of each (\"CAD per\nUSD\"), on a log axis of their own; two\nor more "
+        "each at 100 on its first date\ndrawn; FRED's daily rates from 1971, the\nolder ones before "
+        "them; with --cpi or\n--population only when no debt, GDP,\ninterest or --payments is drawn",
+        names=("fx",), shortest=2, label="Exchange rates", panel="curves", topic="exchange-rates",
     ),
     # Curve sub-options: debt and interest by level of government ("--d:" is
     # debt; the size needs at least "dim"). They set one field; see
@@ -2000,7 +2032,7 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     idle = idle_options(
         values["include_debt"], values["include_gdp"], values["include_interest"],
         extra_curve=values["price_index"] or values["population"], payments=values["payments"],
-        inflation=values["inflation"],
+        inflation=values["inflation"], fx=values["fx"],
     )
     if values["relative"] and "relative" in idle:
         values["relative"] = False
@@ -2031,7 +2063,8 @@ def config_from_choices(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
 
 
 def idle_options(
-    debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False, payments: bool = False, inflation: bool = False
+    debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False, payments: bool = False, inflation: bool = False,
+    fx: bool = False,
 ) -> frozenset[str]:
     """Return the options that change nothing on any chart while these right-axis curves are chosen.
 
@@ -2051,9 +2084,11 @@ def idle_options(
     -r excepted: it hid GDP, which ``config_from_choices`` now stops.
 
     The extra axes' curves (``extra_curve``: the consumer price index, batch
-    13.4, the population, 13.5, or both, 14.1) are fitted by --reg, so the
-    regression segments are not idle while one is drawn; the measures and
-    the limits act on the amounts alone.
+    13.4, the population, 13.5, or both, 14.1; ``fx``, the exchange rates,
+    14.2) are fitted by --reg, so the regression segments are not idle while
+    one is drawn; the measures and the limits act on the amounts alone. The
+    exchange rates are a market's, not smooth, so Daily values and the
+    projections pass them by.
 
     The balance of payments (``payments``, batch 23) is an amount on the
     right axis, measured, fitted and projected as debt and interest are: -r
@@ -2065,11 +2100,12 @@ def idle_options(
     since batch 43.1, do the projections to today (``SeriesKind.projected``),
     idle while none of them is drawn.
     """
-    return frozenset(idle_option_reasons(debt, gdp, interest, extra_curve=extra_curve, payments=payments, inflation=inflation))
+    return frozenset(idle_option_reasons(debt, gdp, interest, extra_curve=extra_curve, payments=payments, inflation=inflation, fx=fx))
 
 
 def idle_option_reasons(
-    debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False, payments: bool = False, inflation: bool = False
+    debt: bool, gdp: bool, interest: bool, *, extra_curve: bool = False, payments: bool = False, inflation: bool = False,
+    fx: bool = False,
 ) -> dict[str, str]:
     """Return ``idle_options``' names, each with why it is idle, a clause to follow "Greyed because" (batch 29.1)."""
     reasons: dict[str, str] = {}
@@ -2089,7 +2125,7 @@ def idle_option_reasons(
     if not (debt or gdp or interest or payments):
         amounts = ("per-capita", "constant", "top", "bottom")
         reasons |= dict.fromkeys(
-            amounts if extra_curve else (*amounts, "regression", "regression-tolerance"),
+            amounts if extra_curve or fx else (*amounts, "regression", "regression-tolerance"),
             "it acts on the right axis's curves, and none of debt, GDP, interest and the balance of payments is ticked",
         )
     return reasons
@@ -2125,6 +2161,15 @@ def adjusted_index_drawn(flags: Mapping[str, bool]) -> bool:
     """
     ticked = {option.fields[0] for option in options_in("country") if flags.get(option.name)}
     return any(nation.show_field in ticked for nation in NATIONS if nation.key in SEASONALLY_ADJUSTED_NATIONS)
+
+
+def fx_idle_reason(flags: Mapping[str, bool]) -> str | None:
+    """Why the exchange rates (--fx, batch 14.2) draw nothing under these flags: the nations ticked are all in one currency (one nation, or none, which draws the defaults); None otherwise."""
+    ticked = {option.fields[0] for option in options_in("country") if flags.get(option.name)}
+    shown = [nation for nation in NATIONS if nation.show_field in ticked] or [nation for nation in NATIONS if nation.shown_by_default]
+    if len({nation.currency for nation in shown}) < 2:
+        return "an exchange rate needs a second nation ticked, in another currency"
+    return None
 
 
 def unticked(name: str) -> str:
@@ -2400,7 +2445,7 @@ def command_line_tokens(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
     idle = idle_options(
         flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True),
         extra_curve=flags.get("cpi", False) or flags.get("population", False), payments=flags.get("payments", False),
-        inflation=flags.get("inflation", False),
+        inflation=flags.get("inflation", False), fx=flags.get("fx", False),
     )
     idle_keys = idle_margins(payloads, flags) | idle_aggregates(payloads, flags)
     payloads = {key: text for key, text in payloads.items() if key.split(":")[-1] not in idle and key not in idle_keys}

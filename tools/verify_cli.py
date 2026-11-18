@@ -351,6 +351,12 @@ CASES: list[list[str]] = [
     ["--cpi", "--pop", "--debt"], ["--cpi", "--pop", "--gdp"], ["--cpi", "--pop", "--int"], ["--cpi", "--pop", "--pay"],
     ["--cpi", "--pop", "--pay:trade"], ["--cpi", "--pop", "--debt", "--no-debt"], ["--cpi", "--pop", "--debt", "--no-pop"],
     ["--cpi", "--pop", "--no-yield", "--no-gdp", "--no-debt", "--no-interest"], ["--debt", "--gdp", "--interest", "--cpi", "--pop"],
+    # Batch 14.2: --fx, at least "fx" ("--f" names nothing alone); alone, beside the amounts or one other extra kind;
+    # a third kind refused, with one amount or two; --no-fx; -r and --reg with it; one nation (drawn, nothing to show).
+    ["--fx"], ["--f"], ["--no-fx"], ["--fx", "--no-fx"], ["--fx", "--yield"], ["--fx", "--debt", "--gdp", "--int"],
+    ["--fx", "--cpi"], ["--fx", "--pop"], ["--fx", "--cpi", "--pop"], ["--fx", "--cpi", "--debt"], ["--fx", "--pop", "--pay"],
+    ["--fx", "--cpi", "--pop", "--debt"], ["--fx", "--reg:8", "-l"], ["--fx", "-r"], ["--fx", "--debt", "-r"],
+    ["--na:ca", "--fx"], ["--na:ca,us,gb,de", "--fx", "--cpi"], ["--fx:x"],
 ]
 
 

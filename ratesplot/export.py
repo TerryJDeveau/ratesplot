@@ -103,6 +103,9 @@ MACRO_AXIS = "macro"
 INDEX_AXIS = "index"
 # The population's (batch 13.5), whichever axis it is drawn on: "persons".
 POPULATION_AXIS = "population"
+# An exchange rate's (batch 14.2): this, then its unit, "CAD per USD", or
+# "index, 2000-01-03 = 100" where several are drawn at 100 on their first date.
+FX_AXIS_PREFIX = "fx:"
 # Each currency as a column's unit names it (the axis's own symbol is "$"
 # for the U.S., which alone in a file says too little): the symbols a chart
 # in the master currency writes (config.MASTER_SYMBOLS, the same four).
@@ -258,13 +261,15 @@ def _macro_unit(figure: Figure, config: PlotConfig, nation_key: str) -> str:
 
 
 def _unit(axis: str, figure: Figure, config: PlotConfig, nation_key: str) -> str:
-    """The unit of a curve drawn on ``axis``: "%" on the yield axis, the index's base for the price index, "persons" for the population, else the amounts' (``_macro_unit``)."""
+    """The unit of a curve drawn on ``axis``: "%" on the yield axis, the index's base for the price index, "persons" for the population, an exchange rate's own (batch 14.2), else the amounts' (``_macro_unit``)."""
     if axis == YIELD_AXIS:
         return "%"
     if axis == INDEX_AXIS:
         return f"index, {PRICE_INDEX_BASES[nation_key]}"
     if axis == POPULATION_AXIS:
         return "persons"
+    if axis.startswith(FX_AXIS_PREFIX):
+        return axis.removeprefix(FX_AXIS_PREFIX)
     return _macro_unit(figure, config, nation_key)
 
 

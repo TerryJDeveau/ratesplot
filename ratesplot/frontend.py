@@ -82,6 +82,7 @@ from .options import (
     choices_from_config,
     config_from_choices,
     format_dollar_bound,
+    fx_idle_reason,
     group_title,
     field_default,
     idle_aggregate_reasons,
@@ -783,7 +784,7 @@ def idle_control_reasons(flags: Mapping[str, bool]) -> dict[str, str]:
     reasons = idle_option_reasons(
         flags.get("debt", True), flags.get("gdp", True), flags.get("interest", True),
         extra_curve=flags.get("cpi", False) or flags.get("population", False), payments=flags.get("payments", False),
-        inflation=flags.get("inflation", False),
+        inflation=flags.get("inflation", False), fx=flags.get("fx", False),
     )
     # The price index seasonally adjusted (batch 13.4): the ONS publishes
     # none, so with the UK the only nation ticked "Seas. adj." changes nothing
@@ -792,6 +793,10 @@ def idle_control_reasons(flags: Mapping[str, bool]) -> dict[str, str]:
         reasons["cpi-adjustment"] = "the ONS publishes no seasonally adjusted price index, and the UK is the only nation ticked"
     if flags.get("relative", False) and "relative" not in reasons:
         reasons["gdp"] = "under % of GDP, GDP is the divisor and is not drawn"
+    # The exchange rates (batch 14.2): greyed where the nations ticked share one currency.
+    fx = fx_idle_reason(flags)
+    if fx is not None:
+        reasons["fx"] = fx
     # The master currency's boxes (batch 30.2): fewer than two nations, % of
     # GDP in effect, no amount drawn (``options.master_idle_reason``).
     master = master_idle_reason("", flags)
@@ -831,11 +836,12 @@ def idle_choice_reasons(payloads: Mapping[str, str], flags: Mapping[str, bool]) 
 
 # Every option ``idle_controls`` and ``idle_choices`` can grey out: those idle
 # with no right-axis curve chosen, and GDP (under -r); the yield terms, Min
-# and Max (batch 28.1); the latest values' (``options.latest_idle``); and a
-# nation's aggregate debts, by its key (``idle_nation_keys``).
+# and Max (batch 28.1); the latest values' (``options.latest_idle``); the
+# exchange rates with one currency ticked (batch 14.2); and a nation's
+# aggregate debts, by its key (``idle_nation_keys``).
 GREYABLE_OPTIONS = (
     frozenset(idle_option_reasons(False, False, False))
-    | {"gdp", "aggregate", "yields", "min", "max", "current", "master", "cpi-adjustment", "base", "base-nation", "ttm"}
+    | {"gdp", "aggregate", "yields", "min", "max", "current", "master", "cpi-adjustment", "base", "base-nation", "ttm", "fx"}
     | AUTO_REFRESH_OPTIONS
 )
 

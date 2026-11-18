@@ -1,0 +1,22 @@
+# Exchange rates
+
+The exchange rates of the other nations ticked, each against the currency of the chart they are drawn on: on Canada's chart with the U.S. ticked, the Canadian dollars one U.S. dollar was worth, "CAD per USD", and on the U.S. chart "USD per CAD". Each currency is one line in a colour of its own, on a log axis of their own. Ticking Exchange rates adds them to the chart and hides nothing. Nations sharing a currency give it once; while the nations ticked are all in one currency (one nation alone, today) the box is greyed, there being no other currency to show.
+
+With one other currency the line is its rate as quoted, and the axis says so: "CAD per USD (Log Scale)". With two or more, the rates differ too widely to share an axis as quoted (a pound buys about two Canadian dollars, a euro about one and a half), so each starts at 100 on its first date in the chart, normally its Start, and the axis says which: "Exchange Rates (2000-01-03 = 100, Log Scale)". A line above 100 is a currency that has gained against the chart's own since then; on a log axis the same rise or fall has the same height whatever the rate.
+
+When GDP, debt, interest or the [balance of payments](?help=payments) is drawn, the exchange rates have an axis of their own outside the right axis; alone, they are on the right axis. The right side holds two kinds of unit at most, each on an axis of its own: the amounts, the [price index](?help=price-index), the [population](?help=population) and the exchange rates, however many currencies they draw. With no amount drawn, the exchange rates can be drawn beside the index or the population, outside it; beside an amount they are drawn without either. Ticking a box that would make three kinds unticks the outermost of the others (the exchange rates are the outermost, then the population); on the command line three kinds together are refused. The rates are drawn the same [per capita](?help=per-capita), [as % of GDP](?help=percent-of-gdp), [inflation adjusted](?help=constant-prices) and in a [master currency](?help=master-currency): always against the chart's own currency, never divided. Top and Bottom are the right axis's limits, not the rates'.
+
+Each rate is held until the next, in steps: a day's rate from 1971 (1999 for the euro), and before that a month's or a year's average across its period. They are a market's figures, so [Daily values](?help=daily) and [Projections to today](?help=projections) pass them by. The [regression segments](?help=regression) fit each currency on its own, by the axis's height, so each piece's %/yr is how fast it rose or fell against the chart's currency. A day's rate is jagged: at the default tolerance a long chart is cut into many short pieces, which a wider tolerance (`--reg:8`, say) joins into pieces of a year or more. An end label and the read-out give a rate as quoted to five figures, 1.3612, and one started at 100 to one decimal, 98.6.
+
+## Where the rates come from
+
+The same rates a limit in another currency is converted at ([Top and Bottom](?help=limits) gives each source in full), each through the U.S. dollar:
+
+- **From 1971:** the Federal Reserve Board's daily rates (H.10), on FRED: [Canadian dollars](https://fred.stlouisfed.org/series/DEXCAUS) and [pounds](https://fred.stlouisfed.org/series/DEXUSUK) from 1971-01-04, [euros](https://fred.stlouisfed.org/series/DEXUSEU) from 1999-01-04, and before the euro the [Deutsche mark](https://fred.stlouisfed.org/series/EXGEUS) (monthly averages) at its fixed 1.95583 marks to the euro. FRED adds the H.10 rates once a week, on Mondays, so the latest rate can be a week or more old.
+- **Before 1971:** the pound monthly from 1791 and the Canadian dollar from 1858 (at the gold par to 1912, each year's average 1913 to 1962, monthly from 1963), from the Bank of England's "A millennium of macroeconomic data" and Historical Statistics of Canada; the euro from 1948-06-21, the mark's official parities, then monthly from 1963.
+
+A rate between two currencies other than the U.S. dollar, CAD per GBP say, is the one's rate against the dollar over the other's on each date, the latest of each by then; before 1999 a rate with the euro thus moves with the dollar's daily rate and steps with the mark's monthly one. Where a currency has no rate yet (the euro before 1948-06-21), its line begins later, and the log says so.
+
+## On the command line
+
+`--fx`; `--no-fx` takes the rates off. As a series, `--fx` alone draws the exchange rates alone: [Command line](?help=command-line).

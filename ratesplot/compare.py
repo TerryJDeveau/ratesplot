@@ -147,7 +147,7 @@ CHARTS: tuple[Country | CompareChart, ...] = (*COUNTRIES, CHART)
 _EVERY_CURVE_OFF = dict(
     include_yield=False, policy_rates=False, inflation=False, mortgages=False, spreads=False,
     include_debt=False, include_gdp=False, include_interest=False, payments=False, price_index=False,
-    population=False,
+    population=False, fx=False,
 )
 # Every curve solid on this chart, where each is one measure and its colour says
 # whose: inflation's dots, GDP's and interest's dashes and the real yields'

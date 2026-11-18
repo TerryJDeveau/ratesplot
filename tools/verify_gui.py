@@ -118,6 +118,8 @@ CHART_CASES = (
     "cmp_pol_l",
     # Batch 14.1: the price index and the population together, alone, the index mirrored on the left.
     "cpi_pop_alone",
+    # Batch 14.2: the exchange rates of the other three nations, each at 100 on the Start, beside the amounts.
+    "fx_amounts",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -3056,6 +3058,54 @@ def check_batch141(check: Check) -> None:
         check("its chart the written line's", w.written_draws_the_same(("cdn",)))
 
 
+def check_batch142(check: Check) -> None:
+    """Batch 14.2: "Exchange rates": the other nations' currencies on an axis of their own, greyed with one nation ticked; the outermost kind unticked where a third is ticked."""
+    with window(f"--na:ca,us,gb --fx --no-gdp --no-debt --no-interest --no-yield -s:2015 {END}") as w:
+        app = w.app
+
+        def labels_on(axes) -> set[str]:
+            return {line.get_label() for line in axes.get_lines() if not line.get_label().startswith("_")}
+
+        def fx_axis():
+            return next((axis for axis in app.figures["cdn"][0].axes if "CAD per USD" in labels_on(axis)), None)
+
+        axis = fx_axis()
+        check("the exchange rates alone: CAD per USD and CAD per GBP on one axis, at 100 on the Start",
+              app.flag_vars["fx"].get() and axis is not None and {"CAD per USD", "CAD per GBP"} <= labels_on(axis)
+              and "= 100" in axis.get_ylabel(), None if axis is None else (labels_on(axis), axis.get_ylabel()))
+        check("its box enabled with three nations", not app.flag_boxes["fx"].instate(["disabled"]))
+        check("its chart the written line's", w.written_draws_the_same(("cdn",)))
+        w.tick("cpi", True)
+        w.settle()
+        index_axis = next((axis for axis in app.figures["cdn"][0].axes if "Consumer price index" in labels_on(axis)), None)
+        check("“Price index (CPI)” ticked: the rates kept, on an axis outside the index's", app.flag_vars["fx"].get()
+              and app.flag_vars["cpi"].get() and fx_axis() is not None and index_axis is not None and fx_axis() is not index_axis
+              and fx_axis().spines["right"].get_position()[0] == "outward", w.command_tokens())
+        w.tick("population", True)
+        w.settle()
+        check("“Population” ticked beside both: “Exchange rates”, the outermost, unticked", app.flag_vars["cpi"].get()
+              and app.flag_vars["population"].get() and not app.flag_vars["fx"].get() and "--fx" not in w.command_tokens(),
+              w.command_tokens())
+        w.tick("fx", True)
+        w.settle()
+        check("“Exchange rates” ticked again: “Population” unticked, the index kept", app.flag_vars["cpi"].get()
+              and app.flag_vars["fx"].get() and not app.flag_vars["population"].get(), w.command_tokens())
+        w.tick("debt", True)
+        w.settle()
+        check("“Aggregate public debt” ticked beside the index and the rates: the rates unticked", app.flag_vars["cpi"].get()
+              and not app.flag_vars["fx"].get() and app.flag_vars["debt"].get(), w.command_tokens())
+        w.tick("fx", True)
+        w.settle()
+        check("“Exchange rates” ticked beside debt and the index: the index unticked", app.flag_vars["fx"].get()
+              and not app.flag_vars["cpi"].get() and app.flag_vars["debt"].get(), w.command_tokens())
+        check("its chart the written line's", w.written_draws_the_same(("cdn",)))
+        w.tick("us", False)
+        w.tick("uk", False)
+        w.settle()
+        check("one nation ticked: “Exchange rates” greyed, its tick kept", app.flag_boxes["fx"].instate(["disabled"])
+              and app.flag_vars["fx"].get())
+
+
 def check_batch35(check: Check) -> None:
     """Batch 35.3, 35.4: the wait line beside the build line while a chart is drawn, its arc turning, under it when narrow; a queued drawing part of the wait; the figures learned and saved; Earlier, Later and Zoom out."""
     # Each chart held until the checks have looked: a drawing with its downloads kept is over in a second.
@@ -3425,6 +3475,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch263": check_batch263,
     "batch473": check_batch473,
     "batch141": check_batch141,
+    "batch142": check_batch142,
 }
 
 

@@ -41,6 +41,7 @@ from .axes import (
     apply_axes_formatting,
     colour_axis,
     format_currency,
+    format_fx,
     format_index,
     format_index_tick,
     format_inflation,
@@ -90,6 +91,14 @@ from .config import (
     POPULATION_LABEL,
     POPULATION_STYLE,
     POPULATION_TITLE,
+    FX_AXIS_LABEL,
+    FX_AXIS_LABEL_REBASED,
+    FX_COLOURS,
+    FX_LABEL,
+    FX_REBASED_EACH,
+    FX_STYLE,
+    FX_TITLE,
+    FX_TITLE_REBASED,
     PROJECTION_ALPHA,
     SEASONALLY_ADJUSTED_NATIONS,
     SERIES_KINDS,
@@ -113,9 +122,9 @@ from .config import (
 )
 from .console import this_thread_output_to
 from .endlabels import ValueFormatter
-from .export import INDEX_AXIS, MACRO_AXIS, POPULATION_AXIS, YIELD_AXIS, mark_amounts_currency, mark_price_base, mark_series
+from .export import FX_AXIS_PREFIX, INDEX_AXIS, MACRO_AXIS, POPULATION_AXIS, YIELD_AXIS, mark_amounts_currency, mark_price_base, mark_series
 from .frames import filter_to_date_range
-from .fx import Rate, rate
+from .fx import Rate, rate, units_per_unit
 from . import monitors
 from .hover import attach as attach_hover
 from .hover import detach as detach_hover
@@ -835,14 +844,17 @@ def draw_country(
     _shade_payments_gap(ax_macro, macro_in_range, macro_columns_drawn, projected,
                         filled=config.daily and SERIES_KINDS["payments_credits"].filled_in)
 
-    # The extra axes' curves (``ExtraCurve``; two at most, nearest the chart
-    # first, batch 14.1): the first takes the right axis when no curve of it is
-    # chosen, and every other an axis of its own outside it; each drawn the same
-    # either way, and under every measure (never divided).
+    # The extra axes' curves (``ExtraCurve``; two kinds at most, nearest the
+    # chart first, batch 14.1): the first takes the right axis when no curve of
+    # it is chosen, and every other an axis of its own outside it, but for a
+    # curve of a group already drawn, which shares its axis (--fx's currencies,
+    # 14.2); each drawn the same either way, and under every measure (never divided).
     drawn_extras: list[_DrawnExtra] = []
+    group_axes: dict[str, ExtraAxis] = {}
     for extra in macro.attrs.get(EXTRA_CURVES_ATTR, ()):
+        shared = group_axes.get(extra.axis_group) if extra.axis_group is not None else None
         right_free = not config.has_macro_series and all(drawn.axis.axes is not ax_macro for drawn in drawn_extras)
-        ax_extra = ax_macro if right_free else ax_yield.twinx()
+        ax_extra = shared.axes if shared is not None else ax_macro if right_free else ax_yield.twinx()
         # Daily values (batch 42.2) and a projection to today (43.1): ``extra_points``.
         extra_frame = pd.DataFrame({DATE_COLUMN: extra.values.index, extra.label: extra.values.to_numpy()})  # its figures, --reg's
         extra_in_range, extra_from = extra_points(extra, config)
@@ -862,11 +874,15 @@ def draw_country(
             amount=format_population,
         )
         if extra_line is not None:
-            drawn_extras.append(_DrawnExtra(extra, extra_line, ExtraAxis(ax_extra, extra.axis_label, extra.tick_format), extra_from, extra_frame))
-        elif ax_extra is not ax_macro:
+            axis = shared if shared is not None else ExtraAxis(ax_extra, extra.axis_label, extra.tick_format)
+            if extra.axis_group is not None:
+                group_axes[extra.axis_group] = axis
+            drawn_extras.append(_DrawnExtra(extra, extra_line, axis, extra_from, extra_frame))
+        elif ax_extra is not ax_macro and shared is None:
             ax_extra.remove()  # nothing of the curve in the window
-    extra_axes = [drawn.axis for drawn in drawn_extras]
-    outer_axes = [drawn.axis.axes for drawn in drawn_extras if drawn.axis.axes is not ax_macro]
+    # Each axis once, nearest the chart first.
+    extra_axes = list({id(drawn.axis.axes): drawn.axis for drawn in drawn_extras}.values())
+    outer_axes = [axis.axes for axis in extra_axes if axis.axes is not ax_macro]
     extra_lines = [drawn.line for drawn in drawn_extras]
 
     # A break in the inflation curve says why, in the message log (batch 40.3).
@@ -888,7 +904,7 @@ def draw_country(
         _place_outside(outer_axes, ax_macro, config)
     _colour_lone_axes(
         [(ax_macro, macro_lines + [drawn.line for drawn in drawn_extras if drawn.axis.axes is ax_macro])]
-        + [(drawn.axis.axes, [drawn.line]) for drawn in drawn_extras if drawn.axis.axes is not ax_macro],
+        + [(axes, [drawn.line for drawn in drawn_extras if drawn.axis.axes is axes]) for axes in outer_axes],
         len(yield_lines) + len(rate_lines) + len(macro_lines) + len(extra_lines),
         None if config.has_left_axis_series else ax_yield,
     )
@@ -944,7 +960,7 @@ def draw_country(
         macro_keys_drawn=macro_keys_drawn,
         config=config,
         rate_titles=[curve.title for _line, curve in sorted(rate_lines, key=lambda item: not item[1].spread)],
-        extra_titles=[drawn.curve.title for drawn in drawn_extras],
+        extra_titles=list(dict.fromkeys(drawn.curve.title for drawn in drawn_extras)),
     )
     title = metadata.title_for(**title_parts)
     short_title = metadata.title_for(**title_parts, short=True)
@@ -1156,7 +1172,7 @@ EXTRA_AXIS_GAP_PT = 6.0
 
 @dataclass(frozen=True, eq=False)
 class ExtraCurve:
-    """A curve on an extra axis (the consumer price index, batch 13.4; the population, 13.5; each on an axis of its own, 14.1), and how it is written.
+    """A curve on an extra axis (the consumer price index, batch 13.4; the population, 13.5; each on an axis of its own, 14.1; the exchange rates, 14.2, on one), and how it is written.
 
     Compared by identity (``eq=False``): pandas compares a frame's attrs when
     it joins frames, and a Series has no truth value.
@@ -1175,6 +1191,9 @@ class ExtraCurve:
     # Carried on to today (batch 43.1, ``latest.project_series``): the date its
     # figures end, its values after it a projection (``extra_points``).
     projected_from: pd.Timestamp | None = None
+    # The curves of one group share one axis (--fx's currencies, batch 14.2),
+    # its label and ticks the first's; None: an axis of its own.
+    axis_group: str | None = None
 
 
 class _DrawnExtra(NamedTuple):
@@ -1279,15 +1298,82 @@ def _price_index(key: str, config: PlotConfig) -> ExtraCurve | None:
 def _extra_curves(
     key: str, config: PlotConfig, population: pd.Series | None, population_from: pd.Timestamp | None = None
 ) -> tuple[ExtraCurve, ...]:
-    """Nation ``key``'s curves on the extra axes, nearest the chart first: the price index (--cpi), then the population (--population, batch 13.5), which -p reads too; empty without either.
+    """Nation ``key``'s curves on the extra axes, nearest the chart first: the price index (--cpi), then the population (--population, batch 13.5), which -p reads too, then the exchange rates (--fx, 14.2); empty without any.
 
-    Both together only where no amount is drawn (batch 14.1,
-    ``options.check_right_axis_kinds``): the index on the right axis, the
-    population outside it.
+    Two kinds of unit on the right at most (batch 14.1,
+    ``options.check_right_axis_kinds``): where no amount is drawn, the first
+    on the right axis, the second outside it.
     """
     index = _price_index(key, config)
     count = _population_curve(config, population, population_from)
-    return tuple(curve for curve in (index, count) if curve is not None)
+    return tuple(curve for curve in (index, count) if curve is not None) + _fx_curves(key, config)
+
+
+def _fx_curves(key: str, config: PlotConfig) -> tuple[ExtraCurve, ...]:
+    """Nation ``key``'s exchange rates for --fx (batch 14.2): units of its currency per unit of each other ticked nation's (``PlotConfig.fx_currencies``, ``fx.units_per_unit``); none without --fx.
+
+    Terry, 2026-10-06: "the exchange rates of all the tabbed nations against
+    the current tab's currency, on a dimensionless log scale on the right".
+    One currency: its rate as quoted, "CAD per USD". Two or more: each at 100
+    on its first date in the window (the plan's 14.2), so the axis compares
+    their rises and falls and --reg gives each one's in %/yr. All on one
+    axis (``ExtraCurve.axis_group``). The coverage warning names one where
+    the chart begins before it (the euro's from 1948-06-21).
+    """
+    if not config.fx:
+        return ()
+    nation = nation_by_key(key)
+    own = nation.currency
+    others = config.fx_currencies(key)
+    if not others:
+        print(f"  Note: --fx draws nothing on {nation.name}'s chart: no other nation ticked is in another currency.")
+        return ()
+    rates: dict[str, pd.Series] = {}
+    for other in others:
+        values = units_per_unit(own, other)
+        label = FX_LABEL.format(own=own, other=other)
+        if values.empty:
+            print(f"  Warning: no exchange rate of {label}; it is not drawn.")
+            continue
+        warn_series_coverage(config.start, {f"{label} (--fx)": values.index[0]})
+        rates[other] = values
+    rebased = len(rates) > 1
+    firsts = {other: _first_in_window(values, config) for other, values in rates.items()}
+    shared_first = set(firsts.values())
+    base_words = (
+        f"{next(iter(shared_first)):%Y-%m-%d}" if len(shared_first) == 1 and None not in shared_first else FX_REBASED_EACH
+    )
+    curves = []
+    for other, values in rates.items():
+        label = FX_LABEL.format(own=own, other=other)
+        unit = label
+        if rebased:
+            first = firsts[other] if firsts[other] is not None else values.index[0]
+            values = values / float(values.loc[first]) * 100.0
+            unit = f"index, {first:%Y-%m-%d} = 100"
+        curves.append(
+            ExtraCurve(
+                values,
+                label=label,
+                title=FX_TITLE_REBASED if rebased else FX_TITLE,
+                axis_label=FX_AXIS_LABEL_REBASED.format(base=base_words) if rebased else FX_AXIS_LABEL.format(own=own, other=other),
+                style=FX_STYLE | {"color": FX_COLOURS[other]},
+                value_format=format_index if rebased else format_fx,
+                tick_format=format_index_tick,
+                export_axis=FX_AXIS_PREFIX + unit,
+                kind="fx",
+                axis_group="fx",
+            )
+        )
+    return tuple(curves)
+
+
+def _first_in_window(values: pd.Series, config: PlotConfig) -> pd.Timestamp | None:
+    """The date of ``values``' first value on or after the chart's Start (its first value with no Start yet), or None if it has none by the End."""
+    inside = values.loc[values.index >= config.start] if config.start is not None else values
+    if config.end is not None:
+        inside = inside.loc[inside.index <= config.end]
+    return None if inside.empty else inside.index[0]
 
 
 def _population_curve(config: PlotConfig, population: pd.Series | None, population_from: pd.Timestamp | None) -> ExtraCurve | None:
