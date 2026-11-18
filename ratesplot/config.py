@@ -197,6 +197,8 @@ STATCAN_WDS_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorsAn
 # any period, is accepted (measured 2026-10-22).
 STATCAN_WDS_RANGE_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorByReferencePeriodRange"
 STATCAN_WDS_RANGE_END = "9999-12-31"
+# The host of the three: checked once a day, its series given stand-ins on a day it fails (batch 49, ``http.DAILY_CHECKED_HOSTS``).
+STATCAN_HOST = "www150.statcan.gc.ca"
 
 # Each source's name in the message log, by the host its requests go to: a
 # source that fails gets one warning per drawing, which names it once (batch

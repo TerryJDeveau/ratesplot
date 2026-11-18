@@ -36,6 +36,7 @@ from .config import (
     LATEST_SESSION,
     RETRY_WAIT_SECONDS,
     SOURCE_NAMES,
+    STATCAN_HOST,
     UK_SESSION,
 )
 from .console import current_writer, this_thread_output_to
@@ -444,6 +445,9 @@ class _Fallback:
     copies: dict[str, float] = field(default_factory=dict)
     # A series drawn from its bake alone (its label) -> the bake's last date.
     baked: dict[str, pd.Timestamp] = field(default_factory=dict)
+    # A series a stand-in was asked for while its source is down for the day (its label) -> what the stand-in gave
+    # ("the Bank of Canada's V41690973, 2026-11-01 added"; batch 49, ``stand_in_asked``).
+    stand_ins: dict[str, str] = field(default_factory=dict)
 
     def warning(self, name: str, why: str) -> str:
         """``  Warning: FRED: WHY. 13 series drawn from their baked history: DGS2, DGS10 to 2026-10-21; GDP to 2026-04-01. ...``
@@ -469,6 +473,9 @@ class _Fallback:
         for when, labels in downloaded.items():
             parts.append(f"Drawn from {'its last good copy' if len(labels) == 1 else 'their last good copies'}, "
                          f"downloaded {when}: {'; '.join(labels)}.")
+        if self.stand_ins:
+            given = "; ".join(f"{_within(name, label)}, {said}" for label, said in self.stand_ins.items())
+            parts.append(f"Stand-ins asked for newer periods: {given}.")
         return " ".join(parts) + "\n"
 
 
@@ -701,6 +708,120 @@ def forget_downloads_older_than(seconds: float) -> int:
         return len(old)
 
 
+# ---------------------------------------------------------------------------
+# A host checked once a day (batch 49)
+# ---------------------------------------------------------------------------
+# Terry, 2026-11-18, with Statistics Canada's data host sending every program
+# Cloudflare's bot check: "we should build alternate access into the program as
+# a fallback, in case the prime site is down for any reason ... The check would
+# be only done once per calendar day, when Canadian data is called for. If the
+# main site is not reachable, the fallback site is used for the rest of that
+# calendar day, until another check if Canadian data is requested on the next
+# calendar day." So the day's first request to such a host is its check. One
+# that fails as unavailable (``_unavailable``: a bot check, a timeout, a
+# connection never made, an outage page) marks the host down until the day
+# ends, and nothing more is asked of it that day, in this drawing or any other:
+# each request is answered at once from its last good copy (or fails, where it
+# has none), and a series with a stand-in takes the stand-in's newer periods
+# (``cdn_data.with_stand_ins``). A host that answers is asked as before, and a
+# failure of one request (a 404, a 5xx after its retry) is not the host's and
+# marks nothing. The day is Ottawa's, Statistics Canada's own, whatever the
+# machine's zone: one day everywhere, the cloud's server included. The mark is
+# kept beside the last good copies (``DOWN_TODAY_FILE``), so the command line
+# run again the same day does not ask again; without them, for the process's
+# life. Made and read only by the program's own ``_cached``: the harnesses,
+# which replace it, neither mark a host nor meet a mark, so their charts stay
+# those of the answers they hold.
+DAILY_CHECKED_HOSTS = (STATCAN_HOST,)
+DOWN_TODAY_FILE = "down_today.json"
+CHECKING_TIMEZONE = "America/Toronto"
+_down_today: dict[str, tuple[str, str, float]] = {}  # host -> (its day, why it failed, when: time.time())
+_down_today_lock = threading.Lock()
+
+
+class HostDownToday(RuntimeError):
+    """A request not made: its host failed the day's check (above). Raised in its place, as a host found unavailable in a drawing is."""
+
+    def __init__(self, host: str, why: str, wall: float) -> None:
+        super().__init__(f"not asked again today: it failed at {_utc_text(wall)}: {why}")
+        self.host = host
+
+
+def checking_day(wall: float | None = None) -> str:
+    """The calendar day in Ottawa (``CHECKING_TIMEZONE``) at ``wall`` (time.time(), now by default), as ``YYYY-MM-DD``."""
+    when = pd.Timestamp(time.time() if wall is None else wall, unit="s", tz="UTC").tz_convert(CHECKING_TIMEZONE)
+    return f"{when:%Y-%m-%d}"
+
+
+def host_down_today(host: str) -> HostDownToday | None:
+    """Why ``host`` is not asked for the rest of today, as the failure raised in a request's place; None if it is asked.
+
+    What this process knows: a mark another run left in the day's file is
+    read by the first request to the host (``_checked_down``), so a process
+    that has asked nothing of it says None.
+    """
+    with _down_today_lock:
+        mark = _down_today.get(host)
+    if mark is None or mark[0] != checking_day():
+        return None
+    return HostDownToday(host, mark[1], mark[2])
+
+
+def _checked_down(host: str) -> HostDownToday | None:
+    """``host_down_today``, with today's mark first read from the copies' folder when this process has none (another run's)."""
+    if host_down_today(host) is None and _copies_folder is not None:
+        try:
+            mark = json.loads((_copies_folder / DOWN_TODAY_FILE).read_text(encoding="utf-8"))[host]
+            day, why, wall = str(mark["day"]), str(mark["why"]), float(mark["at"])
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # no file, or no mark for the host: not found down
+        else:
+            if day == checking_day():
+                with _down_today_lock:
+                    _down_today[host] = (day, why, wall)
+    return host_down_today(host)
+
+
+def _mark_down_today(host: str, failure: BaseException) -> None:
+    """Mark ``host`` down until the day ends, in this process and in the copies' folder (above)."""
+    wall = time.time()
+    mark = (checking_day(wall), _why(failure), wall)
+    with _down_today_lock:
+        _down_today[host] = mark
+        if _copies_folder is None:
+            return
+        path = _copies_folder / DOWN_TODAY_FILE
+        try:
+            try:
+                marks = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                marks = {}
+            marks[host] = {"day": mark[0], "why": mark[1], "at": wall}
+            written = path.with_suffix(".tmp")
+            written.write_text(json.dumps(marks, indent=1), encoding="utf-8")
+            written.replace(path)
+        except OSError as exc:  # said, not swallowed: the mark still holds in this process
+            print(f"  Note: {source_name(host)}'s mark for today could not be kept in {path} ({exc}).")
+
+
+def stand_in_asked(host: str, label: str, said: str) -> None:
+    """Record what a stand-in gave series ``label`` while ``host`` is down for the day (batch 49): in the host's warning at the drawing's end, else at once.
+
+    ``label`` begins with the source's name ("Statistics Canada consumer
+    price index"); ``said`` is what the stand-in gave ("the Bank of Canada's
+    V41690973, 2026-11-01 added"). Under the cause the drawing met first,
+    so the warning that names the last good copies names the stand-ins too.
+    """
+    drawing = getattr(_log_state, "drawing", None)
+    if drawing is None:
+        print(f"  Note: {label}: {said}.")
+        return
+    failure = drawing.unavailable.get(host) or host_down_today(host)
+    why = _why(failure) if failure is not None else "not answering"
+    with drawing.lock:
+        drawing.fallback(source_name(host), why).stand_ins[label] = said
+
+
 def _cached(key: tuple, download: Callable[[], T]) -> T:
     """Return the cached result for ``key``, downloading it first if needed (or if caching is off).
 
@@ -739,9 +860,12 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
             if _download_cache_max_age is None or time.monotonic() - fetched_at <= _download_cache_max_age:
                 _note_reused(key, fetched_at, fetched_wall)
                 return result  # type: ignore[return-value]
+    host = host_of(key)
     earlier = drawing.failed.get(key) if drawing is not None else None
     if earlier is None and drawing is not None:
-        earlier = drawing.unavailable.get(host_of(key))
+        earlier = drawing.unavailable.get(host)
+    if earlier is None and host in DAILY_CHECKED_HOSTS:
+        earlier = _checked_down(host)  # failed today's check (batch 49): not asked again before the day ends
     try:
         if earlier is not None:
             # With this call's traceback only: the object is the one raised before, whose
@@ -756,6 +880,8 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     except Exception as failure:
         if drawing is not None:
             drawing.failed[key] = failure
+        if earlier is None and host in DAILY_CHECKED_HOSTS and _unavailable(failure):
+            _mark_down_today(host, failure)  # the day's check failed (batch 49)
         kept = _last_good_copy(key) if _copies_folder is not None else None
         if kept is None:
             raise
@@ -785,13 +911,22 @@ class BotCheck(RuntimeError):
     side (the VPN's split tunnelling), never in the request's headers.
     """
 
-    def __init__(self, host: str) -> None:
-        super().__init__(f"{host} sent a bot check instead of data; a VPN can cause this")
+    def __init__(self, host: str, cause: str = "a VPN can cause this") -> None:
+        super().__init__(f"{host} sent a bot check instead of data; {cause}")
         self.host = host
 
 
 # Where a bot check sends a request (the Bundesbank's, measured 2026-10-08).
 _BOT_CHECK_PATHS = ("/.enodia/challenge",)
+# Cloudflare's: a 403 whose header ``Cf-Mitigated`` says "challenge" (Statistics Canada's data host to every program
+# from the night of 2026-11-17, measured from Buddug's own address and the VPN's alike; Terry met it in his Chrome too).
+CLOUDFLARE_CHALLENGE = "its site's Cloudflare check, which every program meets"
+
+
+def _raise_if_cloudflare_check(response: requests.Response, url: str) -> None:
+    """Raise ``BotCheck`` for Cloudflare's challenge in place of an answer, before its 403 reads as the request's own failure."""
+    if response.status_code == 403 and response.headers.get("Cf-Mitigated", "").lower() == "challenge":
+        raise BotCheck(urlsplit(url).netloc, CLOUDFLARE_CHALLENGE)
 
 
 class SourcePage(RuntimeError):
@@ -945,7 +1080,7 @@ def _unavailable(failure: BaseException) -> bool:
     other error status, a 5xx after its retry, a connection dropped twice,
     an answer that cannot be read) is not the host's.
     """
-    if isinstance(failure, (BotCheck, SourcePage, requests.Timeout)):
+    if isinstance(failure, (BotCheck, SourcePage, HostDownToday, requests.Timeout)):
         return True
     if _dropped_part_way(failure) or _server_error(failure):
         return False
@@ -1039,6 +1174,7 @@ def _session_get(
             # Before the status: the check's own page may be a 400, which would be read as the request's own failure.
             if any(path in response.url for path in _BOT_CHECK_PATHS):
                 raise BotCheck(urlsplit(url).netloc)
+            _raise_if_cloudflare_check(response, url)
             if missing_ok and response.status_code == 404:
                 return None
             response.raise_for_status()
@@ -1088,6 +1224,7 @@ def canadian_post(url: str, payload: object, *, timeout: int) -> requests.Respon
         log_download(url)
         with host_turn(url):
             response = CANADIAN_SESSION.post(url, json=payload, timeout=timeout)
+            _raise_if_cloudflare_check(response, url)
             response.raise_for_status()
             # Its outage page arrives with status 200 too (2026-10-21; SourcePage).
             raise_if_web_page(url, response.content)

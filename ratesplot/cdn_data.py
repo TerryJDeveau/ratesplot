@@ -31,6 +31,7 @@ from __future__ import annotations
 import io
 import zipfile
 from dataclasses import dataclass
+from functools import partial
 from typing import Callable, Iterable
 
 import numpy as np
@@ -84,6 +85,7 @@ from .config import (
     STATCAN_CDN_INTEREST_TABLE,
     STATCAN_CDN_POPULATION_TABLE,
     STATCAN_CDN_POPULATION_VECTOR,
+    STATCAN_HOST,
     STATCAN_TABLE_URL,
     STATCAN_TIMEOUT_SECONDS,
     STATCAN_WDS_RANGE_END,
@@ -94,7 +96,15 @@ from .config import (
     PlotConfig,
     component_column,
 )
-from .http import canadian_get, canadian_post, downloads_of, parse_boc_csv
+from .http import (
+    canadian_get,
+    canadian_post,
+    downloads_of,
+    fetch_fred_csv,
+    host_down_today,
+    parse_boc_csv,
+    stand_in_asked,
+)
 from .joins import align_macro, chain, dated_by_quarter_end, embedded_frame
 from .us_data import fred_series
 
@@ -530,14 +540,108 @@ def statcan_table(table_id: str) -> pd.DataFrame:
     its last date, with a warning naming the table. Measured 2026-10-22: the
     bake joined to its recent part is the whole table's values, float for
     float, for all 26 vectors.
+
+    On a day Statistics Canada's host failed its check (batch 49,
+    ``http.DAILY_CHECKED_HOSTS``), it is not asked: the recent part is its
+    last good copy, or the bake alone where there is none, and a vector with
+    a stand-in takes the stand-in's newer periods (``with_stand_ins``).
     """
-    return frame_with_recent_part(
+    frame = frame_with_recent_part(
         STATCAN_BAKED_SOURCE,
         list(STATCAN_SERIES_READ[table_id].vectors),
         f"Statistics Canada table {table_id}",
         lambda start: statcan_download(table_id, start),
         RECENT_PART_REVISED,
     )
+    return with_stand_ins(frame, table_id)
+
+
+# ---------------------------------------------------------------------------
+# Stand-ins on a day Statistics Canada does not answer (batch 49)
+# ---------------------------------------------------------------------------
+# Terry, 2026-11-18, after Statistics Canada put Cloudflare's bot check in
+# front of its data host for every program (from the night of 2026-11-17):
+# "we should build alternate access into the program as a fallback, in case
+# the prime site is down for any reason. It's down now, so the fallback will
+# get used. If Stat's Can ever comes back, we can revert to it." The day's
+# check is the request layer's (``http.DAILY_CHECKED_HOSTS``). On a day the
+# host fails it, a vector with a stand-in takes the stand-in's periods after
+# its own last (the bake's, or its recent part's last good copy's), and only
+# those: its history stays Statistics Canada's, and a stand-in with nothing
+# newer changes nothing. On a day it answers, no stand-in is asked. Each was
+# measured against the bake before it was taken (2026-11-18): the Bank of
+# Canada's Valet carries the consumer price index, unadjusted and seasonally
+# adjusted, under Statistics Canada's own vector numbers, equal to the bake in
+# all 382 months from 1995-01 to 2026-10; FRED's NGDPSAXDCCAQ, the IMF's copy
+# of GDP at market prices, seasonally adjusted, at a quarter's rate, is the
+# bake's annual rate divided by four in all 262 quarters from 1961-Q1 to
+# 2026-Q2. Each is dated as the vector is (a month's or a quarter's first
+# day) and in its unit (index points; millions of dollars at annual rates).
+
+
+@dataclass(frozen=True)
+class StandIn:
+    """What stands in for one Statistics Canada vector (above)."""
+
+    series: str  # what the vector is, in the drawing's warning: "consumer price index"
+    name: str  # where the stand-in is: "the Bank of Canada's V41690973"
+    fetch: Callable[[pd.Timestamp], pd.Series]  # its values from a date on, dated and in the unit as the vector is
+
+
+def _valet_stand_in(series_code: str, since: pd.Timestamp) -> pd.Series:
+    """A Valet series from ``since`` on (``valet_download``): one request, cached and kept as the others are."""
+    return valet_download(series_code, f"{since:%Y-%m-%d}")
+
+
+def _fred_stand_in(series_id: str, factor: float, since: pd.Timestamp) -> pd.Series:
+    """A FRED series from ``since``'s period on, times ``factor`` (``http.fetch_fred_csv``)."""
+    return fetch_fred_csv(series_id, since=since).set_index(DATE_COLUMN)[series_id] * factor
+
+
+STATCAN_STAND_INS: dict[str, StandIn] = {
+    STATCAN_CDN_CPI_VECTOR: StandIn(
+        "consumer price index", "the Bank of Canada's V41690973", partial(_valet_stand_in, "V41690973")
+    ),
+    STATCAN_CDN_CPI_SA_VECTOR: StandIn(
+        "consumer price index, seas. adj.", "the Bank of Canada's V41690914", partial(_valet_stand_in, "V41690914")
+    ),
+    STATCAN_CDN_GDP_VECTOR: StandIn(
+        "GDP", "FRED's NGDPSAXDCCAQ (the IMF's) times 4", partial(_fred_stand_in, "NGDPSAXDCCAQ", 4.0)
+    ),
+}
+
+
+def with_stand_ins(frame: pd.DataFrame, table_id: str) -> pd.DataFrame:
+    """``frame``, table ``table_id``'s vectors as ``statcan_table`` reads them, with each stand-in's newer periods on a day Statistics Canada failed its check; as it is on any other.
+
+    What each stand-in gave, or that it failed, is said in Statistics
+    Canada's warning at the drawing's end (``http.stand_in_asked``). A
+    stand-in that fails leaves its vector as it was.
+    """
+    if host_down_today(STATCAN_HOST) is None:
+        return frame
+    for vector in STATCAN_SERIES_READ[table_id].vectors:
+        stand_in = STATCAN_STAND_INS.get(vector)
+        own = frame[vector].dropna() if vector in frame.columns else None
+        if stand_in is None or own is None or own.empty:
+            continue
+        last = own.index[-1]
+        label = f"Statistics Canada {stand_in.series}"
+        try:
+            with downloads_of(f"Stand-in for {label}: {stand_in.name}"):
+                values = stand_in.fetch(last)
+        except Exception as exc:
+            stand_in_asked(STATCAN_HOST, label, f"{stand_in.name} failed ({exc}), so to {last:%Y-%m-%d}")
+            continue
+        newer = values.loc[values.index > last].dropna()
+        if newer.empty:
+            stand_in_asked(STATCAN_HOST, label, f"{stand_in.name}, nothing after {last:%Y-%m-%d}")
+            continue
+        frame = frame.reindex(frame.index.union(newer.index).rename(frame.index.name))
+        frame.loc[newer.index, vector] = newer.to_numpy()
+        added = f"{newer.index[0]:%Y-%m-%d}" + ("" if len(newer) == 1 else f" to {newer.index[-1]:%Y-%m-%d}")
+        stand_in_asked(STATCAN_HOST, label, f"{stand_in.name}, {added} added")
+    return frame
 
 
 def statcan_wds_vectors(vector_ids: Iterable[str | int], *, latest_n: int = 250) -> pd.DataFrame:
