@@ -1028,6 +1028,32 @@ def check_batch473(check: Check) -> None:
     check("on Canada's tab, no “TTM % change”; its choice kept", "flag:ttm" not in keys and "--ttm" in address(at).split(), address(at))
 
 
+def check_batch46(check: Check) -> None:
+    """Batch 46 (decision 150): the tips' shade and the strips bridging the gap to their ⓘ (46.1, 46.2); a tip's links kept live (46.2).
+
+    AppTest runs no script and draws no tip: what the browser does with these
+    was measured in headless Chrome (each ⓘ hovered, More reached and clicked).
+    """
+    at = new_page("-c --e:2026-09-01")
+    rules = [element.proto.body for element in at.get("html") if "stTooltipContent" in element.proto.body]
+    shade = f"rgb(from currentColor r g b / {web.TIP_SHADE_PERCENT}%)"
+    check("46.1: a tip takes its text colour over its background at 8 %, with a hairline", len(rules) == 1
+          and f"background-image: linear-gradient({shade}, {shade});" in rules[0]
+          and "border: 1px solid rgb(from currentColor r g b / 0.2);" in rules[0], [rule[:400] for rule in rules])
+    wrapper = 'div[role="tooltip"]:has(> div[data-testid="stTooltipContent"])'
+    check("46.2: the strips along the tip's wrapper's edges, 11 px, taking the pointer", len(rules) == 1
+          and f"{wrapper}::before {{ bottom: 100%; }}" in rules[0] and f"{wrapper}::after {{ top: 100%; }}" in rules[0]
+          and f"height: {web.TIP_BRIDGE_PX}px; pointer-events: auto;" in rules[0] and web.TIP_BRIDGE_PX == 11, [rule[:900] for rule in rules])
+    script = web._SIDEBAR_JS
+    body = script[script.index("export default function"):]
+    check("46.2: the sidebar keeper's script keeps a tip's links live first, listening on window in the capture phase",
+          script.startswith(web._TIP_LINKS_JS) and body.split("\n")[1].strip().startswith("keepTipLinksLive();")
+          and 'window.addEventListener("click"' in web._TIP_LINKS_JS and "}, true);" in web._TIP_LINKS_JS
+          and """closest('[data-testid="stTooltipContent"] a[href]')""" in web._TIP_LINKS_JS
+          and "event.stopPropagation();" in web._TIP_LINKS_JS and "preventDefault" not in web._TIP_LINKS_JS, body.split("\n")[:2])
+    check("… the keeper laid out", sidebar_keeper(at) is not None, sidebar_keeper(at))
+
+
 def check_batch15(check: Check) -> None:
     """Batch 15 (Terry, 2026-10-13 and 2026-10-14): the two ticks' wording; Save log file."""
     at = new_page("--e:2026-09-01")
@@ -2591,7 +2617,7 @@ PAGE_CHECKS = (
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
     check_batch135, check_batch133, check_batch35, check_wait_colour, check_batch37, check_batch38, check_batch262,
-    check_batch263, check_batch473,
+    check_batch263, check_batch473, check_batch46,
 )
 
 
