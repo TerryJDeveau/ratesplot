@@ -104,6 +104,10 @@ VALUES = (
     # index alone on the right axis), under -p, and the "no" form; beside the index refused, and off again.
     "--population", "--pop --yield --reg", "--pop --no-gdp --no-debt --no-interest -p", "--pop --reg:2 --no-gdp --no-debt --no-interest",
     "--cpi --reg:2 --no-gdp --no-debt --no-interest", "--no-pop", "--cpi --pop", "--cpi:sa --no-cpi --pop",
+    # The exchange rates (batch 14.2): alone, with --reg (not idle with them alone), beside the index or the
+    # population, beside the amounts, with one nation (greyed, its tick written), and the "no" form.
+    "--fx", "--fx --yield --reg", "--fx --cpi", "--fx --pop --reg:2", "--gdp --debt --interest --yield --fx",
+    "--nations:ca --fx", "--fx --no-fx", "--no-fx",
     # The real yields (batch 13.3): among the terms, alone, one nation's own, one a nation lacks, a spread of
     # nominal less real (no box offers it, so a box of its own), and taken out.
     "--y:r10", "--y:10,r10", "--y:r5,r7,r10,r20,r30", "--us:y:r5,r30", "--cdn:y:r30 --y:10", "--uk:y:r20 --y:r10", "--ger:y:r7",

@@ -17,7 +17,7 @@ With one of the two set, the other end is not fitted to the curves but set at a 
 
 Top and Bottom can be given in another nation's currency by its code first: `USD20t`, `CAD5t`, `GBP2t`, `EUR3t`; `US$`, `C$`, `£` and `€` are accepted too, and written back as the code. A `$` alone is refused, since it doesn't say whose dollars (and on a command line `$20t` is read as a variable). The chart converts the amount at the exchange rate of its End date, the latest on or before it, and the log gives the rate: a chart with a fixed End draws the same each time, one ending today follows the rate.
 
-Every rate goes through the U.S. dollar:
+Every rate goes through the U.S. dollar; [Exchange rates](?help=exchange-rates) draws them:
 
 - **From 1971:** the Federal Reserve Board's daily rates (H.10), on FRED: [Canadian dollars](https://fred.stlouisfed.org/series/DEXCAUS) and [pounds](https://fred.stlouisfed.org/series/DEXUSUK) from 1971-01-04, [euros](https://fred.stlouisfed.org/series/DEXUSEU) from 1999-01-04; before the euro, the [Deutsche mark](https://fred.stlouisfed.org/series/EXGEUS) (monthly averages) at its fixed 1.95583 marks to the euro. FRED adds the H.10 rates once a week, on Mondays, so the latest rate can be a week or more old.
 - **The pound before 1971:** U.S. dollars per pound, monthly from 1791, from the Bank of England's dataset "A millennium of macroeconomic data" ([research datasets](https://www.bankofengland.co.uk/statistics/research-datasets)).

@@ -231,12 +231,41 @@ def check_master() -> None:
     check("left out while greyed, its text kept", command_line_tokens(usd, {**two, "us": False}) == ["--C"] and usd[MASTER] == "USD")
 
 
+def check_fx() -> None:
+    """The exchange rates' box (batch 14.2): greyed exactly while the nations ticked share one currency, with its reason; its tick kept and written."""
+    print("-- the exchange rates' box")
+    base_payloads, base_flags = choices_from_config(PlotConfig())
+    boxes = nation_boxes()
+    currencies = {name: next(nation.currency for nation in NATIONS if nation.key == key) for name, key in boxes.items()}
+    combinations = disagreements = greyed_seen = 0
+    first_disagreement = None
+    for ticked in itertools.product((False, True), repeat=len(boxes)):
+        if not any(ticked):
+            continue  # the window keeps one nation ticked
+        for fx in (False, True):
+            flags = {**base_flags, **dict(zip(boxes, ticked)), "fx": fx}
+            greyed = len({currencies[name] for name, on in zip(boxes, ticked) if on}) < 2
+            reason = greyed_reason("fx", base_payloads, flags)
+            combinations += 1
+            greyed_seen += greyed
+            if greyed != ("fx" in idle_choices(base_payloads, flags)) or greyed != bool(reason):
+                disagreements += 1
+                first_disagreement = first_disagreement or (ticked, fx, reason)
+    check(f"{combinations} combinations of nations ({greyed_seen} greyed): greyed where they share one currency, a reason exactly there",
+          disagreements == 0, first_disagreement)
+    one = {**base_flags, "cdn": True, "us": False, "fx": True}
+    check("one nation: its reason", greyed_reason("fx", base_payloads, one) == "an exchange rate needs a second nation ticked, in another currency",
+          greyed_reason("fx", base_payloads, one))
+    check("greyed, its tick still written", "--fx" in command_line_tokens(base_payloads, one), command_line_tokens(base_payloads, one))
+
+
 def main() -> int:
     check_texts()
     check_topics()
     check_reasons()
     check_all_ticks()
     check_master()
+    check_fx()
     failed = results.count(False)
     print(f"\n{len(results) - failed} of {len(results)} checks passed")
     return 1 if failed else 0

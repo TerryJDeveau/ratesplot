@@ -447,6 +447,14 @@ CASES: dict[str, list[str]] = {
     "cpi_pop_reg": ["--na:ca,us,gb,de", "--cpi", "--pop", "--yield", "-l", "--reg", "-s:1990"],
     "cpi_pop_alone": ["--na:us,gb", "--cpi:sa", "--pop", "-l", "-s:1950"],
     "cpi_pop_proj": ["--na:ca,de", "--cpi", "--pop", "--yield", "-l", "-s:2023"],
+    # Batch 14.2: the exchange rates (--fx). One currency, its rate as quoted, alone on the right axis, mirrored on the
+    # left; four nations beside the yields and the amounts, each currency at 100 on the Start, on an axis outside the
+    # right axis; beside the price index with a wide --reg tolerance over FRED's start in 1971 (monthly rates before);
+    # 1900 to 1975, the euro beginning in 1948, so each at 100 on its own first date.
+    "fx_two": ["--na:ca,us", "--fx", "-l", "-s:1990"],
+    "fx_amounts": ["--na:ca,us,gb,de", "--yield", "--debt", "--gdp", "--int", "--fx", "-l", "-s:2005"],
+    "fx_cpi_reg": ["--na:ca,gb,de", "--fx", "--cpi", "--reg:8", "-l", "-s:1960"],
+    "fx_old": ["--na:ca,us,gb,de", "--fx", "-l", "-s:1900", "--e:1975"],
 }
 
 

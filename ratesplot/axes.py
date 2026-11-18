@@ -139,6 +139,14 @@ def format_population(value: float) -> str:
     return format_currency(value, prefix="")
 
 
+def format_fx(value: float) -> str:
+    """Format an exchange rate to five significant figures, as FRED gives the Federal Reserve's: ``1.3612``, ``0.73465``, ``157.23`` (batch 14.2)."""
+    if not math.isfinite(value) or value <= 0:
+        return f"{value:g}"
+    decimals = max(0, 4 - math.floor(math.log10(value)))
+    return f"{value:.{decimals}f}"
+
+
 def format_inflation(value: float) -> str:
     """Format a 12-month rise in prices in percent to one decimal, as the statistics offices publish it: ``3.7%``, ``-0.4%``.
 

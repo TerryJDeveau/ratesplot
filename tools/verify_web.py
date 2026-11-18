@@ -171,6 +171,8 @@ CHART_CASES = (
     "cmp_pol_l",
     # Batch 14.1: the price index and the population together, each on an axis of its own, on all four, with -l and --reg.
     "cpi_pop_reg",
+    # Batch 14.2: the exchange rates, two nations, each rate as quoted.
+    "fx_two",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -2378,6 +2380,43 @@ def check_batch135(check: Check) -> None:
           [block.value for block in at.warning])
 
 
+def check_batch142(check: Check) -> None:
+    """Batch 14.2: "Exchange rates": in the address and drawn; the outermost kind unticked where a third is ticked; greyed with one nation; three kinds in an address reported; its help view."""
+
+    def ticked(page: AppTest) -> tuple[bool, bool, bool, bool]:
+        """(“Aggregate public debt”, “Price index (CPI)”, “Population”, “Exchange rates”) ticked."""
+        return tuple(page.checkbox(key=f"flag:{name}").value for name in ("debt", "cpi", "population", "fx"))
+
+    at = new_page("--na:ca,us --fx -s:2015 --e:2019")
+    check("the exchange rates alone: ticked, in the address, drawn", not at.exception and ticked(at) == (False, False, False, True)
+          and "--fx" in address(at).split() and config_from_choices(*sort_tokens(address(at).split())[:2]).fx,
+          (address(at), ticked(at)))
+    check("its box enabled with two nations", not at.checkbox(key="flag:fx").disabled)
+    at.checkbox(key="flag:cpi").check().run()
+    check("“Price index (CPI)” ticked: the rates kept", not at.exception and ticked(at) == (False, True, False, True), ticked(at))
+    at.checkbox(key="flag:population").check().run()
+    check("“Population” ticked beside both: “Exchange rates”, the outermost, unticked", not at.exception
+          and ticked(at) == (False, True, True, False) and "--fx" not in address(at).split(), (address(at), ticked(at)))
+    at.checkbox(key="flag:fx").check().run()
+    at.checkbox(key="flag:debt").check().run()
+    check("“Exchange rates” ticked, then debt: the population, then the rates unticked", not at.exception
+          and ticked(at) == (True, True, False, False), ticked(at))
+    at.checkbox(key="flag:us").uncheck().run()
+    check("one nation ticked: “Exchange rates” greyed", not at.exception and at.checkbox(key="flag:fx").disabled)
+
+    at = new_page("-c --fx --cpi --pop -s:2015 --e:2019")
+    check("--fx --cpi --pop in an address: reported, as -r -p is, and the defaults drawn",
+          not at.exception and any("--cpi, --population and --fx cannot all be drawn" in block.value for block in at.warning),
+          [block.value for block in at.warning])
+
+    view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+    view.query_params["help"] = "exchange-rates"
+    view.run()
+    shown = "\n".join(block.value for block in view.markdown)
+    check("?help=exchange-rates: its title and its sources", not view.exception and "# Exchange rates" in shown.splitlines()
+          and "DEXCAUS" in shown, shown[:200])
+
+
 def check_batch141(check: Check) -> None:
     """Batch 14.1: two kinds of unit on the right at most: "Price index (CPI)" and "Population" together with no amount; an amount ticked unticks the population; the two in an address drawn."""
 
@@ -2648,7 +2687,7 @@ PAGE_CHECKS = (
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
     check_batch135, check_batch133, check_batch35, check_wait_colour, check_batch37, check_batch38, check_batch262,
-    check_batch263, check_batch473, check_batch46, check_batch141,
+    check_batch263, check_batch473, check_batch46, check_batch141, check_batch142,
 )
 
 

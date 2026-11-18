@@ -47,6 +47,11 @@ the same month:
   M14 (marks per pound) over M15; each at 1.95583 marks per euro. No rate
   before 1948-06-21: a limit in euros is then left to the axis with a
   warning (``plotting.limits_in_own_currency``).
+
+Batch 14.2 (--fx) draws the rates themselves: ``units_per_unit``, one
+currency's units per unit of another on every date either source has, built
+from the same series as ``rate``, so that each point drawn is the rate a
+limit would be converted at on its date.
 """
 
 from __future__ import annotations
@@ -202,3 +207,62 @@ def rate(source: str, target: str, on: pd.Timestamp) -> Rate | None:
         return None
     sources = " and ".join(name for name in (to_source.source, to_target.source) if name)
     return Rate(to_target.value / to_source.value, min(to_source.dated, to_target.dated), sources)
+
+
+def _from_fred_history(currency: str) -> list[pd.Series]:
+    """``currency``'s units per U.S. dollar from FRED's rates, newest source first, each a date-indexed series of its observations."""
+
+    def series(series_id: str, stopped: pd.Timestamp | None = None) -> pd.Series:
+        frame = fred_series(series_id, revised=False, stopped=stopped)
+        return frame.set_index(DATE_COLUMN)[series_id].dropna().astype(float)
+
+    if currency == "CAD":
+        return [series(FX_CAD_PER_USD)]
+    if currency == "GBP":
+        return [1.0 / series(FX_USD_PER_GBP)]
+    if currency == "EUR":
+        return [1.0 / series(FX_USD_PER_EUR), series(FX_DEM_PER_USD, stopped=FX_DEM_ENDED) / DEM_PER_EUR]
+    raise ValueError(f"no exchange rate for {currency!r}")
+
+
+def units_per_usd_history(currency: str) -> pd.Series:
+    """Return ``currency``'s units per U.S. dollar on every date its sources give one, oldest first (batch 14.2).
+
+    ``units_per_usd``'s sources joined, newest first: each is read only
+    before the first date of the ones after it, so a date's value is the one
+    ``units_per_usd`` gives on it. A monthly or yearly average is dated by its
+    period's first day, as the older sources are.
+    """
+    joined: pd.Series | None = None
+    for part in [*_from_fred_history(currency), *(older.values for older in _older(currency))]:
+        part = part.dropna().sort_index()
+        if part.empty:
+            continue
+        joined = part if joined is None else pd.concat([part.loc[part.index < joined.index[0]], joined])
+    if joined is None:
+        return pd.Series(dtype=float)
+    return joined.rename(None).rename_axis(None)
+
+
+def units_per_unit(own: str, other: str) -> pd.Series:
+    """Return the units of currency ``own`` one unit of ``other`` was worth, by date, from the first date both have a rate (batch 14.2, --fx).
+
+    Through the U.S. dollar, as ``rate`` takes it: on each date either
+    currency has a rate, each one's latest by then, so the cross rate of a
+    daily rate and a monthly average (the mark's, before the euro's daily
+    rate in 1999) changes with each. "CAD per USD": ``units_per_unit("CAD",
+    "USD")``.
+    """
+    if own == other:
+        raise ValueError(f"no exchange rate of {own!r} with itself")
+    if other == "USD":
+        return units_per_usd_history(own)
+    per_other = units_per_usd_history(other)
+    if own == "USD":
+        return (1.0 / per_other).rename(None)
+    per_own = units_per_usd_history(own)
+    if per_own.empty or per_other.empty:
+        return pd.Series(dtype=float)
+    dates = per_own.index.union(per_other.index)
+    joined = pd.DataFrame({"own": per_own.reindex(dates).ffill(), "other": per_other.reindex(dates).ffill()}).dropna()
+    return (joined["own"] / joined["other"]).rename(None)
