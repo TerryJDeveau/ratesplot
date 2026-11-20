@@ -331,6 +331,9 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
         own = solo if currency is None else _in_currency(solo, nation, currency)
         if own is None:
             return None
+        if measure == "mortgage":
+            # Its own headline term alone: another nation's may be one of its bands too (France's over 10 years is Germany's).
+            own = replace(own, mortgage_terms=(COMPARE_MORTGAGE_TERMS[nation.key][0],))
         try:
             yields, macro, rates = country.prepare(own)
         except Exception as exc:  # that nation alone; the others are drawn
