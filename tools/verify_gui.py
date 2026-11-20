@@ -120,6 +120,8 @@ CHART_CASES = (
     "cpi_pop_alone",
     # Batch 14.2: the exchange rates of the other three nations, each at 100 on the Start, beside the amounts.
     "fx_amounts",
+    # Batch 14.3: France alone with its curves, its levels, its own values, all five nations, the mortgage comparison.
+    "fr_rates", "fr_lv", "fr_nat", "all5", "cmp_mort_fr",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -373,7 +375,7 @@ def check_reset(check: Check) -> None:
         app._reset()
         w.settle()
         check("Reset: the nation boxes as they were", {name: app.flag_vars[name].get() for name in nations} == nations
-              == {"cdn": True, "us": False, "uk": False, "germany": True}, nations)
+              == {"cdn": True, "us": False, "uk": False, "germany": True, "france": False}, nations)
         check("Reset: the rest at the defaults (the policy rate off, Canada's Max blank, the default size)",
               not app.flag_vars["policy"].get() and w.text("cdn:max") == "" and w.text("dimensions") == "2048x1536",
               (app.flag_vars["policy"].get(), w.text("cdn:max"), w.text("dimensions")))
@@ -387,7 +389,7 @@ def check_reset(check: Check) -> None:
         # An unticked nation's last chart is kept off screen, its tab hidden: the tabs say what is shown.
         tabs = {key: app.notebook.tab(app.tabs[key], "state") for key in NATION_KEYS}
         check("Reset: Canada's and Germany's tabs shown, the others hidden",
-              tabs == {"cdn": "normal", "us": "hidden", "uk": "hidden", "de": "normal"}, tabs)
+              tabs == {"cdn": "normal", "us": "hidden", "uk": "hidden", "de": "normal", "fr": "hidden"}, tabs)
         app._back()
         w.settle()
         check("Back after Reset: the choices as before", app._snapshot() == before)
@@ -893,7 +895,8 @@ def check_policy_terms(check: Check) -> None:
         # The editor keeps its boxes and their widgets in the same order.
         captions = {n: str(editor(n).widgets[list(editor(n).boxes).index("market")].cget("text")) for n in NATION_KEYS}
         check("each nation's market box named for its rate (batch 24.5)",
-              captions == {"cdn": "market (CORRA)", "us": "market (fed funds)", "uk": "market (SONIA)", "de": "market (€STR)"},
+              captions == {"cdn": "market (CORRA)", "us": "market (fed funds)", "uk": "market (SONIA)", "de": "market (€STR)",
+                           "fr": "market (€STR)"},
               captions)
         check("the target ticked in each", all(ticked(n) == ["target"] for n in NATION_KEYS), {n: ticked(n) for n in NATION_KEYS})
         check("greyed while the policy rate is off", all(not enabled(widget) for n in NATION_KEYS for widget in editor(n).widgets))
@@ -922,6 +925,7 @@ LEVEL_CAPTIONS = {
     "us": ["Federal", "State", "Local", "State & Local"],
     "uk": ["Central", "Local"],
     "de": ["Federal", "Länder", "Local", "Länder & Local"],
+    "fr": ["Central", "Local"],
 }
 
 
@@ -1025,25 +1029,26 @@ def check_limits(check: Check) -> None:
         check("the labels: Max, Min, Top, Bottom", labels == {"max": "Max", "min": "Min", "top": "Top", "bottom": "Bottom"}, labels)
         units = {f"{key}:{name}": unit(f"{key}:{name}") for key in NATION_KEYS for name in ("max", "top")}
         check("% right of Max, the currency right of Top",
-              units == {"cdn:max": "%", "cdn:top": "C$", "us:max": "%", "us:top": "$", "uk:max": "%", "uk:top": "£", "de:max": "%", "de:top": "€"},
+              units == {"cdn:max": "%", "cdn:top": "C$", "us:max": "%", "us:top": "$", "uk:max": "%", "uk:top": "£", "de:max": "%", "de:top": "€",
+                        "fr:max": "%", "fr:top": "€"},
               units)
         check("every All box greyed while its box is blank", all(all_greyed(key) for key in app.all_boxes))
         w.typed("us:max", "8")
         check("a value typed: its All box active, the others greyed", not all_greyed("us:max") and all_greyed("cdn:max"))
         tick_all("us:max")
         w.settle()
-        check("All ticked: every nation's Max 8", texts("max") == ["8"] * 4, texts("max"))
+        check("All ticked: every nation's Max 8", texts("max") == ["8"] * len(NATION_KEYS), texts("max"))
         check("written once, --max:8", "--max:8" in tokens() and not any(t.startswith(("--us:", "--cdn:")) for t in tokens()), tokens())
         check("its charts the written line's", w.written_draws_the_same(("cdn", "us")))
         w.typed("cdn:max", "7")
-        check("a value typed in another nation's box goes into every one", texts("max") == ["7"] * 4, texts("max"))
+        check("a value typed in another nation's box goes into every one", texts("max") == ["7"] * len(NATION_KEYS), texts("max"))
         w.settle()
         w.typed("cdn:max", "")
         check("blanked by typing: still ticked, its box active, the others' values kept",
-              ticked("max") and not all_greyed("cdn:max") and texts("max")[1:] == ["7"] * 3)
+              ticked("max") and not all_greyed("cdn:max") and texts("max")[1:] == ["7"] * (len(NATION_KEYS) - 1))
         app._limit_settled("cdn:max")  # Return, or the box left (decision 47)
         check("the blank settled: unticked, its own All greyed, the others' active and still 7", not ticked("max") and all_greyed("cdn:max")
-              and not any(all_greyed(f"{key}:max") for key in ("us", "uk", "de")) and texts("max")[1:] == ["7"] * 3)
+              and not any(all_greyed(f"{key}:max") for key in NATION_KEYS[1:]) and texts("max")[1:] == ["7"] * (len(NATION_KEYS) - 1))
         w.settle()
         check("written per nation now: --us:max:7, no --max", "--us:max:7" in tokens() and not any(t.startswith("--max") for t in tokens()), tokens())
         # A blank settled by a click elsewhere; a click in the box itself settles nothing.
@@ -1064,24 +1069,25 @@ def check_limits(check: Check) -> None:
         w.typed("us:min", "1")
         tick_all("us:min")
         w.settle()
-        check("All on Min: every nation's Min 1", texts("min") == ["1"] * 4, texts("min"))
+        check("All on Min: every nation's Min 1", texts("min") == ["1"] * len(NATION_KEYS), texts("min"))
         app._apply_view({"max": "5", "min": "0.5"}, "Zoomed", "us")
         w.settle()
-        check("a zoom: Min, whose All is ticked, into every nation's box", texts("min") == ["0.5"] * 4, texts("min"))
-        check("a zoom: Max, whose All is not, the U.S.' alone", texts("max") == ["7", "5", "7", "7"], texts("max"))
+        check("a zoom: Min, whose All is ticked, into every nation's box", texts("min") == ["0.5"] * len(NATION_KEYS), texts("min"))
+        check("a zoom: Max, whose All is not, the U.S.' alone", texts("max") == ["7", "5"] + ["7"] * (len(NATION_KEYS) - 2), texts("max"))
         check("its charts the written line's", w.written_draws_the_same(("cdn", "us")), tokens())
         # Top and Bottom: an amount goes with its currency (18.3); under -r, percentages as they are.
         w.typed("us:top", "40t")
         check("Top in dollars: its All box active", not all_greyed("us:top"))
         tick_all("us:top")
         w.settle()
-        check("All on Top: the U.S.' 40t as USD40t in the other boxes", texts("top") == ["USD40t", "40t", "USD40t", "USD40t"], texts("top"))
+        check("All on Top: the U.S.' 40t as USD40t in the other boxes", texts("top") == ["USD40t", "40t"] + ["USD40t"] * (len(NATION_KEYS) - 2),
+              texts("top"))
         check("--top:USD40t once", "--top:USD40t" in tokens(), tokens())
         check("its charts the written line's (Canada's Top converted)", w.written_draws_the_same(("cdn", "us")))
         log = app.log.get("1.0", "end")
         check("the log names the conversion", "Top USD40t is C$" in log, [line for line in log.splitlines() if "USD40t" in line][-2:])
         w.typed("cdn:top", "50t")
-        check("Canada's 50t typed: CAD50t in the others", texts("top") == ["50t", "CAD50t", "CAD50t", "CAD50t"], texts("top"))
+        check("Canada's 50t typed: CAD50t in the others", texts("top") == ["50t"] + ["CAD50t"] * (len(NATION_KEYS) - 1), texts("top"))
         w.tick("relative", True)
         w.settle()
         check("-r: Top's unit blank, Max's still %", unit("us:top") == "" and unit("us:max") == "%", (unit("us:top"), unit("us:max")))
@@ -1089,7 +1095,7 @@ def check_limits(check: Check) -> None:
         w.typed("us:top", "150%")
         tick_all("us:top")
         w.settle()
-        check("-r: All on Top copies 150% to every nation", texts("top") == ["150%"] * 4, texts("top"))
+        check("-r: All on Top copies 150% to every nation", texts("top") == ["150%"] * len(NATION_KEYS), texts("top"))
         check("-r: --top:150% once", "--top:150%" in tokens(), tokens())
         w.tick("relative", False)
         w.settle()
@@ -2663,11 +2669,11 @@ def check_batch30(check: Check) -> None:
         labels = {key: str(box.cget("text")) for key, box in app.master_boxes.items()}
         check("a box in each nation's panel, its own currency's code", labels == {
             "cdn": "Use CAD as the master currency", "us": "Use USD as the master currency",
-            "uk": "Use GBP as the master currency", "de": "Use EUR as the master currency"}, labels)
+            "uk": "Use GBP as the master currency", "de": "Use EUR as the master currency", "fr": "Use EUR as the master currency"}, labels)
         check("none ticked, none greyed with two nations", all(t == (False, False) for t in ticks().values()), ticks())
         tick("us", True)
         check("the U.S.' ticked: --master:USD, the others unticked", "--master:USD" in w.command_tokens()
-              and ticks() == {"cdn": (False, False), "us": (True, False), "uk": (False, False), "de": (False, False)}, ticks())
+              and ticks() == {"cdn": (False, False), "us": (True, False), "uk": (False, False), "de": (False, False), "fr": (False, False)}, ticks())
         figure = app.figures["cdn"][0]
         check("the Canadian chart drawn in U.S. dollars, the rate on its axis", figure.axes[1].get_ylabel().startswith("Nominal USD (at ")
               and any(label.get_text().startswith("US$") for label in figure.axes[1].get_yticklabels()), figure.axes[1].get_ylabel())
@@ -2875,8 +2881,8 @@ def check_batch263(check: Check) -> None:
         check("on the tab Compare, the base nation's block after the comparison's", "base" in frames and frames["base"].winfo_manager()
               and frames["country"].master.pack_slaves().index(frames["base"]) == frames["country"].master.pack_slaves().index(frames["compare"]) + 1)
         editor = app.choice_editors["base-nation"]
-        check("its four nations' boxes, the U.S. ticked, greyed while “Base nation” is unticked",
-              [widget.cget("text") for widget in editor.widgets] == ["Canada", "United States", "United Kingdom", "Germany"]
+        check("its nations' boxes, the U.S. ticked, greyed while “Base nation” is unticked",
+              [widget.cget("text") for widget in editor.widgets] == ["Canada", "United States", "United Kingdom", "Germany", "France"]
               and [value for value, variable in editor.boxes.items() if variable.get()] == ["us"]
               and not any(enabled(widget) for widget in editor.widgets))
         w.tick("base", True)
@@ -3239,18 +3245,21 @@ def check_batch133(check: Check) -> None:
     """Batch 13.3: the real yields as terms of their own: each panel offers its nation's, none ticked; a box ticked is written and drawn, dashed, in its nominal term's colour; a real yield alone."""
     with window(f"--na:ca,us,gb,de -s:2015 --no-gdp --no-debt --no-interest {END}") as w:
         app = w.app
+        # A nation offering one yield term has no list in its panel (France's 10-year, batch 14.3).
+        listed = tuple(n for n in NATION_KEYS if f"{n}:yields" in app.choice_editors)
+        check("France: one term, no yields list", "fr" not in listed and len(listed) == len(NATION_KEYS) - 1, listed)
 
         def editor(nation: str):
             return app.choice_editors[f"{nation}:yields"]
 
-        real = {n: [value for value in editor(n).boxes if value.startswith("r")] for n in NATION_KEYS}
+        real = {n: [value for value in editor(n).boxes if value.startswith("r")] for n in listed}
         check("each panel offers its nation's real terms", real == {
             "cdn": ["r30"], "us": ["r5", "r7", "r10", "r20", "r30"], "uk": ["r5", "r7", "r10", "r20", "r30"], "de": ["r5", "r7", "r10"],
         }, real)
-        check("none ticked at the start", not any(editor(n).boxes[value].get() for n in NATION_KEYS for value in real[n]))
+        check("none ticked at the start", not any(editor(n).boxes[value].get() for n in listed for value in real[n]))
         check("a box's caption is its term", str(editor("us").widgets[list(editor("us").boxes).index("r10")].cget("text")) == "r10")
         check("the row captioned “real:” in each panel", all(
-            any(widget.winfo_class() == "TLabel" and str(widget.cget("text")) == "real:" for widget in all_widgets(editor(n).frame)) for n in NATION_KEYS
+            any(widget.winfo_class() == "TLabel" and str(widget.cget("text")) == "real:" for widget in all_widgets(editor(n).frame)) for n in listed
         ))
         editor("us").boxes["r10"].set(True)
         editor("us").box_changed("r10")
