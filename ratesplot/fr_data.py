@@ -43,7 +43,6 @@ from .config import (
     FR_INTEREST_COLUMN,
     GDP_COLUMN,
     POPULATION_COLUMN,
-    YIELD_TERMS,
     PlotConfig,
     component_column,
 )
