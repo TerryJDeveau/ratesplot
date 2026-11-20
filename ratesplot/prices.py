@@ -55,6 +55,7 @@ from .config import (
     nation_by_key,
 )
 from .de_data import fetch_de_consumer_prices
+from .fr_data import fetch_fr_consumer_prices
 from .uk_archive_data import EMBEDDED_UK_CPI_HISTORY
 from .uk_data import UK_CPI_SERIES, UK_INFLATION_SERIES, ons_series
 from .us_data import US_CPI_SA_SERIES_ID, US_CPI_SERIES_ID, fred_series
@@ -148,7 +149,7 @@ def _millennium_index() -> pd.Series:
 
 
 def consumer_prices(country: str, *, adjusted: bool = False) -> pd.Series:
-    """Return one country's consumer price index ("cdn", "us", "uk" or "de"), each month dated by its first day; raises if its source has nothing.
+    """Return one country's consumer price index ("cdn", "us", "uk", "de" or "fr"), each month dated by its first day; raises if its source has nothing.
 
     Each in its own base year: --constant divides by it and multiplies by
     its value in one month (``measures.in_constant_prices``), so the base
@@ -156,7 +157,10 @@ def consumer_prices(country: str, *, adjusted: bool = False) -> pd.Series:
     nation of ``SEASONALLY_ADJUSTED_NATIONS`` only (a ValueError for the UK).
     """
     if not adjusted:
-        reader = {"us": us_consumer_prices, "cdn": cdn_consumer_prices, "uk": uk_consumer_prices, "de": fetch_de_consumer_prices}
+        reader = {
+            "us": us_consumer_prices, "cdn": cdn_consumer_prices, "uk": uk_consumer_prices, "de": fetch_de_consumer_prices,
+            "fr": fetch_fr_consumer_prices,
+        }
         return _by_month(reader[country]())
     if country not in SEASONALLY_ADJUSTED_NATIONS:
         raise ValueError(f"{country}: no seasonally adjusted consumer price index is published")
@@ -175,8 +179,8 @@ def uk_inflation() -> pd.Series:
 
 
 def inflation(country: str) -> pd.Series:
-    """Return one country's 12-month rise in consumer prices ("cdn", "us", "uk" or "de"), in percent, each month dated by its first day; raises if its source has nothing."""
+    """Return one country's 12-month rise in consumer prices ("cdn", "us", "uk", "de" or "fr"), in percent, each month dated by its first day; raises if its source has nothing."""
     if country == "uk":
         return uk_inflation()
-    index = {"us": us_consumer_prices, "cdn": cdn_consumer_prices, "de": fetch_de_consumer_prices}[country]()
+    index = {"us": us_consumer_prices, "cdn": cdn_consumer_prices, "de": fetch_de_consumer_prices, "fr": fetch_fr_consumer_prices}[country]()
     return twelve_month_rise(index)

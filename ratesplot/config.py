@@ -628,6 +628,8 @@ DEFAULT_DEBT_AGGREGATES = ("gross",)
 UK_INTEREST_COLUMN = "TTM UK Interest Paid (£)"
 DE_DEBT_COLUMN = "Total German Debt (€)"
 DE_INTEREST_COLUMN = "TTM German Interest Paid (€)"
+FR_DEBT_COLUMN = "Total French Debt (€)"
+FR_INTEREST_COLUMN = "TTM French Interest Paid (€)"
 
 # --payments[:LIST] (batch 23; Terry, 2026-10-24, decisions 61 and 62): the
 # money coming into a nation against the money going out, as two curves on the
@@ -684,14 +686,16 @@ COMPARE_MORTGAGE_TERMS = {
     "us": ("30", "30-year fixed"),
     "uk": ("2f", "2-year fixed"),
     "de": ("5-10", "fixed 5 to 10 years"),
+    # France (batch 14.3): most of its housing loans are fixed for over ten years.
+    "fr": ("over10", "fixed over 10 years"),
 }
 # The currency the amounts are compared in when no master currency is chosen
 # (--master, batch 30): every nation's converted at the End's rate.
 COMPARE_DEFAULT_CURRENCY = "USD"
 # Each nation's colour on the comparison chart: red for Canada and blue for
 # the U.S., the first two of matplotlib's cycle as they are of the yields';
-# purple for the UK, near-black for Germany. A nation added later gets one.
-COMPARE_COLOURS = {"cdn": "#d62728", "us": "#1f77b4", "uk": "#7b3fa0", "de": "#2b2b2b"}
+# purple for the UK, near-black for Germany, orange for France (batch 14.3). A nation added later gets one.
+COMPARE_COLOURS = {"cdn": "#d62728", "us": "#1f77b4", "uk": "#7b3fa0", "de": "#2b2b2b", "fr": "#ff7f0e"}
 # The base nation (batch 26.3; Terry, 2026-11-12, decision 147: "a “Base
 # nation” option ... One of the nations should be “on” by default"): drawn
 # flat at 0, the others "% plus or minus around it". The U.S. by default, the
@@ -846,6 +850,7 @@ SERIES_KINDS = {
     "mortgage_cdn_history": SeriesKind(MARKET, "month"),
     "mortgage_uk": SeriesKind(MARKET, "month"),
     "mortgage_de": SeriesKind(MARKET, "month"),
+    "mortgage_fr": SeriesKind(MARKET, "month"),
     "inflation": SeriesKind(SMOOTH, "month"),  # a month's 12-month rise, taken from the price index
     # The right axis: stocks are moments, flows the sums of their windows.
     "debt": SeriesKind(SMOOTH, held=True),
@@ -922,9 +927,10 @@ PRICE_INDEX_ADJUSTED_LABEL = "Consumer price index, seasonally adjusted"
 PRICE_INDEX_TITLE = "Consumer Price Index"
 PRICE_INDEX_ADJUSTED_TITLE = "Seasonally Adjusted Consumer Price Index"
 PRICE_INDEX_AXIS_LABEL = "Consumer Price Index ({base}, Log Scale)"
-PRICE_INDEX_BASES = {"us": "1982-84 = 100", "cdn": "2002 = 100", "uk": "2015 = 100", "de": "2020 = 100"}
+PRICE_INDEX_BASES = {"us": "1982-84 = 100", "cdn": "2002 = 100", "uk": "2015 = 100", "de": "2020 = 100", "fr": "2025 = 100"}
 # The nations whose statistics office publishes a seasonally adjusted index
-# (--cpi:sa): every nation but the UK.
+# (--cpi:sa): every nation but the UK and France (Eurostat's harmonised index,
+# batch 14.3, is unadjusted).
 SEASONALLY_ADJUSTED_NATIONS = ("us", "cdn", "de")
 # --population (batch 13.5, decision 43): each nation's population on the same
 # extra axis, in dark goldenrod, which no other curve has, as thick as the
@@ -993,9 +999,10 @@ MORTGAGE_TERMS = {
     # households (ECB), by initial rate fixation: over 1 and up to 5 years,
     # over 5 and up to 10, over 10. Named by the band, as the statistics
     # are; coloured as the yield of the band's top (the 20-year for over 10).
-    "1-5": (("de",), "5y"),
-    "5-10": (("de",), "10y"),
-    "over10": (("de",), "20y"),
+    # France (batch 14.3): the same three bands of the same statistics.
+    "1-5": (("de", "fr"), "5y"),
+    "5-10": (("de", "fr"), "10y"),
+    "over10": (("de", "fr"), "20y"),
 }
 DEFAULT_MORTGAGE_TERMS = ("30", "5")
 # The terms drawn plus a margin in points, each with a box beside its tick
@@ -1026,7 +1033,7 @@ MORTGAGE_OWN_COLORS = {"15": "#556b2f", "prime": "#696969", "svr": "#696969", "t
 # the policy rate; the variable rates dash-dotted: Canada's, as it shares the
 # 5-year's colour, and the UK tracker, as it shares the policy rate's.
 MORTGAGE_STYLE = {"linewidth": 1.5, "linestyle": "--"} | _one_drawstyle(
-    "mortgage_us", "mortgage_cdn", "mortgage_cdn_history", "mortgage_uk", "mortgage_de", "prime", "tracker"
+    "mortgage_us", "mortgage_cdn", "mortgage_cdn_history", "mortgage_uk", "mortgage_de", "mortgage_fr", "prime", "tracker"
 )
 VARIABLE_MORTGAGE_STYLE = MORTGAGE_STYLE | {"linestyle": "-."}
 # The prime rate: dotted, a base rate rather than a mortgage of a term.
@@ -1280,6 +1287,24 @@ NATIONS: tuple[Nation, ...] = (
             ("yield_terms", ("2y", "5y", "10y", "30y")),
             ("mortgage_terms", ("1-5", "5-10", "over10")),
             ("spread_pairs", (("10y", "2y"), ("30y", "10y"))),
+        ),
+    ),
+    # Batch 14.3 (decision 171): drawn only when asked for, as the UK and
+    # Germany are; named by --nations:fr (or fra, its ISO three-letter code),
+    # a value for it alone "--fr:max:8". One yield term so far, the 10-year
+    # (the OECD's monthly averages on FRED, from 1960): no daily French
+    # yields on the hosts the program asks (Webstat's wait on a key). So no
+    # spread of its own by default. Its levels: central and local government
+    # (France has no state level; the social security funds are no level of
+    # the chart, as Germany's). Its mortgage bands are Germany's (the ECB's).
+    Nation(
+        "fr", "France", ("fr", "fra"), ("10y",), "French",
+        shown_by_default=False, market_timezone="Europe/Paris", currency="EUR", overnight_rate="€STR",
+        level_boxes=(("f", "Central"), ("m", "Local")),
+        own_defaults=(
+            ("yield_terms", ("10y",)),
+            ("mortgage_terms", ("1-5", "5-10", "over10")),
+            ("spread_pairs", ()),
         ),
     ),
 )
@@ -1878,6 +1903,31 @@ DE = CountryMetadata(
     component_debt_title="{} German Public Debt",
 )
 
+# France (batch 14.3, ratesplot.fr_data): the OECD's monthly 10-year (on
+# FRED); Eurostat's debt, interest, GDP and population, Germany's queries
+# with FR in place of DE.
+FR = CountryMetadata(
+    key="fr",
+    country_name="France",
+    currency_prefix=CURRENCY_SYMBOLS["EUR"],
+    # The OECD's long-term rate: the 10-year benchmark bond's yield, a
+    # monthly average.
+    yield_title="French Government 10-Year Yield (monthly average)",
+    title_nation="French",
+    title_short="FRA",
+    debt_column=FR_DEBT_COLUMN,
+    debt_label="French General Government Gross Debt",
+    debt_title="French General Government Gross Debt",
+    interest_column=FR_INTEREST_COLUMN,
+    # D.41 payable by general government, consolidated, as Germany's.
+    interest_label="TTM Interest Payable",
+    # État and the administrations publiques locales; no state level, and
+    # the social security funds are no level of the chart (as Germany's).
+    level_names=(("f", "Central"), ("n", "Local"), ("p", "Regional"), ("m", "Local")),
+    component_debt_label="{} French Public Debt",
+    component_debt_title="{} French Public Debt",
+)
+
 
 def macro_column_kind(column: str) -> SeriesKind:
     """The kind (``SERIES_KINDS``, batch 42.1) of the series a right-axis column holds, for any nation; a column untagged is an error.
@@ -1887,7 +1937,7 @@ def macro_column_kind(column: str) -> SeriesKind:
     """
     keys = {component_column(kind, letter): f"{kind}_{letter}" for kind in ("debt", "interest") for letter in COMPONENT_LETTERS}
     keys |= dict(zip(PAYMENTS_COLUMNS, _PAYMENTS_KEYS))
-    for metadata in (CDN, US, UK, DE):
+    for metadata in (CDN, US, UK, DE, FR):
         keys |= {metadata.debt_column: "debt", metadata.gdp_column: "gdp", metadata.interest_column: "interest"}
         if metadata.federal_debt_column is not None:
             keys[metadata.federal_debt_column] = "federal_debt"
@@ -2026,6 +2076,8 @@ class PlotConfig:
     show_uk: bool = False
     # Germany's chart (batch 4): only when asked for (--ger, --nations:de).
     show_de: bool = False
+    # France's chart (batch 14.3): only when asked for (--nations:fr).
+    show_fr: bool = False
     # --debt:LETTERS / --interest:LETTERS: the levels of government to split
     # debt and interest into, as letters from COMPONENT_LETTERS in that order
     # ("" = the aggregate lines).

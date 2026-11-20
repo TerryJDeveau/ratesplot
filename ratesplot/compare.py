@@ -79,6 +79,7 @@ from .config import (
     CURRENCY_SYMBOLS,
     DATE_COLUMN,
     DE,
+    FR,
     DEFAULT_DEBT_AGGREGATES,
     MACRO_PLOT_STYLES,
     MARKET_TIMEZONE,
@@ -165,7 +166,7 @@ _BALANCES = {
 }
 # The nations' metadata by key (their words in the title), and by currency (the
 # right axis's label and its ticks' symbol for amounts in that currency).
-_METADATA = {metadata.key: metadata for metadata in (CDN, US, UK, DE)}
+_METADATA = {metadata.key: metadata for metadata in (CDN, US, UK, DE, FR)}
 _METADATA_BY_CURRENCY = {nation_by_key(metadata.key).currency: metadata for metadata in _METADATA.values()}
 
 
@@ -330,6 +331,9 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
         own = solo if currency is None else _in_currency(solo, nation, currency)
         if own is None:
             return None
+        if measure == "mortgage":
+            # Its own headline term alone: another nation's may be one of its bands too (France's over 10 years is Germany's).
+            own = replace(own, mortgage_terms=(COMPARE_MORTGAGE_TERMS[nation.key][0],))
         try:
             yields, macro, rates = country.prepare(own)
         except Exception as exc:  # that nation alone; the others are drawn

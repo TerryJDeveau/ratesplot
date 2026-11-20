@@ -96,6 +96,8 @@ _STARTING_ASKED = {
     "us": {"fred.stlouisfed.org": 9, "home.treasury.gov": 1, "api.fiscaldata.treasury.gov": 1},
     "uk": {"www.bankofengland.co.uk": 3, "www.ons.gov.uk": 3},
     "de": {"api.statistiken.bundesbank.de": 8, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 4},
+    # France's (batch 14.3), counted from its default chart's requests: the 10-year, the ECB's year ends, debt, GDP, interest.
+    "fr": {"fred.stlouisfed.org": 1, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
 }
 # Below this the words change: "nearly done" rather than "about 0 s".
 _NEARLY_DONE_SECONDS = 1.0

@@ -61,7 +61,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import announced, bake, cdn_data, de_archive_data, de_data, latest, payments, prices, rates, uk_archive_data, uk_data, us_data  # noqa: E402
+from ratesplot import announced, bake, cdn_data, de_archive_data, de_data, fr_data, latest, payments, prices, rates, uk_archive_data, uk_data, us_data  # noqa: E402
 from ratesplot.cli import parse_args  # noqa: E402
 from ratesplot.config import (  # noqa: E402
     CDN_DEBT_COLUMN,
@@ -76,6 +76,8 @@ from ratesplot.config import (  # noqa: E402
     UK_NET_DEBT_COLUMN,
     DE_DEBT_COLUMN,
     DE_INTEREST_COLUMN,
+    FR_DEBT_COLUMN,
+    FR_INTEREST_COLUMN,
     YIELD_COLUMNS,
     YIELD_TERMS,
     PlotConfig,
@@ -589,6 +591,63 @@ def _de_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     return None, "; ".join(notes)
 
 
+def _fr_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    # Its whole span: a monthly average is dated by its month's first day, before the check's own window.
+    frame = fr_data.fetch_fr_yields(replace(config, yield_terms=("10y",), start=fr_data.FR_YIELD_EARLIEST["10-Year"]))
+    values = frame["10-Year"].dropna()
+    return _last(values), f"10-Year {values.iloc[-1]:.2f} (monthly average of {values.index[-1]:%Y-%m}), from {values.index[0]:%Y-%m}"
+
+
+def _fr_annual_debt(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    # Used only before Eurostat's quarters begin (2000), so its age does not matter; a WARN if the ECB fails.
+    annual = de_data.ecb_series(*fr_data.FR_ECB_ANNUAL_DEBT, revised=True)
+    return None, f"{len(annual)} year-ends, {annual.index[0]:%Y} to {annual.index[-1]:%Y}"
+
+
+def _fr_population(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    people = fr_data.fetch_fr_population()
+    return _last(people), f"{people.iloc[-1] / 1e6:.2f} million, from {people.index[0]:%Y-%m-%d}; a quarter dated by its middle"
+
+
+def _eurostat_flat(dataset: str, params: dict[str, str]) -> pd.Series:
+    """A Eurostat dataset of one series (every dimension but time a single category), by period: for a measurement only."""
+    data = de_data.de_get(de_data.EUROSTAT_DATASET_URL.format(dataset=dataset), params).json()
+    order = data["dimension"]["time"]["category"]["index"]
+    times = sorted(order, key=order.get)
+    assert all(size == 1 for dim, size in zip(data["id"], data["size"]) if dim != "time"), data["size"]
+    return pd.Series({time: data["value"][str(i)] for i, time in enumerate(times) if str(i) in data["value"]}, dtype=float)
+
+
+def _fr_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """France's series against another source of the same figures (batch 14.3): a note, not a pass or fail.
+
+    FRED's 10-year (the OECD's) against Eurostat's convergence-criterion
+    yield (``irt_lt_mcby_m``, from 1980); the ECB's year-ends against
+    Eurostat's fourth quarters; the yearly interest of S13 against the
+    four-quarter sums; the levels' yearly interest against the total's.
+    """
+    notes = []
+    oecd = fetch_fred_csv("IRLTLT01FRM156N").set_index("DATE")["IRLTLT01FRM156N"].dropna()
+    oecd.index = pd.DatetimeIndex(oecd.index).strftime("%Y-%m")
+    eurostat = _eurostat_flat("irt_lt_mcby_m", {"geo": fr_data.FR_GEO})
+    both = oecd.index.intersection(eurostat.index)
+    gap = (oecd[both] - eurostat[both]).abs()
+    notes.append(f"10-year: FRED less Eurostat's convergence yield, largest {gap.max():.2f} ({gap.idxmax()}), "
+                 f"{int((gap > 0.005).sum())} of {len(both)} months apart, {both[0]} to {both[-1]}")
+    annual = de_data.ecb_series(*fr_data.FR_ECB_ANNUAL_DEBT, revised=True)
+    quarters = de_data.eurostat_series("gov_10q_ggdebt", geo=fr_data.FR_GEO, sector=de_data.GENERAL_GOVERNMENT)
+    common = annual.index.intersection(quarters.index)
+    notes.append(f"debt: ECB year-ends against Eurostat's fourth quarters, largest gap {(annual[common] / quarters[common] - 1).abs().max():.1e} over {len(common)} years")
+    yearly = de_data.eurostat_series("gov_10a_main", geo=fr_data.FR_GEO, sector=de_data.GENERAL_GOVERNMENT)
+    sums = de_data.ttm_sum(de_data.eurostat_series("gov_10q_ggnfa", geo=fr_data.FR_GEO, sector=de_data.GENERAL_GOVERNMENT))
+    both = yearly.index.intersection(sums.index)
+    notes.append(f"interest: yearly against four-quarter sums, largest gap {(yearly[both] / sums[both] - 1).abs().max():.1e} over {len(both)} years")
+    levels = sum(de_data.eurostat_series("gov_10a_main", geo=fr_data.FR_GEO, sector=sector) for sector in ("S1311", "S1313", "S1314"))
+    share = (levels / yearly - 1).dropna()
+    notes.append(f"interest: central, local and social security funds unconsolidated over the total, {share.min():+.1%} to {share.max():+.1%}")
+    return None, "; ".join(notes)
+
+
 # The FRED German series not fetched from the laptop on 2026-10-06 (timed out
 # with a browser's User-Agent; the program fetches FRED without one).
 _DE_FRED_SERIES = ("IRLTLT01DEM156N", "INTDSRDEM193N", "IR3TIB01DEM156N", "IRSTCI01DEM156N", "CPMNACSCAB1GQDE", "GGGDTADEA188N", "DEUPOPNDQ")
@@ -731,9 +790,9 @@ CHECKS: tuple[Check, ...] = (
     # Batch 9.6: the Bundesbank's discount rate before 1999, baked.
     Check("bbk_discount", "Bundesbank discount rate 1948-1998 (baked) against BBIN1's month-end values", None, _de_discount),
     Check("ecb_overnight", "ECB EONIA, then €STR (--policy:market)", DAILY, _rate(rates.de_policy_market)),
-    Check("ecb_mortgage1_5", "ECB MIR German housing loans, fixed over 1 to 5 years", MONTHLY, _rate(partial(rates.mortgage_rate, "1-5"))),
-    Check("ecb_mortgage5_10", "ECB MIR German housing loans, fixed over 5 to 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "5-10"))),
-    Check("ecb_mortgage10", "ECB MIR German housing loans, fixed over 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "over10"))),
+    Check("ecb_mortgage1_5", "ECB MIR German housing loans, fixed over 1 to 5 years", MONTHLY, _rate(partial(rates.mortgage_rate, "1-5", "de"))),
+    Check("ecb_mortgage5_10", "ECB MIR German housing loans, fixed over 5 to 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "5-10", "de"))),
+    Check("ecb_mortgage10", "ECB MIR German housing loans, fixed over 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "over10", "de"))),
     Check("ecb_debt_annual", "ECB GFS German debt, year-ends (before 2000)", None, _de_annual_debt),
     # Eurostat's, through the program's own fetchers (batch 19.2): their bake and one recent part per
     # dataset, a WARN if Eurostat fails; de_joins reads them so too.
@@ -749,6 +808,23 @@ CHECKS: tuple[Check, ...] = (
     Check("cnbc_de", "CNBC quote feed, German yields, 1 2 5 7 10 20 30 years (unofficial)", QUOTES, _quotes("de", tuple(de_data.DE_YIELD_SERIES))),
     Check("de_joins", "German history against the live series where they meet (a measurement)", None, _de_joins),
     Check("de_fred", "FRED German series still to be measured (a note)", None, _de_fred),
+    # France (batch 14.3): none baked yet, each asked whole; the policy rates are Germany's (the euro area's).
+    Check("fred_fr10", "FRED IRLTLT01FRM156N French 10-year (OECD, monthly average)", MONTHLY, _fr_yields),
+    Check("ecb_fr_mortgage1_5", "ECB MIR French housing loans, fixed over 1 to 5 years", MONTHLY, _rate(partial(rates.mortgage_rate, "1-5", "fr"))),
+    Check("ecb_fr_mortgage5_10", "ECB MIR French housing loans, fixed over 5 to 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "5-10", "fr"))),
+    Check("ecb_fr_mortgage10", "ECB MIR French housing loans, fixed over 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "over10", "fr"))),
+    Check("ecb_fr_debt_annual", "ECB GFS French debt, year-ends (before 2000)", None, _fr_annual_debt),
+    Check("est_fr_debt", "Eurostat gov_10q_ggdebt French debt (quarterly)", QUARTERLY, _de_column(fr_data.fetch_fr_debt, FR_DEBT_COLUMN)),
+    Check("est_fr_gdp", "Eurostat namq_10_gdp French GDP (four-quarter sums)", QUARTERLY, _de_column(fr_data.fetch_fr_gdp, GDP_COLUMN)),
+    Check("est_fr_interest", "Eurostat gov_10q_ggnfa French interest (four-quarter sums)", QUARTERLY, _de_column(fr_data.fetch_fr_interest, FR_INTEREST_COLUMN)),
+    Check("est_fr_central", "Eurostat S1311 French central government debt", QUARTERLY, _de_column(fr_data.fetch_fr_components, component_column("debt", "f"), components="fm")),
+    Check("est_fr_local", "Eurostat S1313 French local debt", QUARTERLY, _de_column(fr_data.fetch_fr_components, component_column("debt", "m"), components="fm")),
+    Check("est_fr_int_central", "Eurostat gov_10a_main S1311 French central government interest (yearly)", ANNUAL,
+          _de_column(fr_data.fetch_fr_components, component_column("interest", "f"), components="fm")),
+    Check("est_fr_population", "Eurostat namq_10_pe French population", QUARTERLY, _fr_population),
+    Check("est_fr_cpi", "Eurostat prc_hicp_minr French harmonised consumer prices, 12-month rise (--inflation)", PRICES,
+          _rate(partial(rates.inflation_rate, "fr"))),
+    Check("fr_joins", "French series against another source of the same figures (a measurement)", None, _fr_joins),
 )
 
 

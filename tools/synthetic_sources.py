@@ -194,6 +194,10 @@ def fred(series_id: str) -> pd.DataFrame:
         # The same index seasonally adjusted (batch 13.4), monthly from 1947.
         dates = pd.date_range("1947-01-01", "2026-09-01", freq="MS")
         values = np.round(_growth(dates, 21.5, 336.3, series_id), 3)
+    elif series_id == "IRLTLT01FRM156N":
+        # France's 10-year (batch 14.3): the OECD's monthly average, from 1960-01, each month's first day.
+        dates = pd.date_range("1960-01-01", "2026-09-01", freq="MS")
+        values = _yield_path(series_id, dates, 10, _FR_OFFSET)
     elif series_id in _GROWTH:
         start, freq, first, last = _GROWTH[series_id]
         end = "2026-07-01" if freq == "QS" else "2025-01-01"
@@ -627,6 +631,8 @@ def ons(cdid: str) -> bytes:
 # Bundesbank's term structure: term code -> (years, first month of the
 # end-of-month series, first day of the daily one).
 _DE_OFFSET = -1.2
+# France's yields and mortgage rates (batch 14.3) sit between Germany's and the U.S.'.
+_FR_OFFSET = -0.6
 _BUNDESBANK_TERMS = {
     "R01XX": (1, "1972-09", "1997-08-01"), "R02XX": (2, "1972-09", "1997-08-01"), "R03XX": (3, "1972-09", "1997-08-01"),
     "R05XX": (5, "1972-09", "1997-08-01"), "R07XX": (7, "1972-09", "1997-08-01"), "R10XX": (10, "1972-09", "1997-08-01"),
@@ -747,8 +753,17 @@ def ecb(url: str) -> bytes:
     elif flow == "MIR":
         months = pd.date_range("2000-01-31", "2026-08-31", freq="ME")
         band = {"I": 3, "O": 10, "P": 20}[key.split(".")[4]]
-        values = list(np.round(_yield_path("demir" + key, months, band, _DE_OFFSET) + 1.4, 2))
+        offset = _FR_OFFSET if key.split(".")[1] == "FR" else _DE_OFFSET  # France's bands (batch 14.3)
+        values = list(np.round(_yield_path("demir" + key, months, band, offset) + 1.4, 2))
         periods = [f"{day:%Y-%m}" for day in months]
+    elif flow == "GFS" and key.split(".")[2] == "FR":
+        # France's year ends (batch 14.3), 1995 to 1999 and on; from 2000 on the Eurostat quarters' path.
+        early = pd.date_range("1995-12-31", "1999-12-31", freq="YE")
+        quarters = pd.date_range("2000-03-31", "2026-03-31", freq="QE")
+        later = pd.Series(_growth(quarters, 870_000, 3_416_000, "fr_debt"), index=quarters).loc[lambda q: q.index.month == 12]
+        years = early.append(later.index)
+        values = list(np.round(np.concatenate([_growth(early, 663_000, 804_000, "fr_gfs_a"), later.to_numpy()]), 0))
+        periods, unit_column, unit, multiplier = [str(day.year) for day in years], "UNIT_MEASURE", "XDC", 6
     elif flow == "GFS":
         # Unification doubled the debt in the 1990s; from 2000 the year-ends
         # follow the Eurostat quarters' path (equal on real data).
@@ -783,6 +798,15 @@ def _jsonstat(label: str, dims: list[tuple[str, list[str]]], value) -> bytes:
 # Eurostat: the German series, first and last value (millions of euros,
 # thousands of persons, persons) and each sector's share of the total.
 _DE_SECTOR_SHARES = {"S13": 1.0, "S1311": 0.70, "S1312": 0.235, "S1313": 0.07, "S1314": 0.005}
+# France's (batch 14.3): no state level; the social security funds are no level of the chart.
+_FR_SECTOR_SHARES = {"S13": 1.0, "S1311": 0.80, "S1313": 0.08, "S1314": 0.12}
+# France's series (geo "FR" in the same queries), each (first period, first value, last value).
+_FR_EUROSTAT_PATHS = {
+    "gov_10q_ggdebt": ("2000Q1", 870_000, 3_416_000),
+    "gov_10q_ggnfa": ("1995Q1", 9_800, 17_200),
+    "namq_10_gdp": ("1980Q1", 74_000, 760_000),
+    "namq_10_pe": ("1980Q1", 55_100, 68_700),
+}
 _EUROSTAT_URL = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
 # Every Eurostat series the program reads, by its baked file's name (de_data.eurostat_code): its
 # dataset and the categories chosen (de_data.EUROSTAT_SERIES_READ; batch 19.2).
@@ -806,13 +830,34 @@ def eurostat(url: str, params: tuple) -> bytes:
     query = dict(params)
     unit = query.get("unit", "NR")
     quarters = lambda first, last: [f"{p.year}-Q{p.quarter}" for p in pd.period_range(first, last, freq="Q")]  # noqa: E731
-    fixed = [(dim, [query[dim]]) for dim in ("na_item", "s_adj", "age", "sex") if dim in query]
-    common = [("freq", ["Q"]), ("unit", [unit]), *fixed, ("geo", ["DE"])]
+    fixed = [(dim, [query[dim]]) for dim in ("na_item", "s_adj", "age", "sex", "coicop18") if dim in query]
+    geo = query.get("geo", "DE")
+    common = [("freq", ["Q"]), ("unit", [unit]), *fixed, ("geo", [geo])]
 
     def path(name: str, periods: list[str], first: float, last: float) -> dict[str, float]:
         dates = pd.DatetimeIndex([pd.Period(period.replace("-", ""), freq="Q" if "Q" in period else "Y").end_time.normalize() for period in periods])
         return dict(zip(periods, _growth(dates, first, last, name)))
 
+    if geo == "FR":
+        # France (batch 14.3): its own paths, the same shapes as Germany's answers.
+        if dataset == "prc_hicp_minr":
+            months = pd.period_range("1996-01", "2026-09", freq="M")
+            times = [f"{month.year}-{month.month:02d}" for month in months]
+            index = dict(zip(times, _growth(months.to_timestamp(), 64.0, 101.2, "fr_hicp")))
+            return _jsonstat("HICP", [("freq", ["M"]), ("unit", [unit]), *fixed, ("geo", [geo]), ("time", times)], lambda c: index[c["time"]])
+        if dataset == "gov_10a_main":
+            # Each subsector's yearly interest (its levels' interest), 1995 to 2025.
+            times = [str(year) for year in range(1995, 2026)]
+            yearly = path("fr_gov_10a_main", times, 39_000, 60_100)
+            dims = [("freq", ["A"]), ("unit", [unit]), ("sector", list(_FR_SECTOR_SHARES)), *fixed, ("geo", [geo]), ("time", times)]
+            return _jsonstat(dataset, dims, lambda c: yearly[c["time"]] * _FR_SECTOR_SHARES[c["sector"]])
+        first, low, high = _FR_EUROSTAT_PATHS[dataset]
+        times = quarters(first, "2026Q2" if dataset.startswith("namq") else "2026Q1")
+        total = path(f"fr_{dataset}", times, low, high)
+        if dataset.startswith("gov_10q"):
+            dims = [*common[:2], ("sector", list(_FR_SECTOR_SHARES)), *common[2:], ("time", times)]
+            return _jsonstat(dataset, dims, lambda c: total[c["time"]] * _FR_SECTOR_SHARES[c["sector"]])
+        return _jsonstat(dataset, [*common, ("time", times)], lambda c: total[c["time"]])
     if dataset == "gov_10q_ggdebt":
         times = quarters("2000Q1", "2026Q1")
         total = path("de_debt", times, 1_265_509, 2_902_035)

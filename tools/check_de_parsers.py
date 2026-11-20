@@ -685,8 +685,9 @@ def check_eurostat() -> None:
     check("Eurostat GDP in national currency: 1991 sums to 1,591.61 bn, table 81000-117's; in euros to 1,518.03; the same 1999-2019",
           round(gdp_nac.loc["1991"].sum(), 1) == 1_591_610.0 and round(gdp.loc["1991"].sum(), 1) == 1_518_029.1
           and (gdp.loc["1999":"2019"] == gdp_nac.loc["1999":"2019"]).all(), (gdp_nac.loc["1991"].sum(), gdp.loc["1991"].sum()))
+    # I25: the harmonised consumer price index (2025 = 100), France's (batch 14.3), an index, not an amount.
     check("the program asks Eurostat for every amount in national currency, never in euros",
-          {unit for _params, unit in de_data.EUROSTAT_QUERIES.values()} == {"MIO_NAC", "CP_MNAC", "THS_PER", "NR"}
+          {unit for _params, unit in de_data.EUROSTAT_QUERIES.values()} == {"MIO_NAC", "CP_MNAC", "THS_PER", "NR", "I25"}
           and all(params.get("unit") == unit for params, unit in de_data.EUROSTAT_QUERIES.values() if "unit" in params))
 
 
@@ -743,17 +744,17 @@ def check_fetchers() -> None:
               and joined.label == "Bundesbank Discount Rate, ECB Main Refinancing Rate from 1999-01", joined.label)
         check("policy: each day carried to the next change, the last to today (2.65 since 2026-09-16)",
               policy.loc["2026-09-30"] == 2.65 and policy.index[-1] >= pd.Timestamp("2026-10-07") and policy.loc["2025-01-01"] == 3.15)
-        mortgage = rates.mortgage_rate("5-10")
+        mortgage = rates.mortgage_rate("5-10", "de")
         check("mortgages: the 5-10 year band dated by each month's first day (3.81 for 2026-08), in the 10-year's colour",
               mortgage.values.loc["2026-08-01"] == 3.81 and mortgage.color_of == "10-Year", mortgage.label)
         check("mortgages: the 5-10 year band from 1982-06, the Bundesbank's 10-year to 2002-12 (5.52), then the ECB's (5.39 for 2003-01)",
               mortgage.values.index[0] == pd.Timestamp("1982-06-01") and mortgage.values.loc["2002-12-01"] == 5.52 and mortgage.values.loc["2003-01-01"] == 5.39
               and mortgage.values.index.is_monotonic_increasing and not mortgage.values.index.has_duplicates, mortgage.values.loc["2002-11-01":"2003-02-01"].to_dict())
-        shorter = rates.mortgage_rate("1-5")
+        shorter = rates.mortgage_rate("1-5", "de")
         check("mortgages: the 1-5 year band from 1982-06, the Bundesbank's 5-year to 2002-12 (4.96), then the ECB's (4.94 for 2003-01), each month once",
               shorter.values.index[0] == pd.Timestamp("1982-06-01") and shorter.values.loc["2002-12-01"] == 4.96 and shorter.values.loc["2003-01-01"] == 4.94
               and not shorter.values.index.has_duplicates, shorter.values.loc["2002-11-01":"2003-02-01"].to_dict())
-        longest = rates.mortgage_rate("over10")
+        longest = rates.mortgage_rate("over10", "de")
         check("mortgages: the over-10 band still the ECB's alone, from 2000-01 (5.54 for 2002-12)",
               longest.values.index[0] == pd.Timestamp("2000-01-01") and longest.values.loc["2002-12-01"] == 5.54, longest.values.iloc[:2].to_dict())
     finally:

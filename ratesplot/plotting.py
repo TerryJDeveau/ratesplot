@@ -110,6 +110,7 @@ from .config import (
     SPREAD_INVERSION_ALPHA,
     TERM_COLORS,
     DE,
+    FR,
     UK,
     US,
     YIELD_LINE_STYLE,
@@ -177,6 +178,15 @@ from .de_data import (
     fetch_de_yields,
     de_series_earliest,
     west_german_own_populations,
+)
+from .fr_data import (
+    fetch_fr_components,
+    fetch_fr_debt,
+    fetch_fr_gdp,
+    fetch_fr_interest,
+    fetch_fr_population,
+    fetch_fr_yields,
+    fr_series_earliest,
 )
 from .uk_data import (
     YIELD_HISTORY_ATTR,
@@ -368,6 +378,12 @@ def add_de_yield_lines(ax: Axes, yields: pd.DataFrame, config: PlotConfig) -> li
     """Plot Germany's yields: each term's monthly values as steps, then its daily ones (``de_data.fetch_de_yields``)."""
     through = dict(yields.attrs.get(YIELD_HISTORY_ATTR, {}))
     return add_stepped_yield_lines(ax, yields, config, "de", through.get)
+
+
+def add_fr_yield_lines(ax: Axes, yields: pd.DataFrame, config: PlotConfig) -> list[Line2D]:
+    """Plot France's yields: each term's monthly averages as steps (``fr_data.fetch_fr_yields``, all monthly)."""
+    through = dict(yields.attrs.get(YIELD_HISTORY_ATTR, {}))
+    return add_stepped_yield_lines(ax, yields, config, "fr", through.get)
 
 
 def add_stepped_yield_lines(
@@ -1613,6 +1629,43 @@ def prepare_de(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     return yields, expressed, rates
 
 
+@_with_chart_end
+def prepare_fr(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]:
+    """Fetch and align all selected French inputs, in the configured measure; return ``(yields, macro, rates)`` (batch 14.3).
+
+    As ``prepare_de``: date-indexed yields (every value monthly, recorded in
+    ``attrs[de_data.YIELD_HISTORY_ATTR]``), not run on with --cur (no French
+    quote is read); the macro curves aligned on their dates and projected to
+    a chart's last day as Germany's are. The balance of payments is not
+    drawn yet for France (``payments.fetch_payments`` says so).
+    """
+    _require_start(config)
+    _warn_no_yields("fr", config)
+    _note_gross_debt_drawn("fr", config)
+    warn_series_coverage(config.start, fr_series_earliest(config))
+    yields = fetch_fr_yields(config)
+    rates = rate_curves("fr", yields, config)
+    warn_series_coverage(config.start, {curve.label: curve.first for curve in rates if not curve.spread})
+    if _levels_drawn("fr", config):
+        series = (fetch_fr_components(config), fetch_fr_gdp(config))
+    else:
+        series = (fetch_fr_debt(config), fetch_fr_gdp(config), fetch_fr_interest(config))
+    series += (_payments("fr", config),)
+    parts = [part for part in series if part is not None]
+    observed = {column: observed_through(part[column].dropna().index) for part in parts for column in part.columns}
+    history = pd.concat(parts, axis=1) if parts else pd.DataFrame()
+    aligned = align_macro(yields, series, config)
+    macro = project_to_now(aligned, observed, config, history)
+    projected = macro.attrs.get(PROJECTION_ATTR, {})
+    population, population_from = _population(fetch_fr_population() if config.per_capita or config.population else None, config)
+    yields.attrs[QUOTE_TIME_ATTR] = None
+    prices, prices_from = _consumer_prices("fr", config)
+    expressed = express(macro, config, FR, population, prices, None, prices_through=prices_from)
+    expressed.attrs[PROJECTION_ATTR] = projected
+    expressed.attrs[EXTRA_CURVES_ATTR] = _extra_curves("fr", config, population, population_from)
+    return yields, expressed, rates
+
+
 @dataclass(frozen=True)
 class Country:
     """Everything needed to produce one country's chart."""
@@ -1630,6 +1683,7 @@ COUNTRIES: tuple[Country, ...] = (
     Country("us", "show_us", US, prepare_us, add_us_yield_lines),
     Country("uk", "show_uk", UK, prepare_uk, add_uk_yield_lines),
     Country("de", "show_de", DE, prepare_de, add_de_yield_lines),
+    Country("fr", "show_fr", FR, prepare_fr, add_fr_yield_lines),
 )
 
 
@@ -2046,3 +2100,11 @@ def run_de(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) ->
     yields, macro, rates = prepare_de(config)
     plot_country(yields, macro, rates, config, DE, add_de_yield_lines, _refresher(DE.key, prepare_de, again))
     print("German chart finished.\n")
+
+
+def run_fr(config: PlotConfig, again: Callable[[], PlotConfig] | None = None) -> None:
+    """Fetch all selected French inputs and show France's chart in a matplotlib window; ``again``: refreshed (``_refresher``)."""
+    config = chart_config(config, FR.key)
+    yields, macro, rates = prepare_fr(config)
+    plot_country(yields, macro, rates, config, FR, add_fr_yield_lines, _refresher(FR.key, prepare_fr, again))
+    print("French chart finished.\n")

@@ -455,6 +455,23 @@ CASES: dict[str, list[str]] = {
     "fx_amounts": ["--na:ca,us,gb,de", "--yield", "--debt", "--gdp", "--int", "--fx", "-l", "-s:2005"],
     "fx_cpi_reg": ["--na:ca,gb,de", "--fx", "--cpi", "--reg:8", "-l", "-s:1960"],
     "fx_old": ["--na:ca,us,gb,de", "--fx", "-l", "-s:1900", "--e:1975"],
+    # Batch 14.3: France, by its prefix --fr: and from --nations:fr.
+    "fr_default": ["--na:fr"],
+    "fr1960_l": ["--na:fr", "-s:1960", "-l"],
+    "fr_rates": ["--gdp", "--debt", "--interest", "--yield", "--na:fr", "--policy", "--mo", "-l", "-s:2015"],
+    "fr_r1995": ["--na:fr", "-r", "-s:1995"],
+    "fr_p1995": ["--na:fr", "-p", "-s:1995"],
+    "fr_lv": ["--na:fr", "--d:fm", "-i", "-s:2000", "-l"],
+    "fr_reg1995": ["--na:fr", "--reg", "-s:1995"],
+    "fr_nat": ["--gdp", "--debt", "--interest", "--yield", "--na:fr", "--fr:max:6", "--fr:top:4t", "-s:2005"],
+    "fr_inf_cpi": ["--na:fr", "--inf", "--cpi", "--policy", "-l", "-s:1996"],
+    "fr_pop": ["--na:fr", "--pop", "-l", "--reg", "-s:1990"],
+    "fr_constant": ["--na:fr", "--constant", "-p", "-l", "-s:1997"],
+    "all5": ["--na:ca,us,gb,de,fr", "-s:2010"],
+    "cmp_mort_fr": ["--na:ca,us,gb,de,fr", "--com:mortgage", "-l", "-s:2015"],
+    "cmp_fr": ["--na:de,fr", "--com", "-s:1990"],
+    "fr_fx": ["--na:us,fr", "--fx", "-l", "-s:2000"],
+    "fr_master": ["--na:us,fr", "--master:usd", "-s:2010"],
 }
 
 

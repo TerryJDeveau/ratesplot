@@ -1516,7 +1516,8 @@ def _load_choices(choices: Choices) -> None:
         elif option.editor == "choices":
             text = payloads.get(key, "")
             rows = choice_rows(option, text, nation)
-            st.session_state[_CHOICE_OTHERS + key] = [value for value, _box in rows[-1][1]] if rows[-1][0] == "other" else []
+            # A list may offer a nation nothing (France's spreads, batch 14.3): no rows at all.
+            st.session_state[_CHOICE_OTHERS + key] = [value for value, _box in rows[-1][1]] if rows and rows[-1][0] == "other" else []
             ticked = choice_values(option, text, nation)
             for _caption, boxes in rows:
                 for value, _box in boxes:
