@@ -31,6 +31,7 @@ from __future__ import annotations
 import io
 import zipfile
 from dataclasses import dataclass
+from xml.etree import ElementTree
 from functools import partial
 from typing import Callable, Iterable
 
@@ -68,6 +69,8 @@ from .config import (
     DATE_COLUMN,
     GDP_COLUMN,
     HTTP_POST_TIMEOUT_SECONDS,
+    IMF_QGFS_FLOW,
+    IMF_SDMX_URL,
     MILLION,
     POPULATION_COLUMN,
     RECENT_PART_REVISED,
@@ -577,6 +580,16 @@ def statcan_table(table_id: str) -> pd.DataFrame:
 # bake's annual rate divided by four in all 262 quarters from 1961-Q1 to
 # 2026-Q2. Each is dated as the vector is (a month's or a quarter's first
 # day) and in its unit (index points; millions of dollars at annual rates).
+# The second stage (2026-11-20, on Terry's decision 169 of 2026-11-19, which
+# allowed the IMF's data service): the IMF's Quarterly Government Finance
+# Statistics carry Canada's interest as Statistics Canada publishes it,
+# measured 2026-11-19 against the bake from 1990-Q1 to 2026-Q1: general
+# government's (S13) equal to the consolidated interest (v52531011), and
+# budgetary central government's (S1311B) to the federal (v52531068), each in
+# 144 of 145 quarters, the last a revision apart; in dollars, so divided by a
+# million, and a quarter behind Statistics Canada. The IMF's debt is not
+# Statistics Canada's (up to 14 % apart), and it has no provincial or local
+# sector, so neither is taken.
 
 
 @dataclass(frozen=True)
@@ -586,6 +599,9 @@ class StandIn:
     series: str  # what the vector is, in the drawing's warning: "consumer price index"
     name: str  # where the stand-in is: "the Bank of Canada's V41690973"
     fetch: Callable[[pd.Timestamp], pd.Series]  # its values from a date on, dated and in the unit as the vector is
+    # How many of its latest periods may not yet hold Statistics Canada's revisions (the IMF copies them some weeks
+    # later): ``tools/check_sources.py`` holds the periods before them to equality, and only reports these.
+    behind_revisions: int = 0
 
 
 def _valet_stand_in(series_code: str, since: pd.Timestamp) -> pd.Series:
@@ -598,6 +614,26 @@ def _fred_stand_in(series_id: str, factor: float, since: pd.Timestamp) -> pd.Ser
     return fetch_fred_csv(series_id, since=since).set_index(DATE_COLUMN)[series_id] * factor
 
 
+def imf_quarterly(flow: str, key: str, since: pd.Timestamp) -> pd.Series:
+    """One quarterly series of the IMF's SDMX data service from ``since``'s year on: each figure as given (in units), dated by its quarter's first day.
+
+    One request (cached and kept as the others are). An answer with no
+    figures raises, as Valet's does.
+    """
+    response = canadian_get(IMF_SDMX_URL.format(flow=flow, key=key), {"startPeriod": f"{since:%Y}"})
+    observations = [(obs.get("TIME_PERIOD", ""), obs.get("OBS_VALUE")) for obs in ElementTree.fromstring(response.content).iter("Obs")]
+    if not observations:
+        raise ValueError(f"the IMF gave no figures of {key} from {since:%Y}")
+    quarters = pd.PeriodIndex([period.replace("-Q", "Q") for period, _ in observations], freq="Q").to_timestamp()
+    values = pd.to_numeric(pd.Series([value for _, value in observations], index=quarters, name=key), errors="coerce")
+    return values.sort_index()
+
+
+def _imf_stand_in(key: str, since: pd.Timestamp) -> pd.Series:
+    """An IMF QGFS series for Canada from ``since``'s year on (``imf_quarterly``), in millions of dollars as Statistics Canada's."""
+    return imf_quarterly(IMF_QGFS_FLOW, key, since) / MILLION
+
+
 STATCAN_STAND_INS: dict[str, StandIn] = {
     STATCAN_CDN_CPI_VECTOR: StandIn(
         "consumer price index", "the Bank of Canada's V41690973", partial(_valet_stand_in, "V41690973")
@@ -607,6 +643,12 @@ STATCAN_STAND_INS: dict[str, StandIn] = {
     ),
     STATCAN_CDN_GDP_VECTOR: StandIn(
         "GDP", "FRED's NGDPSAXDCCAQ (the IMF's) times 4", partial(_fred_stand_in, "NGDPSAXDCCAQ", 4.0)
+    ),
+    GFS_VECTORS[("Consolidated government", "Interest")]: StandIn(
+        "interest", "the IMF's QGFS CAN.SOO.S13.G24_T_XDC", partial(_imf_stand_in, "CAN.SOO.S13.G24_T_XDC.Q"), 4
+    ),
+    GFS_VECTORS[("Federal government", "Interest")]: StandIn(
+        "federal interest", "the IMF's QGFS CAN.SOO.S1311B.G24_T_XDC", partial(_imf_stand_in, "CAN.SOO.S1311B.G24_T_XDC.Q"), 4
     ),
 }
 
