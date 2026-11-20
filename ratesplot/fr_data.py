@@ -7,8 +7,11 @@ program already asks:
 * The 10-year yield: the OECD's long-term interest rate on FRED,
   ``IRLTLT01FRM156N``, a monthly average from 1960-01, dated by each month's
   first day (FRED's dates) and drawn across its month as steps, as the UK's
-  monthly averages are. It equals Eurostat's convergence-criterion yield
-  (``irt_lt_mcby_m``, from 1980) in October 2026 (4.89 both). No daily French
+  monthly averages are. Against Eurostat's convergence-criterion yield
+  (``irt_lt_mcby_m``, from 1980; measured 2026-11-20, ``check_sources``
+  fr_joins): equal every month from 2000-01 (4.89 both in 2026-10), within
+  0.1 point 1987 to 1999, and 0.4 to 1.2 points above it 1980 to 1986,
+  where the two measure different bonds. No daily French
   yields are on those hosts: the Banque de France's Webstat has them, behind
   a key Terry has not registered.
 * General government gross debt (Maastricht, consolidated): the ECB's year
@@ -24,7 +27,10 @@ program already asks:
   index, all items, 2025 = 100 (``prc_hicp_minr``), from 1996-01; unadjusted.
 * Levels of government: central government (S1311) and local (S1313).
   France has no state level (S1312 is empty); the social security funds
-  (S1314) are no level of the chart, as Germany's are not.
+  (S1314) are no level of the chart, as Germany's are not. Their debt is
+  Eurostat's quarters; their interest its yearly accounts (``gov_10a_main``,
+  1995 to 2025, each year dated by its last day), since the quarterly
+  interest is published for S13 alone (measured 2026-11-20).
 
 The policy rate is the euro area's (``rates``, Germany's functions), and the
 mortgage rates the ECB's for France (``rates.FR_MORTGAGE_SERIES``). Amounts in
@@ -125,6 +131,16 @@ def _ttm_interest(sectors: tuple[str, ...]) -> pd.Series:
     return ttm_sum(pd.concat(parts, axis=1).sum(axis=1, min_count=len(parts)).dropna())
 
 
+def _yearly_interest(sectors: tuple[str, ...]) -> pd.Series:
+    """Return the interest payable (D.41) by these subsectors together in each calendar year, dated by its last day, in euros (Eurostat's yearly accounts).
+
+    A level's: Eurostat's quarters hold the interest of S13 alone for France.
+    A year's sum is the trailing twelve months at its end, as a quarter's TTM is.
+    """
+    parts = [eurostat_series("gov_10a_main", geo=FR_GEO, sector=sector) for sector in sectors]
+    return pd.concat(parts, axis=1).sum(axis=1, min_count=len(parts)).dropna()
+
+
 @downloads_of("ECB and Eurostat government debt")
 def fetch_fr_debt(config: PlotConfig) -> pd.DataFrame | None:
     """Return general government gross debt: the ECB's year ends (1995-1999), then Eurostat's quarters (2000-).
@@ -175,7 +191,7 @@ def fetch_fr_interest(config: PlotConfig) -> pd.DataFrame | None:
 
 @downloads_of("Eurostat debt and interest by level of government")
 def fetch_fr_components(config: PlotConfig) -> pd.DataFrame | None:
-    """Return debt and TTM interest by level of government (--debt:LETTERS): central and local, Eurostat's quarters (debt from 2000, interest from 1995).
+    """Return debt and TTM interest by level of government (--debt:LETTERS): central and local, debt from Eurostat's quarters (from 2000), interest from its years (1995 to 2025).
 
     A level whose series fails is left out, with a warning.
     """
@@ -184,7 +200,7 @@ def fetch_fr_components(config: PlotConfig) -> pd.DataFrame | None:
         if letter not in config.components or letter not in _LEVEL_SECTORS:
             continue
         sectors = _LEVEL_SECTORS[letter]
-        for kind, include, fetch in (("debt", config.include_debt, _quarterly_debt), ("interest", config.include_interest, _ttm_interest)):
+        for kind, include, fetch in (("debt", config.include_debt, _quarterly_debt), ("interest", config.include_interest, _yearly_interest)):
             if not include:
                 continue
             try:

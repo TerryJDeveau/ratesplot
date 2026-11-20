@@ -327,6 +327,10 @@ EUROSTAT_QUERIES = {
     # France's, from 1996-01; measured 2026-11-20, the dataset that replaced
     # prc_hicp_midx, which ends 2025-12). Germany's index is the Bundesbank's.
     "prc_hicp_minr": ({"geo": "DE", "unit": "I25", "coicop18": "TOTAL"}, "I25"),
+    # Interest payable by subsector, yearly (batch 14.3: France's levels,
+    # whose quarterly interest Eurostat publishes for S13 alone; measured
+    # 2026-11-20: S1311 and S1313 from 1995 to 2025). Germany's are not asked.
+    "gov_10a_main": ({"geo": "DE", "unit": "MIO_NAC", "na_item": "D41PAY"}, "MIO_NAC"),
 }
 _EUROSTAT_MULTIPLIER = {"MIO_NAC": MILLION, "CP_MNAC": MILLION, "THS_PER": THOUSAND, "NR": 1, "I25": 1}
 # Each dataset's frequency (its one ``freq`` category), measured 2026-10-22;
@@ -334,7 +338,7 @@ _EUROSTAT_MULTIPLIER = {"MIO_NAC": MILLION, "CP_MNAC": MILLION, "THS_PER": THOUS
 # ``sinceTimePeriod`` is written depends on it (``_eurostat_since``).
 _EUROSTAT_FREQUENCIES = {
     "gov_10q_ggdebt": "Q", "gov_10q_ggnfa": "Q", "gov_10dd_edpt1": "A", "namq_10_gdp": "Q", "namq_10_pe": "Q", "demo_pjan": "A",
-    "prc_hicp_minr": "M",
+    "prc_hicp_minr": "M", "gov_10a_main": "A",
 }
 # Levels of government (--debt:LETTERS): Eurostat's subsectors of each.
 # "n" is the Länder and local government together.
