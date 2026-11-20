@@ -357,6 +357,14 @@ CASES: list[list[str]] = [
     ["--fx", "--cpi"], ["--fx", "--pop"], ["--fx", "--cpi", "--pop"], ["--fx", "--cpi", "--debt"], ["--fx", "--pop", "--pay"],
     ["--fx", "--cpi", "--pop", "--debt"], ["--fx", "--reg:8", "-l"], ["--fx", "-r"], ["--fx", "--debt", "-r"],
     ["--na:ca", "--fx"], ["--na:ca,us,gb,de", "--fx", "--cpi"], ["--fx:x"],
+    # Batch 14.3: France, by --nations:fr (or fra) and its prefixes --fr: and --fra:; its own defaults (the 10-year,
+    # three mortgage bands, no spreads); its levels f and m (no p); a term it lacks; --cpi:sa, which it has not;
+    # the comparison and a base with it; "--fran" names no nation.
+    ["--na:fr"], ["--na:fra"], ["--na:ca,us,gb,de,fr"], ["--na:fr", "--fr:max:6"], ["--na:fr", "--fra:top:4t"],
+    ["--na:fr", "--fr:d:fm"], ["--na:fr", "--fr:d:p"], ["--na:fr", "--fr:y:2,10"], ["--na:fr", "--fr:mo:over10"],
+    ["--na:fr", "--mo"], ["--na:fr", "--sp"], ["--na:fr", "--policy"], ["--na:fr", "--cpi:sa"], ["--na:fr", "--inf"],
+    ["--na:de,fr", "--com"], ["--na:de,fr", "--com:mortgage"], ["--na:us,fr", "--com", "--base:fr"],
+    ["--na:fr", "--master:eur"], ["--fran:max:6"], ["--na:fr", "--fr:top:USD3t"],
 ]
 
 
