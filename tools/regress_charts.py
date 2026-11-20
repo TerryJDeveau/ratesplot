@@ -463,7 +463,7 @@ CASES: dict[str, list[str]] = {
     "fr_p1995": ["--na:fr", "-p", "-s:1995"],
     "fr_lv": ["--na:fr", "--d:fm", "-i", "-s:2000", "-l"],
     "fr_reg1995": ["--na:fr", "--reg", "-s:1995"],
-    "fr_nat": ["--gdp", "--debt", "--interest", "--na:fr", "--fr:max:6", "--fr:top:4t", "-s:2005"],
+    "fr_nat": ["--gdp", "--debt", "--interest", "--yield", "--na:fr", "--fr:max:6", "--fr:top:4t", "-s:2005"],
     "fr_inf_cpi": ["--na:fr", "--inf", "--cpi", "--policy", "-l", "-s:1996"],
     "fr_pop": ["--na:fr", "--pop", "-l", "--reg", "-s:1990"],
     "fr_constant": ["--na:fr", "--constant", "-p", "-l", "-s:1997"],

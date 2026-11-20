@@ -1206,8 +1206,8 @@ def check_batch91(check: Check) -> None:
     check("Canada's last policy box cannot be unticked",
           at.checkbox(key="choice:cdn:policy-terms:target").value
           and any("untick “Policy rate”" in str(item.value) for item in list(at.info) + list(at.warning)), address(at))
-    check("no exception, one drawing per chart", not at.exception and charts_shown(at) == 4, at.exception)
-    page = new_page("--gdp --debt --interest --yield --po:market --na:ca,us,gb,de --e:2026-09-01")
+    check("no exception, one drawing per chart", not at.exception and charts_shown(at) == len(NATION_KEYS), at.exception)
+    page = new_page("--gdp --debt --interest --yield --po:market --na:ca,us,gb,de,fr --e:2026-09-01")
     markets = {f"choice:{key}:policy-terms:market" for key in NATION_KEYS}
     check("--po:market: the market ticked in every section, the target not",
           {key for key in wanted if page.checkbox(key=key).value} == markets and flags(page)["policy"],

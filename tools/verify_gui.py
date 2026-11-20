@@ -982,7 +982,7 @@ def check_levels(check: Check) -> None:
         check("the UK's central level too: --debt:fp once", "--debt:fp" in tokens()
               and not any(token.startswith(("--cdn:debt", "--uk:debt")) for token in tokens()), tokens())
         check("the UK's aggregate debts greyed by its level", all(not enabled(widget) for widget in app.choice_editors["uk:aggregate"].widgets))
-        check("each chart the written line's", w.written_draws_the_same(NATION_KEYS), tokens())
+        check("each chart the written line's", w.written_draws_the_same(("cdn", "us", "uk", "de")), tokens())
         for name in ("debt", "interest"):
             w.tick(name, False)
         w.settle()
