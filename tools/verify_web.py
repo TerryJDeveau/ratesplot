@@ -958,7 +958,7 @@ def check_batch262(check: Check) -> None:
     at = new_page("--e:2026-09-01")
     check("no exception", not at.exception, at.exception)
     keys = [box.key for box in at.checkbox if box.key]
-    check("“Compare the nations” with the nations, after Germany", keys.index("flag:compare") == keys.index("flag:germany") + 1, keys[:6])
+    check("“Compare the nations” with the nations, after the last of them", keys.index("flag:compare") == keys.index("flag:france") + 1, keys[:7])
     titles = [header.value for header in at.subheader]
     check("on a nation's tab, no comparison block", "Comparison chart" not in titles and "Curve selection" in titles, titles)
     at.checkbox(key="flag:debt").uncheck()  # a curve's box, its value to be kept through the tab Compare
@@ -1376,15 +1376,15 @@ def check_batch18(check: Check) -> None:
     at.checkbox(key="all:us:max").check()
     at.run()
     check("All ticked: every nation's Max 8, every Max's All ticked",
-          values("max") == ["8"] * 4 and all(ticked("max")), values("max"))
+          values("max") == ["8"] * len(NATION_KEYS) and all(ticked("max")), values("max"))
     check("All ticked: written once, --max:8", "--max:8" in address(at) and "--us:max" not in address(at), address(at))
     at.text_input(key="value:cdn:max").input("7")
     at.run()
-    check("a value entered in another nation's field goes into every one", values("max") == ["7"] * 4, values("max"))
+    check("a value entered in another nation's field goes into every one", values("max") == ["7"] * len(NATION_KEYS), values("max"))
     at.text_input(key="value:cdn:max").input("")
     at.run()
     check("a field blanked: its All unticked in every section, the others' values kept",
-          not any(ticked("max")) and values("max") == ["", "7", "7", "7"],
+          not any(ticked("max")) and values("max") == [""] + ["7"] * (len(NATION_KEYS) - 1),
           values("max"))
     check("a field blanked: its own All greyed, the others' active",
           at.checkbox(key="all:cdn:max").disabled and not at.checkbox(key="all:us:max").disabled)
@@ -1394,7 +1394,7 @@ def check_batch18(check: Check) -> None:
     check("Top in dollars: its All active", not at.checkbox(key="all:us:top").disabled)
     at.checkbox(key="all:us:top").check()
     at.run()
-    check("All on Top: the U.S.' 40t as USD40t in the other nations' fields", values("top") == ["USD40t", "40t", "USD40t", "USD40t"],
+    check("All on Top: the U.S.' 40t as USD40t in the other nations' fields", values("top") == ["USD40t", "40t"] + ["USD40t"] * (len(NATION_KEYS) - 2),
           values("top"))
     check("All on Top: written once, --top:USD40t", "--top:USD40t" in address(at) and "--us:top" not in address(at), address(at))
     check("no exception", not at.exception, at.exception)
@@ -1405,10 +1405,10 @@ def check_batch18(check: Check) -> None:
     check("-r: Top's and Bottom's unit blank, Max's and Min's %", units(at) == ["%", "&nbsp;"] * 4, units(at))
     at.checkbox(key="all:us:top").check()
     at.run()
-    check("-r: All on Top copies 150% to every nation", values("top") == ["150%"] * 4 and "--top:150%" in address(at), values("top"))
+    check("-r: All on Top copies 150% to every nation", values("top") == ["150%"] * len(NATION_KEYS) and "--top:150%" in address(at), values("top"))
     at.checkbox(key="flag:relative").uncheck()
     at.run()
-    check("the measure changed: Top cleared, its All unticked", values("top") == [""] * 4 and not at.checkbox(key="all:us:top").value,
+    check("the measure changed: Top cleared, its All unticked", values("top") == [""] * len(NATION_KEYS) and not at.checkbox(key="all:us:top").value,
           values("top"))
     at.checkbox(key="flag:cdn").uncheck()
     at.run()
