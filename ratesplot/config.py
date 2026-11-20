@@ -199,6 +199,11 @@ STATCAN_WDS_RANGE_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVec
 STATCAN_WDS_RANGE_END = "9999-12-31"
 # The host of the three: checked once a day, its series given stand-ins on a day it fails (batch 49, ``http.DAILY_CHECKED_HOSTS``).
 STATCAN_HOST = "www150.statcan.gc.ca"
+# The IMF's SDMX 2.1 data service (no key; Terry's decision 169, 2026-11-19): a flow and a series key, from a
+# ``startPeriod``; its answer structure-specific XML, each figure in units (``SCALE`` only how it is shown). Its
+# Quarterly Government Finance Statistics hold Canada's interest as Statistics Canada's own (batch 49's second stage).
+IMF_SDMX_URL = "https://api.imf.org/external/sdmx/2.1/data/{flow}/{key}"
+IMF_QGFS_FLOW = "IMF.STA,QGFS,12.0.0"
 
 # Each source's name in the message log, by the host its requests go to: a
 # source that fails gets one warning per drawing, which names it once (batch
@@ -219,6 +224,7 @@ SOURCE_NAMES = {
     "api.fiscaldata.treasury.gov": "U.S. Treasury",
     "quote.cnbc.com": "CNBC",
     "www2.census.gov": "Census Bureau",
+    "api.imf.org": "IMF",
 }
 
 _BROWSER_HEADERS = {
