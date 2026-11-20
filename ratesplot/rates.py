@@ -179,6 +179,9 @@ DE_EONIA = ("EON", "D.EONIA_TO.RATE", "PC")
 DE_EONIA_ENDED = pd.Timestamp("2021-12-31")  # stopped (batch 19.3: see US_TARGET_ENDED)
 DE_ESTR = ("EST", "B.EU000A2X2A25.WT", "PC")
 DE_MORTGAGE_SERIES = {"1-5": "M.DE.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.DE.B.A2C.O.R.A.2250.EUR.N", "over10": "M.DE.B.A2C.P.R.A.2250.EUR.N"}
+# France's (batch 14.3): the same statistics with FR, each band 2000-01 on
+# (measured 2026-11-19 and 20); no older series joined before them.
+FR_MORTGAGE_SERIES = {"1-5": "M.FR.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.FR.B.A2C.O.R.A.2250.EUR.N", "over10": "M.FR.B.A2C.P.R.A.2250.EUR.N"}
 # The ECB's flow of the MFI interest rate statistics and the unit its mortgage
 # rates are given in (a rate per year), for every band of DE_MORTGAGE_SERIES.
 DE_MORTGAGE_FLOW = "MIR"
@@ -801,21 +804,12 @@ def _uk_tracker() -> pd.Series:
     return pd.concat([first, bank.loc[bank.index > UK_TRACKER_FROM]])
 
 
-def de_policy_target() -> RateCurve | None:
-    """Return Germany's official rate: the Bundesbank's discount rate, then the ECB's main refinancing rate from 1999.
+def _ecb_main_refinancing_rate() -> pd.Series | None:
+    """Return the ECB's main refinancing rate on every day from its first (1999-01-01) to today, or None with a warning if its fixed rate fails.
 
-    The ECB's: fixed, the minimum bid while the tenders were variable, fixed
-    again. Both series hold only the days the rate changed: each value is
-    carried daily to the next change, and the last to today (it holds until
-    changed). If the minimum bid rate fails, the fixed rate alone, with a
-    warning (wrong 2000-2008); None if the fixed rate fails (the discount
-    rate alone would be carried on from 1998, as an announced rate is).
-    Before the ECB's first day, the Bundesbank's discount rate on the days
-    it changed, from 1948-07 (baked, batch 9.6; Terry's 2026-10-13 request,
-    labelled for its years as the U.S. line is for its years before the
-    target). The Lombard rate, its ceiling, is not drawn: its special rate
-    stood in for it in 1973-74 and 1981-82, it lay one to three points
-    above, and the ECB's corridor is not drawn after 1999 either.
+    Fixed, the minimum bid while the tenders were variable, fixed again (as
+    ``de_policy_target`` describes); each change carried daily to the next,
+    and the last to today.
     """
     try:
         fixed = _clean(ecb_series(*DE_POLICY_FIXED, revised=False))
@@ -839,7 +833,28 @@ def de_policy_target() -> RateCurve | None:
     # chart's end anyway; the daily values are kept, so the points drawn are
     # those drawn before.)
     today = pd.Timestamp.today().normalize()
-    values = values.reindex(pd.date_range(values.index[0], max(today, values.index[-1]), freq="D")).ffill()
+    return values.reindex(pd.date_range(values.index[0], max(today, values.index[-1]), freq="D")).ffill()
+
+
+def de_policy_target() -> RateCurve | None:
+    """Return Germany's official rate: the Bundesbank's discount rate, then the ECB's main refinancing rate from 1999.
+
+    The ECB's: fixed, the minimum bid while the tenders were variable, fixed
+    again. Both series hold only the days the rate changed: each value is
+    carried daily to the next change, and the last to today (it holds until
+    changed). If the minimum bid rate fails, the fixed rate alone, with a
+    warning (wrong 2000-2008); None if the fixed rate fails (the discount
+    rate alone would be carried on from 1998, as an announced rate is).
+    Before the ECB's first day, the Bundesbank's discount rate on the days
+    it changed, from 1948-07 (baked, batch 9.6; Terry's 2026-10-13 request,
+    labelled for its years as the U.S. line is for its years before the
+    target). The Lombard rate, its ceiling, is not drawn: its special rate
+    stood in for it in 1973-74 and 1981-82, it lay one to three points
+    above, and the ECB's corridor is not drawn after 1999 either.
+    """
+    values = _ecb_main_refinancing_rate()
+    if values is None:
+        return None
     discount = _baked(EMBEDDED_DE_DISCOUNT_RATE_CHANGES)
     discount = discount.loc[discount.index < values.index[0]]
     parts = _parts(
@@ -847,6 +862,20 @@ def de_policy_target() -> RateCurve | None:
         (values, "ECB Main Refinancing Rate", "ECB Main Refinancing Rate"),
     )
     values = pd.concat([discount, values])
+    return RateCurve("policy", _named(parts), values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, holds_of("policy")),
+                     parts=parts)
+
+
+def fr_policy_target() -> RateCurve | None:
+    """Return France's official rate (batch 14.3): the ECB's main refinancing rate from 1999, as Germany's; None if it fails.
+
+    Nothing before the euro: the Banque de France's own rates are on no host
+    the program asks.
+    """
+    values = _ecb_main_refinancing_rate()
+    if values is None:
+        return None
+    parts = _parts((values, "ECB Main Refinancing Rate", "ECB Main Refinancing Rate"))
     return RateCurve("policy", _named(parts), values, POLICY_RATE_STYLE, title="Policy Rate", holds=holding(values, holds_of("policy")),
                      parts=parts)
 
@@ -889,6 +918,12 @@ def _de_mortgage(term: str) -> pd.Series:
         return values
     history = _baked(DE_MORTGAGE_HISTORY[term])
     return pd.concat([history.loc[history.index < DE_MORTGAGE_JOIN], values.loc[values.index >= DE_MORTGAGE_JOIN]])
+
+
+def _fr_mortgage(term: str) -> pd.Series:
+    """Return one French mortgage band's monthly rate (the ECB's, from 2000-01), dated by each month's first day, as Germany's are."""
+    monthly = ecb_series(DE_MORTGAGE_FLOW, FR_MORTGAGE_SERIES[term], DE_MORTGAGE_UNIT, revised=True)
+    return _clean(monthly.set_axis(monthly.index.to_period("M").start_time))
 
 
 def cdn_mortgage_history() -> pd.Series:
@@ -938,12 +973,16 @@ def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) ->
     if country is None:
         (country,) = countries
     label = _mortgage_label(term, country, margin)
-    code = {"us": US_MORTGAGE_SERIES, "cdn": CDN_MORTGAGE_SERIES, "uk": UK_MORTGAGE_SERIES, "de": DE_MORTGAGE_SERIES}[country][term]
+    code = {
+        "us": US_MORTGAGE_SERIES, "cdn": CDN_MORTGAGE_SERIES, "uk": UK_MORTGAGE_SERIES, "de": DE_MORTGAGE_SERIES, "fr": FR_MORTGAGE_SERIES,
+    }[country][term]
     try:
         if country == "uk":
             values = _uk_mortgage(term)
         elif country == "de":
             values = _de_mortgage(term)
+        elif country == "fr":
+            values = _fr_mortgage(term)
         else:
             values = _fred(code) if country == "us" else _valet(code)
     except Exception as exc:
@@ -1169,8 +1208,9 @@ def with_followed(
 
 
 # Each nation's policy terms (batch 9.1).
-_POLICY_TARGETS = {"us": us_policy_target, "cdn": cdn_policy_target, "uk": uk_policy_target, "de": de_policy_target}
-_POLICY_MARKETS = {"us": us_policy_market, "cdn": cdn_policy_market, "uk": uk_policy_market, "de": de_policy_market}
+# France's market rate is the euro area's, as Germany's (batch 14.3).
+_POLICY_TARGETS = {"us": us_policy_target, "cdn": cdn_policy_target, "uk": uk_policy_target, "de": de_policy_target, "fr": fr_policy_target}
+_POLICY_MARKETS = {"us": us_policy_market, "cdn": cdn_policy_market, "uk": uk_policy_market, "de": de_policy_market, "fr": de_policy_market}
 
 # How far ahead a blank End looks for a policy target's value (batch 32.4):
 # a change takes effect on the day of its announcement (the Bank of

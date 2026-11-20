@@ -323,13 +323,18 @@ EUROSTAT_QUERIES = {
     "namq_10_gdp": ({"geo": "DE", "unit": "CP_MNAC", "na_item": "B1GQ", "s_adj": "NSA"}, "CP_MNAC"),
     "namq_10_pe": ({"geo": "DE", "unit": "THS_PER", "na_item": "POP_NC", "s_adj": "NSA"}, "THS_PER"),
     "demo_pjan": ({"geo": "DE", "sex": "T", "age": "TOTAL"}, "NR"),
+    # The harmonised consumer price index, all items, 2025 = 100 (batch 14.3:
+    # France's, from 1996-01; measured 2026-11-20, the dataset that replaced
+    # prc_hicp_midx, which ends 2025-12). Germany's index is the Bundesbank's.
+    "prc_hicp_minr": ({"geo": "DE", "unit": "I25", "coicop18": "TOTAL"}, "I25"),
 }
-_EUROSTAT_MULTIPLIER = {"MIO_NAC": MILLION, "CP_MNAC": MILLION, "THS_PER": THOUSAND, "NR": 1}
+_EUROSTAT_MULTIPLIER = {"MIO_NAC": MILLION, "CP_MNAC": MILLION, "THS_PER": THOUSAND, "NR": 1, "I25": 1}
 # Each dataset's frequency (its one ``freq`` category), measured 2026-10-22;
 # an answer of another raises (``eurostat_download``), since how
 # ``sinceTimePeriod`` is written depends on it (``_eurostat_since``).
 _EUROSTAT_FREQUENCIES = {
     "gov_10q_ggdebt": "Q", "gov_10q_ggnfa": "Q", "gov_10dd_edpt1": "A", "namq_10_gdp": "Q", "namq_10_pe": "Q", "demo_pjan": "A",
+    "prc_hicp_minr": "M",
 }
 # Levels of government (--debt:LETTERS): Eurostat's subsectors of each.
 # "n" is the Länder and local government together.
@@ -671,11 +676,17 @@ def _eurostat_since(dataset: str, day: pd.Timestamp) -> str:
         return f"{day.year}-Q{day.quarter}"
     if frequency == "A":
         return f"{day.year}"
+    if frequency == "M":
+        # Measured 2026-11-20 (prc_hicp_minr): "2026-01" answers from 2026-01.
+        return f"{day.year}-{day.month:02d}"
     raise ValueError(f"Eurostat {dataset}: no sinceTimePeriod form measured for its frequency {frequency!r}")
 
 
-def eurostat_download(dataset: str, start: pd.Timestamp | None = None) -> dict:
+def eurostat_download(dataset: str, start: pd.Timestamp | None = None, geo: str = "DE") -> dict:
     """Ask Eurostat for one dataset (``EUROSTAT_QUERIES``): its JSON-stat answer, every period, or those from the period holding ``start`` on.
+
+    ``geo``: the nation asked for (batch 14.3: France's "FR" in place of
+    Germany's "DE" in the same query; Germany's request is unchanged).
 
     One request (cached and kept as the others are), which answers every
     series of the dataset. The whole dataset is asked for as before batch
@@ -685,6 +696,7 @@ def eurostat_download(dataset: str, start: pd.Timestamp | None = None) -> dict:
     ``parse_jsonstat`` reads as no values.
     """
     params, _unit = EUROSTAT_QUERIES[dataset]
+    params = params | {"geo": geo}
     if start is not None:
         params = params | {"sinceTimePeriod": _eurostat_since(dataset, start)}
     data = de_get(EUROSTAT_DATASET_URL.format(dataset=dataset), params).json()
@@ -694,14 +706,14 @@ def eurostat_download(dataset: str, start: pd.Timestamp | None = None) -> dict:
     return data
 
 
-def _eurostat_frame(dataset: str, codes: dict[str, dict[str, str]], start: pd.Timestamp | None) -> pd.DataFrame:
+def _eurostat_frame(dataset: str, codes: dict[str, dict[str, str]], start: pd.Timestamp | None, geo: str = "DE") -> pd.DataFrame:
     """Series ``codes`` (each file's name -> the categories chosen) of one answer of ``dataset`` (``eurostat_download``), a column each, in the dataset's unit.
 
     From ``start`` (a recent part), a series with no value raises, naming
     it: the join would otherwise lose its values from there on.
     """
     _params, unit = EUROSTAT_QUERIES[dataset]
-    data = eurostat_download(dataset, start)
+    data = eurostat_download(dataset, start, geo)
     columns = {}
     for code, chosen in codes.items():
         columns[code] = parse_jsonstat(data, unit, **chosen)
@@ -710,7 +722,7 @@ def _eurostat_frame(dataset: str, codes: dict[str, dict[str, str]], start: pd.Ti
     return pd.concat(columns, axis=1).sort_index()
 
 
-def eurostat_series(dataset: str, **chosen: str) -> pd.Series:
+def eurostat_series(dataset: str, *, geo: str = "DE", **chosen: str) -> pd.Series:
     """Return one series of a Eurostat dataset (``EUROSTAT_QUERIES``), in euros or persons; raises if it has none.
 
     Batch 19.2 (``ratesplot.baked``): the history of every series read
@@ -725,13 +737,22 @@ def eurostat_series(dataset: str, **chosen: str) -> pd.Series:
     its last value, with a warning naming the series. Measured 2026-10-22:
     the bake joined to its recent part is Eurostat's whole answer, value for
     value, for all twelve.
+
+    ``geo`` (batch 14.3): another nation's series of the same query (France's
+    "FR"), named with its code (``gov_10q_ggdebt.FR.S13``); not baked yet, so
+    its dataset is asked for whole, once a drawing (the download cache).
     """
     _params, unit = EUROSTAT_QUERIES[dataset]
-    code = eurostat_code(dataset, **chosen)
-    codes = {eurostat_code(dataset, **read): read for read in EUROSTAT_SERIES_READ[dataset]}
-    codes.setdefault(code, chosen)  # not one read before, so not baked: the dataset is asked for whole
+    if geo == "DE":
+        code = eurostat_code(dataset, **chosen)
+        codes = {eurostat_code(dataset, **read): read for read in EUROSTAT_SERIES_READ[dataset]}
+        codes.setdefault(code, chosen)  # not one read before, so not baked: the dataset is asked for whole
+    else:
+        code = eurostat_code(dataset, geo=geo, **chosen)
+        codes = {code: chosen}
     frame = frame_with_recent_part(
-        EUROSTAT_BAKED_SOURCE, list(codes), f"Eurostat {code}", lambda start: _eurostat_frame(dataset, codes, start), RECENT_PART_REVISED
+        EUROSTAT_BAKED_SOURCE, list(codes), f"Eurostat {code}", lambda start: _eurostat_frame(dataset, codes, start, geo),
+        RECENT_PART_REVISED,
     )
     # Named as before 19.2 (none): the callers name what they make of it.
     values = frame[code].dropna().rename(None)

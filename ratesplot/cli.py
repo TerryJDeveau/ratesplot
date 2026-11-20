@@ -41,7 +41,7 @@ from .options import (
 from .http import drawing_downloads, enable_download_cache, enable_last_good_copies, not_drawn_line
 from .http import not_drawn as why_not_drawn
 from .compare import CHARTS, build_chart, run_compare
-from .plotting import end_to_resolve, resolve_end, resolve_start, run_cdn, run_de, run_uk, run_us
+from .plotting import end_to_resolve, resolve_end, resolve_start, run_cdn, run_de, run_fr, run_uk, run_us
 from .refresh import Ticker, forget_old_downloads
 
 
@@ -441,6 +441,7 @@ def main(argv: list[str] | None = None) -> None:
             (config.show_us, run_us, "United States"),
             (config.show_uk, run_uk, "United Kingdom"),
             (config.show_de, run_de, "Germany"),
+            (config.show_fr, run_fr, "France"),
             # The comparison chart (batch 26), after the nations', drawn once (no automatic refresh in the prototype).
             (config.show_compare, lambda config, _again: run_compare(config), COMPARE_TAB_TITLE),
         ):

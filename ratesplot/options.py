@@ -1048,6 +1048,12 @@ OPTIONS: tuple[Option, ...] = (
         "Germany's chart (only when named; with\n-c or -u, those too)",
         names=("germany",), shortest=3, label="Germany", command_line=False, topic="germany",
     ),
+    # Batch 14.3: France, as Germany.
+    Option(
+        "france", Kind.SWITCH, ("show_fr",), "country", "--nations:fr",
+        "France's chart (only when named; with\n-c or -u, those too)",
+        names=("france",), shortest=3, label="France", command_line=False, topic="france",
+    ),
     # The same by the nations' codes, for when there are more than two
     # (batch 2). The command line turns it into the switches of the nations it
     # names (``cli.sort_tokens``), so it sets no field of its own and has no
