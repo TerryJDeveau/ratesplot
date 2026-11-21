@@ -76,6 +76,16 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   each month's sum is over GDP's latest quarter, so the ratio runs up within
   a quarter by up to its growth (about 2 % a quarter in the 1970s, 1 %
   since 2010), which batch 42.3's filled-in sums would smooth.
+* France (batch 14.3's second stage): Eurostat's balance of payments with
+  the rest of the world (``de_data.EUROSTAT_QUERIES``), millions of euros a
+  quarter, unadjusted, under BPM6: ``bop_c6_q`` from 1999-Q1, the current
+  account's (CA) and goods and services' (GS) credits and debits (credits
+  less debits is its balance within a million). After its last quarter the
+  whole quarters of its monthly figures (``bop_c6_m``, from 2008-01), whose
+  three months add up to the quarter within 3 million in all 74 quarters
+  from 2008 (measured 2026-11-21: the quarters to 2026-Q2, the months to
+  2026-09). Nothing before 1999: the IMF's quarters from 1975 are in U.S.
+  dollars alone (decision 172's call).
 """
 
 from __future__ import annotations
@@ -96,7 +106,8 @@ from .config import (
     PlotConfig,
     nation_by_key,
 )
-from .de_data import DE_PAYMENTS_SERIES, DE_PAYMENTS_SIDES, bundesbank_series
+from .de_data import DE_PAYMENTS_SERIES, DE_PAYMENTS_SIDES, bundesbank_series, eurostat_series
+from .fr_data import FR_GEO
 from .frames import at_quarter_end, rows_to_frame
 from .http import downloads_of
 from .joins import ttm_sum
@@ -105,7 +116,7 @@ from .us_data import fred_series
 
 # The nations whose balance of payments is drawn (batch 23's stages): a chart
 # of another prints a note and draws none.
-PAYMENTS_NATIONS = ("us", "cdn", "uk", "de")
+PAYMENTS_NATIONS = ("us", "cdn", "uk", "de", "fr")
 
 # FRED's BEA series, BPM6, from 1999-Q1, millions of dollars a quarter,
 # seasonally adjusted: (credits, debits) of each pair.
@@ -146,6 +157,14 @@ DE_PAYMENTS_PARTS = {"current": ("G", "S", "IN1", "IN2"), "trade": ("G", "S")}
 DE_PAYMENTS_EARLIEST = pd.Timestamp("1971-01-01")
 # A year of months, for Germany's twelve-month sums.
 _MONTHS_IN_A_YEAR = 12
+
+# France: Eurostat's item of each pair (``bop_item``) and its credits and
+# debits (``stk_flow``), quarters from ``bop_c6_q`` then whole quarters of
+# ``bop_c6_m``'s months (the module's docstring).
+FR_PAYMENTS_ITEMS = {"current": "CA", "trade": "GS"}
+FR_PAYMENTS_FLOWS = ("CRE", "DEB")
+FR_PAYMENTS_EARLIEST = pd.Timestamp("1999-01-01")
+_MONTHS_IN_A_QUARTER = 3
 
 
 def _fred_quarters(series_id: str, *, stopped: pd.Timestamp | None = None) -> pd.Series:
@@ -223,9 +242,36 @@ def _de_months(item: str) -> tuple[pd.Series, pd.Series]:
     return sides[0], sides[1]
 
 
+def _fr_quarters(item: str) -> tuple[pd.Series, pd.Series]:
+    """France's credits and debits of pair ``item``, each a quarter's flow in euros, dated by its last day: Eurostat's quarters, then its months' whole quarters (the module's docstring)."""
+    sides = []
+    for flow in FR_PAYMENTS_FLOWS:
+        quarters = eurostat_series("bop_c6_q", geo=FR_GEO, bop_item=FR_PAYMENTS_ITEMS[item], stk_flow=flow)
+        sides.append(_with_eurostat_months(quarters, item, flow))
+    return sides[0], sides[1]
+
+
+def _with_eurostat_months(quarters: pd.Series, item: str, flow: str) -> pd.Series:
+    """``quarters`` (France's, dated by each quarter's last day) and after its last the whole quarters of Eurostat's months (``bop_c6_m``), each the sum of its three.
+
+    If Eurostat's months fail, ``quarters`` as they are, with a warning
+    naming where they end (as ``_with_monthly_quarters`` for the U.S.).
+    """
+    try:
+        months = eurostat_series("bop_c6_m", geo=FR_GEO, bop_item=FR_PAYMENTS_ITEMS[item], stk_flow=flow)
+    except Exception as exc:  # noqa: BLE001 - any failure: the quarterly series alone
+        print(f"  Warning: Eurostat bop_c6_m (France's balance of payments each month) unavailable ({exc}); "
+              f"it ends at its quarterly figures' last quarter, {quarters.index.max():%Y-%m-%d}.")
+        return quarters
+    whole = months.resample("QE").agg(["sum", "count"])
+    sums = whole.loc[whole["count"] == _MONTHS_IN_A_QUARTER, "sum"]
+    later = sums.loc[sums.index > quarters.index.max()]
+    return pd.concat([quarters, later]) if len(later) else quarters
+
+
 # Each drawn nation's reader: (credits, debits) of a pair, a quarter's flows,
 # or for Germany a month's.
-_QUARTERS = {"us": _us_quarters, "cdn": _cdn_quarters, "uk": _uk_quarters}
+_QUARTERS = {"us": _us_quarters, "cdn": _cdn_quarters, "uk": _uk_quarters, "fr": _fr_quarters}
 _MONTHS = {"de": _de_months}
 
 
@@ -250,7 +296,10 @@ def _monthly_ttm_frame(credits: pd.Series, debits: pd.Series) -> pd.DataFrame:
 
 def payments_earliest(key: str) -> pd.Timestamp | None:
     """The first quarter (Germany's: month) of nation ``key``'s balance of payments, for the coverage warning; None where none is drawn yet."""
-    return {"us": US_PAYMENTS_EARLIEST, "cdn": CDN_PAYMENTS_EARLIEST, "uk": UK_PAYMENTS_EARLIEST, "de": DE_PAYMENTS_EARLIEST}.get(key)
+    return {
+        "us": US_PAYMENTS_EARLIEST, "cdn": CDN_PAYMENTS_EARLIEST, "uk": UK_PAYMENTS_EARLIEST, "de": DE_PAYMENTS_EARLIEST,
+        "fr": FR_PAYMENTS_EARLIEST,
+    }.get(key)
 
 
 @downloads_of("the balance of payments")
@@ -273,7 +322,8 @@ def fetch_payments(key: str, item: str) -> pd.DataFrame | None:
 # (batch 43.3: the monthly trade releases, ``US_MONTHLY_TRADE_SERIES`` and
 # ``uk_data.ONS_SOONER``), so that it steers the current account's projection
 # (``latest._trade_steered``). Canada's would join with its monthly trade;
-# Germany's figures are monthly already, trade's and the current account's alike.
+# Germany's figures are monthly already, trade's and the current account's alike;
+# France's months reach as far for both pairs.
 TRADE_STEERED_NATIONS = ("us", "uk")
 
 

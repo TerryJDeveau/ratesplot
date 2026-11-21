@@ -820,6 +820,36 @@ _EUROSTAT_SERIES = {
 }
 
 
+# France's balance of payments (batch 14.3's second stage): each (item, flow)'s quarterly flow, first and last,
+# millions of euros.
+_FR_PAYMENTS_PATHS = {
+    ("CA", "CRE"): (120_000, 399_000), ("CA", "DEB"): (110_000, 406_000),
+    ("GS", "CRE"): (85_000, 274_000), ("GS", "DEB"): (80_000, 270_000),
+}
+
+
+def _fr_payments(dataset: str, query: dict) -> bytes:
+    """France's ``bop_c6_q`` (quarters 1999-Q1 to 2026-Q2) or ``bop_c6_m`` (months 2008-01 to 2026-09, each a third of its quarter's path), the query's items and flows."""
+    items, flows = list(query["bop_item"]), list(query["stk_flow"])
+    quarters = pd.period_range("1999Q1", "2026Q3", freq="Q")
+    paths = {
+        key: dict(zip(quarters, _growth(quarters.to_timestamp(how="end"), low, high, f"fr_bop_{key[0]}_{key[1]}")))
+        for key, (low, high) in _FR_PAYMENTS_PATHS.items()
+    }
+    if dataset == "bop_c6_q":
+        periods, frequency, share = list(quarters[:-1]), "Q", 1.0
+        times = [f"{p.year}-Q{p.quarter}" for p in periods]
+    else:
+        periods, frequency, share = list(pd.period_range("2008-01", "2026-09", freq="M")), "M", 1 / 3
+        times = [f"{p.year}-{p.month:02d}" for p in periods]
+    by_time = dict(zip(times, periods))
+    dims = [
+        ("freq", [frequency]), ("currency", [query["currency"]]), ("bop_item", items), ("sector10", [query["sector10"]]),
+        ("sectpart", [query["sectpart"]]), ("stk_flow", flows), ("partner", [query["partner"]]), ("geo", ["FR"]), ("time", times),
+    ]
+    return _jsonstat(dataset, dims, lambda c: paths[(c["bop_item"], c["stk_flow"])][by_time[c["time"]].asfreq("Q")] * share)
+
+
 def eurostat(url: str, params: tuple) -> bytes:
     """A Eurostat JSON-stat answer for the query the program sends (``de_data.EUROSTAT_QUERIES``).
 
@@ -851,6 +881,8 @@ def eurostat(url: str, params: tuple) -> bytes:
             yearly = path("fr_gov_10a_main", times, 39_000, 60_100)
             dims = [("freq", ["A"]), ("unit", [unit]), ("sector", list(_FR_SECTOR_SHARES)), *fixed, ("geo", [geo]), ("time", times)]
             return _jsonstat(dataset, dims, lambda c: yearly[c["time"]] * _FR_SECTOR_SHARES[c["sector"]])
+        if dataset in ("bop_c6_q", "bop_c6_m"):
+            return _fr_payments(dataset, query)
         first, low, high = _FR_EUROSTAT_PATHS[dataset]
         times = quarters(first, "2026Q2" if dataset.startswith("namq") else "2026Q1")
         total = path(f"fr_{dataset}", times, low, high)

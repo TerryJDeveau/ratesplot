@@ -609,6 +609,29 @@ def _fr_population(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     return _last(people), f"{people.iloc[-1] / 1e6:.2f} million, from {people.index[0]:%Y-%m-%d}; a quarter dated by its middle"
 
 
+def _fr_payments(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """Batch 14.3's second stage: France's current account as the program reads it (``payments.fetch_payments``), its newest four-quarter sums."""
+    frame = payments.fetch_payments("fr", "current").set_index("DATE")
+    credits, debits = frame.iloc[:, 0], frame.iloc[:, 1]
+    return _last(frame), (f"credits €{credits.iloc[-1] / 1e9:,.1f} billion, debits €{debits.iloc[-1] / 1e9:,.1f} billion "
+                          f"over the year to {frame.index[-1]:%Y-%m-%d}, from {frame.index[0]:%Y-%m-%d}")
+
+
+def _fr_payments_months(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """Batch 14.3's second stage: Eurostat's French balance of payments each month (``payments._with_eurostat_months``), its newest month, and how far its quarters' sums stand from the quarters they extend."""
+    notes, lasts = [], []
+    for code in payments.FR_PAYMENTS_ITEMS.values():
+        for flow in payments.FR_PAYMENTS_FLOWS:
+            months = de_data.eurostat_series("bop_c6_m", geo=fr_data.FR_GEO, bop_item=code, stk_flow=flow)
+            quarters = de_data.eurostat_series("bop_c6_q", geo=fr_data.FR_GEO, bop_item=code, stk_flow=flow)
+            whole = months.resample("QE").agg(["sum", "count"])
+            gap = (whole.loc[whole["count"] == 3, "sum"] - quarters).dropna().abs()
+            lasts.append(months.index[-1])
+            notes.append(f"{code} {flow} to {months.index[-1]:%Y-%m} (quarters to {quarters.index[-1]:%Y-%m}), "
+                         f"quarters' sums within {gap.max() / 1e6:.0f} million of them over {len(gap)}")
+    return min(lasts), "; ".join(notes)
+
+
 def _eurostat_flat(dataset: str, params: dict[str, str]) -> pd.Series:
     """A Eurostat dataset of one series (every dimension but time a single category), by period: for a measurement only."""
     data = de_data.de_get(de_data.EUROSTAT_DATASET_URL.format(dataset=dataset), params).json()
@@ -824,6 +847,8 @@ CHECKS: tuple[Check, ...] = (
     Check("est_fr_population", "Eurostat namq_10_pe French population", QUARTERLY, _fr_population),
     Check("est_fr_cpi", "Eurostat prc_hicp_minr French harmonised consumer prices, 12-month rise (--inflation)", PRICES,
           _rate(partial(rates.inflation_rate, "fr"))),
+    Check("est_fr_bop", "Eurostat bop_c6_q French current account credits and debits (four-quarter sums, --payments)", QUARTERLY, _fr_payments),
+    Check("est_fr_bop_months", "Eurostat bop_c6_m French balance of payments each month (the quarters after bop_c6_q's last)", MONTHLY, _fr_payments_months),
     Check("fr_joins", "French series against another source of the same figures (a measurement)", None, _fr_joins),
 )
 
