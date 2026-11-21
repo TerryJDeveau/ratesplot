@@ -44,6 +44,13 @@ index (batch 13.4), on the right axis or on its own axis outside it, is
 compared point by point with its source read here on its own: each point
 its month's index, every month of it in the window drawn.
 
+Daily values (batch 42.2, on by default) draw a smooth series' line between
+its figures, which no source has by design: every case is drawn with
+--no-daily, and the cases named ``daily_*`` (which give --daily) check each
+line Daily values fill in (inflation, the price index, the population)
+against the same line drawn without them: each point a figure, or on the
+straight line by days between the two figures around it (``check_filled``).
+
 Usage (from the project root)::
 
     python tools/check_drawn_values.py               # every case, downloads from out/download_cache
@@ -128,8 +135,20 @@ MONTHLY_CARRY_DAYS = 62
 # second week, its values carried up to six business days (found by this
 # tool, 2026-10-13); since batch 9.2 it is the daily market yield from 2001,
 # the auctions only in December 2000, so the daily limit holds for both.
+# Daily values (batch 42.2, 8.11; on by default) draw a smooth series between
+# its figures, on the straight line by days: points no source has, by design.
+# Every case is drawn with them off, which draws each figure as it is (the
+# regression set at 8.11: every chart with them off identical to 8.9's), and
+# a case naming --daily (its token is later, so it wins) checks the filled-in
+# lines against that drawing instead (``check_filled``).
+NO_DAILY = "--no-daily"
+# How far beyond a --daily case's window its reference is drawn (``check_filled``): far enough to hold the figure
+# on each side of either edge, whose straight line the edge's point is on.
+FILLED_MARGIN_DAYS = 62
+# The half month a run of monthly figures is held past its first and last figure's pinned day (batch 42.2).
+HALF_MONTH_DAYS = 16
 
-# Each case: a name and the command line drawn (the pinned end added).
+# Each case: a name and the command line drawn (the pinned end and --no-daily added).
 # Chosen to cross every join the yield axis has: Canada's PDF history to
 # Valet (2001), the monthly Bank Rate to the weekly (1980), the Bank Rate to
 # the overnight target (1996-02) and the weekly to the daily target (2001),
@@ -234,6 +253,13 @@ CASES: dict[str, list[str]] = {
     "de_interest_1950_pc": ["--na:de", "-s:1950", "--e:1975", "--interest", "-p"],
     "de_interest_1950_r": ["--na:de", "-s:1950", "--e:1975", "--interest", "-r"],
     "de_interest_1950_pc_yield": ["--na:de", "-s:1950", "--e:1975", "--interest", "-p", "--y:10"],
+    # Batch 42.2: Daily values on (the case's --daily wins over --no-daily), each line they fill in checked against the
+    # same line drawn without them (``check_filled``): inflation on the yield axis and the price index on its own axis,
+    # each month pinned at its middle, across the U.S.' missing 2025-10 (a break) and to the End's straight line; the
+    # price index seasonally adjusted, the UK's join (1988-89) inside; the population cut at the window's edges.
+    "daily_inflation_cpi": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:2015", "--inf", "--cpi", "--no-yield", "--daily"],
+    "daily_cpi_sa": ["--na:ca,us,gb,de", "-s:1985", "--cpi:sa", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
+    "daily_population": ["--na:ca,us,gb,de", "-s:1960", "--pop", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
 }
 
 
@@ -608,12 +634,13 @@ def check_case(name: str, tokens: list[str]) -> bool:
     """Draw one case and check every yield-axis curve; print a line per curve; True if none failed."""
     printed: list[str] = []
     with this_thread_output_to(printed.append):
-        config = resolve_start(cli.parse_args(["--no-gui", PINNED_END, *tokens]))
+        config = resolve_start(cli.parse_args(["--no-gui", PINNED_END, NO_DAILY, *tokens]))
         figures = {country.key: build_figure(country, config) for country in COUNTRIES if getattr(config, country.show_field)}
         # The curves' labels and kinds, as the drawing prepared them.
         chosen_rates = {country.key: country.prepare(config.for_nation(country.key))[2] for country in COUNTRIES if country.key in figures}
-    print(f"== {name}: {' '.join(tokens)} {PINNED_END}")
+    print(f"== {name}: {' '.join(tokens)} {PINNED_END}{'' if config.daily else ' ' + NO_DAILY}")
     passed = True
+    references = _filled_references(tokens, config, figures) if config.daily else {}
     for key, figure in figures.items():
         curves = {rates.legend_label(curve, config.for_nation(key)): curve for curve in chosen_rates[key]}
         yields = {}
@@ -641,6 +668,9 @@ def check_case(name: str, tokens: list[str]) -> bool:
                 sources = yield_sources(key, line.label.removesuffix(" Yield"))
             elif curve is not None and curve.key in ("policy", "policy_market"):
                 sources = policy_sources(key, curve.key)
+            elif curve is not None and curve.key == rates.INFLATION_KEY and config.daily:
+                passed &= check_filled(key, line, references.get(key, {}).get(line.label), monthly=True)
+                continue
             elif curve is not None and curve.key == rates.INFLATION_KEY:
                 sources = inflation_sources(key)
             elif curve is not None and curve.key.startswith("mortgage_"):
@@ -678,7 +708,10 @@ def check_case(name: str, tokens: list[str]) -> bool:
             passed &= not result.failures
         for axis in figure.axes[1:]:  # the right axis, and the extra axis outside it (batch 13.4)
             for line in drawn_curves(axis):
-                if line.label in (PRICE_INDEX_LABEL, PRICE_INDEX_ADJUSTED_LABEL):
+                if line.label in (PRICE_INDEX_LABEL, PRICE_INDEX_ADJUSTED_LABEL, POPULATION_LABEL) and config.daily:
+                    reference = references.get(key, {}).get(line.label)
+                    passed &= check_filled(key, line, reference, monthly=line.label != POPULATION_LABEL)
+                elif line.label in (PRICE_INDEX_LABEL, PRICE_INDEX_ADJUSTED_LABEL):
                     passed &= check_price_index(key, line, config)
                 elif line.label == POPULATION_LABEL:
                     passed &= check_population(key, line, config)
@@ -1166,6 +1199,83 @@ def _each_point_is(key: str, line: Drawn, expected: pd.Series, config, what: str
     for failure in failures:
         print(f"         {failure}")
     return ok
+
+
+def check_filled(key: str, line: Drawn, reference: pd.Series | None, monthly: bool) -> bool:
+    """A line drawn with Daily values (batch 42.2) against ``reference``, the same line drawn without them over a window ``FILLED_MARGIN_DAYS`` wider each side; True if every point is one of its figures or on the straight line between the two around it.
+
+    The rule, taken from batch 42.2's description, not from the program's
+    code: each figure pinned at its date, a month's at the month's middle (its
+    first day plus half its days, rounded down: the 16th of a 31-day month,
+    the 15th of February); between two figures a straight line by days;
+    within half a month before a run's first figure or after its last (where
+    the months begin, end or break) that figure's value held. A month missing
+    breaks the line: no point lies between the figures on either side of it
+    (the U.S.' 2025-10, the month of the shutdown). The population, a count at
+    a moment, has no breaks and is held nowhere. The reference's own figures
+    are checked against the sources by the cases drawn without Daily values.
+    """
+    if reference is None or reference.dropna().empty:
+        print(f"  {key:4} {line.label[:44]:44} FAIL  no line of that name drawn without Daily values to check it against")
+        return False
+    figures = reference.dropna().sort_index()
+    if monthly:
+        figures = figures.loc[figures.index.day == 1]
+        months = pd.PeriodIndex(figures.index, freq="M")
+        figures.index = figures.index + pd.to_timedelta(figures.index.days_in_month // 2, unit="D")
+    dates, numbers = pd.DatetimeIndex(figures.index), figures.to_numpy(dtype=float)
+    half_month = pd.Timedelta(days=HALF_MONTH_DAYS)
+
+    def next_to(before: int, after: int) -> bool:
+        """Whether two figures are joined: always for the population, for months only when no month is missing between them."""
+        return not monthly or months[after] == months[before] + 1
+
+    failures: list[str] = []
+    counts = {"figure": 0, "between": 0, "held": 0}
+    points = line.values.dropna()
+    for when, value in points.items():
+        i = dates.searchsorted(when, side="right")  # the figures on or before ``when`` are dates[:i]
+        before = i - 1 if i else None
+        after = i if i < len(dates) else None
+        joined = before is not None and after is not None and next_to(before, after)
+        if before is not None and dates[before] == when:
+            kind, expected = "figure", numbers[before]
+        elif joined:
+            share = (when - dates[before]) / (dates[after] - dates[before])
+            kind, expected = "between", numbers[before] + (numbers[after] - numbers[before]) * share
+        elif monthly and before is not None and when - dates[before] <= half_month:
+            kind, expected = "held", numbers[before]
+        elif monthly and after is not None and dates[after] - when <= half_month:
+            kind, expected = "held", numbers[after]
+        else:
+            failures.append(f"{when:%Y-%m-%d} {value:g}: no figure, and no two figures around it, explain it")
+            continue
+        if np.isclose(value, expected, rtol=TOLERANCE, atol=TOLERANCE):
+            counts[kind] += 1
+        else:
+            failures.append(f"{when:%Y-%m-%d} {value:g}: expected {expected:g} ({kind})")
+    ok = not failures
+    pinned = "each month at its middle" if monthly else "each estimate at its date"
+    print(
+        f"  {key:4} {line.label[:44]:44} {'OK' if ok else 'FAIL':5} {len(points):,} points filled in ({pinned}): "
+        f"{counts['figure']:,} figures, {counts['between']:,} between two, {counts['held']:,} held half a month; "
+        f"{span(list(points.index)) if len(points) else 'none'}"
+    )
+    for failure in failures[:5]:
+        print(f"         {failure}")
+    if len(failures) > 5:
+        print(f"         ... {len(failures) - 5:,} more")
+    return ok
+
+
+def _filled_references(tokens: list[str], config, keys) -> dict[str, dict[str, pd.Series]]:
+    """For a --daily case: each nation's lines drawn without Daily values over the window widened by ``FILLED_MARGIN_DAYS`` each side, by label."""
+    margin = pd.Timedelta(days=FILLED_MARGIN_DAYS)
+    wider = [f"-s:{pd.Timestamp(config.start) - margin:%Y-%m-%d}", f"--e:{pd.Timestamp(config.end) + margin:%Y-%m-%d}"]
+    with this_thread_output_to(None):
+        reference = resolve_start(cli.parse_args(["--no-gui", PINNED_END, *tokens, NO_DAILY, *wider]))
+        figures = {country.key: build_figure(country, reference) for country in COUNTRIES if country.key in keys}
+    return {key: {line.label: line.values for axis in figure.axes for line in drawn_curves(axis)} for key, figure in figures.items()}
 
 
 def _column_of(term: str) -> str:
