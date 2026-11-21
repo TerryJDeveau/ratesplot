@@ -331,14 +331,34 @@ EUROSTAT_QUERIES = {
     # whose quarterly interest Eurostat publishes for S13 alone; measured
     # 2026-11-20: S1311 and S1313 from 1995 to 2025). Germany's are not asked.
     "gov_10a_main": ({"geo": "DE", "unit": "MIO_NAC", "na_item": "D41PAY"}, "MIO_NAC"),
+    # The balance of payments with the rest of the world, the whole economy
+    # (batch 14.3's second stage: France's, ``payments``; Germany's is the
+    # Bundesbank's): the current account (CA) and goods and services (GS),
+    # credits and debits, both in one answer (a tuple asks for each of its
+    # categories). Quarterly from 1999-Q1 and monthly from 2008-01 for
+    # France, unadjusted: neither dataset has an ``s_adj`` dimension
+    # (measured 2026-11-21). Their unit dimension is ``currency``
+    # (``EUROSTAT_UNIT_DIMENSIONS``).
+    "bop_c6_q": (
+        {"geo": "DE", "currency": "MIO_NAC", "partner": "WRL_REST", "sector10": "S1", "sectpart": "S1",
+         "bop_item": ("CA", "GS"), "stk_flow": ("CRE", "DEB")},
+        "MIO_NAC",
+    ),
+    "bop_c6_m": (
+        {"geo": "DE", "currency": "MIO_NAC", "partner": "WRL_REST", "sector10": "S1", "sectpart": "S1",
+         "bop_item": ("CA", "GS"), "stk_flow": ("CRE", "DEB")},
+        "MIO_NAC",
+    ),
 }
 _EUROSTAT_MULTIPLIER = {"MIO_NAC": MILLION, "CP_MNAC": MILLION, "THS_PER": THOUSAND, "NR": 1, "I25": 1}
+# The dimension holding a dataset's unit where it is not ``unit`` (``parse_jsonstat``).
+EUROSTAT_UNIT_DIMENSIONS = {"bop_c6_q": "currency", "bop_c6_m": "currency"}
 # Each dataset's frequency (its one ``freq`` category), measured 2026-10-22;
 # an answer of another raises (``eurostat_download``), since how
 # ``sinceTimePeriod`` is written depends on it (``_eurostat_since``).
 _EUROSTAT_FREQUENCIES = {
     "gov_10q_ggdebt": "Q", "gov_10q_ggnfa": "Q", "gov_10dd_edpt1": "A", "namq_10_gdp": "Q", "namq_10_pe": "Q", "demo_pjan": "A",
-    "prc_hicp_minr": "M", "gov_10a_main": "A",
+    "prc_hicp_minr": "M", "gov_10a_main": "A", "bop_c6_q": "Q", "bop_c6_m": "M",
 }
 # Levels of government (--debt:LETTERS): Eurostat's subsectors of each.
 # "n" is the Länder and local government together.
@@ -612,14 +632,15 @@ def ecb_series(flow: str, key: str, unit: str, *, revised: bool, stopped: pd.Tim
     )
 
 
-def parse_jsonstat(data: dict, unit: str, **chosen: str) -> pd.Series:
+def parse_jsonstat(data: dict, unit: str, unit_dimension: str = "unit", **chosen: str) -> pd.Series:
     """Return one series of a Eurostat JSON-stat 2.0 answer: dated by each period's end, in the source's unit.
 
     ``chosen`` names a category for each dimension that has more than one
     (``sector="S1311"``); every other dimension but ``time`` must have just
-    one, and the ``unit`` dimension's must be ``unit``. Values are stored
-    flat, row-major over the dimensions in ``id`` order; a position with no
-    value is left out.
+    one, and the ``unit_dimension``'s (``unit``; the balance of payments'
+    ``currency``, ``EUROSTAT_UNIT_DIMENSIONS``) must be ``unit``. Values are
+    stored flat, row-major over the dimensions in ``id`` order; a position
+    with no value is left out.
     """
     ids, sizes = data.get("id", []), data.get("size", [])
     if "time" not in ids or len(ids) != len(sizes):
@@ -628,7 +649,7 @@ def parse_jsonstat(data: dict, unit: str, **chosen: str) -> pd.Series:
         dim: sorted(data["dimension"][dim]["category"]["index"], key=data["dimension"][dim]["category"]["index"].get)
         for dim in ids
     }
-    units = categories.get("unit", [])
+    units = categories.get(unit_dimension, [])
     if units != [unit]:
         raise ValueError(f"Eurostat {data.get('label', '')!r}: expected unit {unit!r}, found {units}")
     unknown = set(chosen) - set(ids)
@@ -720,7 +741,7 @@ def _eurostat_frame(dataset: str, codes: dict[str, dict[str, str]], start: pd.Ti
     data = eurostat_download(dataset, start, geo)
     columns = {}
     for code, chosen in codes.items():
-        columns[code] = parse_jsonstat(data, unit, **chosen)
+        columns[code] = parse_jsonstat(data, unit, EUROSTAT_UNIT_DIMENSIONS.get(dataset, "unit"), **chosen)
         if start is not None and columns[code].empty:
             raise ValueError(f"Eurostat gave no values of {code} from {_eurostat_since(dataset, start)}")
     return pd.concat(columns, axis=1).sort_index()

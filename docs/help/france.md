@@ -9,7 +9,7 @@ At the start it draws GDP, debt and interest on the right axis, and the 10-year 
 - [TTM nominal GDP](?help=gdp), from 1980: four-quarter sums of Eurostat's quarterly national accounts at current prices.
 - [Aggregate public debt](?help=debt), from 1995: general government consolidated gross debt, the ECB's year ends to 1999, Eurostat's quarters from 2000.
 - [TTM interest outlays](?help=interest), from 1995: four-quarter sums of general government interest payable, Eurostat's quarters.
-- [Balance of payments](?help=payments): not drawn for France yet.
+- [Balance of payments](?help=payments), from 1999: Eurostat's quarterly balance of payments, not seasonally adjusted: the current account's credits and debits, or exports and imports of goods and services; the quarters after its last from its monthly figures.
 - [By level](?help=levels): the debt and interest of central government or of local government instead of the total, from Eurostat's figures by subsector: the debt quarterly from 2000, the interest yearly from 1995 (each year's at its last day), since Eurostat's quarterly interest is for general government alone. France has no state level; its social security funds are no level of the chart.
 - [Bond yields](?help=yields), from 1960: the 10-year alone, the OECD's long-term interest rate on FRED, a monthly average drawn across its month. The chart's End is then the first day of the last month published, where its last average is drawn as a point. No other terms, no real yields, and so no yield spreads.
 - [Policy rates](?help=policy-rates): the euro area's, the ECB's main refinancing rate from 1999-01-01; the overnight market's rate, EONIA from 1999-01-04, €STR from 2019-10-01. None before 1999.

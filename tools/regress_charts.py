@@ -472,6 +472,14 @@ CASES: dict[str, list[str]] = {
     "cmp_fr": ["--na:de,fr", "--com", "-s:1990"],
     "fr_fx": ["--na:us,fr", "--fx", "-l", "-s:2000"],
     "fr_master": ["--na:us,fr", "--master:usd", "-s:2010"],
+    # Batch 14.3's second stage: France's balance of payments, Eurostat's quarters from 1999.
+    "fr_pay1999": ["--na:fr", "--pay", "-s:1999"],
+    "fr_pay_trade_r": ["--na:fr", "--pay:trade", "-r", "-l", "-s:1999"],
+    "fr_pay_pc_reg": ["--na:fr", "--pay", "-p", "--reg", "-s:2005"],
+    "fr_pay_master": ["--na:us,fr", "--pay:trade", "--master:usd", "-s:2008"],
+    "pay_all5": ["--na:ca,us,gb,de,fr", "--pay", "-s:2010"],
+    "cmp_cur_fr": ["--na:de,fr", "--com:current", "-l", "-s:2000"],
+    "cmp_trade_base_fr": ["--na:de,gb", "--com:trade", "--base:fr", "-r", "-s:2000"],
 }
 
 

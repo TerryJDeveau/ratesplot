@@ -1636,8 +1636,8 @@ def prepare_fr(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Rat
     As ``prepare_de``: date-indexed yields (every value monthly, recorded in
     ``attrs[de_data.YIELD_HISTORY_ATTR]``), not run on with --cur (no French
     quote is read); the macro curves aligned on their dates and projected to
-    a chart's last day as Germany's are. The balance of payments is not
-    drawn yet for France (``payments.fetch_payments`` says so).
+    a chart's last day as Germany's are; the balance of payments is
+    Eurostat's quarters from 1999 (batch 14.3's second stage, ``payments``).
     """
     _require_start(config)
     _warn_no_yields("fr", config)

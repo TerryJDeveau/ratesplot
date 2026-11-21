@@ -688,7 +688,22 @@ def check_eurostat() -> None:
     # I25: the harmonised consumer price index (2025 = 100), France's (batch 14.3), an index, not an amount.
     check("the program asks Eurostat for every amount in national currency, never in euros",
           {unit for _params, unit in de_data.EUROSTAT_QUERIES.values()} == {"MIO_NAC", "CP_MNAC", "THS_PER", "NR", "I25"}
-          and all(params.get("unit") == unit for params, unit in de_data.EUROSTAT_QUERIES.values() if "unit" in params))
+          and all(params.get(de_data.EUROSTAT_UNIT_DIMENSIONS.get(dataset, "unit"), unit) == unit
+                  for dataset, (params, unit) in de_data.EUROSTAT_QUERIES.items()))
+    # The balance of payments (batch 14.3's second stage): France's, the program's own query saved 2026-11-21, its unit
+    # in a dimension "currency" (de_data.EUROSTAT_UNIT_DIMENSIONS), both pairs' credits and debits in one answer.
+    bop = jsonstat("est_bop_c6_q_fr")
+    currency = de_data.EUROSTAT_UNIT_DIMENSIONS["bop_c6_q"]
+    sides = {(item, flow): parse(bop, "MIO_NAC", currency, bop_item=item, stk_flow=flow) for item in ("CA", "GS") for flow in ("CRE", "DEB")}
+    check("Eurostat bop_c6_q France: CA and GS, credits and debits, each 1999 Q1 to 2026 Q2, 110 quarters",
+          all(len(side) == 110 and side.index[0] == pd.Timestamp("1999-03-31") and side.index[-1] == pd.Timestamp("2026-06-30")
+              for side in sides.values()), {key: (len(side), side.index[0], side.index[-1]) for key, side in sides.items()})
+    check("Eurostat bop_c6_q France: 2026 Q2 current account credits €399,350m, debits €405,887m",
+          sides[("CA", "CRE")].loc["2026-06-30"] == 399_350 and sides[("CA", "DEB")].loc["2026-06-30"] == 405_887,
+          (sides[("CA", "CRE")].iloc[-1], sides[("CA", "DEB")].iloc[-1]))
+    check("Eurostat bop_c6_q: its unit sits in 'currency', so read as the other datasets (by 'unit') it is refused",
+          raises(parse, bop, "MIO_NAC", bop_item="CA", stk_flow="CRE") is not None)
+    check("Eurostat bop_c6_q: a pair's item must be chosen", raises(parse, bop, "MIO_NAC", currency, stk_flow="CRE") is not None)
 
 
 def check_fetchers() -> None:
