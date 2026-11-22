@@ -685,9 +685,10 @@ def check_eurostat() -> None:
     check("Eurostat GDP in national currency: 1991 sums to 1,591.61 bn, table 81000-117's; in euros to 1,518.03; the same 1999-2019",
           round(gdp_nac.loc["1991"].sum(), 1) == 1_591_610.0 and round(gdp.loc["1991"].sum(), 1) == 1_518_029.1
           and (gdp.loc["1999":"2019"] == gdp_nac.loc["1999":"2019"]).all(), (gdp_nac.loc["1991"].sum(), gdp.loc["1991"].sum()))
-    # I25: the harmonised consumer price index (2025 = 100), France's (batch 14.3), an index, not an amount.
+    # I25: the harmonised consumer price index (2025 = 100), France's (batch 14.3), an index, not an amount. MCBY: the
+    # convergence-criterion bond yield (9.10, decision 178: Italy's 10-year before 1991-03), a yield in percent.
     check("the program asks Eurostat for every amount in national currency, never in euros",
-          {unit for _params, unit in de_data.EUROSTAT_QUERIES.values()} == {"MIO_NAC", "CP_MNAC", "THS_PER", "NR", "I25"}
+          {unit for _params, unit in de_data.EUROSTAT_QUERIES.values()} == {"MIO_NAC", "CP_MNAC", "THS_PER", "NR", "I25", "MCBY"}
           and all(params.get(de_data.EUROSTAT_UNIT_DIMENSIONS.get(dataset, "unit"), unit) == unit
                   for dataset, (params, unit) in de_data.EUROSTAT_QUERIES.items()))
     # The balance of payments (batch 14.3's second stage): France's, the program's own query saved 2026-11-21, its unit
