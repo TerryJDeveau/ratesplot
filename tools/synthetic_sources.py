@@ -230,6 +230,25 @@ _EURO = {
         },
         payments_from="1996Q1", months_from="1996-01", mortgage_bands=("I", "O", "P", "F"),
     ),
+    # Italy's (batch 14.3, decision 177): the same shapes, its yields and mortgage rates above Portugal's; its central
+    # government owing nearly all of general government's debt.
+    "IT": _EuroSynthetic(
+        key="it", geo="IT", offset=0.6, yield_series="IRLTLT01ITM156N", yield_from="1991-03-01",
+        cpi_series="ITACPIALLMINMEI", cpi_last="2025-03-01", cpi_path=(2.9, 122.5),
+        sector_shares={"S13": 1.0, "S1311": 0.98, "S1313": 0.033, "S1314": 0.0001},
+        eurostat_paths={
+            "gov_10q_ggdebt": ("2000Q1", 1_300_000, 3_208_000),
+            "gov_10q_ggnfa": ("1999Q1", 19_000, 28_700),
+            "namq_10_gdp": ("1995Q1", 230_000, 577_000),
+            "namq_10_pe": ("1995Q1", 56_800, 58_950),
+        },
+        hicp_path=(54.3, 106.2), yearly_interest_path=(100_000, 87_000), gfs_early_path=(1_150_000, 1_280_000),
+        payments_paths={
+            ("CA", "CRE"): (60_000, 240_000), ("CA", "DEB"): (55_000, 241_000),
+            ("GS", "CRE"): (50_000, 198_000), ("GS", "DEB"): (45_000, 186_000),
+        },
+        payments_from="1995Q1", months_from="2008-01", mortgage_bands=("I", "O", "P", "F"),
+    ),
 }
 # Each nation's FRED series, by code.
 _EURO_YIELDS = {euro.yield_series: euro for euro in _EURO.values()}

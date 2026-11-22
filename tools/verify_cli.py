@@ -377,6 +377,15 @@ CASES: list[list[str]] = [
     # 9.8, decision 176: var for Germany and France too, offered, not ticked at the start; a nation without it.
     ["--na:de", "--ger:mo:var"], ["--na:fr", "--fr:mo:var,over10"], ["--na:de,fr,pt", "--mo:var"], ["--na:de", "--mo"],
     ["--na:fr", "--mo"], ["--na:gb", "--uk:mo:var"], ["--mo:VAR"], ["--mo:variable"],
+    # Batch 14.3, decision 177: Italy, as France: --nations:it (or ita), its prefixes --it: and --ita:, its own
+    # defaults, its levels f and m, a term it lacks, --cpi:sa, the comparison and a base with it, all seven nations;
+    # "--ital" names no nation.
+    ["--na:it"], ["--na:ita"], ["--na:ca,us,gb,de,fr,pt,it"], ["--na:it", "--it:max:9"], ["--na:it", "--ita:top:4t"],
+    ["--na:it", "--it:d:fm"], ["--na:it", "--it:d:p"], ["--na:it", "--it:y:2,10"], ["--na:it", "--it:mo:1-5"],
+    ["--na:it", "--it:mo:var,over10"], ["--na:de,fr,pt,it", "--mo:var"],
+    ["--na:it", "--mo"], ["--na:it", "--sp"], ["--na:it", "--policy"], ["--na:it", "--cpi:sa"], ["--na:it", "--inf"],
+    ["--na:fr,it", "--com"], ["--na:pt,it", "--com:mortgage"], ["--na:us,it", "--com", "--base:it"],
+    ["--na:it", "--master:eur"], ["--ital:max:6"], ["--na:it", "--it:top:USD3t"], ["--na:it,pt", "--it:max:9", "--pt:max:6"],
 ]
 
 
