@@ -307,7 +307,7 @@ def format_terms(values: tuple, _config: PlotConfig) -> str:
 
 
 def parse_mortgage_terms(spec: str) -> tuple[str, ...]:
-    """Parse ``--mortgages:LIST``: terms of ``MORTGAGE_TERMS`` (30 15 U.S.; 5 3 1 5v Canada; prime both; 2f 3f 5f svr tracker UK; 1-5 5-10 over10 Germany), in that order.
+    """Parse ``--mortgages:LIST``: terms of ``MORTGAGE_TERMS`` (30 15 U.S.; 5 3 1 5v Canada; prime both; 2f 3f 5f svr tracker UK; 1-5 5-10 over10 var Germany, France, Portugal), in that order.
 
     A "y" after the years is accepted ("30y"), and repeats are harmless; "none" is none.
     """
@@ -325,7 +325,8 @@ def parse_mortgage_terms(spec: str) -> tuple[str, ...]:
                 "5-year variable), prime (Canada and the U.S.: the banks' prime rate), 2f, 3f, 5f, svr or "
                 "tracker (UK, fixed for 2, 3 or 5 years; svr the standard variable rate; tracker Bank Rate "
                 "plus a margin), 1-5, 5-10 or over10 "
-                "(Germany, fixed for over 1 to 5, over 5 to 10, or over 10 years)"
+                "(Germany, France and Portugal, fixed for over 1 to 5, over 5 to 10, or over 10 years), or var "
+                "(the same nations' variable rate or fixed up to a year)"
             )
         chosen.add(term)
     return tuple(term for term in MORTGAGE_TERMS if term in chosen)
@@ -923,9 +924,11 @@ _MORTGAGE_CHOICES = (
     ("UK", (("2f", "2y"), ("3f", "3y"), ("5f", "5y"), ("svr", "SVR"))),
     # On a row of its own, as the prime rate is, with its margin's field (batch 9.5).
     ("UK, plus a margin", (("tracker", "tracker"),)),
-    ("Germany", (("1-5", "1–5y"), ("5-10", "5–10y"), ("over10", "over 10y"))),
-    # Portugal's variable rate (batch 14.3), on a row of its own: its panel shows it beside the three bands above.
-    ("Portugal", (("var", "variable"),)),
+    # The euro area's nations' bands (Germany's, batch 4; France's and Portugal's, 14.3); a nation's panel shows no caption.
+    ("Euro area", (("1-5", "1–5y"), ("5-10", "5–10y"), ("over10", "over 10y"))),
+    # Their variable rate (Portugal's, 14.3; Germany's and France's, 9.8), on a row of its own: each panel shows it
+    # under the three bands above.
+    ("Euro area, variable", (("var", "variable"),)),
 )
 # Every nation has both policy terms (batch 9.1).
 _POLICY_CHOICES = (("", tuple((term, term) for term in POLICY_TERMS)),)
@@ -1310,8 +1313,8 @@ OPTIONS: tuple[Option, ...] = (
         "the terms: 30 15 (U.S.), 5 3 1 5v\n(Canada; 5v variable, broker average),\nprime (Canada and the U.S.: the banks'\nprime rate),\n"
         "2f 3f 5f svr tracker (UK: fixed 2, 3, 5\nyears; svr the standard variable rate,\nquoted from 1995, the millennium\n"
         "dataset's variable mortgage rate from\n1939; tracker Bank Rate plus a margin,\nfrom 1997),\n"
-        "1-5 5-10 over10 (Germany, France and\nPortugal: fixed over 1 to 5, over 5 to\n10, over 10 years), var (Portugal: the\nvariable rate or fixed up to a year);\n"
-        f"default {','.join(DEFAULT_MORTGAGE_TERMS)} (the UK's, Germany's and\nFrance's: all their terms; Portugal's\nvar); turns --mortgages on",
+        "1-5 5-10 over10 (Germany, France and\nPortugal: fixed over 1 to 5, over 5 to\n10, over 10 years), var (the same three:\nthe variable rate or fixed up to a year);\n"
+        f"default {','.join(DEFAULT_MORTGAGE_TERMS)} (the UK's: all its terms;\nGermany's and France's: their three\nfixed bands; Portugal's var); turns\n--mortgages on",
         names=("mortgages",), shortest=2, parse=parse_mortgage_terms, turns_on="mortgages",
         label="Mortgage terms", format=format_terms, editor="choices", choices=_MORTGAGE_CHOICES,
         topic="mortgages",

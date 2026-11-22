@@ -179,14 +179,18 @@ DE_MINIMUM_BID_ENDED = pd.Timestamp("2008-10-08")  # stopped (batch 19.3: see US
 DE_EONIA = ("EON", "D.EONIA_TO.RATE", "PC")
 DE_EONIA_ENDED = pd.Timestamp("2021-12-31")  # stopped (batch 19.3: see US_TARGET_ENDED)
 DE_ESTR = ("EST", "B.EU000A2X2A25.WT", "PC")
-DE_MORTGAGE_SERIES = {"1-5": "M.DE.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.DE.B.A2C.O.R.A.2250.EUR.N", "over10": "M.DE.B.A2C.P.R.A.2250.EUR.N"}
+DE_MORTGAGE_SERIES = {"1-5": "M.DE.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.DE.B.A2C.O.R.A.2250.EUR.N", "over10": "M.DE.B.A2C.P.R.A.2250.EUR.N",
+                      # 9.8 (decision 176): the variable rate or a fixation of up to one year, 2000-01 on, none missing
+                      # (measured 2026-11-22); no older series joined, as over 10 years has none.
+                      "var": "M.DE.B.A2C.F.R.A.2250.EUR.N"}
 # The euro area's nations after Germany (batch 14.3, ``euro_data``), by key: the same statistics with the nation's
 # code; no older series joined before them. France's, each band 2000-01 on (measured 2026-11-19 and 20); Portugal's
 # over 1 to 5 and over 5 to 10 years from 2003-01, over 10 years from 2003-07, each with 57 or 58 months missing, and
 # its variable rate (band F: a variable rate or a fixation of up to one year) from 2000-01, none missing (measured
-# 2026-11-22).
+# 2026-11-22). France's variable rate too since 9.8 (decision 176), 2000-01 on, none missing.
 EURO_MORTGAGE_SERIES = {
-    "fr": {"1-5": "M.FR.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.FR.B.A2C.O.R.A.2250.EUR.N", "over10": "M.FR.B.A2C.P.R.A.2250.EUR.N"},
+    "fr": {"1-5": "M.FR.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.FR.B.A2C.O.R.A.2250.EUR.N", "over10": "M.FR.B.A2C.P.R.A.2250.EUR.N",
+           "var": "M.FR.B.A2C.F.R.A.2250.EUR.N"},
     "pt": {"1-5": "M.PT.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.PT.B.A2C.O.R.A.2250.EUR.N", "over10": "M.PT.B.A2C.P.R.A.2250.EUR.N",
            "var": "M.PT.B.A2C.F.R.A.2250.EUR.N"},
 }
@@ -234,7 +238,7 @@ _MORTGAGE_LABELS = {
     "1-5": "1–5-Year Mortgage (new loans, avg.)",
     "5-10": "5–10-Year Mortgage (new loans, avg.)",
     "over10": "Over-10-Year Mortgage (new loans, avg.)",
-    "var": "Variable-Rate Mortgage (new loans, avg.)",  # Portugal's (batch 14.3): a variable rate or fixed up to a year
+    "var": "Variable-Rate Mortgage (new loans, avg.)",  # the euro nations' (14.3, 9.8): a variable rate or fixed up to a year
 }
 # The U.S. prime rate by the name the Federal Reserve's H.15 gives it.
 _US_PRIME_LABEL = "Bank Prime Loan Rate"
