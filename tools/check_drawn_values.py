@@ -50,6 +50,12 @@ its figures, which no source has by design: every case is drawn with
 line Daily values fill in (inflation, the price index, the population)
 against the same line drawn without them: each point a figure, or on the
 straight line by days between the two figures around it (``check_filled``).
+The cases named ``daily_constant*`` check the amounts at constant prices with
+Daily values on: each the same chart's amount in current prices, drawn with
+Daily values too, over the price index filled in on the day the amount is
+observed, times the base month's index (``check_daily_constant``). Added
+2026-11-22, after 9.5 found France's constant prices drawn blank in 9.3 and
+9.4 with Daily values on, which no case drew.
 
 Usage (from the project root)::
 
@@ -147,6 +153,9 @@ NO_DAILY = "--no-daily"
 FILLED_MARGIN_DAYS = 62
 # The half month a run of monthly figures is held past its first and last figure's pinned day (batch 42.2).
 HALF_MONTH_DAYS = 16
+# Days counted from here (``filled_index``), a Timestamp in seconds: subtracted from dates in microseconds or
+# nanoseconds it keeps theirs, so 1600's dates stay in range.
+DAY_COUNT_EPOCH = pd.Timestamp("1970-01-01").as_unit("s")
 
 # Each case: a name and the command line drawn (the pinned end and --no-daily added).
 # Chosen to cross every join the yield axis has: Canada's PDF history to
@@ -199,17 +208,17 @@ CASES: dict[str, list[str]] = {
     "inflation": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:1985", "--inf", "--no-yield"],
     # Batch 13.2: the amounts at constant prices against the same charts in
     # current prices, the index worked out here: from 1910 (each nation's
-    # index beginning inside the window, the UK's join in 1988), per capita
-    # from 1990, and in the master currency (both checks).
-    "constant": ["--na:ca,us,gb,de", "-s:1910", "--constant", "--no-yield"],
-    "constant_pc": ["--na:ca,us,gb,de", "-s:1990", "--constant", "-p", "--no-yield"],
+    # index beginning inside the window, the UK's join in 1988, France's in
+    # 1996), per capita from 1990, and in the master currency (both checks).
+    "constant": ["--na:ca,us,gb,de,fr", "-s:1910", "--constant", "--no-yield"],
+    "constant_pc": ["--na:ca,us,gb,de,fr", "-s:1990", "--constant", "-p", "--no-yield"],
     "constant_master": ["--na:ca,us", "-s:2005", "--constant", "--master:usd", "--no-yield"],
     # Batch 13.4: the consumer price index, each point its month's index read
     # here: alone on the right axis from 1910 (each nation's index beginning
-    # inside the window, the UK's join in 1988), and seasonally adjusted on its
-    # own axis outside the amounts per capita (the UK's unadjusted, named so).
-    "cpi": ["--na:ca,us,gb,de", "-s:1910", "--cpi", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
-    "cpi_sa": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:1945", "--cpi:sa", "-p", "--no-yield"],
+    # inside the window, the UK's join in 1988, France's in 1996), and seasonally adjusted on its
+    # own axis outside the amounts per capita (the UK's and France's unadjusted, named so).
+    "cpi": ["--na:ca,us,gb,de,fr", "-s:1910", "--cpi", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
+    "cpi_sa": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de,fr", "-s:1945", "--cpi:sa", "-p", "--no-yield"],
     # Batch 16: West Germany's prices, each month's index and rise worked out here,
     # the two joins (1962-01, 1991-01) inside the window.
     "de_inflation_1949": ["--na:de", "-s:1949", "--inf"],
@@ -257,9 +266,16 @@ CASES: dict[str, list[str]] = {
     # same line drawn without them (``check_filled``): inflation on the yield axis and the price index on its own axis,
     # each month pinned at its middle, across the U.S.' missing 2025-10 (a break) and to the End's straight line; the
     # price index seasonally adjusted, the UK's join (1988-89) inside; the population cut at the window's edges.
-    "daily_inflation_cpi": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de", "-s:2015", "--inf", "--cpi", "--no-yield", "--daily"],
-    "daily_cpi_sa": ["--na:ca,us,gb,de", "-s:1985", "--cpi:sa", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
-    "daily_population": ["--na:ca,us,gb,de", "-s:1960", "--pop", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
+    "daily_inflation_cpi": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de,fr", "-s:2015", "--inf", "--cpi", "--no-yield", "--daily"],
+    "daily_cpi_sa": ["--na:ca,us,gb,de,fr", "-s:1985", "--cpi:sa", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
+    "daily_population": ["--na:ca,us,gb,de,fr", "-s:1960", "--pop", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
+    # Daily values with --constant (2026-11-22, after 9.5 found France's amounts at constant prices drawn blank in 9.3
+    # and 9.4, and amounts before an index began drawn): each amount the same chart's in current prices, drawn with
+    # Daily values too, over the index filled in on the day it is observed (``check_daily_constant``): from 1900, the
+    # amounts of Canada and the UK beginning before their indexes (1914-01, 1914-07), France's join (1996-01) inside;
+    # and per capita from 1990.
+    "daily_constant": ["--na:ca,us,gb,de,fr", "-s:1900", "--constant", "--no-yield", "--daily"],
+    "daily_constant_pc": ["--na:ca,us,gb,de,fr", "-s:1990", "--constant", "-p", "--no-yield", "--daily"],
 }
 
 
@@ -726,7 +742,7 @@ def check_case(name: str, tokens: list[str]) -> bool:
         if config.master_currency is not None:
             passed &= check_master(key, figure, config)
         if config.constant_prices:
-            passed &= check_constant(key, figure, config)
+            passed &= (check_daily_constant if config.daily else check_constant)(key, figure, config)
     # The drawing's warnings, each with the bulleted lines under it (the curves
     # it names), once: the curves were prepared twice, for the chart and above.
     blocks: list[list[str]] = []
@@ -776,11 +792,13 @@ def check_master(key: str, figure, config) -> bool:
 
 
 def price_index(nation: str) -> pd.Series:
-    """A nation's consumer price index read on its own (batch 13.2), by month (a ``Period`` index): FRED's, Statistics Canada's, the Bundesbank's whole series; the UK's built-in millennium index, then the ONS's D7BT from its first month."""
+    """A nation's consumer price index read on its own (batch 13.2), by month (a ``Period`` index): FRED's, Statistics Canada's, the Bundesbank's whole series; the UK's built-in millennium index, then the ONS's D7BT from its first month; France's (batch 14.3) ``french_price_index``."""
     if nation == "uk":
         ons = _clean(uk_data.ons_download("D7BT", "months"))
         millennium = built_in("millennium CPI", EMBEDDED_UK_CPI_HISTORY).read()
         values = pd.concat([millennium.loc[millennium.index < ons.index[0].replace(day=1)], ons])
+    elif nation == "fr":
+        return french_price_index()
     else:
         values = {
             "us": fred(us_data.US_CPI_SERIES_ID),
@@ -788,6 +806,117 @@ def price_index(nation: str) -> pd.Series:
             "de": german_price_source(),
         }[nation].read()
     return values.groupby(values.index.to_period("M")).last()
+
+
+def french_price_index() -> pd.Series:
+    """France's consumer price index read on its own (batch 14.3), by month (a ``Period`` index): Eurostat's harmonised index (prc_hicp_minr) whole, and before its first month FRED's FRACPIALLMINMEI (the OECD's copy of the national index) scaled to it at that month.
+
+    FRED's series is asked here whole, not read from its bake as the drawing
+    reads it (a stopped series, never asked there), so the check covers the
+    bake too.
+    """
+    harmonised = _clean(de_data.parse_jsonstat(de_data.eurostat_download("prc_hicp_minr", geo="FR"), "I25"))
+    national = fred("FRACPIALLMINMEI").read()
+    harmonised = harmonised.groupby(harmonised.index.to_period("M")).last()
+    national = national.groupby(national.index.to_period("M")).last()
+    join = harmonised.index[0]
+    older = national * (float(harmonised.iloc[0]) / float(national.loc[join]))
+    return pd.concat([older.loc[older.index < join], harmonised])
+
+
+def filled_index(index: pd.Series, dates) -> np.ndarray:
+    """``index`` (by month, a ``Period`` index) filled in on each of ``dates`` as Daily values fill it in (batch 42.2); missing before its first month.
+
+    The rule restated from the program's description, not from its code: each
+    month's value pinned at its middle (its first day plus half its days,
+    rounded down), a straight line by days between two months the index has
+    (across a month it lacks, as the U.S.' 2025-10, the line between the months
+    either side), the first month's value held from its first day to its
+    middle and the last month's after its middle; nothing before the first
+    month's first day. Days are counted from an epoch in seconds, so dates in
+    any unit (microseconds, nanoseconds) count alike.
+    """
+    firsts = index.index.to_timestamp()
+    pins = firsts + pd.to_timedelta(firsts.days_in_month // 2, unit="D")
+    when = pd.DatetimeIndex(dates)
+
+    def days(moments: pd.DatetimeIndex) -> np.ndarray:
+        return np.asarray((moments - DAY_COUNT_EPOCH) / pd.Timedelta(days=1), dtype=float)
+
+    values = np.interp(days(when), days(pins), index.to_numpy(dtype=float))
+    values[when < firsts[0]] = np.nan
+    return values
+
+
+def check_daily_constant(key: str, figure, config) -> bool:
+    """A chart at constant prices with Daily values on (2026-11-22): each right-axis curve against the same chart's in current prices, drawn with Daily values too; True if every point is explained.
+
+    Worked out here on its own: each amount in current prices divided by the
+    index filled in (``filled_index``, the index read by ``price_index`` and
+    cut to its months on or before the End) on the day the amount is observed,
+    times the index of the base month, the last on or before the End. An
+    amount is observed where the current-price curve changes value, and held
+    until its next change (a figure carried to the End past its last); the
+    window's first point counts as observed on its own day (with Daily values
+    an amount changes every day it is filled in: a case whose window began in
+    a held stretch would fail here, and need a start elsewhere). Every point
+    observed on or after the index's first month's first day must be drawn,
+    and none observed before it. Unlike ``check_constant`` (Daily values off,
+    each month's index held across it), every line drawn in current prices is
+    looked for at constant prices, so a line drawn blank fails (9.3's France).
+    """
+    with this_thread_output_to(None):
+        plain = build_figure(next(country for country in COUNTRIES if country.key == key), replace(config, constant_prices=False))
+        index = price_index(key)
+    index = index.loc[index.index <= pd.Period(config.end, "M")]
+    if index.empty:
+        print(f"  {key:4} no index on or before the End {config.end:%Y-%m-%d}: drawn in current prices")
+        return True
+    base_month, base_value = index.index[-1], float(index.iloc[-1])
+    first_day = index.index[0].to_timestamp()
+    drawn = {line.label: line.values.dropna() for line in drawn_curves(figure.axes[1])}
+    passed = True
+    for line in drawn_curves(plain.axes[1]):
+        before = line.values.dropna()
+        if before.empty:
+            continue
+        label = line.label.replace("TTM Nominal GDP", "TTM GDP")
+        values = drawn.pop(label, pd.Series(dtype=float))
+        changed = before.ne(before.shift())  # the first point counts as observed on its own day
+        observed = pd.Series(before.index.where(changed), index=before.index).ffill()
+        priced = observed >= first_day
+        failures: list[str] = []
+        extra = values.index.difference(before.index)
+        failures += [f"{when:%Y-%m-%d} {values[when]:.6g}: drawn, but not in current prices" for when in extra[:3]]
+        early = values.index.intersection(before.index[~priced])
+        failures += [f"{when:%Y-%m-%d} {values[when]:.6g}: drawn, though observed {observed[when]:%Y-%m-%d}, before the index begins" for when in early[:3]]
+        missing = before.index[priced].difference(values.index)
+        failures += [f"{when:%Y-%m-%d}: not drawn, though observed {observed[when]:%Y-%m-%d}, after the index begins" for when in missing[:3]]
+        both = values.index.intersection(before.index[priced])
+        expected = before[both].to_numpy(dtype=float) * base_value / filled_index(index, observed[both])
+        wrong = ~np.isclose(values[both].to_numpy(dtype=float), expected, rtol=TOLERANCE, atol=0)
+        failures += [
+            f"{when:%Y-%m-%d} {values[when]:.6g}: expected {expected[at]:.6g} (observed {observed[when]:%Y-%m-%d})"
+            for at, when in zip(np.flatnonzero(wrong)[:5], both[wrong][:5])
+        ]
+        held = int((pd.DatetimeIndex(observed[both]) != both).sum())
+        ok = not (len(extra) or len(early) or len(missing) or wrong.any())
+        passed &= ok
+        print(
+            f"  {key:4} {label[:44]:44} {'OK' if ok else 'FAIL':5} {len(values):,} points at {base_month} prices "
+            f"(index {base_value:g}), each over the index filled in on its day ({held:,} held from an earlier day); "
+            f"{int((~priced).sum()):,} not drawn, before the index ({index.index[0]}); {span(list(both)) if len(both) else 'none'}"
+        )
+        for failure in failures:
+            print(f"         {failure}")
+        if len(extra) + len(early) + len(missing) + int(wrong.sum()) > len(failures):
+            print(f"         ... {len(extra):,} drawn outside current prices, {len(early):,} before the index, "
+                  f"{len(missing):,} not drawn, {int(wrong.sum()):,} different in all")
+    for label, values in drawn.items():
+        if not values.empty:
+            print(f"  {key:4} {label[:44]:44} FAIL  not drawn in current prices")
+            passed = False
+    return passed
 
 
 def check_constant(key: str, figure, config) -> bool:
