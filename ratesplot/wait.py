@@ -100,6 +100,8 @@ _STARTING_ASKED = {
     "fr": {"fred.stlouisfed.org": 1, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
     # Portugal's (batch 14.3), the same requests as France's.
     "pt": {"fred.stlouisfed.org": 1, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
+    # Italy's (batch 14.3), the same requests as France's.
+    "it": {"fred.stlouisfed.org": 1, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
 }
 # Below this the words change: "nearly done" rather than "about 0 s".
 _NEARLY_DONE_SECONDS = 1.0

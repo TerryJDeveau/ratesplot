@@ -632,6 +632,8 @@ FR_DEBT_COLUMN = "Total French Debt (€)"
 FR_INTEREST_COLUMN = "TTM French Interest Paid (€)"
 PT_DEBT_COLUMN = "Total Portuguese Debt (€)"
 PT_INTEREST_COLUMN = "TTM Portuguese Interest Paid (€)"
+IT_DEBT_COLUMN = "Total Italian Debt (€)"
+IT_INTEREST_COLUMN = "TTM Italian Interest Paid (€)"
 
 # --payments[:LIST] (batch 23; Terry, 2026-10-24, decisions 61 and 62): the
 # money coming into a nation against the money going out, as two curves on the
@@ -692,15 +694,20 @@ COMPARE_MORTGAGE_TERMS = {
     "fr": ("over10", "fixed over 10 years"),
     # Portugal (batch 14.3, decision 175): its variable rate, the one band complete from 2000 (MORTGAGE_TERMS["var"]).
     "pt": ("var", "variable rate"),
+    # Italy (batch 14.3, decision 177): fixed for over ten years, as France's, complete from 2000-01 (the ECB publishes
+    # Italy's volume of new housing loans in total alone, so the bands' shares were not measured).
+    "it": ("over10", "fixed over 10 years"),
 }
 # The currency the amounts are compared in when no master currency is chosen
 # (--master, batch 30): every nation's converted at the End's rate.
 COMPARE_DEFAULT_CURRENCY = "USD"
 # Each nation's colour on the comparison chart: red for Canada and blue for
 # the U.S., the first two of matplotlib's cycle as they are of the yields';
-# purple for the UK, near-black for Germany, orange for France, green for Portugal (batch 14.3). A nation added later
-# gets one.
-COMPARE_COLOURS = {"cdn": "#d62728", "us": "#1f77b4", "uk": "#7b3fa0", "de": "#2b2b2b", "fr": "#ff7f0e", "pt": "#2ca02c"}
+# purple for the UK, near-black for Germany, orange for France, green for Portugal, cyan for Italy (batch 14.3). A
+# nation added later gets one.
+COMPARE_COLOURS = {
+    "cdn": "#d62728", "us": "#1f77b4", "uk": "#7b3fa0", "de": "#2b2b2b", "fr": "#ff7f0e", "pt": "#2ca02c", "it": "#17becf",
+}
 # The base nation (batch 26.3; Terry, 2026-11-12, decision 147: "a “Base
 # nation” option ... One of the nations should be “on” by default"): drawn
 # flat at 0, the others "% plus or minus around it". The U.S. by default, the
@@ -857,6 +864,7 @@ SERIES_KINDS = {
     "mortgage_de": SeriesKind(MARKET, "month"),
     "mortgage_fr": SeriesKind(MARKET, "month"),
     "mortgage_pt": SeriesKind(MARKET, "month"),
+    "mortgage_it": SeriesKind(MARKET, "month"),
     "inflation": SeriesKind(SMOOTH, "month"),  # a month's 12-month rise, taken from the price index
     # The right axis: stocks are moments, flows the sums of their windows.
     "debt": SeriesKind(SMOOTH, held=True),
@@ -933,7 +941,10 @@ PRICE_INDEX_ADJUSTED_LABEL = "Consumer price index, seasonally adjusted"
 PRICE_INDEX_TITLE = "Consumer Price Index"
 PRICE_INDEX_ADJUSTED_TITLE = "Seasonally Adjusted Consumer Price Index"
 PRICE_INDEX_AXIS_LABEL = "Consumer Price Index ({base}, Log Scale)"
-PRICE_INDEX_BASES = {"us": "1982-84 = 100", "cdn": "2002 = 100", "uk": "2015 = 100", "de": "2020 = 100", "fr": "2025 = 100", "pt": "2025 = 100"}
+PRICE_INDEX_BASES = {
+    "us": "1982-84 = 100", "cdn": "2002 = 100", "uk": "2015 = 100", "de": "2020 = 100", "fr": "2025 = 100", "pt": "2025 = 100",
+    "it": "2025 = 100",
+}
 # The nations whose statistics office publishes a seasonally adjusted index
 # (--cpi:sa): every nation but the UK and France (Eurostat's harmonised index,
 # batch 14.3, is unadjusted).
@@ -1005,17 +1016,18 @@ MORTGAGE_TERMS = {
     # households (ECB), by initial rate fixation: over 1 and up to 5 years,
     # over 5 and up to 10, over 10. Named by the band, as the statistics
     # are; coloured as the yield of the band's top (the 20-year for over 10).
-    # France and Portugal (batch 14.3): the same three bands of the same statistics.
-    "1-5": (("de", "fr", "pt"), "5y"),
-    "5-10": (("de", "fr", "pt"), "10y"),
-    "over10": (("de", "fr", "pt"), "20y"),
+    # France, Portugal and Italy (batch 14.3): the same three bands of the same statistics.
+    "1-5": (("de", "fr", "pt", "it"), "5y"),
+    "5-10": (("de", "fr", "pt", "it"), "10y"),
+    "over10": (("de", "fr", "pt", "it"), "20y"),
     # Portugal's variable rate (batch 14.3, decision 175): the same statistics' band of a variable rate or a fixation
     # of up to one year (the ECB's F), complete from 2000-01, where Portugal's fixed bands miss 57 months and jump by
     # up to 8.7 points before 2013 (measured 2026-11-22). Coloured as the yield of its top, the 1-year, as the bands
     # are; drawn dash-dotted, as a variable rate. Germany's and France's too since 9.8 (Terry, 2026-11-22: "Yes, add
     # var"; decision 176), offered beside their fixed bands, not ticked at the start: each complete from 2000-01, its
-    # largest month-to-month change 0.69 points, the ECB's estimates to 2002-12 as their fixed bands' are.
-    "var": (("de", "fr", "pt"), "1y"),
+    # largest month-to-month change 0.69 points, the ECB's estimates to 2002-12 as their fixed bands' are. Italy's
+    # the same way (decision 177): complete from 2000-01, its largest month-to-month change 0.81 points.
+    "var": (("de", "fr", "pt", "it"), "1y"),
 }
 DEFAULT_MORTGAGE_TERMS = ("30", "5")
 # The terms drawn plus a margin in points, each with a box beside its tick
@@ -1046,7 +1058,8 @@ MORTGAGE_OWN_COLORS = {"15": "#556b2f", "prime": "#696969", "svr": "#696969", "t
 # the policy rate; the variable rates dash-dotted: Canada's, as it shares the
 # 5-year's colour, and the UK tracker, as it shares the policy rate's.
 MORTGAGE_STYLE = {"linewidth": 1.5, "linestyle": "--"} | _one_drawstyle(
-    "mortgage_us", "mortgage_cdn", "mortgage_cdn_history", "mortgage_uk", "mortgage_de", "mortgage_fr", "mortgage_pt", "prime", "tracker"
+    "mortgage_us", "mortgage_cdn", "mortgage_cdn_history", "mortgage_uk", "mortgage_de", "mortgage_fr", "mortgage_pt", "mortgage_it", "prime",
+    "tracker",
 )
 VARIABLE_MORTGAGE_STYLE = MORTGAGE_STYLE | {"linestyle": "-."}
 # The prime rate: dotted, a base rate rather than a mortgage of a term.
@@ -1335,6 +1348,22 @@ NATIONS: tuple[Nation, ...] = (
             ("spread_pairs", ()),
         ),
     ),
+    # Italy (batch 14.3, decision 177): as France, on the same code
+    # (ratesplot.euro_data); named by --nations:it (or ita), a value for it
+    # alone "--it:max:8". The OECD's monthly 10-year from 1991-03; central
+    # and local government (no state level); Germany's three fixed bands
+    # ticked at the start, complete from 2003 as theirs are, the variable
+    # rate offered beside them.
+    Nation(
+        "it", "Italy", ("it", "ita"), ("10y",), "Italian",
+        shown_by_default=False, market_timezone="Europe/Rome", currency="EUR", overnight_rate="€STR",
+        level_boxes=(("f", "Central"), ("m", "Local")),
+        own_defaults=(
+            ("yield_terms", ("10y",)),
+            ("mortgage_terms", ("1-5", "5-10", "over10")),
+            ("spread_pairs", ()),
+        ),
+    ),
 )
 
 
@@ -1353,7 +1382,7 @@ def nation_by_key(key: str) -> Nation | None:
 
 # The euro area's nations after Germany (batch 14.3), drawn on Germany's code paths by ``euro_data`` (its
 # ``EURO_NATIONS``, the same keys): the euro area's policy rates, the ECB's mortgage bands, Eurostat's series.
-EURO_NATION_KEYS = ("fr", "pt")
+EURO_NATION_KEYS = ("fr", "pt", "it")
 
 
 # The currency Top and Bottom are given in (batch 18.3): None for the chart's
@@ -1984,6 +2013,29 @@ PT = CountryMetadata(
     component_debt_title="{} Portuguese Public Debt",
 )
 
+# Italy (batch 14.3, decision 177, ratesplot.euro_data): as France.
+IT = CountryMetadata(
+    key="it",
+    country_name="Italy",
+    currency_prefix=CURRENCY_SYMBOLS["EUR"],
+    # The OECD's long-term rate: the 10-year benchmark bond's yield, a
+    # monthly average.
+    yield_title="Italian Government 10-Year Yield (monthly average)",
+    title_nation="Italian",
+    title_short="ITA",
+    debt_column=IT_DEBT_COLUMN,
+    debt_label="Italian General Government Gross Debt",
+    debt_title="Italian General Government Gross Debt",
+    interest_column=IT_INTEREST_COLUMN,
+    # D.41 payable by general government, consolidated, as Germany's.
+    interest_label="TTM Interest Payable",
+    # Central and local government; no state level, and the social security
+    # funds are no level of the chart (as France's).
+    level_names=(("f", "Central"), ("n", "Local"), ("p", "Regional"), ("m", "Local")),
+    component_debt_label="{} Italian Public Debt",
+    component_debt_title="{} Italian Public Debt",
+)
+
 
 def macro_column_kind(column: str) -> SeriesKind:
     """The kind (``SERIES_KINDS``, batch 42.1) of the series a right-axis column holds, for any nation; a column untagged is an error.
@@ -1993,7 +2045,7 @@ def macro_column_kind(column: str) -> SeriesKind:
     """
     keys = {component_column(kind, letter): f"{kind}_{letter}" for kind in ("debt", "interest") for letter in COMPONENT_LETTERS}
     keys |= dict(zip(PAYMENTS_COLUMNS, _PAYMENTS_KEYS))
-    for metadata in (CDN, US, UK, DE, FR, PT):
+    for metadata in (CDN, US, UK, DE, FR, PT, IT):
         keys |= {metadata.debt_column: "debt", metadata.gdp_column: "gdp", metadata.interest_column: "interest"}
         if metadata.federal_debt_column is not None:
             keys[metadata.federal_debt_column] = "federal_debt"
@@ -2136,6 +2188,8 @@ class PlotConfig:
     show_fr: bool = False
     # Portugal's chart (batch 14.3): only when asked for (--nations:pt).
     show_pt: bool = False
+    # Italy's chart (batch 14.3): only when asked for (--nations:it).
+    show_it: bool = False
     # --debt:LETTERS / --interest:LETTERS: the levels of government to split
     # debt and interest into, as letters from COMPONENT_LETTERS in that order
     # ("" = the aggregate lines).

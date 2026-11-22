@@ -402,7 +402,7 @@ EURO_EUROSTAT_SERIES_READ: dict[str, tuple[dict[str, str], ...]] = {
     "bop_c6_m": _EURO_PAYMENTS_READ,
 }
 # The euro-area nations' codes (``euro_data.EURO_NATIONS``' ``geo``, in its order).
-EURO_GEOS = ("FR", "PT")
+EURO_GEOS = ("FR", "PT", "IT")
 # Every nation's series read, by its Eurostat code. Germany's files carry no code (named before France's were baked).
 EUROSTAT_SERIES_READ_BY_GEO = {"DE": EUROSTAT_SERIES_READ, **dict.fromkeys(EURO_GEOS, EURO_EUROSTAT_SERIES_READ)}
 EUROSTAT_BAKED_SOURCE = "eurostat"

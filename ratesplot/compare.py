@@ -80,6 +80,7 @@ from .config import (
     DATE_COLUMN,
     DE,
     FR,
+    IT,
     PT,
     DEFAULT_DEBT_AGGREGATES,
     MACRO_PLOT_STYLES,
@@ -167,7 +168,7 @@ _BALANCES = {
 }
 # The nations' metadata by key (their words in the title), and by currency (the
 # right axis's label and its ticks' symbol for amounts in that currency).
-_METADATA = {metadata.key: metadata for metadata in (CDN, US, UK, DE, FR, PT)}
+_METADATA = {metadata.key: metadata for metadata in (CDN, US, UK, DE, FR, PT, IT)}
 _METADATA_BY_CURRENCY = {nation_by_key(metadata.key).currency: metadata for metadata in _METADATA.values()}
 
 
