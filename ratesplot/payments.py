@@ -90,6 +90,8 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
 
 from __future__ import annotations
 
+from functools import partial
+
 import pandas as pd
 
 from .cdn_archive_data import EMBEDDED_CDN_PAYMENTS_HISTORY
@@ -107,7 +109,7 @@ from .config import (
     nation_by_key,
 )
 from .de_data import DE_PAYMENTS_SERIES, DE_PAYMENTS_SIDES, bundesbank_series, eurostat_series
-from .fr_data import FR_GEO
+from .euro_data import EURO_NATIONS, EuroNation
 from .frames import at_quarter_end, rows_to_frame
 from .http import downloads_of
 from .joins import ttm_sum
@@ -158,12 +160,13 @@ DE_PAYMENTS_EARLIEST = pd.Timestamp("1971-01-01")
 # A year of months, for Germany's twelve-month sums.
 _MONTHS_IN_A_YEAR = 12
 
-# France: Eurostat's item of each pair (``bop_item``) and its credits and
-# debits (``stk_flow``), quarters from ``bop_c6_q`` then whole quarters of
-# ``bop_c6_m``'s months (the module's docstring).
-FR_PAYMENTS_ITEMS = {"current": "CA", "trade": "GS"}
-FR_PAYMENTS_FLOWS = ("CRE", "DEB")
-FR_PAYMENTS_EARLIEST = pd.Timestamp("1999-01-01")
+# The euro area's nations after Germany (``euro_data``): Eurostat's item of
+# each pair (``bop_item``) and its credits and debits (``stk_flow``),
+# quarters from ``bop_c6_q`` then whole quarters of ``bop_c6_m``'s months
+# (the module's docstring); each nation's first quarter.
+EURO_PAYMENTS_ITEMS = {"current": "CA", "trade": "GS"}
+EURO_PAYMENTS_FLOWS = ("CRE", "DEB")
+EURO_PAYMENTS_EARLIEST = {"fr": pd.Timestamp("1999-01-01")}
 _MONTHS_IN_A_QUARTER = 3
 
 
@@ -242,25 +245,25 @@ def _de_months(item: str) -> tuple[pd.Series, pd.Series]:
     return sides[0], sides[1]
 
 
-def _fr_quarters(item: str) -> tuple[pd.Series, pd.Series]:
-    """France's credits and debits of pair ``item``, each a quarter's flow in euros, dated by its last day: Eurostat's quarters, then its months' whole quarters (the module's docstring)."""
+def _euro_quarters(nation: EuroNation, item: str) -> tuple[pd.Series, pd.Series]:
+    """A euro-area nation's credits and debits of pair ``item``, each a quarter's flow in euros, dated by its last day: Eurostat's quarters, then its months' whole quarters (the module's docstring)."""
     sides = []
-    for flow in FR_PAYMENTS_FLOWS:
-        quarters = eurostat_series("bop_c6_q", geo=FR_GEO, bop_item=FR_PAYMENTS_ITEMS[item], stk_flow=flow)
-        sides.append(_with_eurostat_months(quarters, item, flow))
+    for flow in EURO_PAYMENTS_FLOWS:
+        quarters = eurostat_series("bop_c6_q", geo=nation.geo, bop_item=EURO_PAYMENTS_ITEMS[item], stk_flow=flow)
+        sides.append(_with_eurostat_months(nation, quarters, item, flow))
     return sides[0], sides[1]
 
 
-def _with_eurostat_months(quarters: pd.Series, item: str, flow: str) -> pd.Series:
-    """``quarters`` (France's, dated by each quarter's last day) and after its last the whole quarters of Eurostat's months (``bop_c6_m``), each the sum of its three.
+def _with_eurostat_months(nation: EuroNation, quarters: pd.Series, item: str, flow: str) -> pd.Series:
+    """``quarters`` (the nation's, dated by each quarter's last day) and after its last the whole quarters of Eurostat's months (``bop_c6_m``), each the sum of its three.
 
     If Eurostat's months fail, ``quarters`` as they are, with a warning
     naming where they end (as ``_with_monthly_quarters`` for the U.S.).
     """
     try:
-        months = eurostat_series("bop_c6_m", geo=FR_GEO, bop_item=FR_PAYMENTS_ITEMS[item], stk_flow=flow)
+        months = eurostat_series("bop_c6_m", geo=nation.geo, bop_item=EURO_PAYMENTS_ITEMS[item], stk_flow=flow)
     except Exception as exc:  # noqa: BLE001 - any failure: the quarterly series alone
-        print(f"  Warning: Eurostat bop_c6_m (France's balance of payments each month) unavailable ({exc}); "
+        print(f"  Warning: Eurostat bop_c6_m ({nation.name}'s balance of payments each month) unavailable ({exc}); "
               f"it ends at its quarterly figures' last quarter, {quarters.index.max():%Y-%m-%d}.")
         return quarters
     whole = months.resample("QE").agg(["sum", "count"])
@@ -271,7 +274,10 @@ def _with_eurostat_months(quarters: pd.Series, item: str, flow: str) -> pd.Serie
 
 # Each drawn nation's reader: (credits, debits) of a pair, a quarter's flows,
 # or for Germany a month's.
-_QUARTERS = {"us": _us_quarters, "cdn": _cdn_quarters, "uk": _uk_quarters, "fr": _fr_quarters}
+_QUARTERS = {
+    "us": _us_quarters, "cdn": _cdn_quarters, "uk": _uk_quarters,
+    **{key: partial(_euro_quarters, nation) for key, nation in EURO_NATIONS.items()},
+}
 _MONTHS = {"de": _de_months}
 
 
@@ -298,7 +304,7 @@ def payments_earliest(key: str) -> pd.Timestamp | None:
     """The first quarter (Germany's: month) of nation ``key``'s balance of payments, for the coverage warning; None where none is drawn yet."""
     return {
         "us": US_PAYMENTS_EARLIEST, "cdn": CDN_PAYMENTS_EARLIEST, "uk": UK_PAYMENTS_EARLIEST, "de": DE_PAYMENTS_EARLIEST,
-        "fr": FR_PAYMENTS_EARLIEST,
+        **EURO_PAYMENTS_EARLIEST,
     }.get(key)
 
 

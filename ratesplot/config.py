@@ -1323,6 +1323,11 @@ def nation_by_key(key: str) -> Nation | None:
     return next((nation for nation in NATIONS if nation.key == key), None)
 
 
+# The euro area's nations after Germany (batch 14.3), drawn on Germany's code paths by ``euro_data`` (its
+# ``EURO_NATIONS``, the same keys): the euro area's policy rates, the ECB's mortgage bands, Eurostat's series.
+EURO_NATION_KEYS = ("fr",)
+
+
 # The currency Top and Bottom are given in (batch 18.3): None for the chart's
 # own, else an ISO code of CURRENCY_SYMBOLS, converted at each drawing.
 LIMIT_CURRENCY_FIELDS = ("macro_top_currency", "macro_bottom_currency")
@@ -1903,7 +1908,7 @@ DE = CountryMetadata(
     component_debt_title="{} German Public Debt",
 )
 
-# France (batch 14.3, ratesplot.fr_data): the OECD's monthly 10-year (on
+# France (batch 14.3, ratesplot.euro_data): the OECD's monthly 10-year (on
 # FRED); Eurostat's debt, interest, GDP and population, Germany's queries
 # with FR in place of DE.
 FR = CountryMetadata(

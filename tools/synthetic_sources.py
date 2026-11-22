@@ -42,6 +42,7 @@ import pickle
 import re
 import sys
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -163,10 +164,62 @@ _FX = {
     "EXGEUS": ("1971-01-01", "2001-12-01", "MS", 3.64, 2.19),
 }
 
+@dataclass(frozen=True, eq=False)
+class _EuroSynthetic:
+    """A euro-area nation's made-up series (batch 14.3, ``ratesplot.euro_data``): its paths, first and last values, in each source's units.
+
+    ``key`` begins each series' seed ("fr_debt"), so a nation's answers stay
+    the same when another is added.
+    """
+
+    key: str
+    geo: str
+    offset: float  # its yields' and mortgage rates' place against the U.S.' path
+    yield_series: str
+    yield_from: str
+    cpi_series: str
+    cpi_last: str
+    cpi_path: tuple[float, float]
+    sector_shares: dict[str, float]
+    eurostat_paths: dict[str, tuple[str, float, float]]  # dataset: (first period, first value, last value)
+    hicp_path: tuple[float, float]
+    yearly_interest_path: tuple[float, float]
+    gfs_early_path: tuple[float, float]  # the ECB's year ends 1995 to 1999
+    payments_paths: dict[tuple[str, str], tuple[float, float]]  # (item, flow): a quarter's flow, first and last
+    payments_from: str  # its first quarter
+    months_from: str  # its first month
+
+
+# The euro area's nations after Germany, by Eurostat's code. France's (batch 14.3): no state level, the social security
+# funds no level of the chart; its yields and mortgage rates between Germany's and the U.S.'.
+_EURO = {
+    "FR": _EuroSynthetic(
+        key="fr", geo="FR", offset=-0.6, yield_series="IRLTLT01FRM156N", yield_from="1960-01-01",
+        cpi_series="FRACPIALLMINMEI", cpi_last="2025-03-01", cpi_path=(7.43, 120.38),
+        sector_shares={"S13": 1.0, "S1311": 0.80, "S1313": 0.08, "S1314": 0.12},
+        eurostat_paths={
+            "gov_10q_ggdebt": ("2000Q1", 870_000, 3_416_000),
+            "gov_10q_ggnfa": ("1995Q1", 9_800, 17_200),
+            "namq_10_gdp": ("1980Q1", 74_000, 760_000),
+            "namq_10_pe": ("1980Q1", 55_100, 68_700),
+        },
+        hicp_path=(64.0, 101.2), yearly_interest_path=(39_000, 60_100), gfs_early_path=(663_000, 804_000),
+        payments_paths={
+            ("CA", "CRE"): (120_000, 399_000), ("CA", "DEB"): (110_000, 406_000),
+            ("GS", "CRE"): (85_000, 274_000), ("GS", "DEB"): (80_000, 270_000),
+        },
+        payments_from="1999Q1", months_from="2008-01",
+    ),
+}
+# Each nation's FRED series, by code.
+_EURO_YIELDS = {euro.yield_series: euro for euro in _EURO.values()}
+_EURO_CPIS = {euro.cpi_series: euro for euro in _EURO.values()}
+
 # Every FRED series ``fred`` answers.
 _FRED_IDS = (
     "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", "CPIAUCNS", "CPIAUCSL", *_GROWTH, *_DAILY_START, *_FX,
-    *_PAYMENTS, "BOPBCA", "FRACPIALLMINMEI", "IRLTLT01FRM156N",
+    *_PAYMENTS, "BOPBCA",
+    *(code for euro in _EURO.values() for code in (euro.cpi_series, euro.yield_series)),
 )
 
 
@@ -194,15 +247,17 @@ def fred(series_id: str) -> pd.DataFrame:
         # The same index seasonally adjusted (batch 13.4), monthly from 1947.
         dates = pd.date_range("1947-01-01", "2026-09-01", freq="MS")
         values = np.round(_growth(dates, 21.5, 336.3, series_id), 3)
-    elif series_id == "IRLTLT01FRM156N":
-        # France's 10-year (batch 14.3): the OECD's monthly average, from 1960-01, each month's first day.
-        dates = pd.date_range("1960-01-01", "2026-09-01", freq="MS")
-        values = _yield_path(series_id, dates, 10, _FR_OFFSET)
-    elif series_id == "FRACPIALLMINMEI":
-        # France's national consumer price index (batch 14.3's third stage), 2015 = 100, 1955-01 to 2025-03 (stopped),
-        # as many decimals as FRED gives it.
-        dates = pd.date_range("1955-01-01", "2025-03-01", freq="MS")
-        values = _growth(dates, 7.43, 120.38, series_id)
+    elif series_id in _EURO_YIELDS:
+        # A euro-area nation's 10-year (batch 14.3): the OECD's monthly average, each month's first day.
+        euro = _EURO_YIELDS[series_id]
+        dates = pd.date_range(euro.yield_from, "2026-09-01", freq="MS")
+        values = _yield_path(series_id, dates, 10, euro.offset)
+    elif series_id in _EURO_CPIS:
+        # A euro-area nation's national consumer price index (batch 14.3's third stage), 2015 = 100, from 1955-01 to its
+        # stop, as many decimals as FRED gives it.
+        euro = _EURO_CPIS[series_id]
+        dates = pd.date_range("1955-01-01", euro.cpi_last, freq="MS")
+        values = _growth(dates, *euro.cpi_path, series_id)
     elif series_id in _GROWTH:
         start, freq, first, last = _GROWTH[series_id]
         end = "2026-07-01" if freq == "QS" else "2025-01-01"
@@ -636,8 +691,6 @@ def ons(cdid: str) -> bytes:
 # Bundesbank's term structure: term code -> (years, first month of the
 # end-of-month series, first day of the daily one).
 _DE_OFFSET = -1.2
-# France's yields and mortgage rates (batch 14.3) sit between Germany's and the U.S.'.
-_FR_OFFSET = -0.6
 _BUNDESBANK_TERMS = {
     "R01XX": (1, "1972-09", "1997-08-01"), "R02XX": (2, "1972-09", "1997-08-01"), "R03XX": (3, "1972-09", "1997-08-01"),
     "R05XX": (5, "1972-09", "1997-08-01"), "R07XX": (7, "1972-09", "1997-08-01"), "R10XX": (10, "1972-09", "1997-08-01"),
@@ -725,11 +778,12 @@ _ECB_SERIES = (
     ("MIR", "M.DE.B.A2C.O.R.A.2250.EUR.N", "PCPA"),
     ("MIR", "M.DE.B.A2C.P.R.A.2250.EUR.N", "PCPA"),
     ("GFS", "A.N.DE.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
-    # France's (batch 14.3: rates.FR_MORTGAGE_SERIES, fr_data.FR_ECB_ANNUAL_DEBT), baked from its fourth stage.
-    ("MIR", "M.FR.B.A2C.I.R.A.2250.EUR.N", "PCPA"),
-    ("MIR", "M.FR.B.A2C.O.R.A.2250.EUR.N", "PCPA"),
-    ("MIR", "M.FR.B.A2C.P.R.A.2250.EUR.N", "PCPA"),
-    ("GFS", "A.N.FR.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
+    # The euro-area nations' after Germany (batch 14.3: rates.EURO_MORTGAGE_SERIES, euro_data's ecb_annual_debt), baked
+    # from France's fourth stage.
+    *(series for geo in _EURO for series in (
+        *(("MIR", f"M.{geo}.B.A2C.{band}.R.A.2250.EUR.N", "PCPA") for band in ("I", "O", "P")),
+        ("GFS", f"A.N.{geo}.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
+    )),
 )
 
 
@@ -763,16 +817,18 @@ def ecb(url: str) -> bytes:
     elif flow == "MIR":
         months = pd.date_range("2000-01-31", "2026-08-31", freq="ME")
         band = {"I": 3, "O": 10, "P": 20}[key.split(".")[4]]
-        offset = _FR_OFFSET if key.split(".")[1] == "FR" else _DE_OFFSET  # France's bands (batch 14.3)
+        offset = _EURO[key.split(".")[1]].offset if key.split(".")[1] in _EURO else _DE_OFFSET  # a euro-area nation's bands (batch 14.3)
         values = list(np.round(_yield_path("demir" + key, months, band, offset) + 1.4, 2))
         periods = [f"{day:%Y-%m}" for day in months]
-    elif flow == "GFS" and key.split(".")[2] == "FR":
-        # France's year ends (batch 14.3), 1995 to 1999 and on; from 2000 on the Eurostat quarters' path.
+    elif flow == "GFS" and key.split(".")[2] in _EURO:
+        # A euro-area nation's year ends (batch 14.3), 1995 to 1999 and on; from 2000 on the Eurostat quarters' path.
+        euro = _EURO[key.split(".")[2]]
         early = pd.date_range("1995-12-31", "1999-12-31", freq="YE")
         quarters = pd.date_range("2000-03-31", "2026-03-31", freq="QE")
-        later = pd.Series(_growth(quarters, 870_000, 3_416_000, "fr_debt"), index=quarters).loc[lambda q: q.index.month == 12]
+        _first, low, high = euro.eurostat_paths["gov_10q_ggdebt"]
+        later = pd.Series(_growth(quarters, low, high, f"{euro.key}_debt"), index=quarters).loc[lambda q: q.index.month == 12]
         years = early.append(later.index)
-        values = list(np.round(np.concatenate([_growth(early, 663_000, 804_000, "fr_gfs_a"), later.to_numpy()]), 0))
+        values = list(np.round(np.concatenate([_growth(early, *euro.gfs_early_path, f"{euro.key}_gfs_a"), later.to_numpy()]), 0))
         periods, unit_column, unit, multiplier = [str(day.year) for day in years], "UNIT_MEASURE", "XDC", 6
     elif flow == "GFS":
         # Unification doubled the debt in the 1990s; from 2000 the year-ends
@@ -808,15 +864,6 @@ def _jsonstat(label: str, dims: list[tuple[str, list[str]]], value) -> bytes:
 # Eurostat: the German series, first and last value (millions of euros,
 # thousands of persons, persons) and each sector's share of the total.
 _DE_SECTOR_SHARES = {"S13": 1.0, "S1311": 0.70, "S1312": 0.235, "S1313": 0.07, "S1314": 0.005}
-# France's (batch 14.3): no state level; the social security funds are no level of the chart.
-_FR_SECTOR_SHARES = {"S13": 1.0, "S1311": 0.80, "S1313": 0.08, "S1314": 0.12}
-# France's series (geo "FR" in the same queries), each (first period, first value, last value).
-_FR_EUROSTAT_PATHS = {
-    "gov_10q_ggdebt": ("2000Q1", 870_000, 3_416_000),
-    "gov_10q_ggnfa": ("1995Q1", 9_800, 17_200),
-    "namq_10_gdp": ("1980Q1", 74_000, 760_000),
-    "namq_10_pe": ("1980Q1", 55_100, 68_700),
-}
 _EUROSTAT_URL = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
 # Every Eurostat series the program reads, by its baked file's name (de_data.eurostat_code): its
 # dataset, the categories chosen and the nation (de_data.EUROSTAT_SERIES_READ_BY_GEO; batch 19.2,
@@ -828,43 +875,37 @@ _EUROSTAT_SERIES = {
     "namq_10_gdp": ("namq_10_gdp", {}, "DE"),
     "namq_10_pe": ("namq_10_pe", {}, "DE"),
     "demo_pjan": ("demo_pjan", {}, "DE"),
-    **{f"gov_10q_ggdebt.FR.{sector}": ("gov_10q_ggdebt", {"sector": sector}, "FR") for sector in ("S13", "S1311", "S1313")},
-    "gov_10q_ggnfa.FR.S13": ("gov_10q_ggnfa", {"sector": "S13"}, "FR"),
-    **{f"gov_10a_main.FR.{sector}": ("gov_10a_main", {"sector": sector}, "FR") for sector in ("S1311", "S1313")},
-    "namq_10_gdp.FR": ("namq_10_gdp", {}, "FR"),
-    "namq_10_pe.FR": ("namq_10_pe", {}, "FR"),
-    "prc_hicp_minr.FR": ("prc_hicp_minr", {}, "FR"),
-    **{f"{dataset}.{item}.FR.{flow}": (dataset, {"bop_item": item, "stk_flow": flow}, "FR")
-       for dataset in ("bop_c6_q", "bop_c6_m") for item in ("CA", "GS") for flow in ("CRE", "DEB")},
+    **{code: series for geo in _EURO for code, series in (
+        *((f"gov_10q_ggdebt.{geo}.{sector}", ("gov_10q_ggdebt", {"sector": sector}, geo)) for sector in ("S13", "S1311", "S1313")),
+        (f"gov_10q_ggnfa.{geo}.S13", ("gov_10q_ggnfa", {"sector": "S13"}, geo)),
+        *((f"gov_10a_main.{geo}.{sector}", ("gov_10a_main", {"sector": sector}, geo)) for sector in ("S1311", "S1313")),
+        (f"namq_10_gdp.{geo}", ("namq_10_gdp", {}, geo)),
+        (f"namq_10_pe.{geo}", ("namq_10_pe", {}, geo)),
+        (f"prc_hicp_minr.{geo}", ("prc_hicp_minr", {}, geo)),
+        *((f"{dataset}.{item}.{geo}.{flow}", (dataset, {"bop_item": item, "stk_flow": flow}, geo))
+          for dataset in ("bop_c6_q", "bop_c6_m") for item in ("CA", "GS") for flow in ("CRE", "DEB")),
+    )},
 }
 
 
-# France's balance of payments (batch 14.3's second stage): each (item, flow)'s quarterly flow, first and last,
-# millions of euros.
-_FR_PAYMENTS_PATHS = {
-    ("CA", "CRE"): (120_000, 399_000), ("CA", "DEB"): (110_000, 406_000),
-    ("GS", "CRE"): (85_000, 274_000), ("GS", "DEB"): (80_000, 270_000),
-}
-
-
-def _fr_payments(dataset: str, query: dict) -> bytes:
-    """France's ``bop_c6_q`` (quarters 1999-Q1 to 2026-Q2) or ``bop_c6_m`` (months 2008-01 to 2026-09, each a third of its quarter's path), the query's items and flows."""
+def _euro_payments(euro: _EuroSynthetic, dataset: str, query: dict) -> bytes:
+    """A euro-area nation's ``bop_c6_q`` (quarters from its first to 2026-Q2) or ``bop_c6_m`` (months from its first to 2026-09, each a third of its quarter's path), the query's items and flows (batch 14.3's second stage)."""
     items, flows = list(query["bop_item"]), list(query["stk_flow"])
-    quarters = pd.period_range("1999Q1", "2026Q3", freq="Q")
+    quarters = pd.period_range(euro.payments_from, "2026Q3", freq="Q")
     paths = {
-        key: dict(zip(quarters, _growth(quarters.to_timestamp(how="end"), low, high, f"fr_bop_{key[0]}_{key[1]}")))
-        for key, (low, high) in _FR_PAYMENTS_PATHS.items()
+        key: dict(zip(quarters, _growth(quarters.to_timestamp(how="end"), low, high, f"{euro.key}_bop_{key[0]}_{key[1]}")))
+        for key, (low, high) in euro.payments_paths.items()
     }
     if dataset == "bop_c6_q":
         periods, frequency, share = list(quarters[:-1]), "Q", 1.0
         times = [f"{p.year}-Q{p.quarter}" for p in periods]
     else:
-        periods, frequency, share = list(pd.period_range("2008-01", "2026-09", freq="M")), "M", 1 / 3
+        periods, frequency, share = list(pd.period_range(euro.months_from, "2026-09", freq="M")), "M", 1 / 3
         times = [f"{p.year}-{p.month:02d}" for p in periods]
     by_time = dict(zip(times, periods))
     dims = [
         ("freq", [frequency]), ("currency", [query["currency"]]), ("bop_item", items), ("sector10", [query["sector10"]]),
-        ("sectpart", [query["sectpart"]]), ("stk_flow", flows), ("partner", [query["partner"]]), ("geo", ["FR"]), ("time", times),
+        ("sectpart", [query["sectpart"]]), ("stk_flow", flows), ("partner", [query["partner"]]), ("geo", [euro.geo]), ("time", times),
     ]
     return _jsonstat(dataset, dims, lambda c: paths[(c["bop_item"], c["stk_flow"])][by_time[c["time"]].asfreq("Q")] * share)
 
@@ -887,27 +928,29 @@ def eurostat(url: str, params: tuple) -> bytes:
         dates = pd.DatetimeIndex([pd.Period(period.replace("-", ""), freq="Q" if "Q" in period else "Y").end_time.normalize() for period in periods])
         return dict(zip(periods, _growth(dates, first, last, name)))
 
-    if geo == "FR":
-        # France (batch 14.3): its own paths, the same shapes as Germany's answers.
+    if geo in _EURO:
+        # A euro-area nation after Germany (batch 14.3): its own paths, the same shapes as Germany's answers.
+        euro = _EURO[geo]
+        shares = euro.sector_shares
         if dataset == "prc_hicp_minr":
             months = pd.period_range("1996-01", "2026-09", freq="M")
             times = [f"{month.year}-{month.month:02d}" for month in months]
-            index = dict(zip(times, _growth(months.to_timestamp(), 64.0, 101.2, "fr_hicp")))
+            index = dict(zip(times, _growth(months.to_timestamp(), *euro.hicp_path, f"{euro.key}_hicp")))
             return _jsonstat("HICP", [("freq", ["M"]), ("unit", [unit]), *fixed, ("geo", [geo]), ("time", times)], lambda c: index[c["time"]])
         if dataset == "gov_10a_main":
             # Each subsector's yearly interest (its levels' interest), 1995 to 2025.
             times = [str(year) for year in range(1995, 2026)]
-            yearly = path("fr_gov_10a_main", times, 39_000, 60_100)
-            dims = [("freq", ["A"]), ("unit", [unit]), ("sector", list(_FR_SECTOR_SHARES)), *fixed, ("geo", [geo]), ("time", times)]
-            return _jsonstat(dataset, dims, lambda c: yearly[c["time"]] * _FR_SECTOR_SHARES[c["sector"]])
+            yearly = path(f"{euro.key}_gov_10a_main", times, *euro.yearly_interest_path)
+            dims = [("freq", ["A"]), ("unit", [unit]), ("sector", list(shares)), *fixed, ("geo", [geo]), ("time", times)]
+            return _jsonstat(dataset, dims, lambda c: yearly[c["time"]] * shares[c["sector"]])
         if dataset in ("bop_c6_q", "bop_c6_m"):
-            return _fr_payments(dataset, query)
-        first, low, high = _FR_EUROSTAT_PATHS[dataset]
+            return _euro_payments(euro, dataset, query)
+        first, low, high = euro.eurostat_paths[dataset]
         times = quarters(first, "2026Q2" if dataset.startswith("namq") else "2026Q1")
-        total = path(f"fr_{dataset}", times, low, high)
+        total = path(f"{euro.key}_{dataset}", times, low, high)
         if dataset.startswith("gov_10q"):
-            dims = [*common[:2], ("sector", list(_FR_SECTOR_SHARES)), *common[2:], ("time", times)]
-            return _jsonstat(dataset, dims, lambda c: total[c["time"]] * _FR_SECTOR_SHARES[c["sector"]])
+            dims = [*common[:2], ("sector", list(shares)), *common[2:], ("time", times)]
+            return _jsonstat(dataset, dims, lambda c: total[c["time"]] * shares[c["sector"]])
         return _jsonstat(dataset, [*common, ("time", times)], lambda c: total[c["time"]])
     if dataset == "gov_10q_ggdebt":
         times = quarters("2000Q1", "2026Q1")

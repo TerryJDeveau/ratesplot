@@ -47,6 +47,8 @@ de_data           Bundesbank / ECB / Eurostat fetch for Germany's yields and mac
                   series (batch 4); the Bundesbank's, the ECB's and Eurostat's series
                   read through their bake and recent part (bundesbank_series;
                   ecb_series, also for rates; eurostat_series)
+euro_data         the euro area's nations after Germany (batch 14.3): France on Germany's
+                  code paths, its own code in the same queries (EuroNation, EURO_NATIONS)
 de_archive_data   baked German history: the Bundesbank's yield on public debt
                   securities before 1972 (rewritten by tools/bake_archives.py)
 uk_archive_data   baked UK history from the Bank of England's "A millennium of
@@ -94,7 +96,8 @@ cdn_data, us_data, uk_data, de_data, joins, latest, baked} -> {frames, http} -> 
 {cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data, us_data, de_data} -> baked -> {http, config};
 rates -> {cdn_data, uk_data, us_data, de_data, baked, announced, prices, http}; announced -> http;
 prices -> {cdn_data, uk_data, us_data, de_data, uk_archive_data} (batch 13.1); plotting -> prices (batch
-13.2, --constant); cdn_data -> us_data (FRED's
+13.2, --constant); {plotting, payments, prices, bake} -> euro_data -> {de_data, us_data, joins, http, config}
+(batch 14.3); cdn_data -> us_data (FRED's
 Canadian GDP); plotting -> fx -> {us_data, cdn_archive_data, uk_archive_data};
 plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
