@@ -377,7 +377,7 @@ def check_reset(check: Check) -> None:
         app._reset()
         w.settle()
         check("Reset: the nation boxes as they were", {name: app.flag_vars[name].get() for name in nations} == nations
-              == {"cdn": True, "us": False, "uk": False, "germany": True, "france": False}, nations)
+              == {"cdn": True, "us": False, "uk": False, "germany": True, "france": False, "portugal": False}, nations)
         check("Reset: the rest at the defaults (the policy rate off, Canada's Max blank, the default size)",
               not app.flag_vars["policy"].get() and w.text("cdn:max") == "" and w.text("dimensions") == "2048x1536",
               (app.flag_vars["policy"].get(), w.text("cdn:max"), w.text("dimensions")))
