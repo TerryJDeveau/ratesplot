@@ -209,7 +209,7 @@ _EURO = {
             ("CA", "CRE"): (120_000, 399_000), ("CA", "DEB"): (110_000, 406_000),
             ("GS", "CRE"): (85_000, 274_000), ("GS", "DEB"): (80_000, 270_000),
         },
-        payments_from="1999Q1", months_from="2008-01",
+        payments_from="1999Q1", months_from="2008-01", mortgage_bands=("I", "O", "P", "F"),  # F, its variable rate, 9.8
     ),
     # Portugal's (batch 14.3, decision 175): the same shapes, its yields and mortgage rates above France's; its central
     # government's debt above general government's, as Eurostat's is (each subsector consolidated within it alone).
@@ -797,6 +797,7 @@ _ECB_SERIES = (
     ("MIR", "M.DE.B.A2C.I.R.A.2250.EUR.N", "PCPA"),
     ("MIR", "M.DE.B.A2C.O.R.A.2250.EUR.N", "PCPA"),
     ("MIR", "M.DE.B.A2C.P.R.A.2250.EUR.N", "PCPA"),
+    ("MIR", "M.DE.B.A2C.F.R.A.2250.EUR.N", "PCPA"),  # Germany's variable rate (9.8, decision 176)
     ("GFS", "A.N.DE.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
     # The euro-area nations' after Germany (batch 14.3: rates.EURO_MORTGAGE_SERIES, euro_data's ecb_annual_debt), baked
     # from France's fourth stage.
@@ -836,7 +837,7 @@ def ecb(url: str) -> bytes:
         periods, values, unit = [f"{day:%Y-%m-%d}" for day in days], list(path), "PC"
     elif flow == "MIR":
         months = pd.date_range("2000-01-31", "2026-08-31", freq="ME")
-        band = {"F": 1, "I": 3, "O": 10, "P": 20}[key.split(".")[4]]  # F: Portugal's variable rate (batch 14.3)
+        band = {"F": 1, "I": 3, "O": 10, "P": 20}[key.split(".")[4]]  # F: the variable rate (Portugal's 14.3, Germany's and France's 9.8)
         offset = _EURO[key.split(".")[1]].offset if key.split(".")[1] in _EURO else _DE_OFFSET  # a euro-area nation's bands (batch 14.3)
         values = list(np.round(_yield_path("demir" + key, months, band, offset) + 1.4, 2))
         periods = [f"{day:%Y-%m}" for day in months]

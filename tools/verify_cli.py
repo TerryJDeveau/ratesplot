@@ -374,6 +374,9 @@ CASES: list[list[str]] = [
     ["--na:pt", "--mo"], ["--na:pt", "--sp"], ["--na:pt", "--policy"], ["--na:pt", "--cpi:sa"], ["--na:pt", "--inf"],
     ["--na:fr,pt", "--com"], ["--na:fr,pt", "--com:mortgage"], ["--na:us,pt", "--com", "--base:pt"],
     ["--na:pt", "--master:eur"], ["--port:max:6"], ["--na:pt", "--pt:top:USD300b"], ["--na:pt,fr", "--pt:max:9", "--fr:max:6"],
+    # 9.8, decision 176: var for Germany and France too, offered, not ticked at the start; a nation without it.
+    ["--na:de", "--ger:mo:var"], ["--na:fr", "--fr:mo:var,over10"], ["--na:de,fr,pt", "--mo:var"], ["--na:de", "--mo"],
+    ["--na:fr", "--mo"], ["--na:gb", "--uk:mo:var"], ["--mo:VAR"], ["--mo:variable"],
 ]
 
 

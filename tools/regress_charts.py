@@ -513,6 +513,10 @@ CASES: dict[str, list[str]] = {
     "cmp_cpi_pt": ["--na:fr,pt", "--com:cpi", "-l", "-s:1960"],
     "cmp_cpi_ttm_pt": ["--na:de,pt", "--com:cpi", "--ttm", "--base:fr", "-s:1970"],
     "cmp_trade_base_pt": ["--na:fr,gb", "--com:trade", "--base:pt", "-r", "-s:2000"],
+    # 9.8, decision 176: Germany's and France's variable rate beside their bands, and the three nations' alone.
+    "de_mo_var": ["--na:de", "--mo:var,1-5,5-10,over10", "-l", "-s:2000"],
+    "fr_mo_var": ["--na:fr", "--mo:var,1-5,5-10,over10", "-l", "-s:2000"],
+    "var3": ["--na:de,fr,pt", "--mo:var", "-l", "-s:2010"],
 }
 
 
