@@ -960,7 +960,7 @@ def check_batch262(check: Check) -> None:
     at = new_page("--e:2026-09-01")
     check("no exception", not at.exception, at.exception)
     keys = [box.key for box in at.checkbox if box.key]
-    last_nation = [option.name for option in options.OPTIONS if option.group == "country" and option.fields[0].startswith("show_")][-1]
+    last_nation = [option.name for option in options.OPTIONS if option.group == "country" and option.fields[:1] and option.fields[0].startswith("show_")][-1]
     check("“Compare the nations” with the nations, after the last of them", keys.index("flag:compare") == keys.index(f"flag:{last_nation}") + 1,
           (last_nation, keys[:8]))
     titles = [header.value for header in at.subheader]
