@@ -61,7 +61,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import announced, bake, cdn_data, de_archive_data, de_data, fr_data, latest, payments, prices, rates, uk_archive_data, uk_data, us_data  # noqa: E402
+from ratesplot import announced, bake, baked, cdn_data, de_archive_data, de_data, fr_data, latest, payments, prices, rates, uk_archive_data, uk_data, us_data  # noqa: E402
 from ratesplot.cli import parse_args  # noqa: E402
 from ratesplot.config import (  # noqa: E402
     CDN_DEBT_COLUMN,
@@ -604,6 +604,31 @@ def _fr_annual_debt(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     return None, f"{len(annual)} year-ends, {annual.index[0]:%Y} to {annual.index[-1]:%Y}"
 
 
+def _fr_cpi_history(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """Batch 14.3's third stage: FRED's copy of France's national price index, stopped and baked, asked here alone.
+
+    Its age does not matter (used only before the harmonised index begins, in
+    1996). Says whether FRED's answer still ends on the declared date and
+    equals the bake, and how the two indexes' 12-month rises stand where both
+    have one (a measurement: the drawn line joins them at 1996-01).
+    """
+    code = fr_data.FR_CPI_HISTORY_SERIES
+    live = pd.to_numeric(fetch_fred_csv(code).set_index("DATE")[code], errors="coerce").dropna()
+    live.index = pd.DatetimeIndex(live.index)
+    bake = baked.read_series(us_data.FRED_BAKED_SOURCE, code).dropna()
+    same = len(live) == len(bake) and bool((live.index == bake.index).all()) and bool(((live - bake).abs() < 1e-9).all())
+    ended = live.index[-1] == fr_data.FR_CPI_HISTORY_STOPPED
+    harmonised = de_data.eurostat_series("prc_hicp_minr", geo=fr_data.FR_GEO)
+    harmonised.index = pd.DatetimeIndex(harmonised.index).to_period("M").to_timestamp()
+    rises = pd.concat({"national": prices.twelve_month_rise(live), "harmonised": prices.twelve_month_rise(harmonised)}, axis=1).dropna()
+    gap = rises.harmonised - rises.national
+    note = (f"{len(live)} months, {live.index[0]:%Y-%m} to {live.index[-1]:%Y-%m}"
+            f" ({'the declared stop' if ended else 'NOT the declared stop ' + format(fr_data.FR_CPI_HISTORY_STOPPED, '%Y-%m') + ': look at the declaration'}),"
+            f" {'the same as' if same else 'DIFFERENT from'} the bake; the harmonised index's 12-month rise less the national one's,"
+            f" {len(gap)} months {gap.index[0]:%Y-%m} to {gap.index[-1]:%Y-%m}: mean {gap.mean():+.2f}, largest {gap.abs().max():.2f} ({gap.abs().idxmax():%Y-%m})")
+    return None, note
+
+
 def _fr_population(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
     people = fr_data.fetch_fr_population()
     return _last(people), f"{people.iloc[-1] / 1e6:.2f} million, from {people.index[0]:%Y-%m-%d}; a quarter dated by its middle"
@@ -847,6 +872,7 @@ CHECKS: tuple[Check, ...] = (
     Check("est_fr_population", "Eurostat namq_10_pe French population", QUARTERLY, _fr_population),
     Check("est_fr_cpi", "Eurostat prc_hicp_minr French harmonised consumer prices, 12-month rise (--inflation)", PRICES,
           _rate(partial(rates.inflation_rate, "fr"))),
+    Check("fred_fr_cpi", "FRED FRACPIALLMINMEI French national consumer prices before 1996 (stopped, baked)", None, _fr_cpi_history),
     Check("est_fr_bop", "Eurostat bop_c6_q French current account credits and debits (four-quarter sums, --payments)", QUARTERLY, _fr_payments),
     Check("est_fr_bop_months", "Eurostat bop_c6_m French balance of payments each month (the quarters after bop_c6_q's last)", MONTHLY, _fr_payments_months),
     Check("fr_joins", "French series against another source of the same figures (a measurement)", None, _fr_joins),

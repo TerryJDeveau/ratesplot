@@ -480,6 +480,12 @@ CASES: dict[str, list[str]] = {
     "pay_all5": ["--na:ca,us,gb,de,fr", "--pay", "-s:2010"],
     "cmp_cur_fr": ["--na:de,fr", "--com:current", "-l", "-s:2000"],
     "cmp_trade_base_fr": ["--na:de,gb", "--com:trade", "--base:fr", "-r", "-s:2000"],
+    # Batch 14.3's third stage: France's consumer prices before 1996, the national index scaled to the harmonised one.
+    "fr_inf_cpi1955": ["--na:fr", "--inf", "--cpi", "-l", "-s:1955"],
+    "fr_constant1980": ["--na:fr", "--constant", "--gdp", "-l", "-s:1980"],
+    "fr_constant_pc_reg": ["--na:fr", "--constant", "-p", "--gdp", "--reg", "-s:1980"],
+    "cmp_cpi_fr": ["--na:de,fr", "--com:cpi", "-l", "-s:1960"],
+    "cmp_cpi_ttm_fr": ["--na:gb,fr", "--com:cpi", "--ttm", "--base:de", "-s:1970"],
 }
 
 

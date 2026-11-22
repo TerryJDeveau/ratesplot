@@ -68,7 +68,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, baked, cdn_data, de_data, payments, rates, uk_data, us_data  # noqa: E402
+from ratesplot import bake, baked, cdn_data, de_data, fr_data, payments, rates, uk_data, us_data  # noqa: E402
 from ratesplot.config import DATE_COLUMN  # noqa: E402
 
 RESULTS: list[bool] = []
@@ -385,7 +385,7 @@ def check_report() -> None:
 
 
 def check_stopped_declared() -> None:
-    """Each series declared stopped (19.3, beside its series in ``rates``, ``de_data`` or ``payments``): its bake ends on the declared date.
+    """Each series declared stopped (19.3, beside its series in ``rates``, ``de_data``, ``payments`` or ``fr_data``): its bake ends on the declared date.
 
     One that does not has been revised, or has started again: its declaration
     is then to be looked at (the drawing reads its bake alone, the new values too).
@@ -401,6 +401,8 @@ def check_stopped_declared() -> None:
         # cdn_archive_data, not a data file (Terry, 2026-11-11).
         **{(us_data.FRED_BAKED_SOURCE, code): payments.US_OLD_PAYMENTS_STOPPED
            for code in (*(code for pair in payments.US_OLD_PAYMENTS_SERIES.values() for code in pair), payments.US_OLD_BALANCE_SERIES)},
+        # France's national consumer price index before the harmonised one (batch 14.3's third stage).
+        (us_data.FRED_BAKED_SOURCE, fr_data.FR_CPI_HISTORY_SERIES): fr_data.FR_CPI_HISTORY_STOPPED,
     }
     ends = {key: baked.read_series(*key).last_valid_index() for key in declared}
     wrong = {"/".join(key): f"{ends[key]:%Y-%m-%d}, declared {end:%Y-%m-%d}" for key, end in declared.items() if ends[key] != end}

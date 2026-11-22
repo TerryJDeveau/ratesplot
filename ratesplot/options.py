@@ -1162,7 +1162,7 @@ OPTIONS: tuple[Option, ...] = (
         "cpi", Kind.FLAG, ("price_index",), "extra", "--cpi / --no-cpi",
         "each country's consumer price index, not\nseasonally adjusted, on a log axis of its\n"
         "own in index points (outside the right\naxis when debt, GDP or interest is\n"
-        "drawn): the U.S. from 1913, Canada and\nthe UK from 1914, Germany from 1948",
+        "drawn): the U.S. from 1913, Canada and\nthe UK from 1914, Germany from 1948,\nFrance from 1955",
         names=("cpi",), shortest=2, label="Price index (CPI)", panel="curves", topic="price-index",
     ),
     Option(
@@ -1287,7 +1287,7 @@ OPTIONS: tuple[Option, ...] = (
         "inflation", Kind.FLAG, ("inflation",), "rates", "--inflation / --no-inflation",
         "each country's 12-month rise in consumer\nprices (the CPI, not seasonally adjusted),\n"
         "dotted: the U.S. from 1914, Canada from\n1915, the UK from 1915 (the ONS's own\n"
-        "rate from 1989), Germany from 1949",
+        "rate from 1989), Germany from 1949,\nFrance from 1956",
         names=("inflation",), shortest=3, label="Inflation", topic="inflation",
     ),
     # At least "mo": "--m:" stays ambiguous (--min or --max).
