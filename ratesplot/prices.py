@@ -22,7 +22,11 @@ all-items index, not seasonally adjusted, monthly:
   for the index itself (13.2), the ONS's D7BT from 1988-01 (2015 = 100, to
   a tenth) and the Bank's index before it, also 2015 = 100, laid end to end
   (they differ by 0.04 % at 1988-01, by at most 0.17 points in the 351
-  months both have).
+  months both have);
+* France (batch 14.3, 2026-11-20): Eurostat's harmonised index, from
+  1996-01 (2025 = 100; ``fr_data``), and before it the national index in
+  the OECD's Main Economic Indicators on FRED, from 1955-01, scaled to it
+  (``fr_data.with_older_index``, batch 14.3's third stage, 2026-11-21).
 
 The seasonally adjusted indexes (13.4), on the same bases: FRED CPIAUCSL from
 1947-01, Statistics Canada's 18-10-0006 (v41690914) from 1992-01 and the

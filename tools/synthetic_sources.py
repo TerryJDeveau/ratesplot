@@ -166,7 +166,7 @@ _FX = {
 # Every FRED series ``fred`` answers.
 _FRED_IDS = (
     "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", "CPIAUCNS", "CPIAUCSL", *_GROWTH, *_DAILY_START, *_FX,
-    *_PAYMENTS, "BOPBCA",
+    *_PAYMENTS, "BOPBCA", "FRACPIALLMINMEI",
 )
 
 
@@ -198,6 +198,11 @@ def fred(series_id: str) -> pd.DataFrame:
         # France's 10-year (batch 14.3): the OECD's monthly average, from 1960-01, each month's first day.
         dates = pd.date_range("1960-01-01", "2026-09-01", freq="MS")
         values = _yield_path(series_id, dates, 10, _FR_OFFSET)
+    elif series_id == "FRACPIALLMINMEI":
+        # France's national consumer price index (batch 14.3's third stage), 2015 = 100, 1955-01 to 2025-03 (stopped),
+        # as many decimals as FRED gives it.
+        dates = pd.date_range("1955-01-01", "2025-03-01", freq="MS")
+        values = _growth(dates, 7.43, 120.38, series_id)
     elif series_id in _GROWTH:
         start, freq, first, last = _GROWTH[series_id]
         end = "2026-07-01" if freq == "QS" else "2025-01-01"

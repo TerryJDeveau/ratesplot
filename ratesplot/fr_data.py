@@ -25,6 +25,13 @@ program already asks:
   1980, dated by each quarter's middle, as Germany's are.
 * Consumer prices (--constant, --inflation, --cpi): Eurostat's harmonised
   index, all items, 2025 = 100 (``prc_hicp_minr``), from 1996-01; unadjusted.
+  Before it (batch 14.3's third stage, 9.5): France's national consumer price
+  index as the OECD published it on FRED (``FRACPIALLMINMEI``, 1955-01 to
+  2025-03, stopped), scaled to the harmonised index at its first month
+  (``with_older_index``). Measured 2026-11-21
+  (``G:\\Research\\Claude\\ratesplot_b143c\\measure_fr_cpi.py``): in the 339
+  months both have a 12-month rise, the harmonised index's runs above the
+  national one's by 0.19 point on average, by 1.04 at most (2023-01).
 * Levels of government: central government (S1311) and local (S1313).
   France has no state level (S1312 is empty); the social security funds
   (S1314) are no level of the chart, as Germany's are not. Their debt is
@@ -35,8 +42,9 @@ program already asks:
 The policy rate is the euro area's (``rates``, Germany's functions), and the
 mortgage rates the ECB's for France (``rates.FR_MORTGAGE_SERIES``). Amounts in
 euros (national currency, so French francs before 1999 at 6.55957, as the ECB
-and Eurostat publish them). None of these series is baked yet: each is asked
-for whole, once a drawing (the download cache).
+and Eurostat publish them). None of these series is baked yet but the national
+price index, which has stopped: each other is asked for whole, once a drawing
+(the download cache).
 """
 from __future__ import annotations
 
@@ -69,6 +77,12 @@ FR_ECB_ANNUAL_DEBT = ("GFS", "A.N.FR.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", 
 _LEVEL_SECTORS = {"f": ("S1311",), "m": ("S1313",)}
 # A quarter's population is dated this many days after the quarter begins, as Germany's.
 _QUARTER_MIDDLE_DAYS = 45
+# France's consumer prices before Eurostat's harmonised index (batch 14.3's third stage, decision 173): the national
+# index, all items, unadjusted, 2015 = 100, in the OECD's Main Economic Indicators (FRED's notes: METHODOLOGY N, the
+# national index, not the harmonised one), monthly from 1955-01. FRED's last value is 2025-03 (measured 2026-11-21):
+# stopped, so it is baked and never asked (``us_data.fred_series``' ``stopped``, the date of its last value).
+FR_CPI_HISTORY_SERIES = "FRACPIALLMINMEI"
+FR_CPI_HISTORY_STOPPED = pd.Timestamp("2025-03-01")
 
 # First observation of each French input, to warn when --start is earlier
 # (``fr_series_earliest`` adds the chosen yields). Measured 2026-11-20.
@@ -212,15 +226,43 @@ def fetch_fr_components(config: PlotConfig) -> pd.DataFrame | None:
     return pd.concat(columns, axis=1).sort_index() if columns else None
 
 
+def with_older_index(harmonised: pd.Series) -> pd.Series:
+    """Return France's consumer price index carried back to 1955-01 by the national index, on the harmonised index's base; from its own first month, unchanged.
+
+    The national index (``FR_CPI_HISTORY_SERIES``) is scaled to the
+    harmonised one at the month where the harmonised one begins, so each keeps
+    its own rises and no level is lost, as Germany's older indexes are joined
+    (``de_data.with_west_germany``). The rises of the first 12 months after
+    the join are the harmonised index over the scaled national one a year
+    before. If the national index cannot be read, or does not hold the
+    harmonised index's first month, ``harmonised`` is returned alone, with a
+    warning.
+    """
+    try:
+        frame = fred_series(FR_CPI_HISTORY_SERIES, revised=False, stopped=FR_CPI_HISTORY_STOPPED)
+    except Exception as exc:
+        print(f"  Warning: FRED {FR_CPI_HISTORY_SERIES} (France's consumer prices before {harmonised.index[0]:%Y-%m}) unavailable ({exc}); drawn without them.")
+        return harmonised
+    national = pd.to_numeric(frame.set_index(DATE_COLUMN)[FR_CPI_HISTORY_SERIES], errors="coerce").dropna()
+    national = national.set_axis(pd.DatetimeIndex(national.index, name=DATE_COLUMN).to_period("M").start_time)
+    join = harmonised.index[0]
+    if join not in national.index:
+        print(f"  Warning: France's harmonised consumer prices begin {join:%Y-%m-%d}, where FRED {FR_CPI_HISTORY_SERIES} has no value; drawn without it.")
+        return harmonised
+    older = national * (harmonised.iloc[0] / national.loc[join])
+    return pd.concat([older.loc[older.index < join], harmonised]).rename(harmonised.name)
+
+
 @downloads_of("Eurostat consumer prices")
 def fetch_fr_consumer_prices() -> pd.Series:
-    """Return France's consumer price index: Eurostat's harmonised index, all items (2025 = 100), monthly from 1996-01, each month dated by its first day; raises if Eurostat has none.
+    """Return France's consumer price index (2025 = 100), each month dated by its first day: Eurostat's harmonised index, all items, from 1996-01, carried back to 1955-01 by the national index (``with_older_index``); raises if Eurostat has none.
 
     Unadjusted: no seasonally adjusted index is published with it (--cpi:sa
     is not offered for France, as for the UK).
     """
     index = eurostat_series("prc_hicp_minr", geo=FR_GEO)
-    return index.set_axis(pd.DatetimeIndex(index.index.to_period("M").start_time, name=DATE_COLUMN)).rename("prc_hicp_minr")
+    harmonised = index.set_axis(pd.DatetimeIndex(index.index.to_period("M").start_time, name=DATE_COLUMN)).rename("prc_hicp_minr")
+    return with_older_index(harmonised)
 
 
 @downloads_of("Eurostat population")

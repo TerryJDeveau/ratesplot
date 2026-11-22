@@ -8,7 +8,7 @@ Each figure is divided when it is observed, by the index of its month, and held 
 
 Debt, counted on a date, is divided by the index of that date's month. GDP and interest, each a total over twelve months, are divided by the index of their last month too. This keeps the distance between debt and GDP on the log axis what it is in current prices, as it should be, since a share of GDP is free of inflation. Dividing each total by the average of its twelve months' index instead would raise GDP and interest by about half a year's inflation.
 
-Before an index begins there is no price to divide by, and nothing is drawn: before 1914 in Canada, 1914-07 in the UK and 1948-06 in Germany (the U.S. index, from 1913, is older than any U.S. curve). On a chart ending before its index begins, the amounts are drawn in current prices, with a warning.
+Before an index begins there is no price to divide by, and nothing is drawn: before 1914 in Canada, 1914-07 in the UK, 1948-06 in Germany and 1955 in France (the U.S. index, from 1913, is older than any U.S. curve). On a chart ending before its index begins, the amounts are drawn in current prices, with a warning.
 
 Inflation adjusted combines with per capita, for real amounts per person ("Inf. Adj. CAD per Capita at 2026-09 Prices"). It can't be combined with [As % of GDP](?help=percent-of-gdp): a share of GDP is free of inflation already, and in the window and on the page ticking that box unticks this one. In the [master currency](?help=master-currency) each chart's amounts are put at its own nation's prices first, then converted at the rate of its End date. Without [GDP](?help=gdp), [debt](?help=debt) or [interest](?help=interest) ticked it has no effect, and its box is greyed.
 
@@ -22,6 +22,8 @@ Each is the all-items consumer price index, not seasonally adjusted, the one the
 - **The United Kingdom, from 1988-01.** The ONS's CPI index, all items, 2015 = 100, to one decimal ([D7BT](https://www.ons.gov.uk/economy/inflationandpriceindices/timeseries/d7bt/mm23)). It and the Bank's index differ by 0.04 % in 1988-01 and by at most 0.17 points in the 351 months both have (to 2017-03, measured 2026-11-03), so they are laid end to end, neither scaled.
 - **Germany, from 1991-01.** The Federal Statistical Office's consumer price index, 2020 = 100, through the Bundesbank ([BBDP1.M.DE.N.VPI.C.A00000.I20.A](https://www.bundesbank.de/dynamic/action/en/statistics/time-series-databases/time-series-databases/759784/759784?tsId=BBDP1.M.DE.N.VPI.C.A00000.I20.A)).
 - **Germany, 1948-06 to 1990.** West Germany's cost-of-living indexes, as the [price index](?help=price-index) page says, scaled to the index above. Germany's GDP, debt and interest reach back to 1950 (the interest of each level of government to 1970).
+- **France, from 1996-01.** Eurostat's harmonised index of consumer prices, 2025 = 100 ([prc_hicp_minr](https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_minr/default/table?lang=en)).
+- **France, 1955-01 to 1995.** The national consumer price index as the OECD published it, through FRED ([FRACPIALLMINMEI](https://fred.stlouisfed.org/series/FRACPIALLMINMEI)), scaled to the index above. France's GDP reaches back to 1980, its debt and interest to 1995.
 
 ## How the program keeps these figures
 

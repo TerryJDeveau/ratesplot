@@ -19,6 +19,24 @@ from .config import COMPONENT_LETTERS, DATE_COLUMN, PAYMENTS_COLUMNS, CountryMet
 from .frames import at_middle_of_month
 
 
+def microseconds(dates) -> np.ndarray:
+    """Return ``dates`` (a Series, an index or a list of dates) as integers in one unit, microseconds, whatever unit each is stored in.
+
+    ``asi8`` counts in the dates' own unit, and pandas stores dates parsed
+    from text in microseconds but keeps a unit given to it: two series
+    compared or interpolated by ``asi8`` must first be in the same unit, and a
+    ``Timestamp.value`` is always in nanoseconds. Microseconds, not
+    nanoseconds, since a chart may start in 1600, before nanoseconds reach
+    (1677). Found 2026-11-21 (9.5): with Daily values, ``index_on`` compared
+    the dates in microseconds with the index's first month in nanoseconds, so
+    France's constant prices (its index from 1996) drew nothing in 9.3 and
+    9.4, and an amount before its nation's index began (Canada's before 1914,
+    the UK's before 1914-07, Germany's before 1948-06) was divided by the
+    index's first month instead of left out.
+    """
+    return pd.DatetimeIndex(pd.to_datetime(dates)).as_unit("us").asi8
+
+
 # The month whose consumer prices a chart's amounts are in (--constant),
 # recorded on the frame ``express`` returns; None where they are in current
 # prices (no index on or before the End). ``plotting.draw_country`` reads it.
@@ -134,9 +152,9 @@ def index_on(dates: pd.Series, index: pd.Series, *, filled: bool = False) -> pd.
     known = index.dropna().sort_index()
     if not filled or known.empty:
         return held_on(dates, known)
-    when = pd.DatetimeIndex(pd.to_datetime(dates)).asi8
-    values = np.interp(when, at_middle_of_month(known.index).asi8, known.to_numpy(dtype=float))
-    values[when < known.index[0].value] = np.nan
+    when = microseconds(dates)
+    values = np.interp(when, microseconds(at_middle_of_month(known.index)), known.to_numpy(dtype=float))
+    values[when < microseconds(known.index[:1])[0]] = np.nan
     return pd.Series(values, index=dates.index)
 
 
@@ -262,8 +280,8 @@ def population_on(dates: pd.Series, population: pd.Series) -> pd.Series:
     estimate is held after it; missing before the first.
     """
     known = population.dropna().sort_index()
-    when = pd.DatetimeIndex(pd.to_datetime(dates)).asi8
-    known_when = pd.DatetimeIndex(known.index).asi8
+    when = microseconds(dates)
+    known_when = microseconds(known.index)
     # np.interp holds the end values beyond the known range; before the first
     # estimate there is no population, so those dates are blanked.
     values = np.exp(np.interp(when, known_when, np.log(known.to_numpy(dtype=float))))
