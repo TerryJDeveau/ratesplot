@@ -1,9 +1,9 @@
 """The euro area's nations after Germany (batch 14.3, decisions 155, 171): Germany's code paths with each nation's code in place of DE.
 
 Each nation is an ``EuroNation`` (below, its sources noted above it), and the
-fetchers take it: France (decision 171, 9.3), Portugal (decision 175, 9.7).
-All on hosts the program already asks (FRED, the ECB, Eurostat), each series
-measured before it was drawn:
+fetchers take it: France (decision 171, 9.3), Portugal (decision 175, 9.7),
+Italy (decision 177, 9.9). All on hosts the program already asks (FRED, the
+ECB, Eurostat), each series measured before it was drawn:
 
 * The 10-year yield: the OECD's long-term interest rate on FRED
   (``IRLTLT01..M156N``), a monthly average, dated by each month's first day
@@ -29,8 +29,8 @@ measured before it was drawn:
   level of the chart, as Germany's are not. Their debt is Eurostat's
   quarters; their interest its yearly accounts (``gov_10a_main``, from 1995,
   each year dated by its last day), since France's quarterly interest is
-  published for S13 alone (measured 2026-11-20); Portugal's levels the same
-  way, though its levels' quarters begin in 2008.
+  published for S13 alone (measured 2026-11-20); Portugal's and Italy's
+  levels the same way, though Portugal's levels' quarters begin in 2008.
 
 The policy rate is the euro area's (``rates``, Germany's functions), and the
 mortgage rates the ECB's for the nation (``rates.EURO_MORTGAGE_SERIES``).
@@ -54,6 +54,8 @@ from .config import (
     FR_DEBT_COLUMN,
     FR_INTEREST_COLUMN,
     GDP_COLUMN,
+    IT_DEBT_COLUMN,
+    IT_INTEREST_COLUMN,
     POPULATION_COLUMN,
     PT_DEBT_COLUMN,
     PT_INTEREST_COLUMN,
@@ -162,8 +164,36 @@ PORTUGAL = EuroNation(
     },
 )
 
+# Italy (batch 14.3, decision 177, 9.9), the third nation of the euro area's path. Measured 2026-11-22
+# (``G:\Research\Claude\ratesplot_b143it\measure_it.py``, ``probe_it.py``, ``measure_cpi_it.py``). The OECD's 10-year
+# from 1991-03, equal to Eurostat's convergence yield to 0.005 in all 428 months both have; Eurostat's runs from
+# 1980-01, not joined before it (decision 177's call). Debt from 1995 (the ECB's year ends, Eurostat's quarters from
+# 2000), GDP and the population from 1995, interest from 1999 (Eurostat's quarters of S13; the levels' interest the
+# yearly accounts', from 1995, as France's); lire before 1999 at 1,936.27. No state level (S1312 empty). The national
+# price index (``ITACPIALLMINMEI``) 1955-01 to 2025-03: in the 339 months both have a 12-month rise, the harmonised
+# index's runs above the national one's by 0.09 point on average, by 1.43 at most (2001-02).
+ITALY = EuroNation(
+    key="it",
+    name="Italy",
+    adjective="Italian",
+    geo="IT",
+    yield_series={"10-Year": "IRLTLT01ITM156N"},
+    yield_earliest={"10-Year": pd.Timestamp("1991-03-01")},
+    ecb_annual_debt=("GFS", "A.N.IT.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
+    level_sectors={"f": ("S1311",), "m": ("S1313",)},
+    cpi_history_series="ITACPIALLMINMEI",
+    cpi_history_stopped=pd.Timestamp("2025-03-01"),
+    debt_column=IT_DEBT_COLUMN,
+    interest_column=IT_INTEREST_COLUMN,
+    series_earliest={
+        "Italian General Government Debt (the ECB's year ends from 1995, Eurostat's quarters from 2000)": pd.Timestamp("1995-12-31"),
+        "TTM Nominal GDP (Eurostat's quarters from 1995)": pd.Timestamp("1995-12-31"),
+        "TTM Italian Interest Payable (Eurostat's quarters from 1999)": pd.Timestamp("1999-12-31"),
+    },
+)
+
 # Every nation of this module, by its key.
-EURO_NATIONS = {nation.key: nation for nation in (FRANCE, PORTUGAL)}
+EURO_NATIONS = {nation.key: nation for nation in (FRANCE, PORTUGAL, ITALY)}
 
 
 def series_earliest(nation: EuroNation, config: PlotConfig) -> dict[str, pd.Timestamp]:
