@@ -695,15 +695,21 @@ def _euro_joins(nation: euro_data.EuroNation, _config: PlotConfig) -> tuple[pd.T
     return None, "; ".join(notes)
 
 
+# Each euro-area mortgage band (``rates.EURO_MORTGAGE_SERIES``): its check's name and its words.
+_EURO_BAND_NAMES = {
+    "1-5": ("1_5", "fixed over 1 to 5 years"), "5-10": ("5_10", "fixed over 5 to 10 years"), "over10": ("10", "fixed over 10 years"),
+    "var": ("_var", "variable or fixed up to 1 year"),
+}
+
+
 def _euro_checks(nation: euro_data.EuroNation) -> tuple[Check, ...]:
     """A euro-area nation's checks (batch 14.3, ``euro_data``), named by its key ("fred_fr10"): its yield, mortgages, debt, GDP, interest, levels, population, prices, balance of payments, and its series against other sources. The policy rates are Germany's (the euro area's)."""
     key, adjective = nation.key, nation.adjective
     components = partial(euro_data.fetch_components, nation)
     return (
         Check(f"fred_{key}10", f"FRED {nation.yield_series['10-Year']} {adjective} 10-year (OECD, monthly average)", MONTHLY, partial(_euro_yields, nation)),
-        Check(f"ecb_{key}_mortgage1_5", f"ECB MIR {adjective} housing loans, fixed over 1 to 5 years", MONTHLY, _rate(partial(rates.mortgage_rate, "1-5", key))),
-        Check(f"ecb_{key}_mortgage5_10", f"ECB MIR {adjective} housing loans, fixed over 5 to 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "5-10", key))),
-        Check(f"ecb_{key}_mortgage10", f"ECB MIR {adjective} housing loans, fixed over 10 years", MONTHLY, _rate(partial(rates.mortgage_rate, "over10", key))),
+        *(Check(f"ecb_{key}_mortgage{_EURO_BAND_NAMES[term][0]}", f"ECB MIR {adjective} housing loans, {_EURO_BAND_NAMES[term][1]}", MONTHLY,
+                _rate(partial(rates.mortgage_rate, term, key))) for term in rates.EURO_MORTGAGE_SERIES[key]),
         Check(f"ecb_{key}_debt_annual", f"ECB GFS {adjective} debt, year-ends (before 2000)", None, partial(_euro_annual_debt, nation)),
         Check(f"est_{key}_debt", f"Eurostat gov_10q_ggdebt {adjective} debt (quarterly)", QUARTERLY, _de_column(partial(euro_data.fetch_debt, nation), nation.debt_column)),
         Check(f"est_{key}_gdp", f"Eurostat namq_10_gdp {adjective} GDP (four-quarter sums)", QUARTERLY, _de_column(partial(euro_data.fetch_gdp, nation), GDP_COLUMN)),

@@ -365,6 +365,15 @@ CASES: list[list[str]] = [
     ["--na:fr", "--mo"], ["--na:fr", "--sp"], ["--na:fr", "--policy"], ["--na:fr", "--cpi:sa"], ["--na:fr", "--inf"],
     ["--na:de,fr", "--com"], ["--na:de,fr", "--com:mortgage"], ["--na:us,fr", "--com", "--base:fr"],
     ["--na:fr", "--master:eur"], ["--fran:max:6"], ["--na:fr", "--fr:top:USD3t"],
+    # Batch 14.3, decision 175: Portugal, as France: --nations:pt (or prt), its prefixes --pt: and --prt:, its own
+    # defaults, its levels f and m, a term it lacks, --cpi:sa, the comparison and a base with it, all six nations;
+    # "--port" names no nation.
+    ["--na:pt"], ["--na:prt"], ["--na:ca,us,gb,de,fr,pt"], ["--na:pt", "--pt:max:9"], ["--na:pt", "--prt:top:400b"],
+    ["--na:pt", "--pt:d:fm"], ["--na:pt", "--pt:d:p"], ["--na:pt", "--pt:y:2,10"], ["--na:pt", "--pt:mo:1-5"],
+    ["--na:pt", "--pt:mo:var,1-5"], ["--na:de,pt", "--mo:var"],
+    ["--na:pt", "--mo"], ["--na:pt", "--sp"], ["--na:pt", "--policy"], ["--na:pt", "--cpi:sa"], ["--na:pt", "--inf"],
+    ["--na:fr,pt", "--com"], ["--na:fr,pt", "--com:mortgage"], ["--na:us,pt", "--com", "--base:pt"],
+    ["--na:pt", "--master:eur"], ["--port:max:6"], ["--na:pt", "--pt:top:USD300b"], ["--na:pt,fr", "--pt:max:9", "--fr:max:6"],
 ]
 
 
