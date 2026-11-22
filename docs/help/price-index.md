@@ -30,6 +30,9 @@ Seasonal adjustment takes out the swings that come back each year at the same ti
 - **Portugal, unadjusted, from 1996-01.** Eurostat's harmonised index of consumer prices, all items, 2025 = 100 ([prc_hicp_minr](https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_minr/default/table?lang=en)).
 - **Portugal, unadjusted, 1955-01 to 1995.** The national consumer price index, all items, as the OECD published it in its Main Economic Indicators, through FRED ([PRTCPIALLMINMEI](https://fred.stlouisfed.org/series/PRTCPIALLMINMEI)). Published on 2015 = 100 and scaled to the harmonised index where that begins, so the line is in 2025 = 100 throughout and has no step in 1996.
 - **Portugal, seasonally adjusted:** none is published with the harmonised index, so with Seas. adj. ticked Portugal's chart draws its index not seasonally adjusted, as France's does.
+- **Italy, unadjusted, from 1996-01.** Eurostat's harmonised index of consumer prices, all items, 2025 = 100 ([prc_hicp_minr](https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_minr/default/table?lang=en)).
+- **Italy, unadjusted, 1955-01 to 1995.** The national consumer price index, all items, as the OECD published it in its Main Economic Indicators, through FRED ([ITACPIALLMINMEI](https://fred.stlouisfed.org/series/ITACPIALLMINMEI)). Published on 2015 = 100 and scaled to the harmonised index where that begins, so the line is in 2025 = 100 throughout and has no step in 1996.
+- **Italy, seasonally adjusted:** none is published with the harmonised index, so with Seas. adj. ticked Italy's chart draws its index not seasonally adjusted, as France's does.
 
 ## How the program keeps these figures
 
