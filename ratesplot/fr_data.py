@@ -42,9 +42,12 @@ program already asks:
 The policy rate is the euro area's (``rates``, Germany's functions), and the
 mortgage rates the ECB's for France (``rates.FR_MORTGAGE_SERIES``). Amounts in
 euros (national currency, so French francs before 1999 at 6.55957, as the ECB
-and Eurostat publish them). None of these series is baked yet but the national
-price index, which has stopped: each other is asked for whole, once a drawing
-(the download cache).
+and Eurostat publish them). Every series is baked (batch 14.3's fourth stage,
+9.6, 2026-11-22), as Germany's are: a drawing asks FRED for the yield's last
+two months, the ECB for the debt's and the mortgage rates' last 24 months, and
+Eurostat for each dataset's last 24 months, one request a dataset
+(``de_data.FR_EUROSTAT_SERIES_READ``); the national price index, stopped, is
+its bake alone.
 """
 from __future__ import annotations
 

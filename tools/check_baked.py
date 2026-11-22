@@ -410,9 +410,36 @@ def check_stopped_declared() -> None:
           wrong or "; ".join(f"{'/'.join(key)} {end:%Y-%m-%d}" for key, end in declared.items()))
 
 
+def check_french_reads_listed() -> None:
+    """France's Eurostat series (batch 14.3's fourth stage): those ``fr_data`` and ``payments`` read are those ``de_data.FR_EUROSTAT_SERIES_READ`` lists, so baked.
+
+    One read but not listed is not baked, and its dataset is asked for whole
+    at every drawing (``baked.frame_with_recent_part``): slower, and silent.
+    The levels from ``fr_data._LEVEL_SECTORS``, the balance of payments' items
+    and flows from ``payments``; the rest as ``fr_data`` reads them.
+    """
+    levels = sorted({sector for sectors in fr_data._LEVEL_SECTORS.values() for sector in sectors})
+    pairs = [{"bop_item": item, "stk_flow": flow} for item in payments.FR_PAYMENTS_ITEMS.values() for flow in payments.FR_PAYMENTS_FLOWS]
+    read = {
+        "gov_10q_ggdebt": [{"sector": sector} for sector in (de_data.GENERAL_GOVERNMENT, *levels)],
+        "gov_10q_ggnfa": [{"sector": de_data.GENERAL_GOVERNMENT}],
+        "gov_10a_main": [{"sector": sector} for sector in levels],
+        "namq_10_gdp": [{}], "namq_10_pe": [{}], "prc_hicp_minr": [{}],
+        "bop_c6_q": pairs, "bop_c6_m": pairs,
+    }
+
+    def as_set(chosen: dict[str, list[dict[str, str]]]) -> set[tuple]:
+        return {(dataset, tuple(sorted(each.items()))) for dataset, every in chosen.items() for each in every}
+
+    listed = as_set({dataset: list(every) for dataset, every in de_data.FR_EUROSTAT_SERIES_READ.items()})
+    check(f"France's Eurostat series read are those listed to be baked ({len(listed)}; 14.3's fourth stage)",
+          listed == as_set(read), {"read, not listed": sorted(as_set(read) - listed), "listed, not read": sorted(listed - as_set(read))})
+
+
 def main() -> int:
     check_files()
     check_stopped_declared()
+    check_french_reads_listed()
     with tempfile.TemporaryDirectory(prefix="ratesplot_check_baked_") as temporary:
         check_written(Path(temporary))
         check_join(Path(temporary))

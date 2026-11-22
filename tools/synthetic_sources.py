@@ -166,7 +166,7 @@ _FX = {
 # Every FRED series ``fred`` answers.
 _FRED_IDS = (
     "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", "CPIAUCNS", "CPIAUCSL", *_GROWTH, *_DAILY_START, *_FX,
-    *_PAYMENTS, "BOPBCA", "FRACPIALLMINMEI",
+    *_PAYMENTS, "BOPBCA", "FRACPIALLMINMEI", "IRLTLT01FRM156N",
 )
 
 
@@ -725,6 +725,11 @@ _ECB_SERIES = (
     ("MIR", "M.DE.B.A2C.O.R.A.2250.EUR.N", "PCPA"),
     ("MIR", "M.DE.B.A2C.P.R.A.2250.EUR.N", "PCPA"),
     ("GFS", "A.N.DE.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
+    # France's (batch 14.3: rates.FR_MORTGAGE_SERIES, fr_data.FR_ECB_ANNUAL_DEBT), baked from its fourth stage.
+    ("MIR", "M.FR.B.A2C.I.R.A.2250.EUR.N", "PCPA"),
+    ("MIR", "M.FR.B.A2C.O.R.A.2250.EUR.N", "PCPA"),
+    ("MIR", "M.FR.B.A2C.P.R.A.2250.EUR.N", "PCPA"),
+    ("GFS", "A.N.FR.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
 )
 
 
@@ -814,14 +819,23 @@ _FR_EUROSTAT_PATHS = {
 }
 _EUROSTAT_URL = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
 # Every Eurostat series the program reads, by its baked file's name (de_data.eurostat_code): its
-# dataset and the categories chosen (de_data.EUROSTAT_SERIES_READ; batch 19.2).
+# dataset, the categories chosen and the nation (de_data.EUROSTAT_SERIES_READ_BY_GEO; batch 19.2,
+# France's from batch 14.3's fourth stage).
 _EUROSTAT_SERIES = {
-    **{f"{dataset}.{sector}": (dataset, {"sector": sector})
+    **{f"{dataset}.{sector}": (dataset, {"sector": sector}, "DE")
        for dataset in ("gov_10q_ggdebt", "gov_10q_ggnfa") for sector in ("S13", "S1311", "S1312", "S1313")},
-    "gov_10dd_edpt1.D41PAY.S13": ("gov_10dd_edpt1", {"sector": "S13", "na_item": "D41PAY"}),
-    "namq_10_gdp": ("namq_10_gdp", {}),
-    "namq_10_pe": ("namq_10_pe", {}),
-    "demo_pjan": ("demo_pjan", {}),
+    "gov_10dd_edpt1.D41PAY.S13": ("gov_10dd_edpt1", {"sector": "S13", "na_item": "D41PAY"}, "DE"),
+    "namq_10_gdp": ("namq_10_gdp", {}, "DE"),
+    "namq_10_pe": ("namq_10_pe", {}, "DE"),
+    "demo_pjan": ("demo_pjan", {}, "DE"),
+    **{f"gov_10q_ggdebt.FR.{sector}": ("gov_10q_ggdebt", {"sector": sector}, "FR") for sector in ("S13", "S1311", "S1313")},
+    "gov_10q_ggnfa.FR.S13": ("gov_10q_ggnfa", {"sector": "S13"}, "FR"),
+    **{f"gov_10a_main.FR.{sector}": ("gov_10a_main", {"sector": sector}, "FR") for sector in ("S1311", "S1313")},
+    "namq_10_gdp.FR": ("namq_10_gdp", {}, "FR"),
+    "namq_10_pe.FR": ("namq_10_pe", {}, "FR"),
+    "prc_hicp_minr.FR": ("prc_hicp_minr", {}, "FR"),
+    **{f"{dataset}.{item}.FR.{flow}": (dataset, {"bop_item": item, "stk_flow": flow}, "FR")
+       for dataset in ("bop_c6_q", "bop_c6_m") for item in ("CA", "GS") for flow in ("CRE", "DEB")},
 }
 
 
@@ -1011,10 +1025,14 @@ def install_synthetic_bake(folder: Path) -> bool:
     for flow, key, unit in _ECB_SERIES:
         answer = ecb(f"https://data-api.ecb.europa.eu/service/data/{flow}/{key}").decode()
         bake("ecb", f"{flow}.{key}", de_data.parse_ecb_csv(answer, f"{flow}.{key}", unit))
-    for code, (dataset, chosen) in _EUROSTAT_SERIES.items():
+    for code, (dataset, chosen, geo) in _EUROSTAT_SERIES.items():
+        if dataset not in de_data.EUROSTAT_QUERIES:
+            continue  # a tree before the dataset was read (France's, batch 14.3)
         params, unit = de_data.EUROSTAT_QUERIES[dataset]
-        answer = json.loads(eurostat(f"{_EUROSTAT_URL}{dataset}", tuple(sorted(params.items()))))
-        bake("eurostat", code, de_data.parse_jsonstat(answer, unit, **chosen))
+        answer = json.loads(eurostat(f"{_EUROSTAT_URL}{dataset}", tuple(sorted((params | {"geo": geo}).items()))))
+        # The unit's dimension where it is not ``unit`` (the balance of payments'; a tree before 9.4 takes no such argument).
+        dimension = (de_data.EUROSTAT_UNIT_DIMENSIONS.get(dataset, "unit"),) if hasattr(de_data, "EUROSTAT_UNIT_DIMENSIONS") else ()
+        bake("eurostat", code, de_data.parse_jsonstat(answer, unit, *dimension, **chosen))
     # The frequency the program reads of each (uk_data.ONS_SERIES_READ): months where the synthetic series has them.
     for cdid, (*_spec, has_months) in _ONS_SERIES.items():
         bake("ons", cdid, uk_data.parse_ons_series(json.loads(ons(cdid)), cdid, "months" if has_months else "quarters"))
