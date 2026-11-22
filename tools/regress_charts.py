@@ -545,6 +545,10 @@ CASES: dict[str, list[str]] = {
     "cmp_cpi_ttm_it": ["--na:de,it", "--com:cpi", "--ttm", "--base:fr", "-s:1970"],
     "cmp_trade_base_it": ["--na:fr,gb", "--com:trade", "--base:it", "-r", "-s:2000"],
     "var4": ["--na:de,fr,pt,it", "--mo:var", "-l", "-s:2010"],
+    # 9.10, decision 178: Italy's 10-year from 1980, Eurostat's before the OECD's first month (1991-03).
+    "it_yield1980": ["--na:it", "--y:10", "-s:1980"],
+    "it1980_l": ["--na:it", "-s:1980", "-l"],
+    "cmp_10y_it1980": ["--na:de,fr,it", "--com", "-s:1980"],
 }
 
 

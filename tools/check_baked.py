@@ -430,6 +430,10 @@ def check_euro_reads_listed() -> None:
     def as_set(chosen: dict[str, list[dict[str, str]]]) -> set[tuple]:
         return {(dataset, tuple(sorted(each.items()))) for dataset, every in chosen.items() for each in every}
 
+    with_history = tuple(nation.geo for nation in nations.values() if nation.yield_history_from is not None)
+    check(f"the euro nations whose 10-year reaches back by Eurostat's convergence yield alike in euro_data and de_data "
+          f"({', '.join(with_history) or 'none'}; decision 178)",
+          with_history == de_data.EURO_YIELD_HISTORY_GEOS, {"euro_data": with_history, "de_data": de_data.EURO_YIELD_HISTORY_GEOS})
     pairs = [{"bop_item": item, "stk_flow": flow} for item in payments.EURO_PAYMENTS_ITEMS.values() for flow in payments.EURO_PAYMENTS_FLOWS]
     for nation in nations.values():
         levels = sorted({sector for sectors in nation.level_sectors.values() for sector in sectors})
@@ -440,6 +444,8 @@ def check_euro_reads_listed() -> None:
             "namq_10_gdp": [{}], "namq_10_pe": [{}], "prc_hicp_minr": [{}],
             "bop_c6_q": pairs, "bop_c6_m": pairs,
         }
+        if nation.yield_history_from is not None:  # its 10-year before the OECD's (decision 178)
+            read["irt_lt_mcby_m"] = [{}]
         listed = as_set({dataset: list(every) for dataset, every in de_data.EUROSTAT_SERIES_READ_BY_GEO.get(nation.geo, {}).items()})
         check(f"{nation.name}'s Eurostat series read are those listed to be baked ({len(listed)}; 14.3's fourth stage)",
               listed == as_set(read), {"read, not listed": sorted(as_set(read) - listed), "listed, not read": sorted(listed - as_set(read))})
