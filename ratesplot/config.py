@@ -1350,7 +1350,8 @@ NATIONS: tuple[Nation, ...] = (
     ),
     # Italy (batch 14.3, decision 177): as France, on the same code
     # (ratesplot.euro_data); named by --nations:it (or ita), a value for it
-    # alone "--it:max:8". The OECD's monthly 10-year from 1991-03; central
+    # alone "--it:max:8". Its monthly 10-year from 1980 (Eurostat's, the OECD's
+    # from 1991-03: decision 178); central
     # and local government (no state level); Germany's three fixed bands
     # ticked at the start, complete from 2003 as theirs are, the variable
     # rate offered beside them.

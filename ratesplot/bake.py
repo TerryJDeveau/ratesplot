@@ -3246,6 +3246,10 @@ _EUROSTAT_SERIES_TITLES = {
     # The euro area's nations after Germany (batch 14.3's fourth stage, ``de_data.EURO_EUROSTAT_SERIES_READ``), read
     # from each dataset's answer (France's 2026-11-22).
     **{code: title for nation in EURO_NATIONS.values() for code, title in _euro_eurostat_titles(nation.geo, nation.name)},
+    # Italy's 10-year before the OECD's (decision 178, ``de_data.EURO_YIELD_HISTORY_READ``), from its answer 2026-11-22.
+    **{f"irt_lt_mcby_m.{nation.geo}": f"EMU convergence criterion series - monthly data: EMU convergence criterion bond yields, "
+                                       f"{nation.name}; monthly"
+       for nation in EURO_NATIONS.values() if nation.yield_history_from is not None},
 }
 
 
@@ -3299,10 +3303,13 @@ def bake_eurostat_history(folder: Path | None = None, *, accept_withdrawn: bool 
         dataset, chosen, geo = series[code]
         params, unit = EUROSTAT_QUERIES[dataset]
         query = " ".join(f"{name}={value}" for name, value in {**params, "geo": geo, **chosen}.items())
+        # A yield (decision 178) is in percent, its measure MCBY: not converted.
+        converted = ("a yield in percent, its measure (euro_data dates each month by its first day)" if dataset == "irt_lt_mcby_m"
+                     else "the dataset's unit (de_data converts it to euros or persons)")
         return (
             f"Eurostat, dataset {dataset} ({query}): {title}.\n"
             f"Every value Eurostat gives, as ratesplot.de_data reads it: dated by each period's last day, in {unit},\n"
-            "the dataset's unit (de_data converts it to euros or persons).\n"
+            f"{converted}.\n"
             "Written by tools/bake_archives.py --only eurostat (ratesplot.bake), read by ratesplot.baked;\n"
             "not edited by hand."
         )

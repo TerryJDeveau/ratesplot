@@ -8,7 +8,10 @@ ECB, Eurostat), each series measured before it was drawn:
 * The 10-year yield: the OECD's long-term interest rate on FRED
   (``IRLTLT01..M156N``), a monthly average, dated by each month's first day
   (FRED's dates) and drawn across its month as steps, as the UK's monthly
-  averages are. No daily yields are on those hosts.
+  averages are. No daily yields are on those hosts. Italy's before the
+  OECD's first month (1991-03): Eurostat's convergence-criterion yield
+  (``irt_lt_mcby_m``), the same monthly average, from 1980 (decision 178,
+  9.10; ``EuroNation.yield_history_from``).
 * General government gross debt (Maastricht, consolidated): the ECB's year
   ends (``GFS``, the series Germany's chart reads, with the nation's code)
   1995 to 1999, then Eurostat's quarters (``gov_10q_ggdebt``, S13) from
@@ -62,7 +65,16 @@ from .config import (
     PlotConfig,
     component_column,
 )
-from .de_data import GENERAL_GOVERNMENT, YIELD_HISTORY_ATTR, ecb_series, eurostat_series
+from .baked import read_series
+from .de_data import (
+    EUROSTAT_BAKED_SOURCE,
+    GENERAL_GOVERNMENT,
+    YIELD_HISTORY_ATTR,
+    ecb_series,
+    eurostat_code,
+    eurostat_names,
+    eurostat_series,
+)
 from .de_data import _before as before  # Germany's join: history until the live series begins
 from .http import downloads_of
 from .joins import ttm_sum
@@ -101,6 +113,11 @@ class EuroNation:
     # The first observation of each input but the yields, by the name the coverage warning gives it
     # (``series_earliest`` adds the chosen yields).
     series_earliest: dict[str, pd.Timestamp]
+    # The first month of Eurostat's convergence-criterion yield (``irt_lt_mcby_m``) joined before the OECD's 10-year
+    # (``_yield_history``; the nation's code in ``de_data.EURO_YIELD_HISTORY_GEOS``), or None: no join (decision 178,
+    # Italy's alone: France's runs 0.4 to 1.2 points above the OECD's 1980 to 1986, a different bond; Portugal's falls
+    # 2.4 points where the OECD's begins).
+    yield_history_from: pd.Timestamp | None = None
 
 
 # France (batch 14.3, decision 171, 9.3; its balance of payments 9.4, its consumer prices before 1996 9.5, its series
@@ -167,7 +184,8 @@ PORTUGAL = EuroNation(
 # Italy (batch 14.3, decision 177, 9.9), the third nation of the euro area's path. Measured 2026-11-22
 # (``G:\Research\Claude\ratesplot_b143it\measure_it.py``, ``probe_it.py``, ``measure_cpi_it.py``). The OECD's 10-year
 # from 1991-03, equal to Eurostat's convergence yield to 0.005 in all 428 months both have; Eurostat's runs from
-# 1980-01, not joined before it (decision 177's call). Debt from 1995 (the ECB's year ends, Eurostat's quarters from
+# 1980-01 with no step where the OECD's begins (13.78 in 1991-02, 13.77 in 1991-03), and is joined before it since
+# 9.10 (decision 178, at Terry's word: decision 177's alternative). Debt from 1995 (the ECB's year ends, Eurostat's quarters from
 # 2000), GDP and the population from 1995, interest from 1999 (Eurostat's quarters of S13; the levels' interest the
 # yearly accounts', from 1995, as France's); lire before 1999 at 1,936.27. No state level (S1312 empty). The national
 # price index (``ITACPIALLMINMEI``) 1955-01 to 2025-03: in the 339 months both have a 12-month rise, the harmonised
@@ -178,7 +196,7 @@ ITALY = EuroNation(
     adjective="Italian",
     geo="IT",
     yield_series={"10-Year": "IRLTLT01ITM156N"},
-    yield_earliest={"10-Year": pd.Timestamp("1991-03-01")},
+    yield_earliest={"10-Year": pd.Timestamp("1980-01-01")},
     ecb_annual_debt=("GFS", "A.N.IT.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
     level_sectors={"f": ("S1311",), "m": ("S1313",)},
     cpi_history_series="ITACPIALLMINMEI",
@@ -190,6 +208,7 @@ ITALY = EuroNation(
         "TTM Nominal GDP (Eurostat's quarters from 1995)": pd.Timestamp("1995-12-31"),
         "TTM Italian Interest Payable (Eurostat's quarters from 1999)": pd.Timestamp("1999-12-31"),
     },
+    yield_history_from=pd.Timestamp("1980-01-01"),
 )
 
 # Every nation of this module, by its key.
@@ -199,7 +218,8 @@ EURO_NATIONS = {nation.key: nation for nation in (FRANCE, PORTUGAL, ITALY)}
 def series_earliest(nation: EuroNation, config: PlotConfig) -> dict[str, pd.Timestamp]:
     """Return the first observation of the nation's inputs, by name, for the coverage warning: the chosen yields it has, then the rest."""
     earliest = {
-        f"{column} Yield (OECD, monthly average)": nation.yield_earliest[column]
+        (f"{column} Yield (Eurostat's convergence yield, then the OECD's; monthly averages)" if nation.yield_history_from
+         else f"{column} Yield (OECD, monthly average)"): nation.yield_earliest[column]
         for column in config.fetched_yield_columns
         if column in nation.yield_series
     }
@@ -227,12 +247,40 @@ def fetch_yields(nation: EuroNation, config: PlotConfig) -> pd.DataFrame:
             print(f"  Warning: FRED {series_id} ({nation.adjective} {column} yield) unavailable ({exc}); not drawn.")
             continue
         values = pd.to_numeric(frame.set_index(DATE_COLUMN)[series_id], errors="coerce").dropna()
-        columns[column] = values.set_axis(pd.DatetimeIndex(values.index, name=DATE_COLUMN))
+        values = values.set_axis(pd.DatetimeIndex(values.index, name=DATE_COLUMN))
+        if column == "10-Year" and nation.yield_history_from is not None:
+            values = before(_yield_history(nation), values)
+        columns[column] = values
     if not columns:
         return pd.DataFrame()
     frame = pd.concat(columns, axis=1).sort_index().rename_axis(DATE_COLUMN).loc[config.start : config.end]
     frame.attrs[YIELD_HISTORY_ATTR] = {column: values.index[-1] for column, values in columns.items()}
     return frame
+
+
+def _yield_history(nation: EuroNation) -> pd.Series | None:
+    """Return Eurostat's convergence-criterion yield for the nation from ``yield_history_from``, each month dated by its first day, as FRED dates the OECD's: the 10-year before the OECD's begins (decision 178).
+
+    Read from its bake alone, with no request: only its months before the
+    OECD's first are drawn (``de_data._before``), and those (1980 to 1991)
+    are long past revision, so a drawing asking Eurostat for its newest
+    months would bring nothing it draws. The daily job keeps the bake, as it
+    keeps every Eurostat series read (``de_data.EURO_YIELD_HISTORY_READ``).
+    With no bake, the dataset is asked for whole (``eurostat_series``); if
+    that fails, a warning, and the OECD's alone.
+    """
+    dataset = "irt_lt_mcby_m"
+    values = read_series(EUROSTAT_BAKED_SOURCE, eurostat_code(dataset, **eurostat_names(nation.geo)))
+    if values is None or values.empty:
+        try:
+            values = eurostat_series(dataset, geo=nation.geo)
+        except Exception as exc:
+            print(f"  Warning: Eurostat {dataset} ({nation.adjective} 10-year before the OECD's) unavailable ({exc}); "
+                  "the OECD's alone.")
+            return None
+    values = values.dropna()
+    values.index = pd.DatetimeIndex(values.index).to_period("M").to_timestamp().rename(DATE_COLUMN)
+    return values.loc[nation.yield_history_from:]
 
 
 def _quarterly_debt(nation: EuroNation, sectors: tuple[str, ...]) -> pd.Series:
