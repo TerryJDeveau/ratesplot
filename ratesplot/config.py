@@ -1012,8 +1012,10 @@ MORTGAGE_TERMS = {
     # Portugal's variable rate (batch 14.3, decision 175): the same statistics' band of a variable rate or a fixation
     # of up to one year (the ECB's F), complete from 2000-01, where Portugal's fixed bands miss 57 months and jump by
     # up to 8.7 points before 2013 (measured 2026-11-22). Coloured as the yield of its top, the 1-year, as the bands
-    # are; drawn dash-dotted, as a variable rate.
-    "var": (("pt",), "1y"),
+    # are; drawn dash-dotted, as a variable rate. Germany's and France's too since 9.8 (Terry, 2026-11-22: "Yes, add
+    # var"; decision 176), offered beside their fixed bands, not ticked at the start: each complete from 2000-01, its
+    # largest month-to-month change 0.69 points, the ECB's estimates to 2002-12 as their fixed bands' are.
+    "var": (("de", "fr", "pt"), "1y"),
 }
 DEFAULT_MORTGAGE_TERMS = ("30", "5")
 # The terms drawn plus a margin in points, each with a box beside its tick

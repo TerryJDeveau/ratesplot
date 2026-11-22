@@ -3139,6 +3139,9 @@ _ECB_SERIES_TITLES = {
     f"{DE_MORTGAGE_FLOW}.{DE_MORTGAGE_SERIES['over10']}":
         "Bank interest rates - loans to households for house purchase with an interest rate fixation period of "
         "over ten years (new business), Germany; monthly",
+    # 9.8 (decision 176): Germany's variable rate, in the words of its answer (2026-11-22).
+    f"{DE_MORTGAGE_FLOW}.{DE_MORTGAGE_SERIES['var']}":
+        f"Bank interest rates on loans to households for house purchase, {_EURO_MORTGAGE_BANDS['var']} (new business), Germany; monthly",
     # The euro area's nations after Germany (batch 14.3's fourth stage, ``euro_data``, ``rates``), read from each
     # series' answer (France's 2026-11-22).
     **{f"{nation.ecb_annual_debt[0]}.{nation.ecb_annual_debt[1]}": f"Government debt (consolidated), {nation.name}, general government; annual"

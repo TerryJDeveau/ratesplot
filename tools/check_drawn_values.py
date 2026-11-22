@@ -226,6 +226,8 @@ CASES: dict[str, list[str]] = {
     "de_cpi_1948": ["--na:de", "-s:1948", "--cpi"],
     # Batch 16: Germany's mortgage bands across the Bundesbank's older rates and the join to the ECB's (2003-01).
     "de_mortgages_1982": ["--na:de", "-s:1982", "--e:2006", "--mo:1-5,5-10,over10"],
+    # 9.8, decision 176: the euro nations' variable rate beside their fixed bands, each nation's read as its own.
+    "euro_mortgages": ["--na:de,fr,pt", "-s:2000", "--mo:var,1-5,5-10,over10"],
     # Batch 16: Germany's GDP from 1950, each figure worked out here across every join (1960, 1970, 1991), in euros
     # and per person (the published figures to 1959; West Germany's population through 1990 and 1991); and per
     # person beside a yield, where a figure first shows on a later chart date (1959's on 1960-01-01).
@@ -545,8 +547,11 @@ def mortgage_sources(term: str, nation: str) -> list[Source]:
         if term == "svr":
             sources.append(built_in("variable mortgage rate 1939-2017", EMBEDDED_UK_MORTGAGE_HISTORY, monthly=True, carry_days=MONTHLY_CARRY_DAYS))
         return sources
-    reported = ecb("MIR", rates.DE_MORTGAGE_SERIES[term], "PCPA", monthly=True, carry_days=MONTHLY_CARRY_DAYS)
-    if term not in rates.DE_MORTGAGE_HISTORY:
+    # The euro area's nations after Germany each their own (9.8: until then every euro nation was read as Germany's,
+    # though no case drew another's mortgage rates).
+    code = rates.DE_MORTGAGE_SERIES[term] if nation == "de" else rates.EURO_MORTGAGE_SERIES[nation][term]
+    reported = ecb("MIR", code, "PCPA", monthly=True, carry_days=MONTHLY_CARRY_DAYS)
+    if nation != "de" or term not in rates.DE_MORTGAGE_HISTORY:
         return [reported]
     # Each source only on its side of the join (batch 16), or a value drawn from the wrong one in 2000-2002 would pass.
     older = built_in(f"the Bundesbank's older rate under {term}", rates.DE_MORTGAGE_HISTORY[term], monthly=True, carry_days=MONTHLY_CARRY_DAYS)
