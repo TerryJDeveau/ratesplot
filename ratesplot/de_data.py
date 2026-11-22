@@ -380,6 +380,28 @@ EUROSTAT_SERIES_READ: dict[str, tuple[dict[str, str], ...]] = {
     "namq_10_pe": ({},),
     "demo_pjan": ({},),
 }
+# France's series read of each dataset (batch 14.3's fourth stage, 2026-11-22), baked as Germany's are, each file
+# named with France's code (``eurostat_code(dataset, geo="FR", ...)``: ``gov_10q_ggdebt.FR.S13``): the debt of general
+# government and of the two levels France has (``fr_data._LEVEL_SECTORS``: central S1311, local S1313); the interest of
+# general government by quarter (the levels' quarters hold no values) and of the two levels by year; GDP; the
+# population; the harmonised price index; the balance of payments' current account and goods and services, credits
+# and debits (``payments.FR_PAYMENTS_ITEMS``, ``FR_PAYMENTS_FLOWS``), by quarter and by month. A series read but not
+# listed has its dataset asked for whole (``baked.frame_with_recent_part``); ``tools/check_baked.py`` checks that
+# these cover what ``fr_data`` and ``payments`` read.
+_FR_LEVELS_READ = ("S1311", "S1313")
+_FR_PAYMENTS_READ = tuple({"bop_item": item, "stk_flow": flow} for item in ("CA", "GS") for flow in ("CRE", "DEB"))
+FR_EUROSTAT_SERIES_READ: dict[str, tuple[dict[str, str], ...]] = {
+    "gov_10q_ggdebt": tuple({"sector": sector} for sector in (GENERAL_GOVERNMENT, *_FR_LEVELS_READ)),
+    "gov_10q_ggnfa": ({"sector": GENERAL_GOVERNMENT},),
+    "gov_10a_main": tuple({"sector": sector} for sector in _FR_LEVELS_READ),
+    "namq_10_gdp": ({},),
+    "namq_10_pe": ({},),
+    "prc_hicp_minr": ({},),
+    "bop_c6_q": _FR_PAYMENTS_READ,
+    "bop_c6_m": _FR_PAYMENTS_READ,
+}
+# Every nation's series read, by its Eurostat code. Germany's files carry no code (named before France's were baked).
+EUROSTAT_SERIES_READ_BY_GEO = {"DE": EUROSTAT_SERIES_READ, "FR": FR_EUROSTAT_SERIES_READ}
 EUROSTAT_BAKED_SOURCE = "eurostat"
 
 # A quarter's population is dated this many days after the quarter begins:
@@ -687,6 +709,11 @@ def eurostat_code(dataset: str, **chosen: str) -> str:
     return ".".join([dataset, *(chosen[dimension] for dimension in sorted(chosen))])
 
 
+def eurostat_names(geo: str) -> dict[str, str]:
+    """The categories a nation's Eurostat file names carry besides those read: none for Germany's (named before another nation's were baked), its code for another's (``gov_10q_ggdebt.FR.S13``)."""
+    return {} if geo == "DE" else {"geo": geo}
+
+
 def _eurostat_since(dataset: str, day: pd.Timestamp) -> str:
     """``sinceTimePeriod`` asking ``dataset`` for the period holding ``day`` on: ``2024-Q2`` (quarterly), ``2023`` (annual).
 
@@ -764,17 +791,16 @@ def eurostat_series(dataset: str, *, geo: str = "DE", **chosen: str) -> pd.Serie
     value, for all twelve.
 
     ``geo`` (batch 14.3): another nation's series of the same query (France's
-    "FR"), named with its code (``gov_10q_ggdebt.FR.S13``); not baked yet, so
-    its dataset is asked for whole, once a drawing (the download cache).
+    "FR"), named with its code (``gov_10q_ggdebt.FR.S13``). France's are baked
+    too since the fourth stage (``FR_EUROSTAT_SERIES_READ``, 2026-11-22): one
+    recent part per dataset for France, as for Germany.
     """
     _params, unit = EUROSTAT_QUERIES[dataset]
-    if geo == "DE":
-        code = eurostat_code(dataset, **chosen)
-        codes = {eurostat_code(dataset, **read): read for read in EUROSTAT_SERIES_READ[dataset]}
-        codes.setdefault(code, chosen)  # not one read before, so not baked: the dataset is asked for whole
-    else:
-        code = eurostat_code(dataset, geo=geo, **chosen)
-        codes = {code: chosen}
+    names = eurostat_names(geo)
+    code = eurostat_code(dataset, **names, **chosen)
+    read = EUROSTAT_SERIES_READ_BY_GEO.get(geo, {}).get(dataset, ())
+    codes = {eurostat_code(dataset, **names, **each): each for each in read}
+    codes.setdefault(code, chosen)  # not one read before, so not baked: the dataset is asked for whole
     frame = frame_with_recent_part(
         EUROSTAT_BAKED_SOURCE, list(codes), f"Eurostat {code}", lambda start: _eurostat_frame(dataset, codes, start, geo),
         RECENT_PART_REVISED,

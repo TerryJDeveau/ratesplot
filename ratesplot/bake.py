@@ -163,7 +163,8 @@ from .de_data import (
     ECB_BAKED_SOURCE,
     EUROSTAT_BAKED_SOURCE,
     EUROSTAT_QUERIES,
-    EUROSTAT_SERIES_READ,
+    EUROSTAT_SERIES_READ_BY_GEO,
+    EUROSTAT_UNIT_DIMENSIONS,
     TERM_STRUCTURE_FREQUENCIES,
     DE_LINKED_BOND_FLOW,
     DE_LINKED_BONDS,
@@ -173,11 +174,12 @@ from .de_data import (
     ecb_download,
     eurostat_code,
     eurostat_download,
+    eurostat_names,
     parse_bundesbank_csv,
     parse_jsonstat,
     term_structure_key,
 )
-from .fr_data import FR_CPI_HISTORY_SERIES
+from .fr_data import FR_CPI_HISTORY_SERIES, FR_ECB_ANNUAL_DEBT, FR_YIELD_SERIES
 from .fx import FX_SERIES
 from .payments import US_OLD_BALANCE_SERIES, US_OLD_PAYMENTS_SERIES, US_PAYMENTS_SERIES
 from .http import canadian_get, de_get, fetch_fred_csv, get_if_published, uk_get
@@ -194,6 +196,7 @@ from .rates import (
     DE_MORTGAGE_UNIT,
     DE_POLICY_FIXED,
     DE_POLICY_MINIMUM_BID,
+    FR_MORTGAGE_SERIES,
     UK_MARKET_SERIES,
     UK_MORTGAGE_SERIES,
     UK_POLICY_SERIES,
@@ -3054,11 +3057,13 @@ _FRED_SERIES_TITLES = {
     "BOPBCA": "Balance on Current Account (DISCONTINUED); quarterly",
     # France's consumer prices before 1996 (batch 14.3's third stage, ``fr_data``), read from its page 2026-11-21.
     "FRACPIALLMINMEI": "Consumer Price Indices (CPIs, HICPs), COICOP 1999: Consumer Price Index: Total for France; monthly",
+    # France's 10-year yield (batch 14.3's fourth stage, ``fr_data``), read from its page 2026-11-22.
+    "IRLTLT01FRM156N": "Interest Rates: Long-Term Government Bond Yields: 10-Year: Main (Including Benchmark) for France; monthly",
 }
 
 
 def fred_baked_codes() -> list[str]:
-    """Every FRED series the program reads but France's yield: the yields, debt, interest, GDP, population and consumer prices (``us_data``), the policy, mortgage and prime rates (``rates``), Canada's GDP (``cdn_data``, when Statistics Canada fails), the exchange rates (``fx``, batch 18.3), the balance of payments (``payments``, batch 23), France's consumer prices before 1996 (``fr_data``, batch 14.3's third stage; its yield is not baked yet)."""
+    """Every FRED series the program reads: the yields, debt, interest, GDP, population and consumer prices (``us_data``), the policy, mortgage and prime rates (``rates``), Canada's GDP (``cdn_data``, when Statistics Canada fails), the exchange rates (``fx``, batch 18.3), the balance of payments (``payments``, batch 23), France's consumer prices before 1996 (``fr_data``, batch 14.3's third stage) and its yield (the fourth stage)."""
     return sorted({
         *US_YIELD_SERIES.values(), US_DEBT_SERIES_ID, US_STATE_LOCAL_DEBT_SERIES_ID, US_INTEREST_SERIES_ID,
         US_FEDERAL_INTEREST_SERIES_ID, US_STATE_LOCAL_INTEREST_SERIES_ID, US_STATE_INTEREST_SERIES_ID,
@@ -3066,7 +3071,7 @@ def fred_baked_codes() -> list[str]:
         US_MONTHLY_EFFECTIVE_SERIES, US_TARGET_SERIES, *US_TARGET_RANGE_SERIES, US_MARKET_SERIES, *US_MORTGAGE_SERIES.values(),
         FRED_CDN_GDP_SERIES, *FX_SERIES,
         *(code for pair in (*US_PAYMENTS_SERIES.values(), *US_OLD_PAYMENTS_SERIES.values()) for code in pair), US_OLD_BALANCE_SERIES,
-        FR_CPI_HISTORY_SERIES,
+        FR_CPI_HISTORY_SERIES, *FR_YIELD_SERIES.values(),
     })
 
 
@@ -3124,13 +3129,24 @@ _ECB_SERIES_TITLES = {
     f"{DE_MORTGAGE_FLOW}.{DE_MORTGAGE_SERIES['over10']}":
         "Bank interest rates - loans to households for house purchase with an interest rate fixation period of "
         "over ten years (new business), Germany; monthly",
+    # France's (batch 14.3's fourth stage, ``fr_data``, ``rates``), read from each series' answer 2026-11-22.
+    f"{FR_ECB_ANNUAL_DEBT[0]}.{FR_ECB_ANNUAL_DEBT[1]}": "Government debt (consolidated), France, general government; annual",
+    f"{DE_MORTGAGE_FLOW}.{FR_MORTGAGE_SERIES['1-5']}":
+        "Bank interest rates on loans to households for house purchase, fixation period of over one & up to five years "
+        "(new business), France; monthly",
+    f"{DE_MORTGAGE_FLOW}.{FR_MORTGAGE_SERIES['5-10']}":
+        "Bank interest rates on loans to households for house purchase, fixation period of over five & up to ten years "
+        "(new business), France; monthly",
+    f"{DE_MORTGAGE_FLOW}.{FR_MORTGAGE_SERIES['over10']}":
+        "Bank interest rates on loans to households for house purchase, fixation period of over ten years "
+        "(new business), France; monthly",
 }
 
 
 def ecb_baked_series() -> dict[str, tuple[str, str, str]]:
-    """Every ECB Data Portal series the program reads, by its file's name (``FLOW.KEY``): its flow, key and unit. The annual debt (``de_data``); the policy, market and mortgage rates (``rates``)."""
-    series = [ECB_ANNUAL_DEBT, DE_POLICY_FIXED, DE_POLICY_MINIMUM_BID, DE_EONIA, DE_ESTR,
-              *((DE_MORTGAGE_FLOW, key, DE_MORTGAGE_UNIT) for key in DE_MORTGAGE_SERIES.values())]
+    """Every ECB Data Portal series the program reads, by its file's name (``FLOW.KEY``): its flow, key and unit. The annual debt (``de_data``, ``fr_data``); the policy, market and mortgage rates (``rates``), Germany's and France's."""
+    series = [ECB_ANNUAL_DEBT, DE_POLICY_FIXED, DE_POLICY_MINIMUM_BID, DE_EONIA, DE_ESTR, FR_ECB_ANNUAL_DEBT,
+              *((DE_MORTGAGE_FLOW, key, DE_MORTGAGE_UNIT) for key in (*DE_MORTGAGE_SERIES.values(), *FR_MORTGAGE_SERIES.values()))]
     return {f"{flow}.{key}": (flow, key, unit) for flow, key, unit in sorted(series)}
 
 
@@ -3193,12 +3209,33 @@ _EUROSTAT_SERIES_TITLES = {
                   "unadjusted; quarterly",
     "demo_pjan": "Population on 1 January by age and sex: Total, both sexes; annual, the count on 1 January of each year "
                  "(dated here by the year's last day, as every period is; de_data dates it by 1 January)",
+    # France's (batch 14.3's fourth stage, ``de_data.FR_EUROSTAT_SERIES_READ``), read from each dataset's answer 2026-11-22.
+    **{f"gov_10q_ggdebt.FR.{sector}": f"Quarterly government debt: Government consolidated gross debt, {name}, France; quarterly"
+       for sector, name in (("S13", "General government"), ("S1311", "Central government"), ("S1313", "Local government"))},
+    "gov_10q_ggnfa.FR.S13": "Quarterly non-financial accounts for general government: Interest, expenditure, General government, "
+                            "unadjusted, France; quarterly",
+    **{f"gov_10a_main.FR.{sector}": f"Government revenue, expenditure and main aggregates: Interest, expenditure, {name}, France; annual"
+       for sector, name in (("S1311", "Central government"), ("S1313", "Local government"))},
+    "namq_10_gdp.FR": "Gross domestic product (GDP) and main components (output, expenditure and income) - quarterly data: "
+                      "Gross domestic product at market prices, current prices, unadjusted, France; quarterly",
+    "namq_10_pe.FR": "Population and employment - national accounts - quarterly data: Total population national concept, "
+                     "unadjusted, France; quarterly",
+    "prc_hicp_minr.FR": "Harmonised index of consumer prices (HICP) - ECOICOP ver.2 - indices and rates of change, monthly data: "
+                        "Index, 2025=100, Total, France; monthly",
+    **{f"{dataset}.{item}.FR.{flow}": f"Balance of payments by country - {frequency} data (BPM6): {item_name}, {flow_name}, "
+                                      f"total economy with the rest of the world, France; {frequency}"
+       for dataset, frequency in (("bop_c6_q", "quarterly"), ("bop_c6_m", "monthly"))
+       for item, item_name in (("CA", "Current account"), ("GS", "Goods and services"))
+       for flow, flow_name in (("CRE", "Credit"), ("DEB", "Debit"))},
 }
 
 
-def eurostat_baked_series() -> dict[str, tuple[str, dict[str, str]]]:
-    """Every Eurostat series the program reads (``de_data.EUROSTAT_SERIES_READ``), by its file's name (``de_data.eurostat_code``): its dataset and the categories chosen."""
-    return dict(sorted((eurostat_code(dataset, **chosen), (dataset, chosen)) for dataset, read in EUROSTAT_SERIES_READ.items() for chosen in read))
+def eurostat_baked_series() -> dict[str, tuple[str, dict[str, str], str]]:
+    """Every Eurostat series the program reads (``de_data.EUROSTAT_SERIES_READ_BY_GEO``), by its file's name (``de_data.eurostat_code``, with ``eurostat_names``): its dataset, the categories chosen and the nation's code."""
+    return dict(sorted(
+        (eurostat_code(dataset, **eurostat_names(geo), **chosen), (dataset, chosen, geo))
+        for geo, datasets in EUROSTAT_SERIES_READ_BY_GEO.items() for dataset, read in datasets.items() for chosen in read
+    ))
 
 
 def eurostat_baked_codes() -> list[str]:
@@ -3217,30 +3254,32 @@ def bake_eurostat_history(folder: Path | None = None, *, accept_withdrawn: bool 
     baked). Each series as ``de_data.parse_jsonstat`` reads it: dated by each
     period's last day (the 1 January counts too, which ``de_data`` dates by
     1 January), in the dataset's unit, a period without a value left out.
+    France's series (batch 14.3's fourth stage) the same, its datasets asked
+    for France, a request each.
     """
     print("Baking the Eurostat series …")
     series = eurostat_baked_series()
-    answers: dict[str, dict | Exception] = {}
+    answers: dict[tuple[str, str], dict | Exception] = {}
 
     def download(code: str) -> pd.Series:
-        dataset, chosen = series[code]
-        if dataset not in answers:
+        dataset, chosen, geo = series[code]
+        if (dataset, geo) not in answers:
             try:
-                answers[dataset] = eurostat_download(dataset)
+                answers[dataset, geo] = eurostat_download(dataset, geo=geo)
             except Exception as exc:
-                answers[dataset] = exc
-        answer = answers[dataset]
+                answers[dataset, geo] = exc
+        answer = answers[dataset, geo]
         if isinstance(answer, Exception):
             raise answer
-        values = parse_jsonstat(answer, EUROSTAT_QUERIES[dataset][1], **chosen)
+        values = parse_jsonstat(answer, EUROSTAT_QUERIES[dataset][1], EUROSTAT_UNIT_DIMENSIONS.get(dataset, "unit"), **chosen)
         if values.empty:
-            raise ValueError(f"Eurostat {dataset} {chosen} has no values")
+            raise ValueError(f"Eurostat {dataset} {chosen} ({geo}) has no values")
         return values
 
     def comment(code: str, title: str) -> str:
-        dataset, chosen = series[code]
+        dataset, chosen, geo = series[code]
         params, unit = EUROSTAT_QUERIES[dataset]
-        query = " ".join(f"{name}={value}" for name, value in {**params, **chosen}.items())
+        query = " ".join(f"{name}={value}" for name, value in {**params, "geo": geo, **chosen}.items())
         return (
             f"Eurostat, dataset {dataset} ({query}): {title}.\n"
             f"Every value Eurostat gives, as ratesplot.de_data reads it: dated by each period's last day, in {unit},\n"
