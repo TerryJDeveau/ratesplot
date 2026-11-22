@@ -175,6 +175,8 @@ CHART_CASES = (
     "fx_two",
     # Batch 14.3: France alone with its curves, its levels, its own values, all five nations, the mortgage comparison.
     "fr_rates", "fr_lv", "fr_nat", "all5", "cmp_mort_fr",
+    # Batch 14.3, decision 175: Portugal, the same, all six nations.
+    "pt_rates", "pt_lv", "pt_nat", "all6", "cmp_mort_pt",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -958,7 +960,9 @@ def check_batch262(check: Check) -> None:
     at = new_page("--e:2026-09-01")
     check("no exception", not at.exception, at.exception)
     keys = [box.key for box in at.checkbox if box.key]
-    check("“Compare the nations” with the nations, after the last of them", keys.index("flag:compare") == keys.index("flag:france") + 1, keys[:7])
+    last_nation = [option.name for option in options.OPTIONS if option.group == "country" and option.fields[:1] and option.fields[0].startswith("show_")][-1]
+    check("“Compare the nations” with the nations, after the last of them", keys.index("flag:compare") == keys.index(f"flag:{last_nation}") + 1,
+          (last_nation, keys[:8]))
     titles = [header.value for header in at.subheader]
     check("on a nation's tab, no comparison block", "Comparison chart" not in titles and "Curve selection" in titles, titles)
     at.checkbox(key="flag:debt").uncheck()  # a curve's box, its value to be kept through the tab Compare
@@ -998,7 +1002,7 @@ def check_batch263(check: Check) -> None:
     nations = [key for key in keys if key.startswith("choice:base-nation:")]
     check("on the tab Compare, “Base nation” after the measure, its nations under it",
           "flag:base" in keys and keys.index("flag:base") > keys.index("choice:compare-measure:population")
-          and nations == [f"choice:base-nation:{code}" for code in ("ca", "us", "gb", "de", "fr")], keys[-12:])
+          and nations == [f"choice:base-nation:{code}" for code in ("ca", "us", "gb", "de", "fr", "pt")], keys[-12:])
     check("the U.S. ticked by default, the boxes greyed while “Base nation” is unticked",
           at.checkbox(key="choice:base-nation:us").value and all(at.checkbox(key=key).disabled for key in nations))
     at.checkbox(key="flag:base").check()
@@ -1175,14 +1179,15 @@ def check_batch95(check: Check) -> None:
 def check_batch91(check: Check) -> None:
     """Batch 9.1: each nation's policy terms, target and market, as boxes; the target ticked; greyed while the policy rate is off."""
     # Every nation ticked, so every nation's section is laid out (batch 28.1).
-    at = new_page("--na:ca,us,gb,de,fr --e:2026-09-01")
+    at = new_page("--na:ca,us,gb,de,fr,pt --e:2026-09-01")
     check("no exception", not at.exception, at.exception)
     boxes = {box.key for box in at.checkbox if box.key and ":policy-terms:" in box.key}
     wanted = {f"choice:{key}:policy-terms:{term}" for key in NATION_KEYS for term in ("target", "market")}
     check("every nation's section has target and market", boxes == wanted, sorted(boxes))
     labels = {key: at.checkbox(key=f"choice:{key}:policy-terms:market").label for key in NATION_KEYS}
     check("each nation's market box named for its rate (batch 24.5)",
-          labels == {"cdn": "market (CORRA)", "us": "market (fed funds)", "uk": "market (SONIA)", "de": "market (€STR)", "fr": "market (€STR)"},
+          labels == {"cdn": "market (CORRA)", "us": "market (fed funds)", "uk": "market (SONIA)", "de": "market (€STR)", "fr": "market (€STR)",
+                    "pt": "market (€STR)"},
           labels)
     targets = {f"choice:{key}:policy-terms:target" for key in NATION_KEYS}
     check("the target ticked in each, the market not", {key for key in boxes if at.checkbox(key=key).value} == targets)
@@ -1207,7 +1212,7 @@ def check_batch91(check: Check) -> None:
           at.checkbox(key="choice:cdn:policy-terms:target").value
           and any("untick “Policy rate”" in str(item.value) for item in list(at.info) + list(at.warning)), address(at))
     check("no exception, one drawing per chart", not at.exception and charts_shown(at) == len(NATION_KEYS), at.exception)
-    page = new_page("--gdp --debt --interest --yield --po:market --na:ca,us,gb,de,fr --e:2026-09-01")
+    page = new_page("--gdp --debt --interest --yield --po:market --na:ca,us,gb,de,fr,pt --e:2026-09-01")
     markets = {f"choice:{key}:policy-terms:market" for key in NATION_KEYS}
     check("--po:market: the market ticked in every section, the target not",
           {key for key in wanted if page.checkbox(key=key).value} == markets and flags(page)["policy"],
@@ -1269,6 +1274,7 @@ def check_batch105(check: Check) -> None:
         "uk": ["Central", "Local"],
         "de": ["Federal", "Länder", "Local", "Länder & Local"],
         "fr": [],  # unticked: its section off the page (batch 28.1)
+        "pt": [],
     }
     captions = {
         key: [box.label for box in at.checkbox if box.key and box.key.startswith(f"level:{key}:")] for key in NATION_KEYS
@@ -2468,6 +2474,7 @@ def check_batch133(check: Check) -> None:
     check("each nation offers its own real terms", offered == {
         "cdn": {"r30"}, "us": {"r5", "r7", "r10", "r20", "r30"}, "uk": {"r5", "r7", "r10", "r20", "r30"}, "de": {"r5", "r7", "r10"},
         "fr": set(),  # unticked, and with no real yields
+        "pt": set(),
     }, offered)
     check("none ticked at the start", not any(at.checkbox(key=f"choice:{nation}:yields:{term}").value for nation, terms in offered.items() for term in terms))
     check("a box's caption is its term", at.checkbox(key="choice:us:yields:r10").label == "r10", at.checkbox(key="choice:us:yields:r10").label)

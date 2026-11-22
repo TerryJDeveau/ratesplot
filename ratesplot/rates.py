@@ -29,6 +29,7 @@ from .config import (
     CDN_MORTGAGE_HISTORY_TABLE,
     CDN_MORTGAGE_HISTORY_VECTOR,
     DATE_COLUMN,
+    EURO_NATION_KEYS,
     INFLATION_STYLE,
     MORTGAGE_MARGINS,
     MORTGAGE_OWN_COLORS,
@@ -179,9 +180,16 @@ DE_EONIA = ("EON", "D.EONIA_TO.RATE", "PC")
 DE_EONIA_ENDED = pd.Timestamp("2021-12-31")  # stopped (batch 19.3: see US_TARGET_ENDED)
 DE_ESTR = ("EST", "B.EU000A2X2A25.WT", "PC")
 DE_MORTGAGE_SERIES = {"1-5": "M.DE.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.DE.B.A2C.O.R.A.2250.EUR.N", "over10": "M.DE.B.A2C.P.R.A.2250.EUR.N"}
-# France's (batch 14.3): the same statistics with FR, each band 2000-01 on
-# (measured 2026-11-19 and 20); no older series joined before them.
-FR_MORTGAGE_SERIES = {"1-5": "M.FR.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.FR.B.A2C.O.R.A.2250.EUR.N", "over10": "M.FR.B.A2C.P.R.A.2250.EUR.N"}
+# The euro area's nations after Germany (batch 14.3, ``euro_data``), by key: the same statistics with the nation's
+# code; no older series joined before them. France's, each band 2000-01 on (measured 2026-11-19 and 20); Portugal's
+# over 1 to 5 and over 5 to 10 years from 2003-01, over 10 years from 2003-07, each with 57 or 58 months missing, and
+# its variable rate (band F: a variable rate or a fixation of up to one year) from 2000-01, none missing (measured
+# 2026-11-22).
+EURO_MORTGAGE_SERIES = {
+    "fr": {"1-5": "M.FR.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.FR.B.A2C.O.R.A.2250.EUR.N", "over10": "M.FR.B.A2C.P.R.A.2250.EUR.N"},
+    "pt": {"1-5": "M.PT.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.PT.B.A2C.O.R.A.2250.EUR.N", "over10": "M.PT.B.A2C.P.R.A.2250.EUR.N",
+           "var": "M.PT.B.A2C.F.R.A.2250.EUR.N"},
+}
 # The ECB's flow of the MFI interest rate statistics and the unit its mortgage
 # rates are given in (a rate per year), for every band of DE_MORTGAGE_SERIES.
 DE_MORTGAGE_FLOW = "MIR"
@@ -226,6 +234,7 @@ _MORTGAGE_LABELS = {
     "1-5": "1–5-Year Mortgage (new loans, avg.)",
     "5-10": "5–10-Year Mortgage (new loans, avg.)",
     "over10": "Over-10-Year Mortgage (new loans, avg.)",
+    "var": "Variable-Rate Mortgage (new loans, avg.)",  # Portugal's (batch 14.3): a variable rate or fixed up to a year
 }
 # The U.S. prime rate by the name the Federal Reserve's H.15 gives it.
 _US_PRIME_LABEL = "Bank Prime Loan Rate"
@@ -866,11 +875,11 @@ def de_policy_target() -> RateCurve | None:
                      parts=parts)
 
 
-def fr_policy_target() -> RateCurve | None:
-    """Return France's official rate (batch 14.3): the ECB's main refinancing rate from 1999, as Germany's; None if it fails.
+def euro_policy_target() -> RateCurve | None:
+    """Return the official rate of a euro-area nation after Germany (batch 14.3, ``euro_data``): the ECB's main refinancing rate from 1999, as Germany's; None if it fails.
 
-    Nothing before the euro: the Banque de France's own rates are on no host
-    the program asks.
+    Nothing before the euro: the national central banks' own rates (the Banque
+    de France's) are on no host the program asks.
     """
     values = _ecb_main_refinancing_rate()
     if values is None:
@@ -920,9 +929,9 @@ def _de_mortgage(term: str) -> pd.Series:
     return pd.concat([history.loc[history.index < DE_MORTGAGE_JOIN], values.loc[values.index >= DE_MORTGAGE_JOIN]])
 
 
-def _fr_mortgage(term: str) -> pd.Series:
-    """Return one French mortgage band's monthly rate (the ECB's, from 2000-01), dated by each month's first day, as Germany's are."""
-    monthly = ecb_series(DE_MORTGAGE_FLOW, FR_MORTGAGE_SERIES[term], DE_MORTGAGE_UNIT, revised=True)
+def _euro_mortgage(country: str, term: str) -> pd.Series:
+    """Return one mortgage band's monthly rate of a euro-area nation after Germany (the ECB's, ``EURO_MORTGAGE_SERIES``), dated by each month's first day, as Germany's are."""
+    monthly = ecb_series(DE_MORTGAGE_FLOW, EURO_MORTGAGE_SERIES[country][term], DE_MORTGAGE_UNIT, revised=True)
     return _clean(monthly.set_axis(monthly.index.to_period("M").start_time))
 
 
@@ -950,7 +959,7 @@ def _mortgage_style(term: str) -> dict:
     colour = TERM_COLORS[yield_term] if yield_term is not None else MORTGAGE_OWN_COLORS[term]
     if term == "prime":
         return PRIME_RATE_STYLE | {"color": colour}
-    variable = term.endswith("v") or term == "tracker"
+    variable = term.endswith("v") or term in ("tracker", "var")
     return (VARIABLE_MORTGAGE_STYLE if variable else MORTGAGE_STYLE) | {"color": colour}
 
 
@@ -974,15 +983,15 @@ def mortgage_rate(term: str, country: str | None = None, margin: float = 0.0) ->
         (country,) = countries
     label = _mortgage_label(term, country, margin)
     code = {
-        "us": US_MORTGAGE_SERIES, "cdn": CDN_MORTGAGE_SERIES, "uk": UK_MORTGAGE_SERIES, "de": DE_MORTGAGE_SERIES, "fr": FR_MORTGAGE_SERIES,
+        "us": US_MORTGAGE_SERIES, "cdn": CDN_MORTGAGE_SERIES, "uk": UK_MORTGAGE_SERIES, "de": DE_MORTGAGE_SERIES, **EURO_MORTGAGE_SERIES,
     }[country][term]
     try:
         if country == "uk":
             values = _uk_mortgage(term)
         elif country == "de":
             values = _de_mortgage(term)
-        elif country == "fr":
-            values = _fr_mortgage(term)
+        elif country in EURO_NATION_KEYS:
+            values = _euro_mortgage(country, term)
         else:
             values = _fred(code) if country == "us" else _valet(code)
     except Exception as exc:
@@ -1208,9 +1217,16 @@ def with_followed(
 
 
 # Each nation's policy terms (batch 9.1).
-# France's market rate is the euro area's, as Germany's (batch 14.3).
-_POLICY_TARGETS = {"us": us_policy_target, "cdn": cdn_policy_target, "uk": uk_policy_target, "de": de_policy_target, "fr": fr_policy_target}
-_POLICY_MARKETS = {"us": us_policy_market, "cdn": cdn_policy_market, "uk": uk_policy_market, "de": de_policy_market, "fr": de_policy_market}
+# The euro area's nations after Germany (batch 14.3): the ECB's main refinancing rate, and the euro area's market
+# rate, as Germany's.
+_POLICY_TARGETS = {
+    "us": us_policy_target, "cdn": cdn_policy_target, "uk": uk_policy_target, "de": de_policy_target,
+    **dict.fromkeys(EURO_NATION_KEYS, euro_policy_target),
+}
+_POLICY_MARKETS = {
+    "us": us_policy_market, "cdn": cdn_policy_market, "uk": uk_policy_market, "de": de_policy_market,
+    **dict.fromkeys(EURO_NATION_KEYS, de_policy_market),
+}
 
 # How far ahead a blank End looks for a policy target's value (batch 32.4):
 # a change takes effect on the day of its announcement (the Bank of

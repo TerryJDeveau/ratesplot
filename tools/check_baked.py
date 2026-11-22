@@ -68,7 +68,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, baked, cdn_data, de_data, fr_data, payments, rates, uk_data, us_data  # noqa: E402
+from ratesplot import bake, baked, cdn_data, config, de_data, euro_data, payments, rates, uk_data, us_data  # noqa: E402
 from ratesplot.config import DATE_COLUMN  # noqa: E402
 
 RESULTS: list[bool] = []
@@ -385,7 +385,7 @@ def check_report() -> None:
 
 
 def check_stopped_declared() -> None:
-    """Each series declared stopped (19.3, beside its series in ``rates``, ``de_data``, ``payments`` or ``fr_data``): its bake ends on the declared date.
+    """Each series declared stopped (19.3, beside its series in ``rates``, ``de_data``, ``payments`` or ``euro_data``): its bake ends on the declared date.
 
     One that does not has been revised, or has started again: its declaration
     is then to be looked at (the drawing reads its bake alone, the new values too).
@@ -401,8 +401,8 @@ def check_stopped_declared() -> None:
         # cdn_archive_data, not a data file (Terry, 2026-11-11).
         **{(us_data.FRED_BAKED_SOURCE, code): payments.US_OLD_PAYMENTS_STOPPED
            for code in (*(code for pair in payments.US_OLD_PAYMENTS_SERIES.values() for code in pair), payments.US_OLD_BALANCE_SERIES)},
-        # France's national consumer price index before the harmonised one (batch 14.3's third stage).
-        (us_data.FRED_BAKED_SOURCE, fr_data.FR_CPI_HISTORY_SERIES): fr_data.FR_CPI_HISTORY_STOPPED,
+        # Each euro-area nation's national consumer price index before the harmonised one (batch 14.3's third stage).
+        **{(us_data.FRED_BAKED_SOURCE, nation.cpi_history_series): nation.cpi_history_stopped for nation in euro_data.EURO_NATIONS.values()},
     }
     ends = {key: baked.read_series(*key).last_valid_index() for key in declared}
     wrong = {"/".join(key): f"{ends[key]:%Y-%m-%d}, declared {end:%Y-%m-%d}" for key, end in declared.items() if ends[key] != end}
@@ -410,36 +410,45 @@ def check_stopped_declared() -> None:
           wrong or "; ".join(f"{'/'.join(key)} {end:%Y-%m-%d}" for key, end in declared.items()))
 
 
-def check_french_reads_listed() -> None:
-    """France's Eurostat series (batch 14.3's fourth stage): those ``fr_data`` and ``payments`` read are those ``de_data.FR_EUROSTAT_SERIES_READ`` lists, so baked.
+def check_euro_reads_listed() -> None:
+    """Each euro-area nation's Eurostat series (batch 14.3's fourth stage): those ``euro_data`` and ``payments`` read are those ``de_data.EURO_EUROSTAT_SERIES_READ`` lists, so baked.
 
     One read but not listed is not baked, and its dataset is asked for whole
     at every drawing (``baked.frame_with_recent_part``): slower, and silent.
-    The levels from ``fr_data._LEVEL_SECTORS``, the balance of payments' items
-    and flows from ``payments``; the rest as ``fr_data`` reads them.
+    The levels from each ``euro_data.EuroNation``'s ``level_sectors``, the
+    balance of payments' items and flows from ``payments``; the rest as
+    ``euro_data`` reads them. The nations themselves: ``euro_data``'s, in
+    ``config.EURO_NATION_KEYS`` and ``de_data.EURO_GEOS``, in the same order.
     """
-    levels = sorted({sector for sectors in fr_data._LEVEL_SECTORS.values() for sector in sectors})
-    pairs = [{"bop_item": item, "stk_flow": flow} for item in payments.FR_PAYMENTS_ITEMS.values() for flow in payments.FR_PAYMENTS_FLOWS]
-    read = {
-        "gov_10q_ggdebt": [{"sector": sector} for sector in (de_data.GENERAL_GOVERNMENT, *levels)],
-        "gov_10q_ggnfa": [{"sector": de_data.GENERAL_GOVERNMENT}],
-        "gov_10a_main": [{"sector": sector} for sector in levels],
-        "namq_10_gdp": [{}], "namq_10_pe": [{}], "prc_hicp_minr": [{}],
-        "bop_c6_q": pairs, "bop_c6_m": pairs,
-    }
+    nations = euro_data.EURO_NATIONS
+    check(f"the euro area's nations after Germany alike in euro_data, config and de_data ({', '.join(nations)})",
+          tuple(nations) == config.EURO_NATION_KEYS and tuple(nation.geo for nation in nations.values()) == de_data.EURO_GEOS
+          and all(key == nation.key for key, nation in nations.items()),
+          {"euro_data": [(key, nation.key, nation.geo) for key, nation in nations.items()], "config": config.EURO_NATION_KEYS,
+           "de_data": de_data.EURO_GEOS})
 
     def as_set(chosen: dict[str, list[dict[str, str]]]) -> set[tuple]:
         return {(dataset, tuple(sorted(each.items()))) for dataset, every in chosen.items() for each in every}
 
-    listed = as_set({dataset: list(every) for dataset, every in de_data.FR_EUROSTAT_SERIES_READ.items()})
-    check(f"France's Eurostat series read are those listed to be baked ({len(listed)}; 14.3's fourth stage)",
-          listed == as_set(read), {"read, not listed": sorted(as_set(read) - listed), "listed, not read": sorted(listed - as_set(read))})
+    pairs = [{"bop_item": item, "stk_flow": flow} for item in payments.EURO_PAYMENTS_ITEMS.values() for flow in payments.EURO_PAYMENTS_FLOWS]
+    for nation in nations.values():
+        levels = sorted({sector for sectors in nation.level_sectors.values() for sector in sectors})
+        read = {
+            "gov_10q_ggdebt": [{"sector": sector} for sector in (de_data.GENERAL_GOVERNMENT, *levels)],
+            "gov_10q_ggnfa": [{"sector": de_data.GENERAL_GOVERNMENT}],
+            "gov_10a_main": [{"sector": sector} for sector in levels],
+            "namq_10_gdp": [{}], "namq_10_pe": [{}], "prc_hicp_minr": [{}],
+            "bop_c6_q": pairs, "bop_c6_m": pairs,
+        }
+        listed = as_set({dataset: list(every) for dataset, every in de_data.EUROSTAT_SERIES_READ_BY_GEO.get(nation.geo, {}).items()})
+        check(f"{nation.name}'s Eurostat series read are those listed to be baked ({len(listed)}; 14.3's fourth stage)",
+              listed == as_set(read), {"read, not listed": sorted(as_set(read) - listed), "listed, not read": sorted(listed - as_set(read))})
 
 
 def main() -> int:
     check_files()
     check_stopped_declared()
-    check_french_reads_listed()
+    check_euro_reads_listed()
     with tempfile.TemporaryDirectory(prefix="ratesplot_check_baked_") as temporary:
         check_written(Path(temporary))
         check_join(Path(temporary))

@@ -47,6 +47,9 @@ de_data           Bundesbank / ECB / Eurostat fetch for Germany's yields and mac
                   series (batch 4); the Bundesbank's, the ECB's and Eurostat's series
                   read through their bake and recent part (bundesbank_series;
                   ecb_series, also for rates; eurostat_series)
+euro_data         the euro area's nations after Germany (batch 14.3): France and Portugal
+                  on Germany's code paths, each one's code in the same queries
+                  (EuroNation, EURO_NATIONS)
 de_archive_data   baked German history: the Bundesbank's yield on public debt
                   securities before 1972 (rewritten by tools/bake_archives.py)
 uk_archive_data   baked UK history from the Bank of England's "A millennium of
@@ -71,7 +74,7 @@ hover             the hover read-out (batch 11.2): where each line runs on the p
 refresh           the automatic refresh (batch 11.3): whether each tick draws again
                   (within market hours always, outside them when a quote has
                   changed); the plain matplotlib windows' timer
-plotting         line drawing, draw_country, build_figure (no pyplot), COUNTRIES, run_cdn / run_us / run_uk / run_de / run_fr
+plotting         line drawing, draw_country, build_figure (no pyplot), COUNTRIES, run_cdn / run_us / run_uk / run_de / run_fr / run_pt
 compare           the comparison chart (batch 26, a prototype): one measure, a curve for
                   each nation, drawn by the nations' own drawers; CHARTS, the nations'
                   charts and it, as the front ends draw them (build_chart)
@@ -94,7 +97,8 @@ cdn_data, us_data, uk_data, de_data, joins, latest, baked} -> {frames, http} -> 
 {cdn_data, uk_data, de_data} -> joins; {cdn_data, uk_data, us_data, de_data} -> baked -> {http, config};
 rates -> {cdn_data, uk_data, us_data, de_data, baked, announced, prices, http}; announced -> http;
 prices -> {cdn_data, uk_data, us_data, de_data, uk_archive_data} (batch 13.1); plotting -> prices (batch
-13.2, --constant); cdn_data -> us_data (FRED's
+13.2, --constant); {plotting, payments, prices, bake} -> euro_data -> {de_data, us_data, joins, http, config}
+(batch 14.3); cdn_data -> us_data (FRED's
 Canadian GDP); plotting -> fx -> {us_data, cdn_archive_data, uk_archive_data};
 plotting, gui, web, http -> console;
 us_data -> latest; legend -> {axes, endlabels, regression, occupancy};
@@ -111,4 +115,4 @@ window is opened, so --no-gui and the web page never load tkinter.
 # build, in a commit of its own made before the push (the daily data job's commits leave it). It counts from 0 at
 # the first work on batch 11: its four pushes of 2026-10-27 made 6.4. Shown with the commit the program was
 # started from (version.version_text).
-__version__ = "9.6"
+__version__ = "9.7"
