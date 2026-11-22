@@ -924,6 +924,8 @@ _MORTGAGE_CHOICES = (
     # On a row of its own, as the prime rate is, with its margin's field (batch 9.5).
     ("UK, plus a margin", (("tracker", "tracker"),)),
     ("Germany", (("1-5", "1–5y"), ("5-10", "5–10y"), ("over10", "over 10y"))),
+    # Portugal's variable rate (batch 14.3), on a row of its own: its panel shows it beside the three bands above.
+    ("Portugal", (("var", "variable"),)),
 )
 # Every nation has both policy terms (batch 9.1).
 _POLICY_CHOICES = (("", tuple((term, term) for term in POLICY_TERMS)),)
@@ -1053,6 +1055,12 @@ OPTIONS: tuple[Option, ...] = (
         "france", Kind.SWITCH, ("show_fr",), "country", "--nations:fr",
         "France's chart (only when named; with\n-c or -u, those too)",
         names=("france",), shortest=3, label="France", command_line=False, topic="france",
+    ),
+    # Batch 14.3: Portugal, as France.
+    Option(
+        "portugal", Kind.SWITCH, ("show_pt",), "country", "--nations:pt",
+        "Portugal's chart (only when named; with\n-c or -u, those too)",
+        names=("portugal",), shortest=3, label="Portugal", command_line=False, topic="portugal",
     ),
     # The same by the nations' codes, for when there are more than two
     # (batch 2). The command line turns it into the switches of the nations it

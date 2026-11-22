@@ -86,6 +86,10 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   from 2008 (measured 2026-11-21: the quarters to 2026-Q2, the months to
   2026-09). Nothing before 1999: the IMF's quarters from 1975 are in U.S.
   dollars alone (decision 172's call).
+* Portugal (batch 14.3, decision 175): the same datasets for geo PT, both
+  from 1996 (``bop_c6_q`` from 1996-Q1, ``bop_c6_m`` from 1996-01), whose
+  three months add up to the quarter within 2 million in all 122 quarters
+  (measured 2026-11-22: the quarters to 2026-Q2, the months to 2026-09).
 """
 
 from __future__ import annotations
@@ -118,7 +122,7 @@ from .us_data import fred_series
 
 # The nations whose balance of payments is drawn (batch 23's stages): a chart
 # of another prints a note and draws none.
-PAYMENTS_NATIONS = ("us", "cdn", "uk", "de", "fr")
+PAYMENTS_NATIONS = ("us", "cdn", "uk", "de", "fr", "pt")
 
 # FRED's BEA series, BPM6, from 1999-Q1, millions of dollars a quarter,
 # seasonally adjusted: (credits, debits) of each pair.
@@ -166,7 +170,7 @@ _MONTHS_IN_A_YEAR = 12
 # (the module's docstring); each nation's first quarter.
 EURO_PAYMENTS_ITEMS = {"current": "CA", "trade": "GS"}
 EURO_PAYMENTS_FLOWS = ("CRE", "DEB")
-EURO_PAYMENTS_EARLIEST = {"fr": pd.Timestamp("1999-01-01")}
+EURO_PAYMENTS_EARLIEST = {"fr": pd.Timestamp("1999-01-01"), "pt": pd.Timestamp("1996-01-01")}
 _MONTHS_IN_A_QUARTER = 3
 
 
@@ -329,7 +333,7 @@ def fetch_payments(key: str, item: str) -> pd.DataFrame | None:
 # ``uk_data.ONS_SOONER``), so that it steers the current account's projection
 # (``latest._trade_steered``). Canada's would join with its monthly trade;
 # Germany's figures are monthly already, trade's and the current account's alike;
-# France's months reach as far for both pairs.
+# France's and Portugal's months reach as far for both pairs.
 TRADE_STEERED_NATIONS = ("us", "uk")
 
 

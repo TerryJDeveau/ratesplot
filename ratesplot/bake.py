@@ -3111,6 +3111,14 @@ def bake_fred_history(folder: Path | None = None, *, accept_withdrawn: bool = Fa
 # and key), for the file's first line: the ECB's own title (TITLE), with the
 # area where the title leaves it out, and the frequency (FREQ), read from each
 # series' answer 2026-10-22. A series read but not named here stops the bake (KeyError).
+# The euro-area nations' mortgage bands (``rates.EURO_MORTGAGE_SERIES``) in the words of the ECB's titles, read from each
+# series' answer (France's 2026-11-22, Portugal's variable rate the same day).
+_EURO_MORTGAGE_BANDS = {
+    "1-5": "fixation period of over one & up to five years",
+    "5-10": "fixation period of over five & up to ten years",
+    "over10": "fixation period of over ten years",
+    "var": "variable rate and fixation period of up to one year",
+}
 _ECB_SERIES_TITLES = {
     f"{ECB_ANNUAL_DEBT[0]}.{ECB_ANNUAL_DEBT[1]}": "Government debt (consolidated), Germany, general government; annual",
     f"{DE_POLICY_FIXED[0]}.{DE_POLICY_FIXED[1]}":
@@ -3135,10 +3143,9 @@ _ECB_SERIES_TITLES = {
     # series' answer (France's 2026-11-22).
     **{f"{nation.ecb_annual_debt[0]}.{nation.ecb_annual_debt[1]}": f"Government debt (consolidated), {nation.name}, general government; annual"
        for nation in EURO_NATIONS.values()},
-    **{f"{DE_MORTGAGE_FLOW}.{EURO_MORTGAGE_SERIES[key][term]}":
-       f"Bank interest rates on loans to households for house purchase, fixation period of {band} (new business), {nation.name}; monthly"
-       for key, nation in EURO_NATIONS.items()
-       for term, band in (("1-5", "over one & up to five years"), ("5-10", "over five & up to ten years"), ("over10", "over ten years"))},
+    **{f"{DE_MORTGAGE_FLOW}.{code}":
+       f"Bank interest rates on loans to households for house purchase, {_EURO_MORTGAGE_BANDS[term]} (new business), {nation.name}; monthly"
+       for key, nation in EURO_NATIONS.items() for term, code in EURO_MORTGAGE_SERIES[key].items()},
 }
 
 
