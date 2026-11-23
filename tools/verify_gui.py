@@ -209,6 +209,10 @@ class Window:
 
     def close(self) -> None:
         self.app._close()
+        # A tip still open as its window closes (a real pointer over the window, not the harness: 9.12's two runs both
+        # broke in batch31) stays ``_Tooltip.shown``; this process's next window would close it in a Tk that is gone
+        # ("application has been destroyed"). The program has one Tk to a process, so only the harness meets it.
+        gui._Tooltip.shown = None
 
 
 def placed(dimensions: str, shift: int = 0) -> str:
