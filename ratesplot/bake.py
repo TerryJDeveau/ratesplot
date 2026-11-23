@@ -3112,7 +3112,7 @@ def bake_fred_history(folder: Path | None = None, *, accept_withdrawn: bool = Fa
 # area where the title leaves it out, and the frequency (FREQ), read from each
 # series' answer 2026-10-22. A series read but not named here stops the bake (KeyError).
 # The euro-area nations' mortgage bands (``rates.EURO_MORTGAGE_SERIES``) in the words of the ECB's titles, read from each
-# series' answer (France's 2026-11-22, Portugal's variable rate and Italy's bands the same day).
+# series' answer (France's 2026-11-22, Portugal's variable rate and Italy's bands the same day, Spain's 2026-11-23).
 _EURO_MORTGAGE_BANDS = {
     "1-5": "fixation period of over one & up to five years",
     "5-10": "fixation period of over five & up to ten years",
@@ -3250,6 +3250,13 @@ _EUROSTAT_SERIES_TITLES = {
     **{f"irt_lt_mcby_m.{nation.geo}": f"EMU convergence criterion series - monthly data: EMU convergence criterion bond yields, "
                                        f"{nation.name}; monthly"
        for nation in EURO_NATIONS.values() if nation.yield_history_from is not None},
+    # Spain's regional level (decision 180, ``de_data.EURO_STATE_LEVEL_READ``): Eurostat's labels, as Germany's S1312.
+    **{code: title for nation in EURO_NATIONS.values() if "p" in nation.level_sectors for code, title in (
+        (f"gov_10q_ggdebt.{nation.geo}.S1312",
+         f"Quarterly government debt: Government consolidated gross debt, State government, {nation.name}; quarterly"),
+        (f"gov_10a_main.{nation.geo}.S1312",
+         f"Government revenue, expenditure and main aggregates: Interest, expenditure, State government, {nation.name}; annual"),
+    )},
 }
 
 

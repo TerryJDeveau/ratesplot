@@ -94,6 +94,12 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   ``bop_c6_q`` from 1995-Q1, ``bop_c6_m`` from 2008-01, whose three months
   add up to the quarter within 2 million in all 74 quarters (measured
   2026-11-22: the quarters to 2026-Q2, the months to 2026-09).
+* Spain (batch 14.3, decision 180): the same datasets for geo ES,
+  ``bop_c6_q`` from 1993-Q1; ``bop_c6_m`` from 2008-01 for the current
+  account, whose three months add up to the quarter within 1 million in
+  all 74 quarters, but with no goods and services (all its months empty,
+  measured 2026-11-23): exports and imports end at their quarters
+  (``de_data.EURO_MONTHS_MISSING``).
 """
 
 from __future__ import annotations
@@ -116,7 +122,7 @@ from .config import (
     PlotConfig,
     nation_by_key,
 )
-from .de_data import DE_PAYMENTS_SERIES, DE_PAYMENTS_SIDES, bundesbank_series, eurostat_series
+from .de_data import DE_PAYMENTS_SERIES, DE_PAYMENTS_SIDES, EURO_MONTHS_MISSING, bundesbank_series, eurostat_series
 from .euro_data import EURO_NATIONS, EuroNation
 from .frames import at_quarter_end, rows_to_frame
 from .http import downloads_of
@@ -126,7 +132,7 @@ from .us_data import fred_series
 
 # The nations whose balance of payments is drawn (batch 23's stages): a chart
 # of another prints a note and draws none.
-PAYMENTS_NATIONS = ("us", "cdn", "uk", "de", "fr", "pt", "it")
+PAYMENTS_NATIONS = ("us", "cdn", "uk", "de", "fr", "pt", "it", "es")
 
 # FRED's BEA series, BPM6, from 1999-Q1, millions of dollars a quarter,
 # seasonally adjusted: (credits, debits) of each pair.
@@ -174,7 +180,10 @@ _MONTHS_IN_A_YEAR = 12
 # (the module's docstring); each nation's first quarter.
 EURO_PAYMENTS_ITEMS = {"current": "CA", "trade": "GS"}
 EURO_PAYMENTS_FLOWS = ("CRE", "DEB")
-EURO_PAYMENTS_EARLIEST = {"fr": pd.Timestamp("1999-01-01"), "pt": pd.Timestamp("1996-01-01"), "it": pd.Timestamp("1995-01-01")}
+EURO_PAYMENTS_EARLIEST = {
+    "fr": pd.Timestamp("1999-01-01"), "pt": pd.Timestamp("1996-01-01"), "it": pd.Timestamp("1995-01-01"),
+    "es": pd.Timestamp("1993-01-01"),
+}
 _MONTHS_IN_A_QUARTER = 3
 
 
@@ -266,8 +275,12 @@ def _with_eurostat_months(nation: EuroNation, quarters: pd.Series, item: str, fl
     """``quarters`` (the nation's, dated by each quarter's last day) and after its last the whole quarters of Eurostat's months (``bop_c6_m``), each the sum of its three.
 
     If Eurostat's months fail, ``quarters`` as they are, with a warning
-    naming where they end (as ``_with_monthly_quarters`` for the U.S.).
+    naming where they end (as ``_with_monthly_quarters`` for the U.S.); if
+    they hold none of the pair for the nation (``de_data.EURO_MONTHS_MISSING``:
+    Spain's goods and services), ``quarters`` as they are, nothing asked.
     """
+    if EURO_PAYMENTS_ITEMS[item] in EURO_MONTHS_MISSING.get(nation.geo, ()):
+        return quarters
     try:
         months = eurostat_series("bop_c6_m", geo=nation.geo, bop_item=EURO_PAYMENTS_ITEMS[item], stk_flow=flow)
     except Exception as exc:  # noqa: BLE001 - any failure: the quarterly series alone
@@ -337,7 +350,8 @@ def fetch_payments(key: str, item: str) -> pd.DataFrame | None:
 # ``uk_data.ONS_SOONER``), so that it steers the current account's projection
 # (``latest._trade_steered``). Canada's would join with its monthly trade;
 # Germany's figures are monthly already, trade's and the current account's alike;
-# France's, Portugal's and Italy's months reach as far for both pairs.
+# France's, Portugal's and Italy's months reach as far for both pairs; Spain's trade stops at its quarters, before
+# its current account's months (``de_data.EURO_MONTHS_MISSING``), so it cannot steer it.
 TRADE_STEERED_NATIONS = ("us", "uk")
 
 

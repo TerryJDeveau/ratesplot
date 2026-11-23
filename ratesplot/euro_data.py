@@ -2,8 +2,9 @@
 
 Each nation is an ``EuroNation`` (below, its sources noted above it), and the
 fetchers take it: France (decision 171, 9.3), Portugal (decision 175, 9.7),
-Italy (decision 177, 9.9). All on hosts the program already asks (FRED, the
-ECB, Eurostat), each series measured before it was drawn:
+Italy (decision 177, 9.9), Spain (decision 180, 9.11). All on hosts the
+program already asks (FRED, the ECB, Eurostat), each series measured before
+it was drawn:
 
 * The 10-year yield: the OECD's long-term interest rate on FRED
   (``IRLTLT01..M156N``), a monthly average, dated by each month's first day
@@ -15,7 +16,7 @@ ECB, Eurostat), each series measured before it was drawn:
 * General government gross debt (Maastricht, consolidated): the ECB's year
   ends (``GFS``, the series Germany's chart reads, with the nation's code)
   1995 to 1999, then Eurostat's quarters (``gov_10q_ggdebt``, S13) from
-  2000-Q1.
+  2000-Q1; Spain's quarters from 1995-Q1, before the ECB's first year end.
 * Interest payable (D.41): four-quarter sums of Eurostat's quarters
   (``gov_10q_ggnfa``).
 * Nominal GDP: four-quarter sums of Eurostat's quarters at current prices,
@@ -28,12 +29,15 @@ ECB, Eurostat), each series measured before it was drawn:
   it on FRED (``...CPIALLMINMEI``, from 1955-01, stopped), scaled to the
   harmonised index at its first month (``with_older_index``).
 * Levels of government: central government (S1311) and local (S1313). No
-  state level (S1312 is empty); the social security funds (S1314) are no
+  state level (S1312 is empty) but Spain's, its autonomous communities
+  (``EuroNation.level_sectors``' "p", "n" the regional and local
+  together, as Germany's); the social security funds (S1314) are no
   level of the chart, as Germany's are not. Their debt is Eurostat's
   quarters; their interest its yearly accounts (``gov_10a_main``, from 1995,
   each year dated by its last day), since France's quarterly interest is
-  published for S13 alone (measured 2026-11-20); Portugal's and Italy's
-  levels the same way, though Portugal's levels' quarters begin in 2008.
+  published for S13 alone (measured 2026-11-20); Portugal's, Italy's and
+  Spain's levels the same way, though Portugal's levels' quarters begin in
+  2008.
 
 The policy rate is the euro area's (``rates``, Germany's functions), and the
 mortgage rates the ECB's for the nation (``rates.EURO_MORTGAGE_SERIES``).
@@ -56,6 +60,8 @@ from .config import (
     DATE_COLUMN,
     FR_DEBT_COLUMN,
     FR_INTEREST_COLUMN,
+    ES_DEBT_COLUMN,
+    ES_INTEREST_COLUMN,
     GDP_COLUMN,
     IT_DEBT_COLUMN,
     IT_INTEREST_COLUMN,
@@ -100,7 +106,7 @@ class EuroNation:
     # The ECB's annual general government debt: Germany's series (``de_data.ECB_ANNUAL_DEBT``) with the nation's
     # code, in national currency (XDC).
     ecb_annual_debt: tuple[str, str, str]
-    # Levels of government (--debt:LETTERS): Eurostat's subsectors of each.
+    # Levels of government (--debt:LETTERS): Eurostat's subsectors of each (several summed, as Germany's "n").
     level_sectors: dict[str, tuple[str, ...]]
     # The national consumer price index before Eurostat's harmonised one, all items, unadjusted, in the OECD's Main
     # Economic Indicators on FRED (its notes: METHODOLOGY N, the national index, not the harmonised one), and the date
@@ -211,8 +217,37 @@ ITALY = EuroNation(
     yield_history_from=pd.Timestamp("1980-01-01"),
 )
 
+# Spain (batch 14.3, decision 180, 9.11), the fourth nation of the euro area's path. Measured 2026-11-23
+# (``G:\Research\Claude\ratesplot_b143es\measure_es.py``, ``probe_es.py``, ``measure_cpi_es.py``). The OECD's 10-year
+# from 1980-01; Eurostat's convergence yield runs from 1980-01 too, up to 1.22 points away before 1991 (91 months
+# over 0.006), so not joined. Debt and interest by Eurostat's quarters from 1995-Q1 (the ECB's year ends, from 1995,
+# only if Eurostat fails); GDP and the population from 1995; pesetas before 1999 at 166.386. A state level, the
+# autonomous communities (S1312, 355 of 1,763 billion in 2026-Q2), drawn as Germany's Länder are; each subsector's
+# debt consolidated within it alone. The national price index (``ESPCPIALLMINMEI``) 1954-03 to 2025-03: in the 339
+# months both have a 12-month rise, the harmonised index's runs below the national one's by 0.01 point on average,
+# 1.59 apart at most (2001-08).
+SPAIN = EuroNation(
+    key="es",
+    name="Spain",
+    adjective="Spanish",
+    geo="ES",
+    yield_series={"10-Year": "IRLTLT01ESM156N"},
+    yield_earliest={"10-Year": pd.Timestamp("1980-01-01")},
+    ecb_annual_debt=("GFS", "A.N.ES.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
+    level_sectors={"f": ("S1311",), "n": ("S1312", "S1313"), "p": ("S1312",), "m": ("S1313",)},
+    cpi_history_series="ESPCPIALLMINMEI",
+    cpi_history_stopped=pd.Timestamp("2025-03-01"),
+    debt_column=ES_DEBT_COLUMN,
+    interest_column=ES_INTEREST_COLUMN,
+    series_earliest={
+        "Spanish General Government Debt (Eurostat's quarters from 1995)": pd.Timestamp("1995-03-31"),
+        "TTM Nominal GDP (Eurostat's quarters from 1995)": pd.Timestamp("1995-12-31"),
+        "TTM Spanish Interest Payable (Eurostat's quarters from 1995)": pd.Timestamp("1995-12-31"),
+    },
+)
+
 # Every nation of this module, by its key.
-EURO_NATIONS = {nation.key: nation for nation in (FRANCE, PORTUGAL, ITALY)}
+EURO_NATIONS = {nation.key: nation for nation in (FRANCE, PORTUGAL, ITALY, SPAIN)}
 
 
 def series_earliest(nation: EuroNation, config: PlotConfig) -> dict[str, pd.Timestamp]:

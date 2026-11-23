@@ -29,7 +29,9 @@ all-items index, not seasonally adjusted, monthly:
   (``euro_data.with_older_index``, batch 14.3's third stage, 2026-11-21);
 * Portugal (batch 14.3, decision 175): the same, Eurostat's harmonised index
   from 1996-01 and before it the national index on FRED from 1955-01;
-* Italy (batch 14.3, decision 177): the same.
+* Italy (batch 14.3, decision 177): the same;
+* Spain (batch 14.3, decision 180): the same, its national index from
+  1954-03.
 
 The seasonally adjusted indexes (13.4), on the same bases: FRED CPIAUCSL from
 1947-01, Statistics Canada's 18-10-0006 (v41690914) from 1992-01 and the
@@ -162,7 +164,7 @@ _EURO_READERS = {key: partial(fetch_consumer_prices, nation) for key, nation in 
 
 
 def consumer_prices(country: str, *, adjusted: bool = False) -> pd.Series:
-    """Return one country's consumer price index ("cdn", "us", "uk", "de", "fr", "pt" or "it"), each month dated by its first day; raises if its source has nothing.
+    """Return one country's consumer price index ("cdn", "us", "uk", "de", "fr", "pt", "it" or "es"), each month dated by its first day; raises if its source has nothing.
 
     Each in its own base year: --constant divides by it and multiplies by
     its value in one month (``measures.in_constant_prices``), so the base
@@ -192,7 +194,7 @@ def uk_inflation() -> pd.Series:
 
 
 def inflation(country: str) -> pd.Series:
-    """Return one country's 12-month rise in consumer prices ("cdn", "us", "uk", "de", "fr", "pt" or "it"), in percent, each month dated by its first day; raises if its source has nothing."""
+    """Return one country's 12-month rise in consumer prices ("cdn", "us", "uk", "de", "fr", "pt", "it" or "es"), in percent, each month dated by its first day; raises if its source has nothing."""
     if country == "uk":
         return uk_inflation()
     index = {"us": us_consumer_prices, "cdn": cdn_consumer_prices, "de": fetch_de_consumer_prices, **_EURO_READERS}[country]()
