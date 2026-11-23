@@ -38,4 +38,4 @@ A box dragged over a chart sets that chart's limits from its height, and Start a
 
 ## Each nation's own
 
-The limits are each nation's own, under its chart in the window and in its section on the page ([Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy)). On the command line a limit with no prefix is for every chart (`--max:8`); a nation's prefix sets its chart alone (`--us:max:8`, `--cdn:top:5t`).
+The limits are each nation's own, under its chart in the window and in its section on the page ([Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [Spain](?help=spain)). On the command line a limit with no prefix is for every chart (`--max:8`); a nation's prefix sets its chart alone (`--us:max:8`, `--cdn:top:5t`).

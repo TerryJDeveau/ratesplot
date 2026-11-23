@@ -27,4 +27,4 @@ Under France's chart in the window, and under "France only" on the page, are the
 
 ## The other nations
 
-[Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [Portugal](?help=portugal), [Italy](?help=italy).
+[Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [Portugal](?help=portugal), [Italy](?help=italy), [Spain](?help=spain).

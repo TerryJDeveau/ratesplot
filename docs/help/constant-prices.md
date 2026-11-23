@@ -8,7 +8,7 @@ Each figure is divided when it is observed, by the index of its month, and held 
 
 Debt, counted on a date, is divided by the index of that date's month. GDP and interest, each a total over twelve months, are divided by the index of their last month too. This keeps the distance between debt and GDP on the log axis what it is in current prices, as it should be, since a share of GDP is free of inflation. Dividing each total by the average of its twelve months' index instead would raise GDP and interest by about half a year's inflation.
 
-Before an index begins there is no price to divide by, and nothing is drawn: before 1914 in Canada, 1914-07 in the UK, 1948-06 in Germany and 1955 in France, Portugal and Italy (the U.S. index, from 1913, is older than any U.S. curve). On a chart ending before its index begins, the amounts are drawn in current prices, with a warning.
+Before an index begins there is no price to divide by, and nothing is drawn: before 1914 in Canada, 1914-07 in the UK, 1948-06 in Germany 1955 in France, Portugal and Italy, and 1954-03 in Spain (the U.S. index, from 1913, is older than any U.S. curve). On a chart ending before its index begins, the amounts are drawn in current prices, with a warning.
 
 Inflation adjusted combines with per capita, for real amounts per person ("Inf. Adj. CAD per Capita at 2026-09 Prices"). It can't be combined with [As % of GDP](?help=percent-of-gdp): a share of GDP is free of inflation already, and in the window and on the page ticking that box unticks this one. In the [master currency](?help=master-currency) each chart's amounts are put at its own nation's prices first, then converted at the rate of its End date. Without [GDP](?help=gdp), [debt](?help=debt) or [interest](?help=interest) ticked it has no effect, and its box is greyed.
 
@@ -28,6 +28,8 @@ Each is the all-items consumer price index, not seasonally adjusted, the one the
 - **Portugal, 1955-01 to 1995.** The national consumer price index as the OECD published it, through FRED ([PRTCPIALLMINMEI](https://fred.stlouisfed.org/series/PRTCPIALLMINMEI)), scaled to the index above. Portugal's GDP and debt reach back to 1995, its interest to 1999.
 - **Italy, from 1996-01.** Eurostat's harmonised index of consumer prices, 2025 = 100 ([prc_hicp_minr](https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_minr/default/table?lang=en)).
 - **Italy, 1955-01 to 1995.** The national consumer price index as the OECD published it, through FRED ([ITACPIALLMINMEI](https://fred.stlouisfed.org/series/ITACPIALLMINMEI)), scaled to the index above. Italy's GDP and debt reach back to 1995, its interest to 1999.
+- **Spain, from 1996-01.** Eurostat's harmonised index of consumer prices, 2025 = 100 ([prc_hicp_minr](https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_minr/default/table?lang=en)).
+- **Spain, 1954-03 to 1995.** The national consumer price index as the OECD published it, through FRED ([ESPCPIALLMINMEI](https://fred.stlouisfed.org/series/ESPCPIALLMINMEI)), scaled to the index above. Spain's GDP, debt and interest reach back to 1995.
 
 ## How the program keeps these figures
 
