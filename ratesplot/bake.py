@@ -3112,7 +3112,8 @@ def bake_fred_history(folder: Path | None = None, *, accept_withdrawn: bool = Fa
 # area where the title leaves it out, and the frequency (FREQ), read from each
 # series' answer 2026-10-22. A series read but not named here stops the bake (KeyError).
 # The euro-area nations' mortgage bands (``rates.EURO_MORTGAGE_SERIES``) in the words of the ECB's titles, read from each
-# series' answer (France's 2026-11-22, Portugal's variable rate and Italy's bands the same day, Spain's 2026-11-23).
+# series' answer (France's 2026-11-22, Portugal's variable rate and Italy's bands the same day, Spain's and the
+# Netherlands' 2026-11-23).
 _EURO_MORTGAGE_BANDS = {
     "1-5": "fixation period of over one & up to five years",
     "5-10": "fixation period of over five & up to ten years",

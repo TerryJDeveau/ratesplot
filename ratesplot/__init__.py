@@ -48,7 +48,8 @@ de_data           Bundesbank / ECB / Eurostat fetch for Germany's yields and mac
                   read through their bake and recent part (bundesbank_series;
                   ecb_series, also for rates; eurostat_series)
 euro_data         the euro area's nations after Germany (batch 14.3): France, Portugal,
-                  Italy and Spain on Germany's code paths, each one's code in the same queries
+                  Italy, Spain and the Netherlands on Germany's code paths, each one's code
+                  in the same queries
                   (EuroNation, EURO_NATIONS)
 de_archive_data   baked German history: the Bundesbank's yield on public debt
                   securities before 1972 (rewritten by tools/bake_archives.py)
@@ -74,7 +75,7 @@ hover             the hover read-out (batch 11.2): where each line runs on the p
 refresh           the automatic refresh (batch 11.3): whether each tick draws again
                   (within market hours always, outside them when a quote has
                   changed); the plain matplotlib windows' timer
-plotting         line drawing, draw_country, build_figure (no pyplot), COUNTRIES, run_cdn / run_us / run_uk / run_de / run_fr / run_pt / run_it / run_es
+plotting         line drawing, draw_country, build_figure (no pyplot), COUNTRIES, run_cdn / run_us / run_uk / run_de / run_fr / run_pt / run_it / run_es / run_nl
 compare           the comparison chart (batch 26, a prototype): one measure, a curve for
                   each nation, drawn by the nations' own drawers; CHARTS, the nations'
                   charts and it, as the front ends draw them (build_chart)

@@ -307,7 +307,7 @@ def format_terms(values: tuple, _config: PlotConfig) -> str:
 
 
 def parse_mortgage_terms(spec: str) -> tuple[str, ...]:
-    """Parse ``--mortgages:LIST``: terms of ``MORTGAGE_TERMS`` (30 15 U.S.; 5 3 1 5v Canada; prime both; 2f 3f 5f svr tracker UK; 1-5 5-10 over10 var Germany, France, Portugal, Italy, Spain), in that order.
+    """Parse ``--mortgages:LIST``: terms of ``MORTGAGE_TERMS`` (30 15 U.S.; 5 3 1 5v Canada; prime both; 2f 3f 5f svr tracker UK; 1-5 5-10 over10 var Germany, France, Portugal, Italy, Spain, the Netherlands), in that order.
 
     A "y" after the years is accepted ("30y"), and repeats are harmless; "none" is none.
     """
@@ -325,7 +325,8 @@ def parse_mortgage_terms(spec: str) -> tuple[str, ...]:
                 "5-year variable), prime (Canada and the U.S.: the banks' prime rate), 2f, 3f, 5f, svr or "
                 "tracker (UK, fixed for 2, 3 or 5 years; svr the standard variable rate; tracker Bank Rate "
                 "plus a margin), 1-5, 5-10 or over10 "
-                "(Germany, France, Portugal, Italy and Spain, fixed for over 1 to 5, over 5 to 10, or over 10 years), or var "
+                "(Germany, France, Portugal, Italy, Spain and the Netherlands, fixed for over 1 to 5, over 5 to 10, or over 10 "
+                "years), or var "
                 "(the same nations' variable rate or fixed up to a year)"
             )
         chosen.add(term)
@@ -381,7 +382,7 @@ def parse_compare_measure(spec: str) -> tuple[str, ...]:
 
 
 def parse_base_nation(spec: str) -> tuple[str, ...]:
-    """Parse ``--base:NATION`` (batch 26.3): one nation's code, as --nations takes it (ca or cdn, us, gb or uk, de, ger or deu, fr or fra, pt or prt, it or ita, es or esp), to its key.
+    """Parse ``--base:NATION`` (batch 26.3): one nation's code, as --nations takes it (ca or cdn, us, gb or uk, de, ger or deu, fr or fra, pt or prt, it or ita, es or esp, nl or nld), to its key.
 
     One at a time: a list of two is refused, as is "none" (--no-base draws
     the comparison without a base).
@@ -461,8 +462,8 @@ def parse_spreads(spec: str) -> tuple[tuple[str, str], ...]:
 
 
 def parse_nations(spec: str) -> tuple[str, ...]:
-    """Parse ``--nations:LIST``: nations' codes (ca or cdn, us, gb or uk, de, ger or deu, fr or fra, pt or prt, it or ita, es or esp), to their keys in ``NATIONS``
-    order."""
+    """Parse ``--nations:LIST``: nations' codes (ca or cdn, us, gb or uk, de, ger or deu, fr or fra, pt or prt, it or ita, es or esp, nl or nld), to their keys
+    in ``NATIONS`` order."""
     codes = [item.strip().lower() for item in spec.split(",") if item.strip()]
     if not codes:
         raise ValueError("empty --nations list: name nations' codes such as ca,us")
@@ -925,11 +926,11 @@ _MORTGAGE_CHOICES = (
     ("UK", (("2f", "2y"), ("3f", "3y"), ("5f", "5y"), ("svr", "SVR"))),
     # On a row of its own, as the prime rate is, with its margin's field (batch 9.5).
     ("UK, plus a margin", (("tracker", "tracker"),)),
-    # The euro area's nations' bands (Germany's, batch 4; France's, Portugal's, Italy's and Spain's, 14.3); a nation's
-    # panel shows no caption.
+    # The euro area's nations' bands (Germany's, batch 4; France's, Portugal's, Italy's, Spain's and the Netherlands',
+    # 14.3); a nation's panel shows no caption.
     ("Euro area", (("1-5", "1–5y"), ("5-10", "5–10y"), ("over10", "over 10y"))),
-    # Their variable rate (Portugal's, 14.3; Germany's and France's, 9.8; Italy's, 9.9; Spain's, 9.11), on a row of its
-    # own: each panel shows it
+    # Their variable rate (Portugal's, 14.3; Germany's and France's, 9.8; Italy's, 9.9; Spain's, 9.11; the
+    # Netherlands', 9.12), on a row of its own: each panel shows it
     # under the three bands above.
     ("Euro area, variable", (("var", "variable"),)),
 )
@@ -1080,13 +1081,19 @@ OPTIONS: tuple[Option, ...] = (
         "Spain's chart (only when named; with\n-c or -u, those too)",
         names=("spain",), shortest=3, label="Spain", command_line=False, topic="spain",
     ),
+    # Batch 14.3: the Netherlands, as France.
+    Option(
+        "netherlands", Kind.SWITCH, ("show_nl",), "country", "--nations:nl",
+        "the Netherlands' chart (only when\nnamed; with -c or -u, those too)",
+        names=("netherlands",), shortest=3, label="Netherlands", command_line=False, topic="netherlands",
+    ),
     # The same by the nations' codes, for when there are more than two
     # (batch 2). The command line turns it into the switches of the nations it
     # names (``cli.sort_tokens``), so it sets no field of its own and has no
     # control: the window and the page show the switches.
     Option(
         "nations", Kind.VALUE, (), "country", "--nations:LIST / --na:LIST",
-        "the charts of these nations only, by\ncode: ca or cdn, us, gb or uk, de, ger\nor deu, fr or fra, pt or prt, it or ita,\nes or esp (--nations:ca,us,gb,de); the\nonly way to name the UK's, Germany's,\nFrance's, Portugal's, Italy's and\nSpain's",
+        "the charts of these nations only, by\ncode: ca or cdn, us, gb or uk, de, ger\nor deu, fr or fra, pt or prt, it or ita,\nes or esp, nl or nld\n(--nations:ca,us,gb,de); the only way to\nname the UK's, Germany's, France's,\nPortugal's, Italy's, Spain's and the\nNetherlands'",
         names=("nations",), shortest=2, parse=parse_nations, in_gui=False,
     ),
     # Batch 26 (Terry, 2026-11-11, decision 146: "Let's try your proposals. It
@@ -1293,7 +1300,7 @@ OPTIONS: tuple[Option, ...] = (
         "policy", Kind.FLAG, ("policy_rates",), "rates", "--policy / --no-policy",
         "each country's policy rate, the central\nbank's official rate: the fed funds\n"
         "target (a range from 2008, the monthly\naverage before 1982-09); the Bank Rate,\n"
-        "the overnight target from 1996; the UK's\nBank Rate; Germany's: the Bundesbank's\ndiscount rate, the ECB's main\nrefinancing rate from 1999; France's,\nPortugal's, Italy's and Spain's: the\nECB's, from 1999",
+        "the overnight target from 1996; the UK's\nBank Rate; Germany's: the Bundesbank's\ndiscount rate, the ECB's main\nrefinancing rate from 1999; France's,\nPortugal's, Italy's, Spain's and the\nNetherlands': the ECB's, from 1999",
         names=("policy-rates",), shortest=2, label="Policy rate", topic="policy-rates",
     ),
     # Batch 9.1 (Terry, decision 27): the official rate by default, the
@@ -1320,7 +1327,7 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "mortgages", Kind.FLAG, ("mortgages",), "rates", "--mortgages / --no-mortgages",
         "mortgage rates, dashed in the colour of\nthe yield of their term: U.S. survey\n"
-        "averages; Canadian posted rates; UK\nquoted rates; German, French,\nPortuguese, Italian and Spanish averages\nof new loans",
+        "averages; Canadian posted rates; UK\nquoted rates; German, French,\nPortuguese, Italian, Spanish and Dutch\naverages of new loans",
         names=("mortgages",), shortest=2, label="Mortgage rates", topic="mortgages",
     ),
     Option(
@@ -1328,8 +1335,8 @@ OPTIONS: tuple[Option, ...] = (
         "the terms: 30 15 (U.S.), 5 3 1 5v\n(Canada; 5v variable, broker average),\nprime (Canada and the U.S.: the banks'\nprime rate),\n"
         "2f 3f 5f svr tracker (UK: fixed 2, 3, 5\nyears; svr the standard variable rate,\nquoted from 1995, the millennium\n"
         "dataset's variable mortgage rate from\n1939; tracker Bank Rate plus a margin,\nfrom 1997),\n"
-        "1-5 5-10 over10 (Germany, France,\nPortugal, Italy and Spain: fixed over 1\nto 5, over 5 to 10, over 10 years), var\n(the same five: the variable rate or\nfixed up to a year);\n"
-        f"default {','.join(DEFAULT_MORTGAGE_TERMS)} (the UK's: all its terms;\nGermany's, France's and Italy's: their\nthree fixed bands; Portugal's and\nSpain's var); turns --mortgages on",
+        "1-5 5-10 over10 (Germany, France,\nPortugal, Italy, Spain and the\nNetherlands: fixed over 1 to 5, over 5\nto 10, over 10 years), var (the same\nsix: the variable rate or fixed up to a\nyear);\n"
+        f"default {','.join(DEFAULT_MORTGAGE_TERMS)} (the UK's: all its terms;\nGermany's, France's, Italy's and the\nNetherlands': their three fixed bands;\nPortugal's and Spain's var); turns\n--mortgages on",
         names=("mortgages",), shortest=2, parse=parse_mortgage_terms, turns_on="mortgages",
         label="Mortgage terms", format=format_terms, editor="choices", choices=_MORTGAGE_CHOICES,
         topic="mortgages",
@@ -2619,9 +2626,9 @@ _HELP_COLUMN = 36  # width of the spellings column (fits "--interest:LETTERS / -
 _HELP_MIN_GAP = 3  # a spelling longer than the column still gets this many spaces
 _HELP_INTRO = """\
 Run with no flags to open the interactive window with both charts (Canadian,
-then U.S.; the UK's, Germany's, France's, Portugal's, Italy's and Spain's
-when asked for, --nations:gb, --nations:de and so on, which -c and -u may
-join). Flags set the window's starting values.
+then U.S.; the UK's, Germany's, France's, Portugal's, Italy's, Spain's and
+the Netherlands' when asked for, --nations:gb, --nations:de and so on, which
+-c and -u may join). Flags set the window's starting values.
 
 Names are case-insensitive, the dashes in front are optional, and any leading
 part of a name will do: -r, --rel and --relative are the same. A name is never
@@ -2639,7 +2646,7 @@ the settings remembered, with the options named laid over them.
 """
 _HELP_NATIONS = (
     "A nation's code in front sets a value for its chart only: --us:top:20t, --cdn:yields:2,10, "
-    "--us:no-y:30 (codes ca or cdn, us, gb or uk, ger or deu, fr or fra, pt or prt, it or ita, and es or esp, written in full; Germany's de only in "
+    "--us:no-y:30 (codes ca or cdn, us, gb or uk, ger or deu, fr or fra, pt or prt, it or ita, es or esp, and nl or nld, written in full; Germany's de only in "
     "--nations, since --de is --debt). It goes on {names}; the nation's own value replaces the one for both charts. "
     "A nation's own list may be none (--cdn:yields:none). A list for every chart draws on each chart the items that "
     "nation has; a chart left none of them draws none, with a warning (-c --yields:7,20)."
