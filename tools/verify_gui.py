@@ -2416,9 +2416,11 @@ def check_batch31(check: Check) -> None:
         def bottom(widget) -> int:
             return widget.winfo_rooty() + widget.winfo_height()
 
+        # As wide as each other to the pixel Tk can share: a column of an odd width gives one of the two uniform
+        # columns the pixel left over (9.11's eight nations, 319 and 320).
         check("31.2: under the version, Refresh and Reset side by side, as wide as each other, the box under them",
               refresh.winfo_rooty() == reset.winfo_rooty() >= bottom(app.version_label) and refresh.winfo_rootx() < reset.winfo_rootx()
-              and refresh.winfo_width() == reset.winfo_width() and box.winfo_rooty() >= bottom(refresh),
+              and abs(refresh.winfo_width() - reset.winfo_width()) <= 1 and box.winfo_rooty() >= bottom(refresh),
               [(widget.winfo_rootx(), widget.winfo_rooty(), widget.winfo_width()) for widget in (refresh, reset, box)])
         check("above the controls, in a bar of the column that does not scroll", top.master is app.column
               and first_block.winfo_rooty() >= bottom(box), (str(top.master), first_block.winfo_rooty(), bottom(box)))
