@@ -28,4 +28,4 @@ Under Canada's chart in the window, and under "Canada only" on the page, are the
 
 ## The other nations
 
-[The United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [Spain](?help=spain).
+[The United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [Spain](?help=spain), [the Netherlands](?help=netherlands).

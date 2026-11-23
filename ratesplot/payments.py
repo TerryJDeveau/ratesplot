@@ -100,6 +100,11 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   all 74 quarters, but with no goods and services (all its months empty,
   measured 2026-11-23): exports and imports end at their quarters
   (``de_data.EURO_MONTHS_MISSING``).
+* The Netherlands (batch 14.3, decision 182): the same datasets for geo
+  NL, ``bop_c6_q`` from 2003-Q2, credits less debits equal to the balance
+  within 1 million in all 93 quarters; ``bop_c6_m`` holds neither pair (all
+  429 months of each empty, measured 2026-11-23): both end at their
+  quarters (``de_data.EURO_MONTHS_MISSING``).
 """
 
 from __future__ import annotations
@@ -132,7 +137,7 @@ from .us_data import fred_series
 
 # The nations whose balance of payments is drawn (batch 23's stages): a chart
 # of another prints a note and draws none.
-PAYMENTS_NATIONS = ("us", "cdn", "uk", "de", "fr", "pt", "it", "es")
+PAYMENTS_NATIONS = ("us", "cdn", "uk", "de", "fr", "pt", "it", "es", "nl")
 
 # FRED's BEA series, BPM6, from 1999-Q1, millions of dollars a quarter,
 # seasonally adjusted: (credits, debits) of each pair.
@@ -182,7 +187,7 @@ EURO_PAYMENTS_ITEMS = {"current": "CA", "trade": "GS"}
 EURO_PAYMENTS_FLOWS = ("CRE", "DEB")
 EURO_PAYMENTS_EARLIEST = {
     "fr": pd.Timestamp("1999-01-01"), "pt": pd.Timestamp("1996-01-01"), "it": pd.Timestamp("1995-01-01"),
-    "es": pd.Timestamp("1993-01-01"),
+    "es": pd.Timestamp("1993-01-01"), "nl": pd.Timestamp("2003-04-01"),
 }
 _MONTHS_IN_A_QUARTER = 3
 
@@ -277,7 +282,8 @@ def _with_eurostat_months(nation: EuroNation, quarters: pd.Series, item: str, fl
     If Eurostat's months fail, ``quarters`` as they are, with a warning
     naming where they end (as ``_with_monthly_quarters`` for the U.S.); if
     they hold none of the pair for the nation (``de_data.EURO_MONTHS_MISSING``:
-    Spain's goods and services), ``quarters`` as they are, nothing asked.
+    Spain's goods and services, both of the Netherlands' pairs), ``quarters``
+    as they are, nothing asked.
     """
     if EURO_PAYMENTS_ITEMS[item] in EURO_MONTHS_MISSING.get(nation.geo, ()):
         return quarters
@@ -351,7 +357,8 @@ def fetch_payments(key: str, item: str) -> pd.DataFrame | None:
 # (``latest._trade_steered``). Canada's would join with its monthly trade;
 # Germany's figures are monthly already, trade's and the current account's alike;
 # France's, Portugal's and Italy's months reach as far for both pairs; Spain's trade stops at its quarters, before
-# its current account's months (``de_data.EURO_MONTHS_MISSING``), so it cannot steer it.
+# its current account's months (``de_data.EURO_MONTHS_MISSING``), so it cannot steer it; the Netherlands' both pairs
+# end at their quarters.
 TRADE_STEERED_NATIONS = ("us", "uk")
 
 

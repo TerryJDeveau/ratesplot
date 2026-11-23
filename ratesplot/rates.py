@@ -191,7 +191,9 @@ DE_MORTGAGE_SERIES = {"1-5": "M.DE.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.DE.B.A2C.
 # over 1 to 5 and over 5 to 10 years from 2003-01, over 10 years and the variable rate from 2000-01, none missing, no
 # month-to-month change over 1 point (measured 2026-11-22). Spain's (decision 180): over 1 to 5 and over 5 to 10
 # years and the variable rate from 2000-01, over 10 years from 2003-01, none missing; its over 5 to 10 years jumps by
-# up to 2.04 points (2012-06), the others by under 1 point from 2013 (measured 2026-11-23).
+# up to 2.04 points (2012-06), the others by under 1 point from 2013 (measured 2026-11-23). The Netherlands'
+# (decision 182): over 1 to 5 and over 5 to 10 years and the variable rate from 2000-01 (the ECB's estimates to
+# 2002-12), over 10 years from 2003-01, none missing, none moving a point in a month (measured 2026-11-23).
 EURO_MORTGAGE_SERIES = {
     "fr": {"1-5": "M.FR.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.FR.B.A2C.O.R.A.2250.EUR.N", "over10": "M.FR.B.A2C.P.R.A.2250.EUR.N",
            "var": "M.FR.B.A2C.F.R.A.2250.EUR.N"},
@@ -201,6 +203,8 @@ EURO_MORTGAGE_SERIES = {
            "var": "M.IT.B.A2C.F.R.A.2250.EUR.N"},
     "es": {"1-5": "M.ES.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.ES.B.A2C.O.R.A.2250.EUR.N", "over10": "M.ES.B.A2C.P.R.A.2250.EUR.N",
            "var": "M.ES.B.A2C.F.R.A.2250.EUR.N"},
+    "nl": {"1-5": "M.NL.B.A2C.I.R.A.2250.EUR.N", "5-10": "M.NL.B.A2C.O.R.A.2250.EUR.N", "over10": "M.NL.B.A2C.P.R.A.2250.EUR.N",
+           "var": "M.NL.B.A2C.F.R.A.2250.EUR.N"},
 }
 # The ECB's flow of the MFI interest rate statistics and the unit its mortgage
 # rates are given in (a rate per year), for every band of DE_MORTGAGE_SERIES.

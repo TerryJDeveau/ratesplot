@@ -28,4 +28,4 @@ Under Germany's chart in the window, and under "Germany only" on the page, are t
 
 ## The other nations
 
-[Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [Spain](?help=spain).
+[Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [Spain](?help=spain), [the Netherlands](?help=netherlands).

@@ -113,6 +113,7 @@ from .config import (
     ES,
     FR,
     IT,
+    NL,
     PT,
     UK,
     US,
@@ -185,6 +186,7 @@ from .de_data import (
 from .euro_data import (
     FRANCE,
     ITALY,
+    NETHERLANDS,
     PORTUGAL,
     SPAIN,
     EuroNation,
@@ -398,6 +400,7 @@ add_fr_yield_lines = partial(add_euro_yield_lines, key="fr")
 add_pt_yield_lines = partial(add_euro_yield_lines, key="pt")
 add_it_yield_lines = partial(add_euro_yield_lines, key="it")
 add_es_yield_lines = partial(add_euro_yield_lines, key="es")
+add_nl_yield_lines = partial(add_euro_yield_lines, key="nl")
 
 
 def add_stepped_yield_lines(
@@ -1695,6 +1698,7 @@ prepare_fr = _euro_preparer(FRANCE, FR)
 prepare_pt = _euro_preparer(PORTUGAL, PT)
 prepare_it = _euro_preparer(ITALY, IT)
 prepare_es = _euro_preparer(SPAIN, ES)
+prepare_nl = _euro_preparer(NETHERLANDS, NL)
 
 
 @dataclass(frozen=True)
@@ -1708,8 +1712,8 @@ class Country:
     draw_yield_lines: YieldLineDrawer
 
 
-# In drawing order (Canadian, then U.S., then the UK's, Germany's, France's, Portugal's, Italy's and Spain's), as the
-# command line always has.
+# In drawing order (Canadian, then U.S., then the UK's, Germany's, France's, Portugal's, Italy's, Spain's and the
+# Netherlands'), as the command line always has.
 COUNTRIES: tuple[Country, ...] = (
     Country("cdn", "show_cdn", CDN, prepare_cdn, add_canadian_yield_lines),
     Country("us", "show_us", US, prepare_us, add_us_yield_lines),
@@ -1719,6 +1723,7 @@ COUNTRIES: tuple[Country, ...] = (
     Country("pt", "show_pt", PT, prepare_pt, add_pt_yield_lines),
     Country("it", "show_it", IT, prepare_it, add_it_yield_lines),
     Country("es", "show_es", ES, prepare_es, add_es_yield_lines),
+    Country("nl", "show_nl", NL, prepare_nl, add_nl_yield_lines),
 )
 
 
@@ -2150,3 +2155,4 @@ run_fr = partial(run_euro_nation, "fr")
 run_pt = partial(run_euro_nation, "pt")
 run_it = partial(run_euro_nation, "it")
 run_es = partial(run_euro_nation, "es")
+run_nl = partial(run_euro_nation, "nl")

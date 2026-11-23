@@ -36,6 +36,9 @@ Seasonal adjustment takes out the swings that come back each year at the same ti
 - **Spain, unadjusted, from 1996-01.** Eurostat's harmonised index of consumer prices, all items, 2025 = 100 ([prc_hicp_minr](https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_minr/default/table?lang=en)).
 - **Spain, unadjusted, 1954-03 to 1995.** The national consumer price index, all items, as the OECD published it in its Main Economic Indicators, through FRED ([ESPCPIALLMINMEI](https://fred.stlouisfed.org/series/ESPCPIALLMINMEI)). Published on 2015 = 100 and scaled to the harmonised index where that begins, so the line is in 2025 = 100 throughout and has no step in 1996.
 - **Spain, seasonally adjusted:** none is published with the harmonised index, so with Seas. adj. ticked Spain's chart draws its index not seasonally adjusted, as France's does.
+- **The Netherlands, unadjusted, from 1996-01.** Eurostat's harmonised index of consumer prices, all items, 2025 = 100 ([prc_hicp_minr](https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_minr/default/table?lang=en)).
+- **The Netherlands, unadjusted, 1960-04 to 1995.** The national consumer price index, all items, as the OECD published it in its Main Economic Indicators, through FRED ([NLDCPIALLMINMEI](https://fred.stlouisfed.org/series/NLDCPIALLMINMEI)). Published on 2015 = 100 and scaled to the harmonised index where that begins, so the line is in 2025 = 100 throughout and has no step in 1996.
+- **The Netherlands, seasonally adjusted:** none is published with the harmonised index, so with Seas. adj. ticked the Netherlands' chart draws its index not seasonally adjusted, as France's does.
 
 ## How the program keeps these figures
 

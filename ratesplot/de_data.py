@@ -408,7 +408,7 @@ EURO_EUROSTAT_SERIES_READ: dict[str, tuple[dict[str, str], ...]] = {
     "bop_c6_m": _EURO_PAYMENTS_READ,
 }
 # The euro-area nations' codes (``euro_data.EURO_NATIONS``' ``geo``, in its order).
-EURO_GEOS = ("FR", "PT", "IT", "ES")
+EURO_GEOS = ("FR", "PT", "IT", "ES", "NL")
 # The euro nations whose 10-year reaches back before the OECD's by Eurostat's convergence-criterion yield (decision
 # 178: Italy's; ``euro_data.EuroNation.yield_history_from``, checked alike by ``tools/check_baked.py``), and the one
 # series read for it, baked as the others are.
@@ -423,9 +423,10 @@ EURO_STATE_LEVEL_READ: dict[str, tuple[dict[str, str], ...]] = {
     "gov_10a_main": ({"sector": "S1312"},),
 }
 # The balance of payments' items Eurostat's months hold no figure of, by nation (Spain's goods and services: all 429
-# of its months empty, measured 2026-11-23, its current account's from 2008-01): not read, so that pair ends at its
-# quarters (``payments._with_eurostat_months``).
-EURO_MONTHS_MISSING = {"ES": ("GS",)}
+# of its months empty, measured 2026-11-23, its current account's from 2008-01; the Netherlands' both pairs, all 429
+# months of each empty, measured the same day): not read, so that pair ends at its quarters
+# (``payments._with_eurostat_months``).
+EURO_MONTHS_MISSING = {"ES": ("GS",), "NL": ("CA", "GS")}
 
 
 def _euro_series_read(geo: str) -> dict[str, tuple[dict[str, str], ...]]:
