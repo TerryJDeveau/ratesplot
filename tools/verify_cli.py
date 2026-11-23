@@ -395,6 +395,15 @@ CASES: list[list[str]] = [
     ["--na:es", "--mo"], ["--na:es", "--sp"], ["--na:es", "--policy"], ["--na:es", "--cpi:sa"], ["--na:es", "--inf"],
     ["--na:it,es", "--com"], ["--na:pt,es", "--com:mortgage"], ["--na:us,es", "--com", "--base:es"],
     ["--na:es", "--master:eur"], ["--espa:max:6"], ["--na:es", "--es:top:USD3t"], ["--na:es,it", "--es:max:9", "--it:max:6"],
+    # Batch 14.3, decision 182: the Netherlands, as Italy: --nations:nl (or nld), its prefixes --nl: and --nld:, its own
+    # defaults, its two levels (f and m) and two it lacks (p, n), a term it lacks, --cpi:sa, the comparison and a base
+    # with it, all nine nations; "--nldx" names no nation.
+    ["--na:nl"], ["--na:nld"], ["--na:ca,us,gb,de,fr,pt,it,es,nl"], ["--na:nl", "--nl:max:9"], ["--na:nl", "--nld:top:2t"],
+    ["--na:nl", "--nl:d:fm"], ["--na:nl", "--nl:d:p"], ["--na:nl", "--nl:d:n"], ["--na:nl", "--nl:y:2,10"],
+    ["--na:nl", "--nl:mo:1-5"], ["--na:nl", "--nl:mo:var,over10"], ["--na:de,fr,pt,it,es,nl", "--mo:var"],
+    ["--na:nl", "--mo"], ["--na:nl", "--sp"], ["--na:nl", "--policy"], ["--na:nl", "--cpi:sa"], ["--na:nl", "--inf"],
+    ["--na:es,nl", "--com"], ["--na:pt,nl", "--com:mortgage"], ["--na:us,nl", "--com", "--base:nl"],
+    ["--na:nl", "--master:eur"], ["--neth:max:6"], ["--na:nl", "--nl:top:USD3t"], ["--na:nl,es", "--nl:max:9", "--es:max:6"],
 ]
 
 

@@ -209,17 +209,17 @@ CASES: dict[str, list[str]] = {
     # Batch 13.2: the amounts at constant prices against the same charts in
     # current prices, the index worked out here: from 1910 (each nation's
     # index beginning inside the window, the UK's join in 1988, France's,
-    # Portugal's, Italy's and Spain's in 1996), per capita from 1990, and in
-    # the master currency (both checks).
-    "constant": ["--na:ca,us,gb,de,fr,pt,it,es", "-s:1910", "--constant", "--no-yield"],
-    "constant_pc": ["--na:ca,us,gb,de,fr,pt,it,es", "-s:1990", "--constant", "-p", "--no-yield"],
+    # Portugal's, Italy's, Spain's and the Netherlands' in 1996), per capita
+    # from 1990, and in the master currency (both checks).
+    "constant": ["--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:1910", "--constant", "--no-yield"],
+    "constant_pc": ["--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:1990", "--constant", "-p", "--no-yield"],
     "constant_master": ["--na:ca,us", "-s:2005", "--constant", "--master:usd", "--no-yield"],
     # Batch 13.4: the consumer price index, each point its month's index read
     # here: alone on the right axis from 1910 (each nation's index beginning
     # inside the window, the UK's join in 1988, France's in 1996), and seasonally adjusted on its
     # own axis outside the amounts per capita (the UK's and France's unadjusted, named so).
-    "cpi": ["--na:ca,us,gb,de,fr,pt,it,es", "-s:1910", "--cpi", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
-    "cpi_sa": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de,fr,pt,it,es", "-s:1945", "--cpi:sa", "-p", "--no-yield"],
+    "cpi": ["--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:1910", "--cpi", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
+    "cpi_sa": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:1945", "--cpi:sa", "-p", "--no-yield"],
     # Batch 16: West Germany's prices, each month's index and rise worked out here,
     # the two joins (1962-01, 1991-01) inside the window.
     "de_inflation_1949": ["--na:de", "-s:1949", "--inf"],
@@ -229,11 +229,12 @@ CASES: dict[str, list[str]] = {
     # 9.10, decision 178: the euro nations' 10-year yields from their own sources (until then this tool read every
     # nation after Germany as Germany, though no case drew one): France's from 1960, Portugal's from 1993-07,
     # Italy's from 1980, Eurostat's convergence yield before the OECD's first month (1991-03); each must be drawn from
-    # where its sources begin. Spain's from 1980, the OECD's (decision 180).
-    "euro_yields": ["--na:fr,pt,it,es", "-s:1960", "--y:10"],
+    # where its sources begin. Spain's from 1980, the OECD's (decision 180); the Netherlands' from 1959, the OECD's
+    # (decision 182).
+    "euro_yields": ["--na:fr,pt,it,es,nl", "-s:1960", "--y:10"],
     # 9.8, decision 176: the euro nations' variable rate beside their fixed bands, each nation's read as its own
-    # (Italy's since 9.9, decision 177; Spain's since 9.11, decision 180).
-    "euro_mortgages": ["--na:de,fr,pt,it,es", "-s:2000", "--mo:var,1-5,5-10,over10"],
+    # (Italy's since 9.9, decision 177; Spain's since 9.11, decision 180; the Netherlands' since 9.12, decision 182).
+    "euro_mortgages": ["--na:de,fr,pt,it,es,nl", "-s:2000", "--mo:var,1-5,5-10,over10"],
     # Batch 16: Germany's GDP from 1950, each figure worked out here across every join (1960, 1970, 1991), in euros
     # and per person (the published figures to 1959; West Germany's population through 1990 and 1991); and per
     # person beside a yield, where a figure first shows on a later chart date (1959's on 1960-01-01).
@@ -275,16 +276,16 @@ CASES: dict[str, list[str]] = {
     # same line drawn without them (``check_filled``): inflation on the yield axis and the price index on its own axis,
     # each month pinned at its middle, across the U.S.' missing 2025-10 (a break) and to the End's straight line; the
     # price index seasonally adjusted, the UK's join (1988-89) inside; the population cut at the window's edges.
-    "daily_inflation_cpi": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de,fr,pt,it,es", "-s:2015", "--inf", "--cpi", "--no-yield", "--daily"],
-    "daily_cpi_sa": ["--na:ca,us,gb,de,fr,pt,it,es", "-s:1985", "--cpi:sa", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
-    "daily_population": ["--na:ca,us,gb,de,fr,pt,it,es", "-s:1960", "--pop", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
+    "daily_inflation_cpi": ["--gdp", "--debt", "--interest", "--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:2015", "--inf", "--cpi", "--no-yield", "--daily"],
+    "daily_cpi_sa": ["--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:1985", "--cpi:sa", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
+    "daily_population": ["--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:1960", "--pop", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
     # Daily values with --constant (2026-11-22, after 9.5 found France's amounts at constant prices drawn blank in 9.3
     # and 9.4, and amounts before an index began drawn): each amount the same chart's in current prices, drawn with
     # Daily values too, over the index filled in on the day it is observed (``check_daily_constant``): from 1900, the
     # amounts of Canada and the UK beginning before their indexes (1914-01, 1914-07), France's join (1996-01) inside;
     # and per capita from 1990.
-    "daily_constant": ["--na:ca,us,gb,de,fr,pt,it,es", "-s:1900", "--constant", "--no-yield", "--daily"],
-    "daily_constant_pc": ["--na:ca,us,gb,de,fr,pt,it,es", "-s:1990", "--constant", "-p", "--no-yield", "--daily"],
+    "daily_constant": ["--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:1900", "--constant", "--no-yield", "--daily"],
+    "daily_constant_pc": ["--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:1990", "--constant", "-p", "--no-yield", "--daily"],
 }
 
 
@@ -409,6 +410,7 @@ EURO_YIELDS = {
     "pt": ("IRLTLT01PTM156N", None),
     "it": ("IRLTLT01ITM156N", ("IT", pd.Timestamp("1991-03-01"))),
     "es": ("IRLTLT01ESM156N", None),
+    "nl": ("IRLTLT01NLM156N", None),
 }
 
 
@@ -861,11 +863,12 @@ def price_index(nation: str) -> pd.Series:
 # written out here, not taken from the program's ``euro_data``.
 EURO_PRICE_INDEXES = {
     "fr": ("FR", "FRACPIALLMINMEI"), "pt": ("PT", "PRTCPIALLMINMEI"), "it": ("IT", "ITACPIALLMINMEI"), "es": ("ES", "ESPCPIALLMINMEI"),
+    "nl": ("NL", "NLDCPIALLMINMEI"),
 }
 
 
 def euro_price_index(geo: str, national_code: str) -> pd.Series:
-    """A euro-area nation's consumer price index read on its own (batch 14.3: France's, Portugal's, Italy's, Spain's), by month (a ``Period`` index): Eurostat's harmonised index (prc_hicp_minr) whole, and before its first month FRED's copy of the national index (the OECD's) scaled to it at that month.
+    """A euro-area nation's consumer price index read on its own (batch 14.3: France's, Portugal's, Italy's, Spain's, the Netherlands'), by month (a ``Period`` index): Eurostat's harmonised index (prc_hicp_minr) whole, and before its first month FRED's copy of the national index (the OECD's) scaled to it at that month.
 
     FRED's series is asked here whole, not read from its bake as the drawing
     reads it (a stopped series, never asked there), so the check covers the

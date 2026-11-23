@@ -446,7 +446,8 @@ def check_euro_reads_listed() -> None:
             "gov_10a_main": [{"sector": sector} for sector in levels],
             "namq_10_gdp": [{}], "namq_10_pe": [{}], "prc_hicp_minr": [{}],
             "bop_c6_q": pairs,
-            # Eurostat's months hold none of some pairs for some nations (Spain's goods and services, decision 180).
+            # Eurostat's months hold none of some pairs for some nations (Spain's goods and services, decision 180; the
+            # Netherlands' both pairs, decision 182).
             "bop_c6_m": [pair for pair in pairs if pair["bop_item"] not in de_data.EURO_MONTHS_MISSING.get(nation.geo, ())],
         }
         if nation.yield_history_from is not None:  # its 10-year before the OECD's (decision 178)

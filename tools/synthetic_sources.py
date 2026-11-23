@@ -271,6 +271,25 @@ _EURO = {
         },
         payments_from="1993Q1", months_from="2008-01", mortgage_bands=("I", "O", "P", "F"),
     ),
+    # The Netherlands' (batch 14.3, decision 182): the same shapes, its yields and mortgage rates a little below
+    # Spain's; no state level; its balance of payments from 2003-Q2 (its months never asked: none exist).
+    "NL": _EuroSynthetic(
+        key="nl", geo="NL", offset=-0.3, yield_series="IRLTLT01NLM156N", yield_from="1959-01-01",
+        cpi_series="NLDCPIALLMINMEI", cpi_last="2025-04-01", cpi_path=(15.8, 134.7),
+        sector_shares={"S13": 1.0, "S1311": 1.11, "S1313": 0.101, "S1314": 0.0056},
+        eurostat_paths={
+            "gov_10q_ggdebt": ("2000Q1", 255_000, 524_000),
+            "gov_10q_ggnfa": ("1999Q1", 4_300, 2_400),
+            "namq_10_gdp": ("1995Q1", 80_000, 304_000),
+            "namq_10_pe": ("1995Q1", 15_430, 18_170),
+        },
+        hicp_path=(50.0, 104.8), yearly_interest_path=(17_000, 8_500), gfs_early_path=(241_000, 230_000),
+        payments_paths={
+            ("CA", "CRE"): (105_000, 364_000), ("CA", "DEB"): (101_000, 347_000),
+            ("GS", "CRE"): (74_000, 260_000), ("GS", "DEB"): (66_000, 230_000),
+        },
+        payments_from="2003Q2", months_from="2008-01", mortgage_bands=("I", "O", "P", "F"),
+    ),
 }
 # Each nation's FRED series, by code.
 _EURO_YIELDS = {euro.yield_series: euro for euro in _EURO.values()}
