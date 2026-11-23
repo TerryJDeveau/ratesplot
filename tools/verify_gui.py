@@ -126,6 +126,8 @@ CHART_CASES = (
     "pt_rates", "pt_lv", "pt_nat", "all6", "cmp_mort_pt",
     # Batch 14.3, decision 177: Italy, the same, all seven nations.
     "it_rates", "it_lv", "it_nat", "all7", "cmp_mort_it",
+    # Batch 14.3, decision 180: Spain, the same with its four levels, all eight nations.
+    "es_rates", "es_lv", "es_nat", "all8", "cmp_mort_es",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -379,7 +381,8 @@ def check_reset(check: Check) -> None:
         app._reset()
         w.settle()
         check("Reset: the nation boxes as they were", {name: app.flag_vars[name].get() for name in nations} == nations
-              == {"cdn": True, "us": False, "uk": False, "germany": True, "france": False, "portugal": False, "italy": False}, nations)
+              == {"cdn": True, "us": False, "uk": False, "germany": True, "france": False, "portugal": False, "italy": False,
+                 "spain": False}, nations)
         check("Reset: the rest at the defaults (the policy rate off, Canada's Max blank, the default size)",
               not app.flag_vars["policy"].get() and w.text("cdn:max") == "" and w.text("dimensions") == "2048x1536",
               (app.flag_vars["policy"].get(), w.text("cdn:max"), w.text("dimensions")))
@@ -393,7 +396,8 @@ def check_reset(check: Check) -> None:
         # An unticked nation's last chart is kept off screen, its tab hidden: the tabs say what is shown.
         tabs = {key: app.notebook.tab(app.tabs[key], "state") for key in NATION_KEYS}
         check("Reset: Canada's and Germany's tabs shown, the others hidden",
-              tabs == {"cdn": "normal", "us": "hidden", "uk": "hidden", "de": "normal", "fr": "hidden", "pt": "hidden", "it": "hidden"}, tabs)
+              tabs == {"cdn": "normal", "us": "hidden", "uk": "hidden", "de": "normal", "fr": "hidden", "pt": "hidden", "it": "hidden",
+                      "es": "hidden"}, tabs)
         app._back()
         w.settle()
         check("Back after Reset: the choices as before", app._snapshot() == before)
@@ -900,7 +904,8 @@ def check_policy_terms(check: Check) -> None:
         captions = {n: str(editor(n).widgets[list(editor(n).boxes).index("market")].cget("text")) for n in NATION_KEYS}
         check("each nation's market box named for its rate (batch 24.5)",
               captions == {"cdn": "market (CORRA)", "us": "market (fed funds)", "uk": "market (SONIA)", "de": "market (€STR)",
-                           "fr": "market (€STR)", "pt": "market (€STR)", "it": "market (€STR)"},
+                           "fr": "market (€STR)", "pt": "market (€STR)", "it": "market (€STR)",
+                           "es": "market (€STR)"},
               captions)
         check("the target ticked in each", all(ticked(n) == ["target"] for n in NATION_KEYS), {n: ticked(n) for n in NATION_KEYS})
         check("greyed while the policy rate is off", all(not enabled(widget) for n in NATION_KEYS for widget in editor(n).widgets))
@@ -932,6 +937,7 @@ LEVEL_CAPTIONS = {
     "fr": ["Central", "Local"],
     "pt": ["Central", "Local"],
     "it": ["Central", "Local"],
+    "es": ["Central", "Regional", "Local", "Regional & Local"],
 }
 
 
@@ -1037,7 +1043,7 @@ def check_limits(check: Check) -> None:
         check("% right of Max, the currency right of Top",
               units == {"cdn:max": "%", "cdn:top": "C$", "us:max": "%", "us:top": "$", "uk:max": "%", "uk:top": "£", "de:max": "%", "de:top": "€",
                         "fr:max": "%", "fr:top": "€", "pt:max": "%", "pt:top": "€",
-                        "it:max": "%", "it:top": "€"},
+                        "it:max": "%", "it:top": "€", "es:max": "%", "es:top": "€"},
               units)
         check("every All box greyed while its box is blank", all(all_greyed(key) for key in app.all_boxes))
         w.typed("us:max", "8")
@@ -2677,12 +2683,13 @@ def check_batch30(check: Check) -> None:
         check("a box in each nation's panel, its own currency's code", labels == {
             "cdn": "Use CAD as the master currency", "us": "Use USD as the master currency",
             "uk": "Use GBP as the master currency", "de": "Use EUR as the master currency", "fr": "Use EUR as the master currency",
-            "pt": "Use EUR as the master currency", "it": "Use EUR as the master currency"}, labels)
+            "pt": "Use EUR as the master currency", "it": "Use EUR as the master currency",
+            "es": "Use EUR as the master currency"}, labels)
         check("none ticked, none greyed with two nations", all(t == (False, False) for t in ticks().values()), ticks())
         tick("us", True)
         check("the U.S.' ticked: --master:USD, the others unticked", "--master:USD" in w.command_tokens()
               and ticks() == {"cdn": (False, False), "us": (True, False), "uk": (False, False), "de": (False, False), "fr": (False, False),
-                              "pt": (False, False), "it": (False, False)}, ticks())
+                              "pt": (False, False), "it": (False, False), "es": (False, False)}, ticks())
         figure = app.figures["cdn"][0]
         check("the Canadian chart drawn in U.S. dollars, the rate on its axis", figure.axes[1].get_ylabel().startswith("Nominal USD (at ")
               and any(label.get_text().startswith("US$") for label in figure.axes[1].get_yticklabels()), figure.axes[1].get_ylabel())
@@ -2891,7 +2898,8 @@ def check_batch263(check: Check) -> None:
               and frames["country"].master.pack_slaves().index(frames["base"]) == frames["country"].master.pack_slaves().index(frames["compare"]) + 1)
         editor = app.choice_editors["base-nation"]
         check("its nations' boxes, the U.S. ticked, greyed while “Base nation” is unticked",
-              [widget.cget("text") for widget in editor.widgets] == ["Canada", "United States", "United Kingdom", "Germany", "France", "Portugal", "Italy"]
+              [widget.cget("text") for widget in editor.widgets] == ["Canada", "United States", "United Kingdom", "Germany", "France", "Portugal", "Italy",
+                                                                 "Spain"]
               and [value for value, variable in editor.boxes.items() if variable.get()] == ["us"]
               and not any(enabled(widget) for widget in editor.widgets))
         w.tick("base", True)
@@ -3254,9 +3262,11 @@ def check_batch133(check: Check) -> None:
     """Batch 13.3: the real yields as terms of their own: each panel offers its nation's, none ticked; a box ticked is written and drawn, dashed, in its nominal term's colour; a real yield alone."""
     with window(f"--na:ca,us,gb,de -s:2015 --no-gdp --no-debt --no-interest {END}") as w:
         app = w.app
-        # A nation offering one yield term has no list in its panel (France's, Portugal's and Italy's 10-year, batch 14.3).
+        # A nation offering one yield term has no list in its panel (France's, Portugal's, Italy's and Spain's 10-year,
+        # batch 14.3).
         listed = tuple(n for n in NATION_KEYS if f"{n}:yields" in app.choice_editors)
-        check("France, Portugal and Italy: one term, no yields list", not {"fr", "pt", "it"} & set(listed) and len(listed) == len(NATION_KEYS) - 3,
+        check("France, Portugal, Italy and Spain: one term, no yields list",
+              not {"fr", "pt", "it", "es"} & set(listed) and len(listed) == len(NATION_KEYS) - 4,
               listed)
 
         def editor(nation: str):

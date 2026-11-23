@@ -434,6 +434,9 @@ def check_euro_reads_listed() -> None:
     check(f"the euro nations whose 10-year reaches back by Eurostat's convergence yield alike in euro_data and de_data "
           f"({', '.join(with_history) or 'none'}; decision 178)",
           with_history == de_data.EURO_YIELD_HISTORY_GEOS, {"euro_data": with_history, "de_data": de_data.EURO_YIELD_HISTORY_GEOS})
+    with_state = tuple(nation.geo for nation in nations.values() if "p" in nation.level_sectors)
+    check(f"the euro nations with a state level alike in euro_data and de_data ({', '.join(with_state) or 'none'}; decision 180)",
+          with_state == de_data.EURO_STATE_LEVEL_GEOS, {"euro_data": with_state, "de_data": de_data.EURO_STATE_LEVEL_GEOS})
     pairs = [{"bop_item": item, "stk_flow": flow} for item in payments.EURO_PAYMENTS_ITEMS.values() for flow in payments.EURO_PAYMENTS_FLOWS]
     for nation in nations.values():
         levels = sorted({sector for sectors in nation.level_sectors.values() for sector in sectors})
@@ -442,7 +445,9 @@ def check_euro_reads_listed() -> None:
             "gov_10q_ggnfa": [{"sector": de_data.GENERAL_GOVERNMENT}],
             "gov_10a_main": [{"sector": sector} for sector in levels],
             "namq_10_gdp": [{}], "namq_10_pe": [{}], "prc_hicp_minr": [{}],
-            "bop_c6_q": pairs, "bop_c6_m": pairs,
+            "bop_c6_q": pairs,
+            # Eurostat's months hold none of some pairs for some nations (Spain's goods and services, decision 180).
+            "bop_c6_m": [pair for pair in pairs if pair["bop_item"] not in de_data.EURO_MONTHS_MISSING.get(nation.geo, ())],
         }
         if nation.yield_history_from is not None:  # its 10-year before the OECD's (decision 178)
             read["irt_lt_mcby_m"] = [{}]
