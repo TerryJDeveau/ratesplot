@@ -252,6 +252,25 @@ _EURO = {
         payments_from="1995Q1", months_from="2008-01", mortgage_bands=("I", "O", "P", "F"),
         yield_history_path=(14.0, 4.7),
     ),
+    # Spain's (batch 14.3, decision 180): the same shapes, its yields and mortgage rates between France's and
+    # Portugal's; a state level (S1312, its autonomous communities), its quarters from 1995.
+    "ES": _EuroSynthetic(
+        key="es", geo="ES", offset=0.1, yield_series="IRLTLT01ESM156N", yield_from="1980-01-01",
+        cpi_series="ESPCPIALLMINMEI", cpi_last="2025-03-01", cpi_path=(1.6, 125.5),
+        sector_shares={"S13": 1.0, "S1311": 0.915, "S1312": 0.20, "S1313": 0.012, "S1314": 0.077},
+        eurostat_paths={
+            "gov_10q_ggdebt": ("1995Q1", 280_000, 1_763_000),
+            "gov_10q_ggnfa": ("1995Q1", 6_000, 13_200),
+            "namq_10_gdp": ("1995Q1", 110_000, 441_000),
+            "namq_10_pe": ("1995Q1", 39_300, 49_850),
+        },
+        hicp_path=(50.5, 105.9), yearly_interest_path=(24_000, 40_400), gfs_early_path=(300_000, 370_000),
+        payments_paths={
+            ("CA", "CRE"): (35_000, 212_000), ("CA", "DEB"): (37_000, 203_000),
+            ("GS", "CRE"): (30_000, 168_000), ("GS", "DEB"): (33_000, 153_000),
+        },
+        payments_from="1993Q1", months_from="2008-01", mortgage_bands=("I", "O", "P", "F"),
+    ),
 }
 # Each nation's FRED series, by code.
 _EURO_YIELDS = {euro.yield_series: euro for euro in _EURO.values()}

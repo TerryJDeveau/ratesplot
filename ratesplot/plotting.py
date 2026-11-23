@@ -110,6 +110,7 @@ from .config import (
     SPREAD_INVERSION_ALPHA,
     TERM_COLORS,
     DE,
+    ES,
     FR,
     IT,
     PT,
@@ -185,6 +186,7 @@ from .euro_data import (
     FRANCE,
     ITALY,
     PORTUGAL,
+    SPAIN,
     EuroNation,
     fetch_components,
     fetch_debt,
@@ -395,6 +397,7 @@ def add_euro_yield_lines(ax: Axes, yields: pd.DataFrame, config: PlotConfig, *, 
 add_fr_yield_lines = partial(add_euro_yield_lines, key="fr")
 add_pt_yield_lines = partial(add_euro_yield_lines, key="pt")
 add_it_yield_lines = partial(add_euro_yield_lines, key="it")
+add_es_yield_lines = partial(add_euro_yield_lines, key="es")
 
 
 def add_stepped_yield_lines(
@@ -1691,6 +1694,7 @@ def _euro_preparer(
 prepare_fr = _euro_preparer(FRANCE, FR)
 prepare_pt = _euro_preparer(PORTUGAL, PT)
 prepare_it = _euro_preparer(ITALY, IT)
+prepare_es = _euro_preparer(SPAIN, ES)
 
 
 @dataclass(frozen=True)
@@ -1704,8 +1708,8 @@ class Country:
     draw_yield_lines: YieldLineDrawer
 
 
-# In drawing order (Canadian, then U.S., then the UK's, Germany's, France's, Portugal's and Italy's), as the command line
-# always has.
+# In drawing order (Canadian, then U.S., then the UK's, Germany's, France's, Portugal's, Italy's and Spain's), as the
+# command line always has.
 COUNTRIES: tuple[Country, ...] = (
     Country("cdn", "show_cdn", CDN, prepare_cdn, add_canadian_yield_lines),
     Country("us", "show_us", US, prepare_us, add_us_yield_lines),
@@ -1714,6 +1718,7 @@ COUNTRIES: tuple[Country, ...] = (
     Country("fr", "show_fr", FR, prepare_fr, add_fr_yield_lines),
     Country("pt", "show_pt", PT, prepare_pt, add_pt_yield_lines),
     Country("it", "show_it", IT, prepare_it, add_it_yield_lines),
+    Country("es", "show_es", ES, prepare_es, add_es_yield_lines),
 )
 
 
@@ -2144,3 +2149,4 @@ def run_euro_nation(key: str, config: PlotConfig, again: Callable[[], PlotConfig
 run_fr = partial(run_euro_nation, "fr")
 run_pt = partial(run_euro_nation, "pt")
 run_it = partial(run_euro_nation, "it")
+run_es = partial(run_euro_nation, "es")

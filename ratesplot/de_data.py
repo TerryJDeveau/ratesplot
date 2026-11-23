@@ -408,16 +408,42 @@ EURO_EUROSTAT_SERIES_READ: dict[str, tuple[dict[str, str], ...]] = {
     "bop_c6_m": _EURO_PAYMENTS_READ,
 }
 # The euro-area nations' codes (``euro_data.EURO_NATIONS``' ``geo``, in its order).
-EURO_GEOS = ("FR", "PT", "IT")
+EURO_GEOS = ("FR", "PT", "IT", "ES")
 # The euro nations whose 10-year reaches back before the OECD's by Eurostat's convergence-criterion yield (decision
 # 178: Italy's; ``euro_data.EuroNation.yield_history_from``, checked alike by ``tools/check_baked.py``), and the one
 # series read for it, baked as the others are.
 EURO_YIELD_HISTORY_GEOS = ("IT",)
 EURO_YIELD_HISTORY_READ: dict[str, tuple[dict[str, str], ...]] = {"irt_lt_mcby_m": ({},)}
+# The euro nations with a state level (S1312: Spain's autonomous communities, decision 180), whose debt by quarter and
+# interest by year are read beside the two levels every one has (``euro_data.EuroNation.level_sectors``' "p" and "n",
+# checked alike by ``tools/check_baked.py``).
+EURO_STATE_LEVEL_GEOS = ("ES",)
+EURO_STATE_LEVEL_READ: dict[str, tuple[dict[str, str], ...]] = {
+    "gov_10q_ggdebt": ({"sector": "S1312"},),
+    "gov_10a_main": ({"sector": "S1312"},),
+}
+# The balance of payments' items Eurostat's months hold no figure of, by nation (Spain's goods and services: all 429
+# of its months empty, measured 2026-11-23, its current account's from 2008-01): not read, so that pair ends at its
+# quarters (``payments._with_eurostat_months``).
+EURO_MONTHS_MISSING = {"ES": ("GS",)}
+
+
+def _euro_series_read(geo: str) -> dict[str, tuple[dict[str, str], ...]]:
+    """A euro nation's Eurostat series read: ``EURO_EUROSTAT_SERIES_READ`` with its state level, its 10-year's history and without its months missing."""
+    read = dict(EURO_EUROSTAT_SERIES_READ)
+    if geo in EURO_STATE_LEVEL_GEOS:
+        read |= {dataset: read[dataset] + extra for dataset, extra in EURO_STATE_LEVEL_READ.items()}
+    if geo in EURO_YIELD_HISTORY_GEOS:
+        read |= EURO_YIELD_HISTORY_READ
+    missing = EURO_MONTHS_MISSING.get(geo, ())
+    read["bop_c6_m"] = tuple(chosen for chosen in read["bop_c6_m"] if chosen["bop_item"] not in missing)
+    return read
+
+
 # Every nation's series read, by its Eurostat code. Germany's files carry no code (named before France's were baked).
 EUROSTAT_SERIES_READ_BY_GEO = {
     "DE": EUROSTAT_SERIES_READ,
-    **{geo: EURO_EUROSTAT_SERIES_READ | (EURO_YIELD_HISTORY_READ if geo in EURO_YIELD_HISTORY_GEOS else {}) for geo in EURO_GEOS},
+    **{geo: _euro_series_read(geo) for geo in EURO_GEOS},
 }
 EUROSTAT_BAKED_SOURCE = "eurostat"
 

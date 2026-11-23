@@ -386,6 +386,15 @@ CASES: list[list[str]] = [
     ["--na:it", "--mo"], ["--na:it", "--sp"], ["--na:it", "--policy"], ["--na:it", "--cpi:sa"], ["--na:it", "--inf"],
     ["--na:fr,it", "--com"], ["--na:pt,it", "--com:mortgage"], ["--na:us,it", "--com", "--base:it"],
     ["--na:it", "--master:eur"], ["--ital:max:6"], ["--na:it", "--it:top:USD3t"], ["--na:it,pt", "--it:max:9", "--pt:max:6"],
+    # Batch 14.3, decision 180: Spain, as Italy: --nations:es (or esp), its prefixes --es: and --esp:, its own
+    # defaults, its four levels (f, p, m and n), a term it lacks, --cpi:sa, the comparison and a base with it, all eight
+    # nations; "--espa" names no nation.
+    ["--na:es"], ["--na:esp"], ["--na:ca,us,gb,de,fr,pt,it,es"], ["--na:es", "--es:max:9"], ["--na:es", "--esp:top:4t"],
+    ["--na:es", "--es:d:fpm"], ["--na:es", "--es:d:n"], ["--na:es", "--es:d:s"], ["--na:es", "--es:y:2,10"],
+    ["--na:es", "--es:mo:1-5"], ["--na:es", "--es:mo:var,over10"], ["--na:de,fr,pt,it,es", "--mo:var"],
+    ["--na:es", "--mo"], ["--na:es", "--sp"], ["--na:es", "--policy"], ["--na:es", "--cpi:sa"], ["--na:es", "--inf"],
+    ["--na:it,es", "--com"], ["--na:pt,es", "--com:mortgage"], ["--na:us,es", "--com", "--base:es"],
+    ["--na:es", "--master:eur"], ["--espa:max:6"], ["--na:es", "--es:top:USD3t"], ["--na:es,it", "--es:max:9", "--it:max:6"],
 ]
 
 
