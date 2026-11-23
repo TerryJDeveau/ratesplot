@@ -226,6 +226,11 @@ CASES: dict[str, list[str]] = {
     "de_cpi_1948": ["--na:de", "-s:1948", "--cpi"],
     # Batch 16: Germany's mortgage bands across the Bundesbank's older rates and the join to the ECB's (2003-01).
     "de_mortgages_1982": ["--na:de", "-s:1982", "--e:2006", "--mo:1-5,5-10,over10"],
+    # 9.10, decision 178: the euro nations' 10-year yields from their own sources (until then this tool read every
+    # nation after Germany as Germany, though no case drew one): France's from 1960, Portugal's from 1993-07,
+    # Italy's from 1980, Eurostat's convergence yield before the OECD's first month (1991-03); each must be drawn from
+    # where its sources begin.
+    "euro_yields": ["--na:fr,pt,it", "-s:1960", "--y:10"],
     # 9.8, decision 176: the euro nations' variable rate beside their fixed bands, each nation's read as its own
     # (Italy's since 9.9, decision 177).
     "euro_mortgages": ["--na:de,fr,pt,it", "-s:2000", "--mo:var,1-5,5-10,over10"],
@@ -396,8 +401,37 @@ def de_real_term(column: str) -> Source:
     return Source(f"between the inflation-linked bonds, {years:g} years", read)
 
 
+# The euro area's nations after Germany (batch 14.3): FRED's copy of the OECD's 10-year, and, where a nation's reaches
+# back before it (decision 178: Italy's), Eurostat's convergence-criterion yield and the OECD's first month, before which
+# it is drawn; written out here, not taken from the program's ``euro_data``.
+EURO_YIELDS = {
+    "fr": ("IRLTLT01FRM156N", None),
+    "pt": ("IRLTLT01PTM156N", None),
+    "it": ("IRLTLT01ITM156N", ("IT", pd.Timestamp("1991-03-01"))),
+}
+
+
+def eurostat_yield(geo: str, **kwargs) -> Source:
+    """Eurostat's convergence-criterion yield (``irt_lt_mcby_m``), its whole answer, not the program's bake; each month dated by its first day."""
+
+    def read() -> pd.Series:
+        values = de_data.parse_jsonstat(de_data.eurostat_download("irt_lt_mcby_m", geo=geo), "MCBY", "int_rt")
+        values.index = pd.DatetimeIndex(values.index).to_period("M").to_timestamp()
+        return _clean(values)
+
+    return Source(f"Eurostat irt_lt_mcby_m {geo}", read, **kwargs)
+
+
 def yield_sources(nation: str, column: str) -> list[Source]:
     """The sources of one nation's yield term, newest first."""
+    if nation in EURO_YIELDS:  # 9.10: each its own (they fell through to Germany's below)
+        code, history = EURO_YIELDS[nation]
+        sources = [fred(code, monthly=True, carry_days=MONTHLY_CARRY_DAYS)]
+        if history is not None:
+            geo, until = history
+            sources.append(within(eurostat_yield(geo, monthly=True, carry_days=MONTHLY_CARRY_DAYS),
+                                  f"Eurostat irt_lt_mcby_m {geo} before {until:%Y-%m}", end=until))
+        return sources
     if nation == "us":
         return [fred(us_data.US_YIELD_SERIES[column])]
     if nation == "cdn":
@@ -720,6 +754,13 @@ def check_case(name: str, tokens: list[str]) -> bool:
                         read[source.name] = pd.Series(dtype=float)
                         print(f"  {key:4} {line.label[:44]:44} note  {source.name} could not be read ({exc})", file=sys.__stdout__)
             result = match(line.values, sources, read)
+            if line.label.endswith(" Yield") and key in EURO_YIELDS and not line.values.empty:
+                # 9.10: a euro yield is drawn from where its sources begin in the window (a join lost would leave out its
+                # first years, and every point left would still match).
+                begins = min((values.index[0] for values in read.values() if not values.empty), default=None)
+                wanted = max(begins, config.start).to_period("M") if begins is not None else None
+                if wanted is not None and line.values.index[0].to_period("M") > wanted:
+                    result.failures.append(f"drawn from {line.values.index[0]:%Y-%m}, its sources from {wanted}")
             parts = [f"{source} {span(dates)}" for source, dates in result.explained.items()]
             carried = [f"{len(gaps):,} carried from {source} (longest {max(gaps)} days)" for source, gaps in result.carried.items()]
             status = "FAIL" if result.failures else "OK"

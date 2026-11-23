@@ -189,6 +189,8 @@ class _EuroSynthetic:
     payments_from: str  # its first quarter
     months_from: str  # its first month
     mortgage_bands: tuple[str, ...] = ("I", "O", "P")  # the ECB's bands of its mortgage rates (rates.EURO_MORTGAGE_SERIES)
+    # Eurostat's convergence-criterion yield, first and last, monthly from 1980-01 (decision 178: Italy's), or None.
+    yield_history_path: tuple[float, float] | None = None
 
 
 # The euro area's nations after Germany, by Eurostat's code. France's (batch 14.3): no state level, the social security
@@ -248,6 +250,7 @@ _EURO = {
             ("GS", "CRE"): (50_000, 198_000), ("GS", "DEB"): (45_000, 186_000),
         },
         payments_from="1995Q1", months_from="2008-01", mortgage_bands=("I", "O", "P", "F"),
+        yield_history_path=(14.0, 4.7),
     ),
 }
 # Each nation's FRED series, by code.
@@ -925,6 +928,8 @@ _EUROSTAT_SERIES = {
         *((f"{dataset}.{item}.{geo}.{flow}", (dataset, {"bop_item": item, "stk_flow": flow}, geo))
           for dataset in ("bop_c6_q", "bop_c6_m") for item in ("CA", "GS") for flow in ("CRE", "DEB")),
     )},
+    # Italy's 10-year before the OECD's (decision 178); a tree whose de_data has no such query skips it.
+    **{f"irt_lt_mcby_m.{geo}": ("irt_lt_mcby_m", {}, geo) for geo, euro in _EURO.items() if euro.yield_history_path},
 }
 
 
@@ -972,6 +977,13 @@ def eurostat(url: str, params: tuple) -> bytes:
         # A euro-area nation after Germany (batch 14.3): its own paths, the same shapes as Germany's answers.
         euro = _EURO[geo]
         shares = euro.sector_shares
+        if dataset == "irt_lt_mcby_m" and euro.yield_history_path:
+            # The convergence-criterion yield (decision 178): monthly from 1980-01, its measure in int_rt.
+            months = pd.period_range("1980-01", "2026-09", freq="M")
+            times = [f"{month.year}-{month.month:02d}" for month in months]
+            level = dict(zip(times, np.round(_growth(months.to_timestamp(), *euro.yield_history_path, f"{euro.key}_mcby"), 3)))
+            dims = [("freq", ["M"]), ("int_rt", ["MCBY"]), ("geo", [geo]), ("time", times)]
+            return _jsonstat("EMU convergence criterion series", dims, lambda c: level[c["time"]])
         if dataset == "prc_hicp_minr":
             months = pd.period_range("1996-01", "2026-09", freq="M")
             times = [f"{month.year}-{month.month:02d}" for month in months]

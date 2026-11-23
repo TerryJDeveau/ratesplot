@@ -349,16 +349,22 @@ EUROSTAT_QUERIES = {
          "bop_item": ("CA", "GS"), "stk_flow": ("CRE", "DEB")},
         "MIO_NAC",
     ),
+    # The EMU convergence-criterion long-term government bond yield, a monthly average, in percent (batch 14.3,
+    # decision 178: Italy's 10-year before the OECD's first month, ``euro_data.EuroNation.yield_history_from``).
+    # Measured 2026-11-22: Italy's from 1980-01, equal to the OECD's to 0.005 in all 428 months both have, with no
+    # step where the OECD's begins (13.78, 13.77 at 1991-03). Its one measure sits in ``int_rt`` (MCBY), there being
+    # no unit dimension (``EUROSTAT_UNIT_DIMENSIONS``).
+    "irt_lt_mcby_m": ({"geo": "DE"}, "MCBY"),
 }
-_EUROSTAT_MULTIPLIER = {"MIO_NAC": MILLION, "CP_MNAC": MILLION, "THS_PER": THOUSAND, "NR": 1, "I25": 1}
+_EUROSTAT_MULTIPLIER = {"MIO_NAC": MILLION, "CP_MNAC": MILLION, "THS_PER": THOUSAND, "NR": 1, "I25": 1, "MCBY": 1}
 # The dimension holding a dataset's unit where it is not ``unit`` (``parse_jsonstat``).
-EUROSTAT_UNIT_DIMENSIONS = {"bop_c6_q": "currency", "bop_c6_m": "currency"}
+EUROSTAT_UNIT_DIMENSIONS = {"bop_c6_q": "currency", "bop_c6_m": "currency", "irt_lt_mcby_m": "int_rt"}
 # Each dataset's frequency (its one ``freq`` category), measured 2026-10-22;
 # an answer of another raises (``eurostat_download``), since how
 # ``sinceTimePeriod`` is written depends on it (``_eurostat_since``).
 _EUROSTAT_FREQUENCIES = {
     "gov_10q_ggdebt": "Q", "gov_10q_ggnfa": "Q", "gov_10dd_edpt1": "A", "namq_10_gdp": "Q", "namq_10_pe": "Q", "demo_pjan": "A",
-    "prc_hicp_minr": "M", "gov_10a_main": "A", "bop_c6_q": "Q", "bop_c6_m": "M",
+    "prc_hicp_minr": "M", "gov_10a_main": "A", "bop_c6_q": "Q", "bop_c6_m": "M", "irt_lt_mcby_m": "M",
 }
 # Levels of government (--debt:LETTERS): Eurostat's subsectors of each.
 # "n" is the Länder and local government together.
@@ -403,8 +409,16 @@ EURO_EUROSTAT_SERIES_READ: dict[str, tuple[dict[str, str], ...]] = {
 }
 # The euro-area nations' codes (``euro_data.EURO_NATIONS``' ``geo``, in its order).
 EURO_GEOS = ("FR", "PT", "IT")
+# The euro nations whose 10-year reaches back before the OECD's by Eurostat's convergence-criterion yield (decision
+# 178: Italy's; ``euro_data.EuroNation.yield_history_from``, checked alike by ``tools/check_baked.py``), and the one
+# series read for it, baked as the others are.
+EURO_YIELD_HISTORY_GEOS = ("IT",)
+EURO_YIELD_HISTORY_READ: dict[str, tuple[dict[str, str], ...]] = {"irt_lt_mcby_m": ({},)}
 # Every nation's series read, by its Eurostat code. Germany's files carry no code (named before France's were baked).
-EUROSTAT_SERIES_READ_BY_GEO = {"DE": EUROSTAT_SERIES_READ, **dict.fromkeys(EURO_GEOS, EURO_EUROSTAT_SERIES_READ)}
+EUROSTAT_SERIES_READ_BY_GEO = {
+    "DE": EUROSTAT_SERIES_READ,
+    **{geo: EURO_EUROSTAT_SERIES_READ | (EURO_YIELD_HISTORY_READ if geo in EURO_YIELD_HISTORY_GEOS else {}) for geo in EURO_GEOS},
+}
 EUROSTAT_BAKED_SOURCE = "eurostat"
 
 # A quarter's population is dated this many days after the quarter begins:
