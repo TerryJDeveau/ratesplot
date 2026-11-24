@@ -42,6 +42,11 @@ same request from a later start removed, by the pass when the copies are turned 
 once when a later copy is kept; a copy with no later one kept however old; a whole series,
 a feed, a damaged copy and a fresh temporary file left alone.
 
+Last in pass 2 (9.15, decision 183 (6)), Statistics Canada's bake as the daily job runs it, without
+copies: with every table's ZIP meeting Cloudflare's check, each table is read whole from the WDS, the
+files the same byte for byte as from the ZIPs, a note per table, the host not marked down for the day;
+with the WDS checked too, nothing is baked, the host is marked down, and nothing more is asked.
+
 Usage (from the project root)::
 
     python tools/check_last_good.py
@@ -54,6 +59,8 @@ at its start (``tools/temp_folders.py``, batch 41.1).
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import pickle
@@ -78,7 +85,7 @@ from matplotlib.figure import Figure  # noqa: E402
 
 import synthetic_sources  # noqa: E402
 import temp_folders  # noqa: E402
-from ratesplot import baked, cdn_data, cli, http  # noqa: E402
+from ratesplot import bake, baked, cdn_data, cli, http  # noqa: E402
 from ratesplot import web  # noqa: E402  (imported first: it turns on the page's caches, undone below)
 from ratesplot.console import this_thread_output_to  # noqa: E402
 from ratesplot.frontend import png_bytes  # noqa: E402
@@ -513,6 +520,67 @@ def check_day_marks(first: dict[str, bytes]) -> None:
     forget_day_marks()
 
 
+def _challenge(url: str) -> requests.Response:
+    """Cloudflare's challenge in place of an answer: a 403 whose ``Cf-Mitigated`` says "challenge" (``http.BotCheck``)."""
+    response = requests.Response()
+    response._content = b"<html>Just a moment...</html>"
+    response.status_code = 403
+    response.headers["Cf-Mitigated"] = "challenge"
+    response.url = url
+    return response
+
+
+def check_zip_challenge() -> None:
+    """9.15 (decision 183 (6)): the bake of a table whose ZIP meets Cloudflare's check reads its WDS whole, the same files; the ZIP's check marks nothing.
+
+    As the bake runs: no copies. Statistics Canada's requests are counted by kind (ZIP or WDS).
+    """
+    host = cdn_data.STATCAN_HOST
+    zips = http.CHALLENGED_APART[0]
+    tables = len(cdn_data.STATCAN_SERIES_READ)
+    vectors = sum(len(read.vectors) for read in cdn_data.STATCAN_SERIES_READ.values())
+    kinds: Counter = Counter()
+    challenged = ()  # the kinds of address answered with the challenge
+
+    def counting_get(session, url, params=None, **kwargs) -> requests.Response:
+        kind = "zip" if url.startswith(zips) else "wds" if urlsplit(url).netloc == host else "other"
+        kinds[kind] += 1
+        return _challenge(url) if kind in challenged else answering_get(session, url, params, **kwargs)
+
+    def bake_into(name: str) -> tuple[dict[str, bytes], str]:
+        kinds.clear()
+        forget_day_marks()
+        folder = temp_folders.make(name)
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            bake.bake_statcan_history(folder)
+        return {path.name: path.read_bytes() for path in sorted(folder.glob("*.csv"))}, printed.getvalue()
+
+    kept_get, copies = requests.Session.get, http._copies_folder
+    requests.Session.get = counting_get  # type: ignore[assignment]
+    http._copies_folder = None
+    try:
+        from_zips, _printed = bake_into("statcan_zips")
+        check("ZIP challenge: the bake with every ZIP answering, each table's ZIP asked once (9.15)",
+              len(from_zips) == vectors and kinds == Counter(zip=tables), (len(from_zips), dict(kinds)))
+        challenged = ("zip",)
+        from_wds, printed = bake_into("statcan_wds")
+        notes = [line for line in printed.splitlines() if "its ZIP met a bot check" in line]
+        check("ZIP challenge: every ZIP challenged, each table read whole from the WDS, the same files byte for byte (9.15)",
+              from_wds == from_zips and kinds == Counter(zip=tables, wds=tables), (len(from_wds), dict(kinds)))
+        check("ZIP challenge: a note per table, the host not marked down for the day (9.15)",
+              len(notes) == tables and http._checked_down(host) is None, (len(notes), notes[:1], http._down_today.get(host)))
+        challenged = ("zip", "wds")
+        from_neither, printed = bake_into("statcan_neither")
+        check("ZIP challenge: the WDS challenged too, nothing baked, the host marked down, nothing more asked (9.15)",
+              not from_neither and http._checked_down(host) is not None and kinds == Counter(zip=1, wds=1)
+              and printed.count("not baked") == vectors, (len(from_neither), dict(kinds), printed.count("not baked")))
+    finally:
+        requests.Session.get = kept_get  # type: ignore[assignment]
+        http._copies_folder = copies
+        forget_day_marks()
+
+
 def main() -> int:
     # web's import turned on the page's memory cache, which would answer pass 2 from pass 1.
     http._download_cache = None
@@ -571,6 +639,7 @@ def main() -> int:
     check("the web page: drawn as in pass 1, its notice listing the copies",
           drawing.error is None and not drawing.failed and drawing.pngs == first["default"] and bool(drawing.copies),
           (drawing.error, drawing.failed, drawing.copies))
+    check_zip_challenge()
 
     print("[last good] pass 3: the same failures without the copies (as before batch 20)")
     http._copies_folder = None

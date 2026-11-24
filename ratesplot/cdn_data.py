@@ -94,12 +94,14 @@ from .config import (
     STATCAN_WDS_RANGE_END,
     STATCAN_WDS_RANGE_URL,
     STATCAN_WDS_URL,
+    STATCAN_WDS_WHOLE_START,
     YIELD_COLUMNS,
     YIELD_TERMS,
     PlotConfig,
     component_column,
 )
 from .http import (
+    BotCheck,
     canadian_get,
     canadian_post,
     downloads_of,
@@ -528,6 +530,27 @@ def statcan_download(table_id: str, start: pd.Timestamp | None = None) -> pd.Dat
     if start is None:
         return _statcan_vectors(statcan_zip_table(table_id), table_id)
     return _statcan_wds_range(table_id, start)
+
+
+def statcan_whole(table_id: str) -> pd.DataFrame:
+    """Every period of the vectors read of one live table, for its bake: its ZIP, or the WDS where the ZIP meets a bot check (9.15).
+
+    Decision 183 (6). The ZIP first, the download the program has always
+    baked, whose rows are found by the table's labels and so would show a
+    vector replaced. Where it meets Cloudflare's check, as every ZIP did on
+    2026-11-18 while the WDS answered (batch 49), the same vectors from the
+    WDS, every one of the table's in one request, from before any period
+    (``STATCAN_WDS_WHOLE_START``): measured 2026-11-24 for all 33, the same
+    periods and values as the ZIPs and the bake, float for float. The ZIP's
+    check marks nothing (``http.CHALLENGED_APART``), so the WDS is asked;
+    a note says which table was read so.
+    """
+    try:
+        return statcan_download(table_id)
+    except BotCheck as challenge:
+        print(f"  Note: Statistics Canada table {table_id}: its ZIP met a bot check ({challenge}); "
+              "its vectors read whole from the Web Data Service instead.")
+        return statcan_download(table_id, pd.Timestamp(STATCAN_WDS_WHOLE_START))
 
 
 def statcan_table(table_id: str) -> pd.DataFrame:

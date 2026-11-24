@@ -13,7 +13,8 @@ on 127.0.0.1 answers each address as its path says, and counts the requests it r
   partway  an answer promising 1000 bytes, broken off after 10;
   hang     the connection held open, never answered (the program's timeout ends it);
   bad      a one-column CSV, which FRED's reader refuses;
-  429      Too Many Requests (9.14).
+  429      Too Many Requests (9.14);
+  challenge  Cloudflare's: a 403 whose Cf-Mitigated header says "challenge" (9.15).
 
 Each kind is asked through ``http.canadian_get`` (requests, as every source but FRED) and
 ``http.fetch_fred_csv`` (urllib, FRED's), and a refused connection (a port nothing listens
@@ -39,6 +40,11 @@ it: without a key nothing is asked; a key is sent in the request's header and th
 returned without its request, so no copy of it holds the key; a 429 is the host not
 answering, asked nothing more in the drawing, and marks it down until its day (UTC) ends,
 so the next drawing asks it nothing either (its terms: nothing asked after a 429).
+
+Then Cloudflare's challenge (9.15), the server standing in for Statistics Canada's host, checked
+once a day: met by a ZIP's address (``http.CHALLENGED_APART``) it is the ZIP's own, so the host is
+asked again in the drawing and not marked down for the day; met by any other of its addresses, the
+host is asked nothing more and marked down.
 
 Usage (from the project root)::
 
@@ -122,6 +128,11 @@ class Server:
             self._send(connection, "200 OK", b"observation_date\n2026-01-01\n")
         elif kind == "page":
             self._send(connection, "200 OK", self.PAGE, "text/html")
+        elif kind == "challenge":  # Cloudflare's (9.15): a 403 whose Cf-Mitigated header says "challenge"
+            body = b"<html>Just a moment...</html>"
+            connection.sendall(b"HTTP/1.1 403 Forbidden\r\nCf-Mitigated: challenge\r\nContent-Type: text/html\r\n"
+                               + f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode() + body)
+            connection.close()
         elif kind in ("404", "503", "429"):
             self._send(connection, {"404": "404 Not Found", "503": "503 Service Unavailable",
                                     "429": "429 Too Many Requests"}[kind], b"")
@@ -312,6 +323,36 @@ def check_webstat(server: Server) -> None:
         http._down_today.pop(host, None)
 
 
+def check_challenged_apart(server: Server) -> None:
+    """9.15: a bot check met by a Statistics Canada ZIP's address is the ZIP's, not its host's; one met elsewhere marks the host.
+
+    The server stands in for a host checked once a day (``http.DAILY_CHECKED_HOSTS``), its ``challenge/zip/``
+    addresses for the ZIPs (``http.CHALLENGED_APART``).
+    """
+    host = f"127.0.0.1:{server.port}"
+    zip_address, other_address = server.url("challenge") + "/zip/t-eng.zip", server.url("challenge") + "/wds"
+    kept = http.DAILY_CHECKED_HOSTS, http.CHALLENGED_APART
+    http.DAILY_CHECKED_HOSTS, http.CHALLENGED_APART = (host,), (server.url("challenge") + "/zip/",)
+    try:
+        http._down_today.pop(host, None)
+        server.asked.clear()
+        with contextlib.redirect_stdout(io.StringIO()), http.drawing_downloads():
+            first = outcome_of(via_requests, zip_address)
+            later = outcome_of(via_requests, server.url("ok"))
+        check(f"a ZIP's bot check ({first}): the host asked again in the drawing ({later}), not marked down for the day",
+              first == "BotCheck" and later == "answered" and server.asked["challenge"] == 1 and server.asked["ok"] == 1
+              and host not in http._down_today, (dict(server.asked), http._down_today.get(host)))
+        server.asked.clear()
+        with contextlib.redirect_stdout(io.StringIO()), http.drawing_downloads():
+            first = outcome_of(via_requests, other_address)
+            later = outcome_of(via_requests, server.url("ok") + "/again")
+        check(f"a bot check elsewhere on the host ({first}): asked nothing more ({later}), marked down for the day",
+              first == "BotCheck" and server.asked["ok"] == 0 and host in http._down_today, (dict(server.asked), later))
+    finally:
+        http.DAILY_CHECKED_HOSTS, http.CHALLENGED_APART = kept
+        http._down_today.pop(host, None)
+
+
 def main() -> int:
     http._download_cache = None
     http._copies_folder = None
@@ -322,6 +363,7 @@ def main() -> int:
     check_hosts(server, Server())
     check_reused_line(server)
     check_webstat(server)
+    check_challenged_apart(server)
     passed = sum(RESULTS)
     print(f"[requests] {passed} of {len(RESULTS)} checks passed")
     return 0 if passed == len(RESULTS) else 1

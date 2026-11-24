@@ -32,7 +32,10 @@ such as a month's average mortgage rate dated by the month's last day).
 A job on GitHub (`.github/workflows/rebake.yml`, run each day at 06:37 UTC) bakes that history
 again: a series whose only change is new values is committed straight to `main`; one whose
 history changed (a value revised, a date added within it, dates the source no longer gives) goes
-to a pull request from the branch `rebake-review`, and merging it accepts the change.
+to a pull request from the branch `rebake-review`, and merging it accepts the change. Statistics
+Canada's tables are baked from their ZIP files; a table whose ZIP meets the site's bot check (as
+every ZIP did on 2026-11-18, while the Web Data Service answered) is read whole from the Web Data
+Service instead, which gives the same values.
 
 ## Three ways to run it
 

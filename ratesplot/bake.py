@@ -74,7 +74,7 @@ from .cdn_data import (
     STATCAN_PAYMENTS_SIDES,
     STATCAN_SERIES_READ,
     _statcan_vectors,
-    statcan_download,
+    statcan_whole,
     statcan_zip_table,
     statcan_zip_table_with_metadata,
     valet_download,
@@ -3653,6 +3653,8 @@ def bake_statcan_history(folder: Path | None = None, *, accept_withdrawn: bool =
     ``cdn_data.statcan_download`` reads it (its rows found by the table's
     labels, and checked): dated by each period's first day, as Statistics
     Canada dates it, in the table's unit, a period without a value left out.
+    A table whose ZIP meets a bot check is read whole from the WDS instead,
+    the same values (9.15, ``cdn_data.statcan_whole``).
     """
     print("Baking Statistics Canada's live tables …")
     series = statcan_baked_series()
@@ -3662,7 +3664,7 @@ def bake_statcan_history(folder: Path | None = None, *, accept_withdrawn: bool =
         table = series[code]
         if table not in answers:
             try:
-                answers[table] = statcan_download(table)
+                answers[table] = statcan_whole(table)
             except Exception as exc:
                 answers[table] = exc
         answer = answers[table]
