@@ -616,6 +616,12 @@ CASES: dict[str, list[str]] = {
     "pt_y_sp2010": ["--na:pt", "--sp", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:2010"],
     "pt_y2026": ["--na:pt", "--y:2,3,5,7,10", "--no-gdp", "--no-debt", "--no-interest", "-s:2026"],
     "cmp_10y_pt_daily": ["--na:de,fr,pt", "--com", "-s:2010"],
+    # 9.14 (decision 185): France's eight daily terms from Webstat, the 10-year the OECD's monthly before 2004-11
+    # (the join in the window from 2000, and over its whole span from 1960); its two spreads; the last weeks.
+    "fr_yields_all": ["--na:fr", "--y:1,2,3,5,7,10,20,30", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:2000"],
+    "fr_y10_1960": ["--na:fr", "--y:10", "--no-gdp", "--no-debt", "--no-interest", "-s:1960"],
+    "fr_y_sp2005": ["--na:fr", "--sp:10y-2y,30y-10y", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:2005"],
+    "fr_y2026": ["--na:fr", "--y:1,2,3,5,7,10,20,30", "--no-gdp", "--no-debt", "--no-interest", "-s:2026"],
 }
 
 
