@@ -197,6 +197,10 @@ STATCAN_WDS_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorsAn
 # any period, is accepted (measured 2026-10-22).
 STATCAN_WDS_RANGE_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorByReferencePeriodRange"
 STATCAN_WDS_RANGE_END = "9999-12-31"
+# A table read whole from the same service, where its ZIP meets Cloudflare's check (9.15, ``cdn_data.statcan_whole``):
+# from a day before any period. Measured 2026-11-24 for all 33 vectors read, the earliest from 1914: every period,
+# float for float as the ZIPs and the bake give them.
+STATCAN_WDS_WHOLE_START = "1800-01-01"
 # The host of the three: checked once a day, its series given stand-ins on a day it fails (batch 49, ``http.DAILY_CHECKED_HOSTS``).
 STATCAN_HOST = "www150.statcan.gc.ca"
 # The IMF's SDMX 2.1 data service (no key; Terry's decision 169, 2026-11-19): a flow and a series key, from a

@@ -39,6 +39,7 @@ from .config import (
     RETRY_WAIT_SECONDS,
     SOURCE_NAMES,
     STATCAN_HOST,
+    STATCAN_TABLE_URL,
     UK_SESSION,
     WEBSTAT_HOST,
     WEBSTAT_KEY_VARIABLE,
@@ -744,6 +745,12 @@ def forget_downloads_older_than(seconds: float) -> int:
 DAILY_CHECKED_HOSTS = (STATCAN_HOST,)
 DOWN_TODAY_FILE = "down_today.json"
 CHECKING_TIMEZONE = "America/Toronto"
+# 9.15 (decision 183 (6)): addresses whose bot check is their own, not their host's. On 2026-11-18 Cloudflare's
+# challenge met every one of Statistics Canada's table ZIPs while its Web Data Service, on the same host, answered
+# (batch 49). So a bot check met by an address starting with one of these marks neither its host unavailable in the
+# drawing (``host_turn``) nor down for the day (``_cached``), and the bake reads the table from the WDS instead
+# (``cdn_data.statcan_whole``). Any other failure of such an address is its host's, as before.
+CHALLENGED_APART = (STATCAN_TABLE_URL.split("{", 1)[0],)
 # A host whose terms say to ask nothing more once it answers 429, Too Many Requests: the Banque de France's Webstat
 # (9.14; its terms, read 2026-11-24, allow 10,000 requests a day). Its 429 marks it down as a failed check does, until
 # its own day ends: UTC, when its quota is reset (its X-RateLimit-Reset, 00:00 UTC, measured 2026-11-24).
@@ -904,7 +911,7 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     except Exception as failure:
         if drawing is not None:
             drawing.failed[key] = failure
-        if earlier is None and host in DAILY_CHECKED_HOSTS and _unavailable(failure):
+        if earlier is None and host in DAILY_CHECKED_HOSTS and _the_hosts_failure(_url_of(key), failure):
             _mark_down_today(host, failure)  # the day's check failed (batch 49)
         elif earlier is None and host in RATE_LIMITED_HOSTS and _too_many_requests(failure):
             _mark_down_today(host, failure)  # its quota spent (9.14): nothing more asked of it today
@@ -924,7 +931,12 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
 
 def host_of(key: tuple) -> str:
     """The host a download's cache key asks (as ``host_turn`` names it): FRED's for ``("fred", ...)``, else its address's."""
-    return urlsplit(FRED_CSV_URL if key[0] == "fred" else key[1]).netloc
+    return urlsplit(_url_of(key)).netloc
+
+
+def _url_of(key: tuple) -> str:
+    """The address a download's cache key asks: FRED's for ``("fred", ...)``, else its own."""
+    return FRED_CSV_URL if key[0] == "fred" else key[1]
 
 
 class BotCheck(RuntimeError):
@@ -1045,7 +1057,7 @@ def host_turn(url: str) -> Iterator[None]:
                 # Which source failed, for a chart not drawn (``source_failure``); urllib's errors do not say.
                 with contextlib.suppress(AttributeError):
                     setattr(failure, _HOST_ATTRIBUTE, host)
-            if drawing is not None and _unavailable(failure):
+            if drawing is not None and _the_hosts_failure(url, failure):
                 drawing.unavailable.setdefault(host, failure)
             raise
 
@@ -1118,6 +1130,13 @@ def _unavailable(failure: BaseException) -> bool:
         return False
     # urllib: a URLError holding why the connection was never made, or a timeout while reading.
     return isinstance(failure, (urllib.error.URLError, TimeoutError))
+
+
+def _the_hosts_failure(url: str, failure: BaseException) -> bool:
+    """Whether ``failure`` of a request to ``url`` says its host is not answering (``_unavailable``), a bot check met by an address of ``CHALLENGED_APART`` being the request's own (9.15)."""
+    if isinstance(failure, BotCheck) and url.startswith(CHALLENGED_APART):
+        return False
+    return _unavailable(failure)
 
 
 def _with_retries(describe: str, attempt_once: Callable[[], T]) -> T:
