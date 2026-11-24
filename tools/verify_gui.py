@@ -3293,9 +3293,10 @@ def check_batch133(check: Check) -> None:
         }, real)
         check("none ticked at the start", not any(editor(n).boxes[value].get() for n in listed for value in real[n]))
         check("a box's caption is its term", str(editor("us").widgets[list(editor("us").boxes).index("r10")].cget("text")) == "r10")
-        check("the row captioned “real:” in each panel", all(
-            any(widget.winfo_class() == "TLabel" and str(widget.cget("text")) == "real:" for widget in all_widgets(editor(n).frame)) for n in listed
-        ))
+        captioned = {n: any(widget.winfo_class() == "TLabel" and str(widget.cget("text")) == "real:" for widget in all_widgets(editor(n).frame))
+                     for n in listed}
+        check("the row captioned “real:” in each panel offering real terms, none in Portugal's (no real yields, 9.13)",
+              captioned == {n: bool(real[n]) for n in listed}, captioned)
         editor("us").boxes["r10"].set(True)
         editor("us").box_changed("r10")
         w.settle()
