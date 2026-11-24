@@ -71,6 +71,9 @@ from ratesplot.config import (  # noqa: E402
     MARKET_TIMEZONE,
     QUOTE_SYMBOLS,
     REAL_YIELD_TERMS,
+    STATCAN_CDN_MONTHLY_TRADE_VECTORS,
+    STATCAN_CDN_PAYMENTS_TABLE,
+    STATCAN_CDN_PAYMENTS_VECTORS,
     UK_DEBT_COLUMN,
     UK_INTEREST_COLUMN,
     UK_NET_DEBT_COLUMN,
@@ -241,6 +244,22 @@ def _fred_monthly_trade(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
         gap = (whole.loc[whole["count"] == 3, "sum"] - quarters).dropna().abs()
         lasts.append(months.index[-1])
         notes.append(f"{monthly_id} to {months.index[-1]:%Y-%m} ({quarterly_id} to {quarters.index[-1]:%Y-%m-%d}), quarters' sums within {gap.max():.0f} million of it over {len(gap)}")
+    return min(lasts), "; ".join(notes)
+
+
+def _statcan_monthly_trade(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """Batch 43.3c: Canada's monthly trade (``config.STATCAN_CDN_MONTHLY_TRADE_VECTORS``), its newest month, and how far its quarters' sums of goods and services stand from the quarterly "Goods and services" they extend."""
+    vectors = [vector for pair in STATCAN_CDN_MONTHLY_TRADE_VECTORS for vector in pair]
+    months = cdn_data.statcan_wds_range_of(vectors, pd.Timestamp("2007-01-01"), 6, "Canada's monthly trade", "Statistics Canada's monthly trade")
+    quarterly = cdn_data.statcan_table(STATCAN_CDN_PAYMENTS_TABLE)
+    notes, lasts = [], []
+    for side, (goods, services), quarterly_id in zip(("exports", "imports"), STATCAN_CDN_MONTHLY_TRADE_VECTORS, STATCAN_CDN_PAYMENTS_VECTORS["trade"]):
+        both = (months[goods] + months[services]).dropna()
+        quarters = quarterly[quarterly_id].dropna()
+        whole = both.resample("QS").agg(["sum", "count"])
+        gap = ((whole.loc[whole["count"] == 3, "sum"] - quarters) / quarters).dropna().abs() * 100
+        lasts.append(both.index[-1])
+        notes.append(f"{side} to {both.index[-1]:%Y-%m} ({quarterly_id} to {quarters.index[-1]:%Y-%m-%d}), quarters' sums within {gap.max():.2f} % of it over {len(gap)}")
     return min(lasts), "; ".join(notes)
 
 
@@ -824,6 +843,8 @@ CHECKS: tuple[Check, ...] = (
     Check("fred_population", "FRED B230RC0Q173SBEA population", QUARTERLY, _fred("B230RC0Q173SBEA", quarterly=True)),
     # Batch 43.3: the U.S. trade each month, its quarters after the international transactions' last.
     Check("fred_trade_monthly", "FRED BOPTEXP, BOPTIMP monthly trade (--payments:trade, steering the current account)", MONTHLY, _fred_monthly_trade),
+    Check("statcan_trade_monthly", "StatCan 12-10-0011 goods, 12-10-0144 services, monthly trade (--payments:trade, steering the current account)", MONTHLY,
+          _statcan_monthly_trade),
     # Batch 9.1: each nation's official rate (--policy, --policy:target) and its market's (--policy:market).
     Check("fred_target", "FRED FEDFUNDS, DFEDTAR, DFEDTARL, DFEDTARU fed funds target (--policy)", DAILY, _rate(rates.us_policy_target)),
     Check("fred_dff", "FRED DFF effective federal funds rate (--policy:market)", DAILY, _rate(rates.us_policy_market)),
