@@ -101,6 +101,11 @@ QUOTES = 4  # Friday's last quotes on the Tuesday after a long weekend
 # 2026-11-16 and 23, 17:00 UTC), so its last day is ten days old the Monday before the next posting, twelve after a
 # holiday.
 BPSTAT_WEEKLY = 12
+# Each nation's daily 10-year (``euro_data.EuroNation.daily_yields``): how far its monthly averages may stand from the
+# OECD's monthly 10-year on FRED before a warning (measured 2026-11-23 and 24): Portugal's equal to 0.006 in 399 of 400
+# months; France's (Webstat's, 9.14) interpolated at ten years between two OATs, the OECD's a benchmark bond, up to 0.12
+# apart (2017-11) from 2008 to 2023, within 0.005 from 2025.
+DAILY_AGAINST_OECD = {"pt": 0.02, "fr": 0.15}
 # A quarter's figures come out one to three months after it ends and stay the
 # newest until the next quarter's do: up to about half a year.
 QUARTERLY = 200
@@ -600,13 +605,13 @@ def _euro_yields(nation: euro_data.EuroNation, config: PlotConfig) -> tuple[pd.T
     return _last(values), f"10-Year {values.iloc[-1]:.2f} (monthly average of {values.index[-1]:%Y-%m}), from {values.index[0]:%Y-%m}"
 
 
-def _bpstat_yields(nation: euro_data.EuroNation, config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
-    """Each of the nation's daily terms on BPstat (9.13): its last day and value, as drawn; the age the 10-year's."""
+def _daily_yields(nation: euro_data.EuroNation, config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """Each of the nation's daily terms (BPstat's, 9.13; Webstat's, 9.14): its last day and value, as drawn; the age the 10-year's."""
     terms = tuple(term for term, column in YIELD_TERMS.items() if column in nation.daily_yields)
     frame = euro_data.fetch_yields(nation, replace(config, yield_terms=terms, start=min(nation.yield_earliest.values())))
     missing = [column for column in nation.daily_yields if column not in frame.columns]
     if missing:
-        raise RuntimeError(f"BPstat terms not drawn: {', '.join(missing)}")
+        raise RuntimeError(f"{euro_data.daily_source_name(nation)} terms not drawn: {', '.join(missing)}")
     parts = []
     for column in nation.daily_yields:
         values = frame[column].dropna()
@@ -697,15 +702,17 @@ def _euro_joins(nation: euro_data.EuroNation, _config: PlotConfig) -> tuple[pd.T
     oecd = fetch_fred_csv(code).set_index("DATE")[code].dropna()
     oecd.index = pd.DatetimeIndex(oecd.index).strftime("%Y-%m")
     if "10-Year" in nation.daily_yields:
-        daily = euro_data.bpstat_series(nation.daily_yields["10-Year"]).dropna()
+        daily = euro_data.daily_series(nation, "10-Year").dropna()
+        source = euro_data.daily_source_name(nation)
         months = daily.groupby(daily.index.strftime("%Y-%m")).mean()
         months = months.iloc[:-1]  # the month under way is not yet the OECD's whole month
         both = oecd.index.intersection(months.index)
         gap = (oecd[both] - months[both]).abs()
-        notes.append(f"10-year: BPstat's daily, each month's average, less FRED {code} (the OECD's), largest {gap.max():.3f} "
+        notes.append(f"10-year: the {source}'s daily, each month's average, less FRED {code} (the OECD's), largest {gap.max():.3f} "
                      f"({gap.idxmax()}), {int((gap > 0.006).sum())} of {len(both)} months over 0.006, {both[0]} to {both[-1]}")
-        if gap.max() > 0.02:
-            print(f"  Warning: {nation.adjective} 10-year: BPstat's monthly average is {gap.max():.3f} from the OECD's in {gap.idxmax()}.")
+        if gap.max() > DAILY_AGAINST_OECD[nation.key]:
+            print(f"  Warning: {nation.adjective} 10-year: the {source}'s monthly average is {gap.max():.3f} from the OECD's in "
+                  f"{gap.idxmax()}.")
     eurostat = _eurostat_flat("irt_lt_mcby_m", {"geo": nation.geo})
     both = oecd.index.intersection(eurostat.index)
     gap = (oecd[both] - eurostat[both]).abs()
@@ -737,8 +744,9 @@ def _euro_checks(nation: euro_data.EuroNation) -> tuple[Check, ...]:
     key, adjective = nation.key, nation.adjective
     components = partial(euro_data.fetch_components, nation)
     return (
-        *((Check(f"bpstat_{key}", f"BPstat {adjective} daily yields, {', '.join(nation.daily_yields)}", BPSTAT_WEEKLY,
-                 partial(_bpstat_yields, nation)),) if nation.daily_yields else
+        *((Check(f"{nation.daily_source}_{key}", f"{euro_data.daily_source_name(nation)} {adjective} daily yields, "
+                 f"{', '.join(nation.daily_yields)}", BPSTAT_WEEKLY if nation.daily_source == euro_data.BPSTAT_BAKED_SOURCE
+                 else DAILY, partial(_daily_yields, nation)),) if nation.daily_yields else
           (Check(f"fred_{key}10", f"FRED {nation.yield_series['10-Year']} {adjective} 10-year (OECD, monthly average)", MONTHLY,
                  partial(_euro_yields, nation)),)),
         *(Check(f"ecb_{key}_mortgage{_EURO_BAND_NAMES[term][0]}", f"ECB MIR {adjective} housing loans, {_EURO_BAND_NAMES[term][1]}", MONTHLY,

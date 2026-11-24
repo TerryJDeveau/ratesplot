@@ -96,10 +96,11 @@ _STARTING_ASKED = {
     "us": {"fred.stlouisfed.org": 9, "home.treasury.gov": 1, "api.fiscaldata.treasury.gov": 1},
     "uk": {"www.bankofengland.co.uk": 3, "www.ons.gov.uk": 3},
     "de": {"api.statistiken.bundesbank.de": 8, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 4},
-    # France's (batch 14.3), counted from its default chart's requests: the 10-year, the ECB's year ends, debt, GDP, interest.
-    "fr": {"fred.stlouisfed.org": 1, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
-    # Portugal's (batch 14.3), the same requests as France's.
-    "pt": {"fred.stlouisfed.org": 1, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
+    # France's (batch 14.3), counted from its default chart's requests: the 10-year (since 9.14 the OECD's monthly
+    # and Webstat's daily), the ECB's year ends, debt, GDP, interest.
+    "fr": {"fred.stlouisfed.org": 1, "webstat.banque-france.fr": 1, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
+    # Portugal's (batch 14.3), the same requests as France's, its yields BPstat's three (since 9.13).
+    "pt": {"bpstat.bportugal.pt": 3, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
     # Italy's (batch 14.3), the same requests as France's.
     "it": {"fred.stlouisfed.org": 1, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
     # Spain's (batch 14.3), the same requests as France's.

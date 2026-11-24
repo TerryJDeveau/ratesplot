@@ -20,6 +20,10 @@ The Bank of England's yields: 20y–10y from 1963 as monthly steps until 1999, d
 
 The Bundesbank's yields: 10y–2y from 1972-09 as month-end steps, daily from 1997-08; 30y–10y from 2000-01, daily from 2000-08.
 
+## France
+
+The Banque de France's yields, daily, none at the start: any two of its terms from 2004-11, with the 30-year from 2006-10. Before 2004-11 the 10-year is a monthly average and no other term exists, so no spread is drawn there.
+
 ## Portugal
 
 The Banco de Portugal's yields, daily: 10y–2y at the start, from 1993-07, broken where the 2-year has gaps (several months a year before 1998, and 2002-07 to 2003-02). In 2011 and early 2012 the 2-year yielded up to 8 points more than the 10-year.

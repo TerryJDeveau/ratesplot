@@ -208,6 +208,14 @@ IMF_QGFS_FLOW = "IMF.STA,QGFS,12.0.0"
 # domain, a series chosen by ``series_ids``, from ``obs_since`` (an ISO day); its answer JSON-stat 2.0
 # (``euro_data.parse_bpstat``). Portugal's daily yields (``euro_data.PORTUGAL``).
 BPSTAT_DATA_URL = "https://bpstat.bportugal.pt/data/v1/domains/{domain}/datasets/{dataset}/"
+# The Banque de France's Webstat (Terry's decisions 169, 179 and 183; his key, 2026-11-24): the export of its dataset
+# of observations, one series chosen by ``series_key``, from a day (``time_period_start``); its answer a JSON list of
+# rows (``euro_data.parse_webstat``). France's daily yields (``euro_data.FRANCE``). It answers nothing without a key,
+# sent in each request's header alone and never written anywhere: read from the environment variable named here
+# (``http.webstat_key``). Its terms: 10,000 requests a day, nothing more asked after a 429 (``http.RATE_LIMITED_HOSTS``).
+WEBSTAT_EXPORT_URL = "https://webstat.banque-france.fr/api/explore/v2.1/catalog/datasets/observations/exports/json"
+WEBSTAT_HOST = "webstat.banque-france.fr"
+WEBSTAT_KEY_VARIABLE = "WEBSTAT_API_KEY"
 
 # Each source's name in the message log, by the host its requests go to: a
 # source that fails gets one warning per drawing, which names it once (batch
@@ -230,6 +238,7 @@ SOURCE_NAMES = {
     "www2.census.gov": "Census Bureau",
     "api.imf.org": "IMF",
     "bpstat.bportugal.pt": "Banco de Portugal",
+    WEBSTAT_HOST: "Banque de France",
 }
 
 _BROWSER_HEADERS = {
@@ -263,6 +272,9 @@ DE_SESSION.headers.update(_BROWSER_HEADERS | {"Accept-Language": "en-GB,en;q=0.9
 # measured with (2026-11-23). No browser's headers were tried: its robots.txt sent curl a refusal page, and no header
 # was varied to get past it.
 BPSTAT_SESSION = requests.Session()
+# The Banque de France's Webstat (9.14): a session of its own with python-requests' own headers, as it was measured
+# (2026-11-24); its key goes in each request's header, never in the session's (``http.webstat_get``).
+WEBSTAT_SESSION = requests.Session()
 # The quote feed is an extra: one quick try (asked once more only as every
 # request is, RETRY_WAIT_SECONDS), then the chart is drawn without it (with a
 # warning).
@@ -1343,14 +1355,18 @@ NATIONS: tuple[Nation, ...] = (
     ),
     # Batch 14.3 (decision 171): drawn only when asked for, as the UK and
     # Germany are; named by --nations:fr (or fra, its ISO three-letter code),
-    # a value for it alone "--fr:max:8". One yield term so far, the 10-year
-    # (the OECD's monthly averages on FRED, from 1960): no daily French
-    # yields on the hosts the program asks (Webstat's wait on a key). So no
-    # spread of its own by default. Its levels: central and local government
-    # (France has no state level; the social security funds are no level of
-    # the chart, as Germany's). Its mortgage bands are Germany's (the ECB's).
+    # a value for it alone "--fr:max:8". Eight daily yields from the Banque
+    # de France's Webstat since 9.14 (decision 185): its constant-maturity
+    # OAT yields at 1, 2, 3, 5, 7, 10, 20 and 30 years, from 2004-11 (the
+    # 30-year 2006-10), the 10-year the OECD's monthly averages before, from
+    # 1960. The 10-year alone ticked at the start and no spread, as before:
+    # a chart starts where every curve drawn has data, so any other term
+    # would start the default chart in 2004 or 2006, not 1995. Its levels:
+    # central and local government (France has no state level; the social
+    # security funds are no level of the chart, as Germany's). Its mortgage
+    # bands are Germany's (the ECB's).
     Nation(
-        "fr", "France", ("fr", "fra"), ("10y",), "French",
+        "fr", "France", ("fr", "fra"), ("1y", "2y", "3y", "5y", "7y", "10y", "20y", "30y"), "French",
         shown_by_default=False, market_timezone="Europe/Paris", currency="EUR", overnight_rate="€STR",
         level_boxes=(("f", "Central"), ("m", "Local")),
         own_defaults=(
@@ -2034,9 +2050,10 @@ FR = CountryMetadata(
     key="fr",
     country_name="France",
     currency_prefix=CURRENCY_SYMBOLS["EUR"],
-    # The OECD's long-term rate: the 10-year benchmark bond's yield, a
-    # monthly average.
-    yield_title="French Government 10-Year Yield (monthly average)",
+    # The Banque de France's daily yields of its OATs at constant maturity
+    # (Webstat's TEC series, 9.14); the 10-year the OECD's monthly average
+    # before 2004-11.
+    yield_title="French OAT Yields (constant maturity)",
     title_nation="French",
     title_short="FRA",
     debt_column=FR_DEBT_COLUMN,

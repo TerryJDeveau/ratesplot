@@ -12,6 +12,7 @@ import json
 import os
 import pickle
 import re
+import sys
 import threading
 import time
 import traceback
@@ -39,6 +40,9 @@ from .config import (
     SOURCE_NAMES,
     STATCAN_HOST,
     UK_SESSION,
+    WEBSTAT_HOST,
+    WEBSTAT_KEY_VARIABLE,
+    WEBSTAT_SESSION,
 )
 from .console import current_writer, this_thread_output_to
 
@@ -116,6 +120,8 @@ _START_PARAMETERS = (
 )
 # Treasury's Debt to the Penny asks from a day by a filter (latest.py): record_date:gte:2026-06-30.
 _FILTER_FROM = re.compile(r"(\w+):gte:(\d{4}-\d{2}-\d{2})")
+# Webstat asks from a day in its query (euro_data.webstat_download, 9.14): ... and time_period_start>=date'2026-09-24'.
+_WHERE_FROM = re.compile(r"(.* and time_period_start>=date')(\d{4}-\d{2}-\d{2})(')")
 # The Bank of England's months, in English whatever the machine's locale (as uk_data writes them).
 _ENGLISH_MONTHS = {name: number for number, name in enumerate(
     ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), start=1)}
@@ -204,6 +210,8 @@ def _request_and_start(key: tuple) -> tuple[tuple, date] | None:
             day, emptied = _start_day(value), (name, "")
         elif name == "filter" and (match := _FILTER_FROM.fullmatch(value)):
             day, emptied = _start_day(match[2]), (name, f"{match[1]}:gte:")
+        elif name == "where" and (match := _WHERE_FROM.fullmatch(value)):
+            day, emptied = _start_day(match[2]), (name, match[1] + match[3])
         else:
             continue
         if day is not None:
@@ -736,6 +744,10 @@ def forget_downloads_older_than(seconds: float) -> int:
 DAILY_CHECKED_HOSTS = (STATCAN_HOST,)
 DOWN_TODAY_FILE = "down_today.json"
 CHECKING_TIMEZONE = "America/Toronto"
+# A host whose terms say to ask nothing more once it answers 429, Too Many Requests: the Banque de France's Webstat
+# (9.14; its terms, read 2026-11-24, allow 10,000 requests a day). Its 429 marks it down as a failed check does, until
+# its own day ends: UTC, when its quota is reset (its X-RateLimit-Reset, 00:00 UTC, measured 2026-11-24).
+RATE_LIMITED_HOSTS = {WEBSTAT_HOST: "UTC"}
 _down_today: dict[str, tuple[str, str, float]] = {}  # host -> (its day, why it failed, when: time.time())
 _down_today_lock = threading.Lock()
 
@@ -748,10 +760,21 @@ class HostDownToday(RuntimeError):
         self.host = host
 
 
-def checking_day(wall: float | None = None) -> str:
-    """The calendar day in Ottawa (``CHECKING_TIMEZONE``) at ``wall`` (time.time(), now by default), as ``YYYY-MM-DD``."""
-    when = pd.Timestamp(time.time() if wall is None else wall, unit="s", tz="UTC").tz_convert(CHECKING_TIMEZONE)
+def checking_day(wall: float | None = None, zone: str = CHECKING_TIMEZONE) -> str:
+    """The calendar day in Ottawa (``CHECKING_TIMEZONE``), or ``zone``, at ``wall`` (time.time(), now by default), as ``YYYY-MM-DD``."""
+    when = pd.Timestamp(time.time() if wall is None else wall, unit="s", tz="UTC").tz_convert(zone)
     return f"{when:%Y-%m-%d}"
+
+
+def _day_zone(host: str) -> str:
+    """The zone whose calendar day a mark on ``host`` lasts: its own for a host with a daily quota (``RATE_LIMITED_HOSTS``), else Ottawa's."""
+    return RATE_LIMITED_HOSTS.get(host, CHECKING_TIMEZONE)
+
+
+def _too_many_requests(failure: BaseException) -> bool:
+    """Whether ``failure`` is a 429, Too Many Requests (requests' ``raise_for_status``)."""
+    return (isinstance(failure, requests.HTTPError) and failure.response is not None
+            and failure.response.status_code == 429)
 
 
 def host_down_today(host: str) -> HostDownToday | None:
@@ -763,7 +786,7 @@ def host_down_today(host: str) -> HostDownToday | None:
     """
     with _down_today_lock:
         mark = _down_today.get(host)
-    if mark is None or mark[0] != checking_day():
+    if mark is None or mark[0] != checking_day(zone=_day_zone(host)):
         return None
     return HostDownToday(host, mark[1], mark[2])
 
@@ -777,7 +800,7 @@ def _checked_down(host: str) -> HostDownToday | None:
         except (OSError, ValueError, KeyError, TypeError):
             pass  # no file, or no mark for the host: not found down
         else:
-            if day == checking_day():
+            if day == checking_day(zone=_day_zone(host)):
                 with _down_today_lock:
                     _down_today[host] = (day, why, wall)
     return host_down_today(host)
@@ -786,7 +809,7 @@ def _checked_down(host: str) -> HostDownToday | None:
 def _mark_down_today(host: str, failure: BaseException) -> None:
     """Mark ``host`` down until the day ends, in this process and in the copies' folder (above)."""
     wall = time.time()
-    mark = (checking_day(wall), _why(failure), wall)
+    mark = (checking_day(wall, _day_zone(host)), _why(failure), wall)
     with _down_today_lock:
         _down_today[host] = mark
         if _copies_folder is None:
@@ -865,8 +888,8 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
     earlier = drawing.failed.get(key) if drawing is not None else None
     if earlier is None and drawing is not None:
         earlier = drawing.unavailable.get(host)
-    if earlier is None and host in DAILY_CHECKED_HOSTS:
-        earlier = _checked_down(host)  # failed today's check (batch 49): not asked again before the day ends
+    if earlier is None and (host in DAILY_CHECKED_HOSTS or host in RATE_LIMITED_HOSTS):
+        earlier = _checked_down(host)  # failed today's check (batch 49), or said 429 (9.14): not asked before the day ends
     try:
         if earlier is not None:
             # With this call's traceback only: the object is the one raised before, whose
@@ -883,6 +906,8 @@ def _cached(key: tuple, download: Callable[[], T]) -> T:
             drawing.failed[key] = failure
         if earlier is None and host in DAILY_CHECKED_HOSTS and _unavailable(failure):
             _mark_down_today(host, failure)  # the day's check failed (batch 49)
+        elif earlier is None and host in RATE_LIMITED_HOSTS and _too_many_requests(failure):
+            _mark_down_today(host, failure)  # its quota spent (9.14): nothing more asked of it today
         kept = _last_good_copy(key) if _copies_folder is not None else None
         if kept is None:
             raise
@@ -1073,7 +1098,7 @@ def _server_error(failure: BaseException) -> bool:
 
 
 def _unavailable(failure: BaseException) -> bool:
-    """Whether ``failure`` says its host is not answering now: a timeout, a connection refused or never made, an outage page, a bot check.
+    """Whether ``failure`` says its host is not answering now: a timeout, a connection refused or never made, an outage page, a bot check, a 429 (9.14).
 
     Terry, 2026-10-22 (decision 52): "once a host fails as unavailable
     (timeout after retries, refused connection, outage page, bot check), ask
@@ -1082,6 +1107,8 @@ def _unavailable(failure: BaseException) -> bool:
     an answer that cannot be read) is not the host's.
     """
     if isinstance(failure, (BotCheck, SourcePage, HostDownToday, requests.Timeout)):
+        return True
+    if _too_many_requests(failure):  # 429: the host asks to be asked nothing more for now (9.14)
         return True
     if _dropped_part_way(failure) or _server_error(failure):
         return False
@@ -1161,17 +1188,29 @@ def _session_get(
     timeout: int,
     cached: bool = True,
     missing_ok: bool = False,
+    secret_headers: Callable[[], dict[str, str]] | None = None,
 ) -> requests.Response | None:
     """GET ``url`` through ``session``, asked once more for a dropped connection or a server error (``_with_retries``); cached under ``(tag, url, params)`` unless ``cached`` is False.
 
     With ``missing_ok`` a 404 returns None at once: the thing does not exist
     (yet), and asking again will not change that.
+    ``secret_headers`` (Webstat's key, 9.14): headers sent with this request
+    alone, read as it is downloaded (so a harness answering from its own
+    cache needs none), never part of the cache's key; the answer is returned
+    without its request (``Response.request``, and each redirect's), which
+    holds them, since an answer is kept on disk as it is (the last good
+    copies, a harness's cache).
     """
+    headers: dict[str, str] | None = None
 
     def attempt() -> requests.Response | None:
         # The answer checked in the host's turn, so an outage page or a bot check marks it unavailable (host_turn).
         with host_turn(url):
-            response = session.get(url, params=params, timeout=timeout)
+            response = session.get(url, params=params, timeout=timeout, headers=headers)
+            if secret_headers is not None:
+                response.request = None  # type: ignore[assignment]
+                for earlier in response.history:
+                    earlier.request = None  # type: ignore[assignment]
             # Before the status: the check's own page may be a 400, which would be read as the request's own failure.
             if any(path in response.url for path in _BOT_CHECK_PATHS):
                 raise BotCheck(urlsplit(url).netloc)
@@ -1186,6 +1225,9 @@ def _session_get(
         return response
 
     def download() -> requests.Response | None:
+        nonlocal headers
+        if secret_headers is not None:
+            headers = secret_headers()  # before the download is logged: without a key, none is made
         log_download(url)
         return _with_retries(f"{tag.capitalize()} request", attempt)
 
@@ -1270,6 +1312,58 @@ def bpstat_get(
 ) -> requests.Response:
     """GET a Banco de Portugal BPstat URL (``euro_data.bpstat_download``, 9.13), asked once more and cached as the others are."""
     response = _session_get(BPSTAT_SESSION, "bpstat", url, params, timeout=timeout)
+    assert response is not None  # only missing_ok returns None
+    return response
+
+
+class NoWebstatKey(RuntimeError):
+    """No key for the Banque de France's Webstat, whose API answers nothing without one (``webstat_key``): no request made."""
+
+
+def webstat_key() -> str | None:
+    """The Banque de France's Webstat key (Terry's, 2026-11-24), or None: the environment variable ``WEBSTAT_KEY_VARIABLE``, else, on Windows, the user's variable of that name in the registry.
+
+    The registry serves a program started before the variable was set, which
+    the user's variables reach only at its next start. On the web page the
+    app's secrets, which Streamlit puts in the environment as it starts; in
+    the daily job, the repository's secret. The key is never printed, logged
+    or written: it goes in a request's header alone (``webstat_get``).
+    """
+    key = os.environ.get(WEBSTAT_KEY_VARIABLE, "").strip()
+    if key or sys.platform != "win32":
+        return key or None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as variables:
+            key, _kind = winreg.QueryValueEx(variables, WEBSTAT_KEY_VARIABLE)
+    except OSError:  # no such variable
+        return None
+    return str(key).strip() or None
+
+
+def _webstat_headers() -> dict[str, str]:
+    """The header that carries Webstat's key; ``NoWebstatKey`` without one."""
+    key = webstat_key()
+    if key is None:
+        raise NoWebstatKey(f"no key: the environment variable {WEBSTAT_KEY_VARIABLE} is not set")
+    return {"Authorization": f"Apikey {key}"}
+
+
+def webstat_get(
+    url: str,
+    params: dict | None = None,
+    *,
+    timeout: int = HTTP_TIMEOUT_SECONDS,
+) -> requests.Response:
+    """GET a Banque de France Webstat URL (``euro_data.webstat_download``, 9.14), its key in the request's header alone, asked once more and cached as the others are.
+
+    The cache's key is the address and parameters; the answer is kept without
+    its request (``_session_get``'s ``secret_headers``). A 429 marks Webstat
+    down until its day ends (``RATE_LIMITED_HOSTS``). Without a key,
+    ``NoWebstatKey``, and nothing asked.
+    """
+    response = _session_get(WEBSTAT_SESSION, "webstat", url, params, timeout=timeout, secret_headers=_webstat_headers)
     assert response is not None  # only missing_ok returns None
     return response
 

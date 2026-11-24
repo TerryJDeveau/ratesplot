@@ -66,6 +66,9 @@ jobs:
         id: bake
         env:
           CENSUS: ${{ inputs.census && '--census' || '' }}
+          # The Banque de France's Webstat answers only with a key (9.14): the repository's secret, which
+          # GitHub keeps out of the log; ratesplot.http.webstat_key reads it.
+          WEBSTAT_API_KEY: ${{ secrets.WEBSTAT_API_KEY }}
         run: |
           set +e
           python tools/rebake.py --out "$RUNNER_TEMP/rebake" $CENSUS

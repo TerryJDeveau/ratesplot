@@ -78,6 +78,7 @@ from ratesplot.bake import (  # noqa: E402
     bake_fred_history,
     bake_ons_history,
     bake_statcan_history,
+    bake_webstat_history,
     bake_us_archives,
     baked_census_debt,
     census_years_listed,
@@ -94,6 +95,7 @@ LIVE_BAKES = {
     "bbk": ("Bundesbank", bake_bbk_history),
     "statcan": ("Statistics Canada", bake_statcan_history),
     "bpstat": ("Banco de Portugal", bake_bpstat_history),
+    "webstat": ("Banque de France", bake_webstat_history),
 }
 # The U.S. Census's state and local debt (23.3): a data module, not a file per series; its two
 # levels reported as two series of it. Their "source" sends them to review (``destination``).

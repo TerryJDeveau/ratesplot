@@ -791,6 +791,25 @@ def check_de(check: Check) -> None:
     check("the UK ticked too: two charts", charts_shown(page) == 2, charts_shown(page))
 
 
+def check_fr(check: Check) -> None:
+    """9.14: France's section offers its eight daily terms (Webstat's), the 10-year alone ticked; a term ticked is written and drawn."""
+    page = new_page("--gdp --debt --interest --yield --na:fr --e:2026-09-01")
+    check("no exception", not page.exception, page.exception)
+    check("one chart drawn", charts_shown(page) == 1, charts_shown(page))
+    terms = ("1y", "2y", "3y", "5y", "7y", "10y", "20y", "30y")
+    keys = {box.key for box in page.checkbox if box.key}
+    offered = sorted(key for key in keys if key.startswith("choice:fr:yields:"))
+    check("France offers its eight terms", offered == sorted(f"choice:fr:yields:{term}" for term in terms), offered)
+    ticked = [term for term in terms if page.checkbox(key=f"choice:fr:yields:{term}").value]
+    check("the 10-year alone ticked at the start", ticked == ["10y"], ticked)
+    page.checkbox(key="choice:fr:yields:2y").check()
+    page.run()
+    tokens = address(page).split()
+    drawn = drawn_config(config_from_choices(*sort_tokens(tokens)[:2]), "fr").yield_terms
+    check("the 2-year ticked: written in the address, drawn with the 10-year",
+          "yields:2y,10y" in address(page) and drawn == ("2y", "10y") and charts_shown(page) == 1, (address(page), drawn))
+
+
 def check_none_lists(check: Check) -> None:
     """2026-10-07: a list that leaves a nation none of its terms: its boxes all unticked, the address kept, a warning logged."""
 
@@ -2706,7 +2725,7 @@ def check_batch37(check: Check) -> None:
 
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
-    check_nation_sections, check_uk, check_de, check_none_lists, check_greyed, check_wrong_fields, check_layout,
+    check_nation_sections, check_uk, check_de, check_fr, check_none_lists, check_greyed, check_wrong_fields, check_layout,
     check_batch15, check_batch9, check_batch94, check_batch17, check_batch91, check_batch95, check_batch104, check_batch105,
     check_batch18, check_batch11, check_batch112, check_batch113, check_batch117, check_batch247, check_batch246,
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,

@@ -38,7 +38,12 @@ Germany has no 1-month, 3-month, 6-month or 3-year in the program.
 - **1993 on: the Banco de Portugal's yields.** Yields of Portuguese Treasury bonds at a fixed rate by residual maturity, the average of the day's quotes (from LSEG), daily, in the Banco de Portugal's statistics database [BPstat](https://bpstat.bportugal.pt/) (domain "Secondary market"): the 2-, 3-, 7- and 10-year from 1993-07-16, the 5-year from 1994-02-04. Each month's average of the 10-year equals the OECD's monthly long-term interest rate for Portugal ([IRLTLT01PTM156N](https://fred.stlouisfed.org/series/IRLTLT01PTM156N)) to 0.006 in 399 of 400 months; the chart drew that monthly average before version 9.13.
 - **Gaps.** Before 1998 the 2-, 3- and 5-year miss several months each year; the 2-year misses 2002-07-17 to 2003-02-13, the 7-year 1993-10-22 to 1995-12-27 and 2015-02-03 to 2016-04-19. Each gap is a break in its line. BPstat's 4-year is not drawn (the program has no such term).
 
-France, Italy, Spain and the Netherlands have the 10-year alone, the OECD's monthly average (their pages say more).
+## France
+
+- **2004 on: the Banque de France's yields.** The yields of French government bonds (OATs) at a constant maturity ("taux de l'échéance constante", TEC), each worked out by the Banque de France between the two OATs whose maturities lie either side of the term, daily, in its statistics service [Webstat](https://webstat.banque-france.fr/): 1, 2, 3, 5, 7, 10, 20 and 30 years, from 2004-11-03, the 30-year from 2006-10-02. Webstat updates its figures three times a day; when measured (2026-11-24), a day's figures were there the next morning. Its 15- and 25-year are not drawn (the program has no such terms).
+- **The 10-year before 2004-11: the OECD's.** The OECD's monthly long-term interest rate for France ([IRLTLT01FRM156N](https://fred.stlouisfed.org/series/IRLTLT01FRM156N)), from 1960, the yield of a benchmark bond. Where both exist, each month's average of Webstat's 10-year is within 0.005 of it from 2025, but up to 0.12 apart from 2008 to 2023, where the benchmark bond's maturity is not exactly ten years; 0.008 apart in 2004-11, where the daily yields begin. The chart drew the OECD's alone before version 9.14.
+
+Italy, Spain and the Netherlands have the 10-year alone, the OECD's monthly average (their pages say more).
 
 ## Real yields
 

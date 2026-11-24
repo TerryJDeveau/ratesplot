@@ -391,7 +391,7 @@ def add_de_yield_lines(ax: Axes, yields: pd.DataFrame, config: PlotConfig) -> li
 
 
 def add_euro_yield_lines(ax: Axes, yields: pd.DataFrame, config: PlotConfig, *, key: str) -> list[Line2D]:
-    """Plot a euro-area nation's yields (``euro_data``, France's ``key`` "fr"): each term's monthly averages as steps, Portugal's daily yields as lines (``euro_data.fetch_yields``)."""
+    """Plot a euro-area nation's yields (``euro_data``, France's ``key`` "fr"): each term's monthly averages as steps, Portugal's and France's daily yields as lines (``euro_data.fetch_yields``)."""
     through = dict(yields.attrs.get(YIELD_HISTORY_ATTR, {}))
     return add_stepped_yield_lines(ax, yields, config, key, through.get)
 
@@ -1653,7 +1653,8 @@ def _euro_preparer(
 
     As ``prepare_de``: date-indexed yields (each monthly term's last date
     recorded in ``attrs[de_data.YIELD_HISTORY_ATTR]``; Portugal's daily since
-    9.13), not run on with --cur (no quote of the nation is read); the macro curves aligned on their dates and projected
+    9.13, France's since 9.14 after its 10-year's monthly part), not run on
+    with --cur (no quote of the nation is read); the macro curves aligned on their dates and projected
     to a chart's last day as Germany's are; the balance of payments is
     Eurostat's quarters (batch 14.3's second stage, ``payments``).
     """

@@ -19,6 +19,11 @@ Eurostat), each series measured before it was drawn:
   are, a gap over three rows a break. Each month's average equals the
   OECD's monthly 10-year, the one drawn before 9.13, to 0.006 in 399 of
   its 400 months (measured 2026-11-23).
+* France's yields too (9.14, decision 185): the Banque de France's daily
+  yields of its OATs at constant maturity (Webstat's TEC series, behind
+  Terry's key) at 1, 2, 3, 5, 7, 10, 20 and 30 years, from 2004-11 (the
+  30-year 2006-10); its 10-year the OECD's monthly averages before, from
+  1960, as Germany's terms are monthly before their daily values.
 * General government gross debt (Maastricht, consolidated): the ECB's year
   ends (``GFS``, the series Germany's chart reads, with the nation's code)
   1995 to 1999, then Eurostat's quarters (``gov_10q_ggdebt``, S13) from
@@ -78,6 +83,7 @@ from .config import (
     PT_DEBT_COLUMN,
     PT_INTEREST_COLUMN,
     RECENT_PART_UNREVISED,
+    WEBSTAT_EXPORT_URL,
     PlotConfig,
     component_column,
 )
@@ -93,7 +99,7 @@ from .de_data import (
 )
 from .de_data import _before as before  # Germany's join: history until the live series begins
 from .de_data import _DAILY_FILL_LIMIT  # Germany's daily yields' fill: a longer gap is a break
-from .http import bpstat_get, downloads_of
+from .http import bpstat_get, downloads_of, webstat_get
 from .joins import ttm_sum
 from .us_data import fred_series
 
@@ -105,6 +111,11 @@ _QUARTER_MIDDLE_DAYS = 45
 # rate, yields by residual maturity, daily and monthly, from LSEG (measured 2026-11-23).
 BPSTAT_BAKED_SOURCE = "bpstat"
 BPSTAT_YIELD_DATASET = (26, "690b7b36fd36c0dbe249c48cbbc39524")
+# The Banque de France's Webstat (9.14, decision 185): its baked files, ``ratesplot/data/webstat/KEY.csv``, and the key
+# of its daily OAT yield at a constant maturity of so many years (TEC, "taux de l'échéance constante"; measured
+# 2026-11-24: 1, 2, 3, 5, 7, 10, 15, 20, 25 and 30 years).
+WEBSTAT_BAKED_SOURCE = "webstat"
+WEBSTAT_YIELD_KEY = "FM.D.FR.EUR.FR2.BB.FRMOYTEC{years}.HSTA"
 
 
 @dataclass(frozen=True, eq=False)
@@ -141,9 +152,12 @@ class EuroNation:
     # Italy's alone: France's runs 0.4 to 1.2 points above the OECD's 1980 to 1986, a different bond; Portugal's falls
     # 2.4 points where the OECD's begins).
     yield_history_from: pd.Timestamp | None = None
-    # Daily yields (Portugal's from BPstat, 9.13), by column: the series ids in ``BPSTAT_YIELD_DATASET``, drawn day by
-    # day in place of a monthly series (a column is in this or ``yield_series``, never both).
+    # Daily yields, by column, drawn day by day: Portugal's from BPstat (9.13), the series ids in
+    # ``BPSTAT_YIELD_DATASET``; France's from Webstat (9.14), its series keys. A column in ``yield_series`` too is
+    # that monthly series until the daily one begins, drawn as steps (France's 10-year, as Germany's terms).
     daily_yields: dict[str, str] = field(default_factory=dict)
+    # The service of ``daily_yields``: its baked source's name, ``BPSTAT_BAKED_SOURCE`` or ``WEBSTAT_BAKED_SOURCE``.
+    daily_source: str = BPSTAT_BAKED_SOURCE
 
 
 # France (batch 14.3, decision 171, 9.3; its balance of payments 9.4, its consumer prices before 1996 9.5, its series
@@ -156,13 +170,29 @@ class EuroNation:
 # 2025-03; measured 2026-11-21 (``G:\Research\Claude\ratesplot_b143c\measure_fr_cpi.py``): in the 339 months both
 # have a 12-month rise, the harmonised index's runs above the national one's by 0.19 point on average, by 1.04 at
 # most (2023-01).
+# Its yields since 9.14 (decision 185): the Banque de France's daily OAT yields at constant maturity on Webstat (TEC),
+# measured 2026-11-24 (``G:\Research\Claude\ratesplot_b143fr\measure_webstat.py``, ``analyse_webstat.py``, from each
+# series' whole answer), each to 2026-11-23, a row for every calendar day, a value on business days alone: 1, 2, 3, 5,
+# 7, 10, 15, 20 years from 2004-11-03, about 5,645 values each; 25 years from 2006-10-24, 30 years from 2006-10-02;
+# no gap over three business days but the 25-year's first week. The 10-year's monthly averages against the OECD's
+# (``IRLTLT01FRM156N``, drawn alone before 9.14): within 0.005 every month from 2025, up to 0.12 apart from 2008 to
+# 2023 (the OECD's a benchmark bond, Webstat's interpolated between the two OATs either side of ten years); 0.008
+# apart in 2004-11, where the daily begins. So the OECD's is drawn before 2004-11 alone. The 15- and 25-year are left
+# out: no such term on the chart.
 FRANCE = EuroNation(
     key="fr",
     name="France",
     adjective="French",
     geo="FR",
     yield_series={"10-Year": "IRLTLT01FRM156N"},
-    yield_earliest={"10-Year": pd.Timestamp("1960-01-01")},
+    daily_yields={column: WEBSTAT_YIELD_KEY.format(years=years) for column, years in (
+        ("1-Year", 1), ("2-Year", 2), ("3-Year", 3), ("5-Year", 5), ("7-Year", 7), ("10-Year", 10),
+        ("20-Year", 20), ("30-Year", 30))},
+    daily_source=WEBSTAT_BAKED_SOURCE,
+    yield_earliest={"1-Year": pd.Timestamp("2004-11-03"), "2-Year": pd.Timestamp("2004-11-03"),
+                    "3-Year": pd.Timestamp("2004-11-03"), "5-Year": pd.Timestamp("2004-11-03"),
+                    "7-Year": pd.Timestamp("2004-11-03"), "10-Year": pd.Timestamp("1960-01-01"),
+                    "20-Year": pd.Timestamp("2004-11-03"), "30-Year": pd.Timestamp("2006-10-02")},
     ecb_annual_debt=("GFS", "A.N.FR.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
     level_sectors={"f": ("S1311",), "m": ("S1313",)},
     cpi_history_series="FRACPIALLMINMEI",
@@ -315,14 +345,21 @@ EURO_NATIONS = {nation.key: nation for nation in (FRANCE, PORTUGAL, ITALY, SPAIN
 
 def series_earliest(nation: EuroNation, config: PlotConfig) -> dict[str, pd.Timestamp]:
     """Return the first observation of the nation's inputs, by name, for the coverage warning: the chosen yields it has, then the rest."""
+    daily_name = _DAILY_SOURCE_NAMES[nation.daily_source]
     earliest = {
         (f"{column} Yield (Eurostat's convergence yield, then the OECD's; monthly averages)" if nation.yield_history_from
-         else f"{column} Yield (Banco de Portugal, daily)" if column in nation.daily_yields
+         else f"{column} Yield (the OECD's monthly averages, then the {daily_name}'s daily)"
+         if column in nation.daily_yields and column in nation.yield_series
+         else f"{column} Yield ({daily_name}, daily)" if column in nation.daily_yields
          else f"{column} Yield (OECD, monthly average)"): nation.yield_earliest[column]
         for column in config.fetched_yield_columns
         if column in nation.yield_series or column in nation.daily_yields
     }
     return {**earliest, **nation.series_earliest}
+
+
+# The name of each service of daily yields (``EuroNation.daily_source``) in messages.
+_DAILY_SOURCE_NAMES = {BPSTAT_BAKED_SOURCE: "Banco de Portugal", WEBSTAT_BAKED_SOURCE: "Banque de France"}
 
 
 def parse_bpstat(data: dict, series_id: str) -> pd.Series:
@@ -388,16 +425,75 @@ def bpstat_series(series_id: str) -> pd.Series:
     )
 
 
+def parse_webstat(rows: object, series_key: str) -> pd.Series:
+    """Return one Webstat series from its export's JSON answer: each day dated by itself, in percent.
+
+    The answer is a list of rows, each with ``series_key``, ``time_period``
+    (an ISO day) and ``obs_value``. Every row must be of that series and
+    dated by a day (a daily series); a day without a value (``obs_value``
+    null: each Saturday, Sunday and holiday, status M) is left out. No row at
+    all (asked from a day after its last) is an empty series.
+    """
+    if not isinstance(rows, list):
+        raise ValueError(f"expected Webstat's export of {series_key} as a list of rows, found {type(rows).__name__}")
+    others = {str(row.get("series_key")) for row in rows} - {series_key}
+    if others:
+        raise ValueError(f"expected Webstat series {series_key} alone, found {sorted(others)[:3]}")
+    days = pd.to_datetime([row["time_period"] for row in rows], format="%Y-%m-%d")
+    values = pd.to_numeric(pd.Series([row.get("obs_value") for row in rows], dtype=object), errors="coerce")
+    return pd.Series(values.to_numpy(dtype=float), index=pd.DatetimeIndex(days, name=DATE_COLUMN)).dropna().sort_index()
+
+
+def webstat_download(series_key: str, start: pd.Timestamp | None = None) -> pd.Series:
+    """Ask Webstat for one series, from ``start`` (a day, ``time_period_start``) or whole (``parse_webstat``)."""
+    where = f'series_key="{series_key}"'
+    if start is not None:
+        where += f" and time_period_start>=date'{start:%Y-%m-%d}'"
+    params = {"select": "series_key,time_period,obs_value", "where": where, "order_by": "time_period_start"}
+    return parse_webstat(webstat_get(WEBSTAT_EXPORT_URL, params).json(), series_key)
+
+
+def webstat_series(series_key: str) -> pd.Series:
+    """Return one Webstat series: its baked history (``ratesplot/data/webstat/``), then its last two months asked for.
+
+    As ``bpstat_series``: market yields, not revised; with Webstat failing, or
+    no key (``http.webstat_key``), the bake alone, with a warning.
+    """
+    return with_recent_part(
+        WEBSTAT_BAKED_SOURCE,
+        series_key,
+        f"Banque de France {series_key}",
+        lambda start: webstat_download(series_key, start),
+        RECENT_PART_UNREVISED,
+    )
+
+
+# Each service of daily yields (``EuroNation.daily_source``): one of its series, by its code.
+_DAILY_SERIES = {BPSTAT_BAKED_SOURCE: bpstat_series, WEBSTAT_BAKED_SOURCE: webstat_series}
+
+
+def daily_series(nation: EuroNation, column: str) -> pd.Series:
+    """One of the nation's daily yields (``daily_yields``) from its service, as drawn: its bake and recent part."""
+    return _DAILY_SERIES[nation.daily_source](nation.daily_yields[column])
+
+
+def daily_source_name(nation: EuroNation) -> str:
+    """The name of the service of the nation's daily yields in messages: "Banco de Portugal", "Banque de France"."""
+    return _DAILY_SOURCE_NAMES[nation.daily_source]
+
+
 def fetch_yields(nation: EuroNation, config: PlotConfig) -> pd.DataFrame:
-    """Return the nation's yields, date-indexed: each term's monthly averages (FRED), drawn as steps, or its daily yields (Portugal's, BPstat).
+    """Return the nation's yields, date-indexed: each term's monthly averages (FRED), drawn as steps, its daily yields (Portugal's, BPstat; France's, Webstat), or both.
 
     The columns are the chosen ones it has (``config.fetched_yield_columns``),
-    trimmed to the window; ``attrs[YIELD_HISTORY_ATTR]`` gives each monthly
-    column's last date (every value of it monthly: steps); a daily column has
+    trimmed to the window; ``attrs[YIELD_HISTORY_ATTR]`` gives each column's
+    last monthly date (its values to there drawn as steps); a daily column has
     none, so it is drawn as a line (``plotting.add_stepped_yield_lines``). A
-    daily term is carried over a missing day for three rows at most, as
+    term with both (France's 10-year, 9.14) is its monthly averages until
+    the daily series begins, as Germany's terms are (``de_data.fetch_de_yields``).
+    A daily term is carried over a missing day for three rows at most, as
     Germany's daily yields are, so a longer gap is a break. A term whose
-    series fails is left out, with a warning.
+    series fails is drawn from the other, or left out, with a warning.
     """
     chosen = [column for column in config.fetched_yield_columns
               if column in nation.yield_series or column in nation.daily_yields]
@@ -407,35 +503,47 @@ def fetch_yields(nation: EuroNation, config: PlotConfig) -> pd.DataFrame:
         print(f"  Note: no {nation.adjective} {', '.join(absent)} yield; the {nation.adjective} chart is drawn without it.")
     columns: dict[str, pd.Series] = {}
     history_through: dict[str, pd.Timestamp] = {}
+    daily_columns: list[str] = []
     for column in chosen:
+        daily = monthly = None
+        both = column in nation.daily_yields and column in nation.yield_series
+        then = "drawn without it" if both else "not drawn"
         if column in nation.daily_yields:
             series_id = nation.daily_yields[column]
             try:
-                daily = bpstat_series(series_id)
+                daily = daily_series(nation, column)
             except Exception as exc:
-                print(f"  Warning: Banco de Portugal {series_id} ({nation.adjective} {column} yield) unavailable ({exc}); not drawn.")
-                continue
-            if not daily.empty:
-                columns[column] = daily
+                print(f"  Warning: {daily_source_name(nation)} {series_id} ({nation.adjective} {column} "
+                      f"yield) unavailable ({exc}); {then}.")
+            if daily is not None and daily.empty:
+                daily = None
+        if column in nation.yield_series:
+            series_id = nation.yield_series[column]
+            try:
+                frame = fred_series(series_id, revised=False)
+            except Exception as exc:
+                print(f"  Warning: FRED {series_id} ({nation.adjective} {column} yield) unavailable ({exc}); {then}.")
+            else:
+                values = pd.to_numeric(frame.set_index(DATE_COLUMN)[series_id], errors="coerce").dropna()
+                values = values.set_axis(pd.DatetimeIndex(values.index, name=DATE_COLUMN))
+                if column == "10-Year" and nation.yield_history_from is not None:
+                    values = before(_yield_history(nation), values)
+                if daily is not None:  # the monthly averages until the daily series begins
+                    values = values.loc[values.index < daily.index[0]]
+                monthly = values if not values.empty else None
+        if monthly is None and daily is None:
             continue
-        series_id = nation.yield_series[column]
-        try:
-            frame = fred_series(series_id, revised=False)
-        except Exception as exc:
-            print(f"  Warning: FRED {series_id} ({nation.adjective} {column} yield) unavailable ({exc}); not drawn.")
-            continue
-        values = pd.to_numeric(frame.set_index(DATE_COLUMN)[series_id], errors="coerce").dropna()
-        values = values.set_axis(pd.DatetimeIndex(values.index, name=DATE_COLUMN))
-        if column == "10-Year" and nation.yield_history_from is not None:
-            values = before(_yield_history(nation), values)
-        columns[column] = values
-        history_through[column] = values.index[-1]
+        columns[column] = pd.concat([part for part in (monthly, daily) if part is not None])
+        if monthly is not None:
+            history_through[column] = monthly.index[-1]
+        if daily is not None:
+            daily_columns.append(column)
     if not columns:
         return pd.DataFrame()
     frame = pd.concat(columns, axis=1).sort_index()
-    for column in frame.columns:
-        if column not in history_through:
-            frame[column] = frame[column].ffill(limit=_DAILY_FILL_LIMIT)
+    for column in daily_columns:
+        daily_part = frame.index > history_through.get(column, pd.Timestamp.min)
+        frame.loc[daily_part, column] = frame.loc[daily_part, column].ffill(limit=_DAILY_FILL_LIMIT)
     frame = frame.rename_axis(DATE_COLUMN).loc[config.start : config.end]
     frame.attrs[YIELD_HISTORY_ATTR] = history_through
     return frame

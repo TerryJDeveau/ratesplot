@@ -179,7 +179,14 @@ from .de_data import (
     parse_jsonstat,
     term_structure_key,
 )
-from .euro_data import BPSTAT_BAKED_SOURCE, BPSTAT_YIELD_DATASET, EURO_NATIONS, bpstat_download
+from .euro_data import (
+    BPSTAT_BAKED_SOURCE,
+    BPSTAT_YIELD_DATASET,
+    EURO_NATIONS,
+    WEBSTAT_BAKED_SOURCE,
+    bpstat_download,
+    webstat_download,
+)
 from .fx import FX_SERIES
 from .payments import US_OLD_BALANCE_SERIES, US_OLD_PAYMENTS_SERIES, US_PAYMENTS_SERIES
 from .http import canadian_get, de_get, fetch_fred_csv, get_if_published, uk_get
@@ -3561,7 +3568,8 @@ def bpstat_baked_series() -> dict[str, str]:
     return dict(sorted(
         (series_id, f"Yield on Treasury bonds with fixed rate and residual maturity of {_BPSTAT_TERM_WORDS[column]}, "
                     f"{nation.name}; daily")
-        for nation in EURO_NATIONS.values() for column, series_id in nation.daily_yields.items()
+        for nation in EURO_NATIONS.values() if nation.daily_source == BPSTAT_BAKED_SOURCE
+        for column, series_id in nation.daily_yields.items()
     ))
 
 
@@ -3593,6 +3601,46 @@ def bake_bpstat_history(folder: Path | None = None, *, accept_withdrawn: bool = 
         )
 
     return _bake_live_series(BPSTAT_BAKED_SOURCE, bpstat_baked_series(), download, comment, folder, accept_withdrawn)
+
+
+def webstat_baked_series() -> dict[str, str]:
+    """Every Webstat series the program reads (France's daily yields, 9.14), by its file's name (the series key): its title, Webstat's own (``title_long_en``, read 2026-11-24)."""
+    return dict(sorted(
+        (key, f"Benchmark bond - French {column.split('-')[0]} year{'' if column == '1-Year' else 's'} Constant Maturity "
+              f"Treasury average (TEC {column.split('-')[0]}); daily")
+        for nation in EURO_NATIONS.values() if nation.daily_source == WEBSTAT_BAKED_SOURCE
+        for column, key in nation.daily_yields.items()
+    ))
+
+
+def webstat_baked_codes() -> list[str]:
+    """The names of Webstat's baked files (``webstat_baked_series``), the series keys."""
+    return sorted(webstat_baked_series())
+
+
+def bake_webstat_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every Webstat series the program reads, whole, into ``ratesplot/data/webstat/`` (9.14).
+
+    As every live source is baked (``_bake_live_series``: ``folder``,
+    ``accept_withdrawn``, what is printed and returned). Each series as
+    ``euro_data.parse_webstat`` reads it: each day dated by itself, in percent,
+    a day without a value left out. Webstat answers only with a key
+    (``http.webstat_key``): without one, each series fails and keeps its file.
+    """
+    print("Baking the Banque de France's Webstat series …")
+
+    def download(code: str) -> pd.Series:
+        return webstat_download(code)
+
+    def comment(code: str, title: str) -> str:
+        return (
+            f"Banque de France, Webstat, series {code}: {title}.\n"
+            "Every value Webstat gives, as ratesplot.euro_data reads it: each day dated by itself, in percent.\n"
+            "Written by tools/bake_archives.py --only webstat (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    return _bake_live_series(WEBSTAT_BAKED_SOURCE, webstat_baked_series(), download, comment, folder, accept_withdrawn)
 
 
 def bake_statcan_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
