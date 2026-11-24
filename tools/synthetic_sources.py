@@ -534,7 +534,9 @@ _STATCAN_PAYMENTS = {
 }
 _MILLIONS = {"UOM": "Dollars", "SCALAR_FACTOR": "millions", "SCALAR_ID": 6}
 _UNITS = {"SCALAR_FACTOR": "units", "SCALAR_ID": 0}
-_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145", "18100004", "18100006", *_STATCAN_PAYMENTS)
+# The tables the WDS's answers are drawn from (``statcan_wds``); the Real Return Bonds' 10-10-0122 last, asked of the
+# WDS only by the bake's fallback (9.15), its vector in no other table.
+_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145", "18100004", "18100006", *_STATCAN_PAYMENTS, "10100122")
 
 
 def statcan(table_id: str) -> bytes:
