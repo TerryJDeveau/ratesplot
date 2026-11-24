@@ -12,7 +12,8 @@ on 127.0.0.1 answers each address as its path says, and counts the requests it r
   close    the connection closed without an answer;
   partway  an answer promising 1000 bytes, broken off after 10;
   hang     the connection held open, never answered (the program's timeout ends it);
-  bad      a one-column CSV, which FRED's reader refuses.
+  bad      a one-column CSV, which FRED's reader refuses;
+  429      Too Many Requests (9.14).
 
 Each kind is asked through ``http.canadian_get`` (requests, as every source but FRED) and
 ``http.fetch_fred_csv`` (urllib, FRED's), and a refused connection (a port nothing listens
@@ -29,9 +30,15 @@ the next drawing asks it again; after a 404, a reset (twice), a 503 (twice) or a
 that cannot be read, the host's other requests are made; a request of another thread,
 waiting its turn while the host hangs, is not made; outside a drawing each request is.
 
-Last, with downloads kept: a drawing that serves a download again ends with "Reused 1
+Then, with downloads kept: a drawing that serves a download again ends with "Reused 1
 earlier download, the oldest from YYYY-MM-DD HH:MM:SS UTC", the date always given, today's
 too (batch 24.3, Terry 2026-10-24: a saved log reads right where the date changed).
+
+Last, the Banque de France's Webstat (9.14, ``http.webstat_get``), the server standing in for
+it: without a key nothing is asked; a key is sent in the request's header and the answer
+returned without its request, so no copy of it holds the key; a 429 is the host not
+answering, asked nothing more in the drawing, and marks it down until its day (UTC) ends,
+so the next drawing asks it nothing either (its terms: nothing asked after a 429).
 
 Usage (from the project root)::
 
@@ -44,6 +51,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import pickle
 import socket
 import struct
 import sys
@@ -77,6 +85,7 @@ class Server:
         self.listener.listen(64)
         self.port = self.listener.getsockname()[1]
         self.asked: Counter = Counter()
+        self.last_request: dict[str, bytes] = {}  # each kind's last request as received, its headers too
         self.held: list[socket.socket] = []  # the hung connections, kept open
         self.arrived = threading.Event()  # set at each request
         threading.Thread(target=self._serve, daemon=True).start()
@@ -105,6 +114,7 @@ class Server:
         path = request.split(b" ", 2)[1].decode()
         kind = path.lstrip("/").split("?", 1)[0].split("/", 1)[0]
         self.asked[kind] += 1
+        self.last_request[kind] = request
         self.arrived.set()
         if kind == "ok":
             self._send(connection, "200 OK", b"observation_date,X\n2026-01-01,1.5\n2026-02-01,1.75\n")
@@ -112,8 +122,9 @@ class Server:
             self._send(connection, "200 OK", b"observation_date\n2026-01-01\n")
         elif kind == "page":
             self._send(connection, "200 OK", self.PAGE, "text/html")
-        elif kind in ("404", "503"):
-            self._send(connection, {"404": "404 Not Found", "503": "503 Service Unavailable"}[kind], b"")
+        elif kind in ("404", "503", "429"):
+            self._send(connection, {"404": "404 Not Found", "503": "503 Service Unavailable",
+                                    "429": "429 Too Many Requests"}[kind], b"")
         elif kind == "reset":
             connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
             connection.close()
@@ -265,6 +276,42 @@ def check_reused_line(server: Server) -> None:
         http._download_cache = None
 
 
+def check_webstat(server: Server) -> None:
+    """9.14: Webstat's key sent in the request's header alone, never kept; a 429 marks its host down until its day ends."""
+    host = f"127.0.0.1:{server.port}"
+    key_reader = http.webstat_key
+    try:
+        http.webstat_key = lambda: None
+        server.asked.clear()
+        outcome = outcome_of(http.webstat_get, server.url("ok"))
+        check(f"Webstat without a key: nothing asked ({outcome})", outcome == "NoWebstatKey" and not server.asked,
+              dict(server.asked))
+        http.webstat_key = lambda: "test-key-914"
+        with contextlib.redirect_stdout(io.StringIO()):
+            answer = http.webstat_get(server.url("ok"))
+        sent = server.last_request.get("ok", b"")
+        check("Webstat's key sent in the request's header", b"\r\nAuthorization: Apikey test-key-914\r\n" in sent, sent[:300])
+        check("... the answer returned without its request, and no copy of it holds the key",
+              answer.request is None and b"test-key-914" not in pickle.dumps(answer)
+              and "Authorization" not in config.WEBSTAT_SESSION.headers)
+        http.RATE_LIMITED_HOSTS[host] = "UTC"
+        server.asked.clear()
+        with contextlib.redirect_stdout(io.StringIO()), http.drawing_downloads():
+            first = outcome_of(http.webstat_get, server.url("429"))
+            later = outcome_of(http.webstat_get, server.url("ok"))
+        check(f"a 429 ({first}), not asked again: the host asked nothing more in the drawing ({later})",
+              server.asked["429"] == 1 and server.asked["ok"] == 0 and first == later == "HTTPError", dict(server.asked))
+        with contextlib.redirect_stdout(io.StringIO()), http.drawing_downloads():
+            again = outcome_of(http.webstat_get, server.url("ok"))
+        check(f"... nor in the next drawing, the host's day (UTC) not ended ({again})",
+              again == "HostDownToday" and server.asked["ok"] == 0
+              and http._down_today[host][0] == http.checking_day(zone="UTC"), (dict(server.asked), http._down_today.get(host)))
+    finally:
+        http.webstat_key = key_reader
+        http.RATE_LIMITED_HOSTS.pop(host, None)
+        http._down_today.pop(host, None)
+
+
 def main() -> int:
     http._download_cache = None
     http._copies_folder = None
@@ -274,6 +321,7 @@ def main() -> int:
     check_retries(server)
     check_hosts(server, Server())
     check_reused_line(server)
+    check_webstat(server)
     passed = sum(RESULTS)
     print(f"[requests] {passed} of {len(RESULTS)} checks passed")
     return 0 if passed == len(RESULTS) else 1

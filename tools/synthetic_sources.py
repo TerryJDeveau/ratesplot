@@ -191,9 +191,11 @@ class _EuroSynthetic:
     mortgage_bands: tuple[str, ...] = ("I", "O", "P")  # the ECB's bands of its mortgage rates (rates.EURO_MORTGAGE_SERIES)
     # Eurostat's convergence-criterion yield, first and last, monthly from 1980-01 (decision 178: Italy's), or None.
     yield_history_path: tuple[float, float] | None = None
-    # Daily yields on BPstat (9.13, Portugal's), by series id: (term in years, first day, gaps as (first, last) days
-    # with no value); its ``yield_series`` then empty, no FRED yield.
+    # Daily yields on BPstat (9.13, Portugal's) or Webstat (9.14, France's), by series id: (term in years, first day,
+    # gaps as (first, last) days with no value); Portugal's ``yield_series`` then empty, no FRED yield; France's 10-year
+    # FRED's monthly before its daily one.
     daily_yields: dict[str, tuple[float, str, tuple[tuple[str, str], ...]]] = field(default_factory=dict)
+    daily_source: str = "bpstat"  # the service of ``daily_yields`` (``euro_data.EuroNation.daily_source``)
 
 
 # The euro area's nations after Germany, by Eurostat's code. France's (batch 14.3): no state level, the social security
@@ -215,6 +217,14 @@ _EURO = {
             ("GS", "CRE"): (85_000, 274_000), ("GS", "DEB"): (80_000, 270_000),
         },
         payments_from="1999Q1", months_from="2008-01", mortgage_bands=("I", "O", "P", "F"),  # F, its variable rate, 9.8
+        # Its eight daily terms on Webstat (9.14), from Webstat's first days; one gap of a week in the 20-year, so a
+        # break is drawn.
+        daily_yields={
+            **{f"FM.D.FR.EUR.FR2.BB.FRMOYTEC{years}.HSTA": (years, "2004-11-03", ()) for years in (1, 2, 3, 5, 7, 10)},
+            "FM.D.FR.EUR.FR2.BB.FRMOYTEC20.HSTA": (20, "2004-11-03", (("2012-05-07", "2012-05-14"),)),
+            "FM.D.FR.EUR.FR2.BB.FRMOYTEC30.HSTA": (30, "2006-10-02", ()),
+        },
+        daily_source="webstat",
     ),
     # Portugal's (batch 14.3, decision 175): the same shapes, its yields and mortgage rates above France's; its central
     # government's debt above general government's, as Eurostat's is (each subsector consolidated within it alone).
@@ -305,7 +315,11 @@ _EURO = {
 # Each nation's FRED series, by code.
 _EURO_YIELDS = {euro.yield_series: euro for euro in _EURO.values() if euro.yield_series}
 # Each daily yield on BPstat (9.13), by series id: its nation, and its term, first day and gaps.
-_BPSTAT_YIELDS = {series_id: (euro, term) for euro in _EURO.values() for series_id, term in euro.daily_yields.items()}
+_BPSTAT_YIELDS = {series_id: (euro, term) for euro in _EURO.values() if euro.daily_source == "bpstat"
+                  for series_id, term in euro.daily_yields.items()}
+# Each daily yield on Webstat (9.14), by series key, as BPstat's.
+_WEBSTAT_YIELDS = {key: (euro, term) for euro in _EURO.values() if euro.daily_source == "webstat"
+                   for key, term in euro.daily_yields.items()}
 _EURO_CPIS = {euro.cpi_series: euro for euro in _EURO.values()}
 
 # Every FRED series ``fred`` answers.
@@ -949,6 +963,34 @@ def bpstat_series(series_id: str) -> pd.Series:
     return pd.Series(_yield_path(series_id, dates, years, euro.offset), index=dates)
 
 
+def webstat_series(key: str) -> pd.Series:
+    """One synthetic Webstat daily yield (9.14): business days from its first day to 2026-09-30, its gaps left out."""
+    euro, (years, first, gaps) = _WEBSTAT_YIELDS[key]
+    dates = pd.bdate_range(first, "2026-09-30")
+    for start, end in gaps:
+        dates = dates[(dates < start) | (dates > end)]
+    return pd.Series(_yield_path(key, dates, years, euro.offset), index=dates)
+
+
+def webstat(params: tuple) -> bytes:
+    """Webstat's export of one series (``euro_data.parse_webstat``): a row for each calendar day, null on a day without
+    a value (each weekend and gap), as Webstat's; from the day its query names, or whole."""
+    where = dict(params)["where"]
+    match = re.fullmatch(r'series_key="([^"]+)"(?: and time_period_start>=date\'(\d{4}-\d{2}-\d{2})\')?', where)
+    if match is None:
+        raise KeyError(f"no synthetic Webstat answer for {where!r}")
+    key, start = match[1], match[2]
+    values = webstat_series(key)
+    days = pd.date_range(values.index[0], values.index[-1], freq="D")
+    if start is not None:
+        days = days[days >= start]
+    return json.dumps([
+        {"series_key": key, "time_period": f"{day:%Y-%m-%d}",
+         "obs_value": float(values[day]) if day in values.index else None}
+        for day in days
+    ]).encode()
+
+
 def bpstat(params: tuple) -> bytes:
     """BPstat's JSON-stat 2.0 answer for one series (``euro_data.parse_bpstat``), whole whatever day it is asked from."""
     series_id = dict(params)["series_ids"]
@@ -1140,6 +1182,8 @@ def synth(key: tuple):
         return _response(eurostat(url, params))
     if "bpstat.bportugal.pt/data/v1/" in url:
         return _response(bpstat(params))
+    if "webstat.banque-france.fr/api/explore/" in url:
+        return _response(webstat(params))
     raise KeyError(f"no synthetic source for {key!r}")
 
 
@@ -1198,6 +1242,8 @@ def install_synthetic_bake(folder: Path) -> bool:
         bake("fred", code, fred(code).set_index("DATE")[code])
     for code in _BPSTAT_YIELDS:  # Portugal's daily yields (9.13)
         bake("bpstat", code, bpstat_series(code))
+    for code in _WEBSTAT_YIELDS:  # France's daily yields (9.14)
+        bake("webstat", code, webstat_series(code))
     de_data = importlib.import_module("ratesplot.de_data")
     for flow, key, unit in _ECB_SERIES:
         answer = ecb(f"https://data-api.ecb.europa.eu/service/data/{flow}/{key}").decode()

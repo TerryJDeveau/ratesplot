@@ -472,6 +472,16 @@ def webstat_series(series_key: str) -> pd.Series:
 _DAILY_SERIES = {BPSTAT_BAKED_SOURCE: bpstat_series, WEBSTAT_BAKED_SOURCE: webstat_series}
 
 
+def daily_series(nation: EuroNation, column: str) -> pd.Series:
+    """One of the nation's daily yields (``daily_yields``) from its service, as drawn: its bake and recent part."""
+    return _DAILY_SERIES[nation.daily_source](nation.daily_yields[column])
+
+
+def daily_source_name(nation: EuroNation) -> str:
+    """The name of the service of the nation's daily yields in messages: "Banco de Portugal", "Banque de France"."""
+    return _DAILY_SOURCE_NAMES[nation.daily_source]
+
+
 def fetch_yields(nation: EuroNation, config: PlotConfig) -> pd.DataFrame:
     """Return the nation's yields, date-indexed: each term's monthly averages (FRED), drawn as steps, its daily yields (Portugal's, BPstat; France's, Webstat), or both.
 
@@ -501,9 +511,9 @@ def fetch_yields(nation: EuroNation, config: PlotConfig) -> pd.DataFrame:
         if column in nation.daily_yields:
             series_id = nation.daily_yields[column]
             try:
-                daily = _DAILY_SERIES[nation.daily_source](series_id)
+                daily = daily_series(nation, column)
             except Exception as exc:
-                print(f"  Warning: {_DAILY_SOURCE_NAMES[nation.daily_source]} {series_id} ({nation.adjective} {column} "
+                print(f"  Warning: {daily_source_name(nation)} {series_id} ({nation.adjective} {column} "
                       f"yield) unavailable ({exc}); {then}.")
             if daily is not None and daily.empty:
                 daily = None

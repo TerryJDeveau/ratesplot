@@ -239,6 +239,10 @@ CASES: dict[str, list[str]] = {
     # values on (a market yield is not filled in: each line read day by day as drawn).
     "pt_daily_yields": ["--na:pt", "-s:1993", "--y:2,3,5,7,10", "--no-debt", "--no-gdp", "--no-interest"],
     "daily_pt_yields": ["--na:pt", "-s:2010", "--y:2,3,5,7,10", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
+    # 9.14: France's eight daily terms from Webstat, the 10-year the OECD's monthly averages before 2004-11 (from 2000,
+    # so the join is in the window), and with Daily values on.
+    "fr_daily_yields": ["--na:fr", "-s:2000", "--y:1,2,3,5,7,10,20,30", "--no-debt", "--no-gdp", "--no-interest"],
+    "daily_fr_yields": ["--na:fr", "-s:2010", "--y:1,2,3,5,7,10,20,30", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
     # Batch 16: Germany's GDP from 1950, each figure worked out here across every join (1960, 1970, 1991), in euros
     # and per person (the published figures to 1959; West Germany's population through 1990 and 1991); and per
     # person beside a yield, where a figure first shows on a later chart date (1959's on 1960-01-01).
@@ -338,6 +342,11 @@ def iadb(code: str, **kwargs) -> Source:
     return Source(f"Bank of England {code}", lambda: _clean(uk_data.iadb_download(code)), **kwargs)
 
 
+def webstat(key: str, **kwargs) -> Source:
+    # Webstat's whole series (9.14), not its bake and recent part (``euro_data.webstat_series``), which the drawing reads.
+    return Source(f"Webstat {key}", lambda: _clean(euro_data.webstat_download(key)), **kwargs)
+
+
 def bpstat(series_id: str, **kwargs) -> Source:
     # BPstat's whole series (9.13), not its bake and recent part (``euro_data.bpstat_series``), which the drawing reads.
     return Source(f"BPstat {series_id}", lambda: _clean(euro_data.bpstat_download(series_id)), **kwargs)
@@ -424,6 +433,14 @@ EURO_YIELDS = {
 BPSTAT_YIELDS = {
     "pt": {"2-Year": "12099454", "3-Year": "12099455", "5-Year": "12099457", "7-Year": "12099458", "10-Year": "12099459"},
 }
+# France's daily yields since 9.14: Webstat's series of each term, and the first day of the 10-year's (measured
+# 2026-11-24), before which the OECD's monthly 10-year (``EURO_YIELDS``) is drawn (written out here, not taken from
+# ``euro_data``).
+WEBSTAT_YIELDS = {
+    "fr": {column: f"FM.D.FR.EUR.FR2.BB.FRMOYTEC{column.split('-')[0]}.HSTA"
+           for column in ("1-Year", "2-Year", "3-Year", "5-Year", "7-Year", "10-Year", "20-Year", "30-Year")},
+}
+WEBSTAT_DAILY_FROM = pd.Timestamp("2004-11-03")
 
 
 def eurostat_yield(geo: str, **kwargs) -> Source:
@@ -441,6 +458,13 @@ def yield_sources(nation: str, column: str) -> list[Source]:
     """The sources of one nation's yield term, newest first."""
     if nation in BPSTAT_YIELDS:  # 9.13: Portugal's, day by day
         return [bpstat(BPSTAT_YIELDS[nation][column])]
+    if nation in WEBSTAT_YIELDS:  # 9.14: France's, day by day; its 10-year the OECD's monthly before
+        sources = [webstat(WEBSTAT_YIELDS[nation][column])]
+        if column == "10-Year":
+            code, _history = EURO_YIELDS[nation]
+            sources.append(within(fred(code, monthly=True, carry_days=MONTHLY_CARRY_DAYS),
+                                  f"FRED {code} before {WEBSTAT_DAILY_FROM:%Y-%m-%d}", end=WEBSTAT_DAILY_FROM))
+        return sources
     if nation in EURO_YIELDS:  # 9.10: each its own (they fell through to Germany's below)
         code, history = EURO_YIELDS[nation]
         sources = [fred(code, monthly=True, carry_days=MONTHLY_CARRY_DAYS)]
@@ -771,7 +795,7 @@ def check_case(name: str, tokens: list[str]) -> bool:
                         read[source.name] = pd.Series(dtype=float)
                         print(f"  {key:4} {line.label[:44]:44} note  {source.name} could not be read ({exc})", file=sys.__stdout__)
             result = match(line.values, sources, read)
-            if line.label.endswith(" Yield") and (key in EURO_YIELDS or key in BPSTAT_YIELDS) and not line.values.empty:
+            if line.label.endswith(" Yield") and (key in EURO_YIELDS or key in BPSTAT_YIELDS or key in WEBSTAT_YIELDS) and not line.values.empty:
                 # 9.10: a euro yield is drawn from where its sources begin in the window (a join lost would leave out its
                 # first years, and every point left would still match).
                 begins = min((values.index[0] for values in read.values() if not values.empty), default=None)
