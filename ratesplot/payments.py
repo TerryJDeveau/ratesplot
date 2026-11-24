@@ -49,7 +49,10 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   and never asked for again (Terry, 2026-11-11). Joined end to end at
   1981-Q1, nothing scaled: there
   the older is 1.4 % under the newer for the receipts, 1.9 % for the
-  payments, 1.0 % for exports, 1.2 % for imports.
+  payments, 1.0 % for exports, 1.2 % for imports. Trade's quarters after
+  36-10-0018's last from the monthly trade release, goods (12-10-0011) and
+  services (12-10-0144), whose three months add up to them
+  (``config.STATCAN_CDN_MONTHLY_TRADE_VECTORS``, batch 43.3c).
 * The UK: the ONS's balance of payments (dataset PNBP), quarterly from 1955
   Q1, seasonally adjusted, £m a quarter, under BPM6 throughout: HBON and
   HBOO, the current account's credits and debits (HBON less HBOO is the
@@ -114,7 +117,7 @@ from functools import partial
 import pandas as pd
 
 from .cdn_archive_data import EMBEDDED_CDN_PAYMENTS_HISTORY
-from .cdn_data import statcan_table
+from .cdn_data import statcan_table, statcan_wds_range_of
 from .config import (
     ARCHIVED_CDN_PAYMENTS_VECTORS,
     BILLION,
@@ -122,6 +125,7 @@ from .config import (
     MILLION,
     PAYMENTS_CREDITS_COLUMN,
     PAYMENTS_DEBITS_COLUMN,
+    STATCAN_CDN_MONTHLY_TRADE_VECTORS,
     STATCAN_CDN_PAYMENTS_TABLE,
     STATCAN_CDN_PAYMENTS_VECTORS,
     PlotConfig,
@@ -246,7 +250,35 @@ def _cdn_quarters(item: str) -> tuple[pd.Series, pd.Series]:
         before = rows_to_frame(EMBEDDED_CDN_PAYMENTS_HISTORY[old_vector], old_vector)[old_vector]
         after = new[new_vector].dropna()
         joined.append(pd.concat([before.loc[before.index < CDN_PAYMENTS_JOIN], after.loc[after.index >= CDN_PAYMENTS_JOIN]]) * MILLION)
+    if item == "trade":
+        joined = _with_cdn_monthly_quarters(joined[0], joined[1])
     return joined[0], joined[1]
+
+
+def _with_cdn_monthly_quarters(exports: pd.Series, imports: pd.Series) -> list[pd.Series]:
+    """Canada's quarterly exports and imports (dollars, indexed by the quarters' first days), each followed by the whole quarters of its monthly trade after its last (batch 43.3c).
+
+    Goods and services each month (``STATCAN_CDN_MONTHLY_TRADE_VECTORS``),
+    read from the WDS from the first month of the quarterly series' last
+    quarter (its months always published), added up, and a quarter taken
+    only with its three months of both. If Statistics Canada fails, the
+    quarterly series as they are, with a warning naming where they end.
+    """
+    last = min(exports.index.max(), imports.index.max())
+    vectors = [vector for pair in STATCAN_CDN_MONTHLY_TRADE_VECTORS for vector in pair]
+    try:
+        months = statcan_wds_range_of(vectors, last, 6, "Canada's monthly trade", "Statistics Canada's monthly trade")
+    except Exception as exc:  # noqa: BLE001 - any failure: the quarterly series alone
+        print(f"  Warning: Statistics Canada's monthly trade unavailable ({exc}); trade ends at its quarterly accounts' last quarter, {last:%Y-%m}.")
+        return [exports, imports]
+    joined = []
+    for quarters, (goods, services) in zip((exports, imports), STATCAN_CDN_MONTHLY_TRADE_VECTORS):
+        both = months[goods] + months[services]
+        whole = both.resample("QS").agg(["sum", "count"])
+        sums = whole.loc[whole["count"] == _MONTHS_IN_A_QUARTER, "sum"] * MILLION
+        later = sums.loc[sums.index > quarters.index.max()]
+        joined.append(pd.concat([quarters, later.rename(quarters.name)]) if len(later) else quarters)
+    return joined
 
 
 def _uk_quarters(item: str) -> tuple[pd.Series, pd.Series]:
@@ -353,13 +385,14 @@ def fetch_payments(key: str, item: str) -> pd.DataFrame | None:
 
 # The nations whose trade runs a quarter later than their current account
 # (batch 43.3: the monthly trade releases, ``US_MONTHLY_TRADE_SERIES`` and
-# ``uk_data.ONS_SOONER``), so that it steers the current account's projection
-# (``latest._trade_steered``). Canada's would join with its monthly trade;
+# ``uk_data.ONS_SOONER``, and Canada's, ``_with_cdn_monthly_quarters``, batch
+# 43.3c), so that it steers the current account's projection
+# (``latest._trade_steered``);
 # Germany's figures are monthly already, trade's and the current account's alike;
 # France's, Portugal's and Italy's months reach as far for both pairs; Spain's trade stops at its quarters, before
 # its current account's months (``de_data.EURO_MONTHS_MISSING``), so it cannot steer it; the Netherlands' both pairs
 # end at their quarters.
-TRADE_STEERED_NATIONS = ("us", "uk")
+TRADE_STEERED_NATIONS = ("us", "cdn", "uk")
 
 
 def trade_for_projection(key: str, config: PlotConfig) -> pd.DataFrame | None:

@@ -493,29 +493,44 @@ def _statcan_wds_range(table_id: str, start: pd.Timestamp) -> pd.DataFrame:
     or without a value from ``start`` raises, naming it.
     """
     read = STATCAN_SERIES_READ[table_id]
+    return statcan_wds_range_of(read.vectors, start, read.scale, table_id, f"Statistics Canada table {table_id}")
+
+
+def statcan_wds_range_of(
+    vectors: Iterable[str], start: pd.Timestamp, scale: int, label: str, what: str
+) -> pd.DataFrame:
+    """Ask Statistics Canada's WDS for ``vectors`` (of any tables) from ``start`` on: a column each, by reference period.
+
+    One request, as ``_statcan_wds_range`` makes for a live table's
+    vectors; ``scale`` is checked in each answer (6 millions), ``label``
+    names the vectors in an error, ``what`` in the download's message. Used
+    alone for vectors that are never baked and whose tables are never asked
+    whole (Canada's monthly trade, batch 43.3c).
+    """
+    vectors = list(vectors)
     params = {
-        "vectorIds": ",".join(f'"{vector.lstrip("v")}"' for vector in read.vectors),
+        "vectorIds": ",".join(f'"{vector.lstrip("v")}"' for vector in vectors),
         "startRefPeriod": f"{start:%Y-%m-%d}",
         "endReferencePeriod": STATCAN_WDS_RANGE_END,
     }
-    with downloads_of(f"Statistics Canada table {table_id}"):
+    with downloads_of(what):
         answer = canadian_get(STATCAN_WDS_RANGE_URL, params, timeout=STATCAN_TIMEOUT_SECONDS).json()
     columns: dict[str, pd.Series] = {}
     for item in answer:
         if item.get("status") != "SUCCESS" or not isinstance(item.get("object"), dict):
-            raise ValueError(f"Statistics Canada's WDS refused a vector of {table_id} ({item.get('object')})")
+            raise ValueError(f"Statistics Canada's WDS refused a vector of {label} ({item.get('object')})")
         vector, points = f"v{item['object']['vectorId']}", item["object"].get("vectorDataPoint") or []
         if not points:
             raise ValueError(f"Statistics Canada gave no values of {vector} from {start:%Y-%m-%d}")
         scales = sorted({point["scalarFactorCode"] for point in points})
-        if scales != [read.scale]:
-            raise ValueError(f"Statistics Canada {table_id} {vector}: expected scale {read.scale}, found {scales}")
+        if scales != [scale]:
+            raise ValueError(f"Statistics Canada {label} {vector}: expected scale {scale}, found {scales}")
         dates = pd.DatetimeIndex(pd.to_datetime([point["refPer"] for point in points], format="%Y-%m-%d"), name=DATE_COLUMN)
         columns[vector] = pd.Series([float("nan") if point["value"] is None else float(point["value"]) for point in points], index=dates)
-    missing = [vector for vector in read.vectors if vector not in columns]
+    missing = [vector for vector in vectors if vector not in columns]
     if missing:
-        raise ValueError(f"Statistics Canada's WDS gave no answer for {', '.join(missing)} of {table_id}")
-    return pd.concat({vector: columns[vector] for vector in read.vectors}, axis=1).sort_index()
+        raise ValueError(f"Statistics Canada's WDS gave no answer for {', '.join(missing)} of {label}")
+    return pd.concat({vector: columns[vector] for vector in vectors}, axis=1).sort_index()
 
 
 def statcan_download(table_id: str, start: pd.Timestamp | None = None) -> pd.DataFrame:

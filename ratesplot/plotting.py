@@ -1506,12 +1506,15 @@ def prepare_cdn(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[Ra
         series = (fetch_cdn_debt(config), fetch_cdn_gdp(config), fetch_cdn_interest(config))
     series += (_payments("cdn", config),)
     # --cur on a chart reaching today: each curve carried on from its last data,
-    # debt steered by the Government of Canada's market debt (ratesplot.latest).
+    # debt steered by the Government of Canada's market debt (ratesplot.latest),
+    # the current account's credits and debits by trade, which the monthly trade release gives a quarter sooner.
     parts = [part for part in series if part is not None]
     observed = {column: observed_through(part[column].dropna().index) for part in parts for column in part.columns}
     history = pd.concat(parts, axis=1) if parts else pd.DataFrame()
     market = market_debt_for_projection(observed, config)
-    macro = project_to_now(align_cdn_macro(yields, series, config), observed, config, history, market)
+    macro = project_to_now(
+        align_cdn_macro(yields, series, config), observed, config, history, market, trade=trade_for_projection("cdn", config)
+    )
     projected = macro.attrs.get(PROJECTION_ATTR, {})
     steered = macro.attrs.get(STEERED_ATTR, [])
     population, population_from = _population(fetch_cdn_population() if config.per_capita or config.population else None, config)
