@@ -107,6 +107,7 @@ def check_files() -> None:
         ("Bundesbank", de_data.BUNDESBANK_BAKED_SOURCE, bake.bbk_baked_codes()),
         ("Statistics Canada", cdn_data.STATCAN_BAKED_SOURCE, bake.statcan_baked_codes()),
         ("Banco de Portugal", euro_data.BPSTAT_BAKED_SOURCE, bake.bpstat_baked_codes()),
+        ("Banque de France", euro_data.WEBSTAT_BAKED_SOURCE, bake.webstat_baked_codes()),
     ):
         found = {path.stem for path in (baked.DATA_FOLDER / source).glob("*.csv")}
         codes = set(read)
