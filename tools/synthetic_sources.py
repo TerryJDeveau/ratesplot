@@ -42,7 +42,7 @@ import pickle
 import re
 import sys
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -191,6 +191,9 @@ class _EuroSynthetic:
     mortgage_bands: tuple[str, ...] = ("I", "O", "P")  # the ECB's bands of its mortgage rates (rates.EURO_MORTGAGE_SERIES)
     # Eurostat's convergence-criterion yield, first and last, monthly from 1980-01 (decision 178: Italy's), or None.
     yield_history_path: tuple[float, float] | None = None
+    # Daily yields on BPstat (9.13, Portugal's), by series id: (term in years, first day, gaps as (first, last) days
+    # with no value); its ``yield_series`` then empty, no FRED yield.
+    daily_yields: dict[str, tuple[float, str, tuple[tuple[str, str], ...]]] = field(default_factory=dict)
 
 
 # The euro area's nations after Germany, by Eurostat's code. France's (batch 14.3): no state level, the social security
@@ -216,7 +219,7 @@ _EURO = {
     # Portugal's (batch 14.3, decision 175): the same shapes, its yields and mortgage rates above France's; its central
     # government's debt above general government's, as Eurostat's is (each subsector consolidated within it alone).
     "PT": _EuroSynthetic(
-        key="pt", geo="PT", offset=0.3, yield_series="IRLTLT01PTM156N", yield_from="1993-07-01",
+        key="pt", geo="PT", offset=0.3, yield_series="", yield_from="1993-07-16",
         cpi_series="PRTCPIALLMINMEI", cpi_last="2025-04-01", cpi_path=(1.0, 123.5),
         sector_shares={"S13": 1.0, "S1311": 1.07, "S1313": 0.04, "S1314": 0.01},
         eurostat_paths={
@@ -231,6 +234,14 @@ _EURO = {
             ("GS", "CRE"): (5_000, 37_000), ("GS", "DEB"): (7_000, 37_300),
         },
         payments_from="1996Q1", months_from="1996-01", mortgage_bands=("I", "O", "P", "F"),
+        # Its five daily terms (9.13), from BPstat's first days, with two of BPstat's gaps, so a break is drawn.
+        daily_yields={
+            "12099454": (2, "1993-07-16", (("2002-07-17", "2003-02-13"),)),
+            "12099455": (3, "1993-07-16", ()),
+            "12099457": (5, "1994-02-04", ()),
+            "12099458": (7, "1993-07-16", (("2015-02-03", "2016-04-19"),)),
+            "12099459": (10, "1993-07-16", ()),
+        },
     ),
     # Italy's (batch 14.3, decision 177): the same shapes, its yields and mortgage rates above Portugal's; its central
     # government owing nearly all of general government's debt.
@@ -292,14 +303,16 @@ _EURO = {
     ),
 }
 # Each nation's FRED series, by code.
-_EURO_YIELDS = {euro.yield_series: euro for euro in _EURO.values()}
+_EURO_YIELDS = {euro.yield_series: euro for euro in _EURO.values() if euro.yield_series}
+# Each daily yield on BPstat (9.13), by series id: its nation, and its term, first day and gaps.
+_BPSTAT_YIELDS = {series_id: (euro, term) for euro in _EURO.values() for series_id, term in euro.daily_yields.items()}
 _EURO_CPIS = {euro.cpi_series: euro for euro in _EURO.values()}
 
 # Every FRED series ``fred`` answers.
 _FRED_IDS = (
     "FEDFUNDS", "DFEDTAR", "DFEDTARL", "DFEDTARU", "MORTGAGE30US", "MORTGAGE15US", "CPIAUCNS", "CPIAUCSL", *_GROWTH, *_DAILY_START, *_FX,
     *_PAYMENTS, "BOPBCA",
-    *(code for euro in _EURO.values() for code in (euro.cpi_series, euro.yield_series)),
+    *(code for euro in _EURO.values() for code in (euro.cpi_series, euro.yield_series) if code),
 )
 
 
@@ -927,6 +940,33 @@ def ecb(url: str) -> bytes:
     return frame.to_csv(index=False).encode()
 
 
+def bpstat_series(series_id: str) -> pd.Series:
+    """One synthetic BPstat daily yield (9.13): business days from its first day to 2026-09-30, its gaps left out."""
+    euro, (years, first, gaps) = _BPSTAT_YIELDS[series_id]
+    dates = pd.bdate_range(first, "2026-09-30")
+    for start, end in gaps:
+        dates = dates[(dates < start) | (dates > end)]
+    return pd.Series(_yield_path(series_id, dates, years, euro.offset), index=dates)
+
+
+def bpstat(params: tuple) -> bytes:
+    """BPstat's JSON-stat 2.0 answer for one series (``euro_data.parse_bpstat``), whole whatever day it is asked from."""
+    series_id = dict(params)["series_ids"]
+    values = bpstat_series(series_id)
+    one = {
+        "40": ("Periodicity", "4263", "Daily"), "45": ("Residual maturity", "0", "term"),
+        "70": ("Unit of measure", "3327", "Percentage"),
+    }
+    dimension = {dim: {"label": label, "category": {"index": [code], "label": {code: name}}}
+                 for dim, (label, code, name) in one.items()}
+    dimension["reference_date"] = {"label": "Date", "category": {"index": [f"{day:%Y-%m-%d}" for day in values.index]}}
+    return json.dumps({
+        "version": "2.0", "class": "dataset", "id": [*one, "reference_date"], "size": [1, 1, 1, len(values)],
+        "dimension": dimension, "value": [float(value) for value in values], "status": ["F"] * len(values),
+        "extension": {"num_series": 1, "series": [{"id": int(series_id)}]},
+    }).encode()
+
+
 def _jsonstat(label: str, dims: list[tuple[str, list[str]]], value) -> bytes:
     """A JSON-stat 2.0 dataset over ``dims`` (the last is time); ``value(categories)`` gives each cell (None: no value)."""
     sizes = [len(codes) for _dim, codes in dims]
@@ -1098,6 +1138,8 @@ def synth(key: tuple):
         return _response(ecb(url))
     if "ec.europa.eu/eurostat/api/dissemination" in url:
         return _response(eurostat(url, params))
+    if "bpstat.bportugal.pt/data/v1/" in url:
+        return _response(bpstat(params))
     raise KeyError(f"no synthetic source for {key!r}")
 
 
@@ -1154,6 +1196,8 @@ def install_synthetic_bake(folder: Path) -> bool:
         bake("boc", code, pd.to_numeric(http.parse_boc_csv(valet(f"{valet_url}{code}/csv", ()).decode()).iloc[:, 0], errors="coerce"))
     for code in _FRED_IDS:
         bake("fred", code, fred(code).set_index("DATE")[code])
+    for code in _BPSTAT_YIELDS:  # Portugal's daily yields (9.13)
+        bake("bpstat", code, bpstat_series(code))
     de_data = importlib.import_module("ratesplot.de_data")
     for flow, key, unit in _ECB_SERIES:
         answer = ecb(f"https://data-api.ecb.europa.eu/service/data/{flow}/{key}").decode()

@@ -179,7 +179,7 @@ from .de_data import (
     parse_jsonstat,
     term_structure_key,
 )
-from .euro_data import EURO_NATIONS
+from .euro_data import BPSTAT_BAKED_SOURCE, BPSTAT_YIELD_DATASET, EURO_NATIONS, bpstat_download
 from .fx import FX_SERIES
 from .payments import US_OLD_BALANCE_SERIES, US_OLD_PAYMENTS_SERIES, US_PAYMENTS_SERIES
 from .http import canadian_get, de_get, fetch_fred_csv, get_if_published, uk_get
@@ -3056,11 +3056,12 @@ _FRED_SERIES_TITLES = {
     "BOPMGS": "Imports of Goods and Services (DISCONTINUED); quarterly",
     "BOPBCA": "Balance on Current Account (DISCONTINUED); quarterly",
     # The euro area's nations after Germany (``euro_data``): the national consumer prices before 1996 (batch 14.3's
-    # third stage) and the 10-year yield (its fourth), each read from its page (France's 2026-11-21 and 2026-11-22).
-    **{code: title for nation in EURO_NATIONS.values() for code, title in (
-        (nation.cpi_history_series, f"Consumer Price Indices (CPIs, HICPs), COICOP 1999: Consumer Price Index: Total for {nation.name}; monthly"),
-        (nation.yield_series["10-Year"], f"Interest Rates: Long-Term Government Bond Yields: 10-Year: Main (Including Benchmark) for {nation.name}; monthly"),
-    )},
+    # third stage) and the 10-year yield (its fourth; Portugal's from BPstat since 9.13, none on FRED), each read from
+    # its page (France's 2026-11-21 and 2026-11-22).
+    **{nation.cpi_history_series: f"Consumer Price Indices (CPIs, HICPs), COICOP 1999: Consumer Price Index: Total for {nation.name}; monthly"
+       for nation in EURO_NATIONS.values()},
+    **{code: f"Interest Rates: Long-Term Government Bond Yields: 10-Year: Main (Including Benchmark) for {nation.name}; monthly"
+       for nation in EURO_NATIONS.values() for code in nation.yield_series.values()},
 }
 
 
@@ -3549,6 +3550,49 @@ def statcan_baked_series() -> dict[str, str]:
 def statcan_baked_codes() -> list[str]:
     """The names of Statistics Canada's baked files (``statcan_baked_series``), each a vector."""
     return sorted(statcan_baked_series())
+
+
+# BPstat's title of each term's series (``euro_data.EuroNation.daily_yields``), read from its answer 2026-11-23.
+_BPSTAT_TERM_WORDS = {"2-Year": "2 years", "3-Year": "3 years", "5-Year": "5 years", "7-Year": "7 years", "10-Year": "10 years"}
+
+
+def bpstat_baked_series() -> dict[str, str]:
+    """Every BPstat series the program reads (Portugal's daily yields, 9.13), by its file's name (the series id): its title."""
+    return dict(sorted(
+        (series_id, f"Yield on Treasury bonds with fixed rate and residual maturity of {_BPSTAT_TERM_WORDS[column]}, "
+                    f"{nation.name}; daily")
+        for nation in EURO_NATIONS.values() for column, series_id in nation.daily_yields.items()
+    ))
+
+
+def bpstat_baked_codes() -> list[str]:
+    """The names of BPstat's baked files (``bpstat_baked_series``), the series ids."""
+    return sorted(bpstat_baked_series())
+
+
+def bake_bpstat_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every BPstat series the program reads, whole, into ``ratesplot/data/bpstat/`` (9.13).
+
+    As every live source is baked (``_bake_live_series``: ``folder``,
+    ``accept_withdrawn``, what is printed and returned). Each series as
+    ``euro_data.parse_bpstat`` reads it: each day dated by itself, in percent,
+    a day without a value left out.
+    """
+    print("Baking the Banco de Portugal's BPstat series …")
+    domain, dataset = BPSTAT_YIELD_DATASET
+
+    def download(code: str) -> pd.Series:
+        return bpstat_download(code)
+
+    def comment(code: str, title: str) -> str:
+        return (
+            f"Banco de Portugal, BPstat, domain {domain}, dataset {dataset}, series {code}: {title}.\n"
+            "Every value BPstat gives, as ratesplot.euro_data reads it: each day dated by itself, in percent.\n"
+            "Written by tools/bake_archives.py --only bpstat (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    return _bake_live_series(BPSTAT_BAKED_SOURCE, bpstat_baked_series(), download, comment, folder, accept_withdrawn)
 
 
 def bake_statcan_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:

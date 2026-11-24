@@ -13,6 +13,12 @@ Eurostat), each series measured before it was drawn:
   OECD's first month (1991-03): Eurostat's convergence-criterion yield
   (``irt_lt_mcby_m``), the same monthly average, from 1980 (decision 178,
   9.10; ``EuroNation.yield_history_from``).
+* Portugal's yields instead (9.13, decision 183): the Banco de Portugal's
+  daily yields of its Treasury bonds at 2, 3, 5, 7 and 10 years (BPstat,
+  ``EuroNation.daily_yields``), drawn day by day as Germany's daily yields
+  are, a gap over three rows a break. Each month's average equals the
+  OECD's monthly 10-year, the one drawn before 9.13, to 0.006 in 399 of
+  its 400 months (measured 2026-11-23).
 * General government gross debt (Maastricht, consolidated): the ECB's year
   ends (``GFS``, the series Germany's chart reads, with the nation's code)
   1995 to 1999, then Eurostat's quarters (``gov_10q_ggdebt``, S13) from
@@ -51,11 +57,12 @@ national price index, stopped, is its bake alone.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
 from .config import (
+    BPSTAT_DATA_URL,
     COMPONENT_LETTERS,
     DATE_COLUMN,
     FR_DEBT_COLUMN,
@@ -70,10 +77,11 @@ from .config import (
     POPULATION_COLUMN,
     PT_DEBT_COLUMN,
     PT_INTEREST_COLUMN,
+    RECENT_PART_UNREVISED,
     PlotConfig,
     component_column,
 )
-from .baked import read_series
+from .baked import read_series, with_recent_part
 from .de_data import (
     EUROSTAT_BAKED_SOURCE,
     GENERAL_GOVERNMENT,
@@ -84,12 +92,19 @@ from .de_data import (
     eurostat_series,
 )
 from .de_data import _before as before  # Germany's join: history until the live series begins
-from .http import downloads_of
+from .de_data import _DAILY_FILL_LIMIT  # Germany's daily yields' fill: a longer gap is a break
+from .http import bpstat_get, downloads_of
 from .joins import ttm_sum
 from .us_data import fred_series
 
 # A quarter's population is dated this many days after the quarter begins, as Germany's.
 _QUARTER_MIDDLE_DAYS = 45
+
+# The Banco de Portugal's BPstat (9.13, decision 183): its baked files, ``ratesplot/data/bpstat/ID.csv``, and the
+# dataset of Portugal's daily yields, (domain, dataset): domain 26, the secondary market; Treasury bonds at a fixed
+# rate, yields by residual maturity, daily and monthly, from LSEG (measured 2026-11-23).
+BPSTAT_BAKED_SOURCE = "bpstat"
+BPSTAT_YIELD_DATASET = (26, "690b7b36fd36c0dbe249c48cbbc39524")
 
 
 @dataclass(frozen=True, eq=False)
@@ -126,6 +141,9 @@ class EuroNation:
     # Italy's alone: France's runs 0.4 to 1.2 points above the OECD's 1980 to 1986, a different bond; Portugal's falls
     # 2.4 points where the OECD's begins).
     yield_history_from: pd.Timestamp | None = None
+    # Daily yields (Portugal's from BPstat, 9.13), by column: the series ids in ``BPSTAT_YIELD_DATASET``, drawn day by
+    # day in place of a monthly series (a column is in this or ``yield_series``, never both).
+    daily_yields: dict[str, str] = field(default_factory=dict)
 
 
 # France (batch 14.3, decision 171, 9.3; its balance of payments 9.4, its consumer prices before 1996 9.5, its series
@@ -169,13 +187,26 @@ FRANCE = EuroNation(
 # billion in 2026-Q2). The national price index (``PRTCPIALLMINMEI``) 1955-01 to 2025-04: in the 340 months both
 # have a 12-month rise, the harmonised index's runs above the national one's by 0.02 point on average, by 1.60 at
 # most (2023-08).
+# Its yields since 9.13 (decision 183): the Banco de Portugal's daily yields on BPstat, five terms, measured
+# 2026-11-23 (``G:\Research\Claude\ratesplot_bpstat\measure_terms.py``, from the dataset's whole answer), each to
+# 2026-11-13: the 10-year 8,539 days from 1993-07-16, holiday gaps alone (six days at most); the 2-year from
+# 1993-07-16, gaps of five months a year to 1998 and 1998-07-24 to 1998-12-23, 2002-07-17 to 2003-02-13; the 3-year
+# from 1993-07-16, gaps of five months a year to 1998; the 5-year from 1994-02-04, gaps to 1998-01; the 7-year from
+# 1993-07-16, gaps 1993-10-22 to 1995-12-27 and 2015-02-03 to 2016-04-19. Each month's average equals BPstat's own
+# monthly to 0.006 in 372 of 376 months (3-year), 378/378 (5-year), 361/362 (7-year), 399/400 (10-year), and the
+# 10-year's the OECD's monthly (FRED ``IRLTLT01PTM156N``, drawn before 9.13) in all 400. BPstat's 4-year is left
+# out: no such term on the chart. The gaps are drawn as breaks (``fetch_yields``).
 PORTUGAL = EuroNation(
     key="pt",
     name="Portugal",
     adjective="Portuguese",
     geo="PT",
-    yield_series={"10-Year": "IRLTLT01PTM156N"},
-    yield_earliest={"10-Year": pd.Timestamp("1993-07-01")},
+    yield_series={},
+    daily_yields={"2-Year": "12099454", "3-Year": "12099455", "5-Year": "12099457", "7-Year": "12099458",
+                  "10-Year": "12099459"},
+    yield_earliest={"2-Year": pd.Timestamp("1993-07-16"), "3-Year": pd.Timestamp("1993-07-16"),
+                    "5-Year": pd.Timestamp("1994-02-04"), "7-Year": pd.Timestamp("1993-07-16"),
+                    "10-Year": pd.Timestamp("1993-07-16")},
     ecb_annual_debt=("GFS", "A.N.PT.W0.S13.S1.C.L.LE.GD.T._Z.XDC._T.F.V.N._T", "XDC"),
     level_sectors={"f": ("S1311",), "m": ("S1313",)},
     cpi_history_series="PRTCPIALLMINMEI",
@@ -286,27 +317,107 @@ def series_earliest(nation: EuroNation, config: PlotConfig) -> dict[str, pd.Time
     """Return the first observation of the nation's inputs, by name, for the coverage warning: the chosen yields it has, then the rest."""
     earliest = {
         (f"{column} Yield (Eurostat's convergence yield, then the OECD's; monthly averages)" if nation.yield_history_from
+         else f"{column} Yield (Banco de Portugal, daily)" if column in nation.daily_yields
          else f"{column} Yield (OECD, monthly average)"): nation.yield_earliest[column]
         for column in config.fetched_yield_columns
-        if column in nation.yield_series
+        if column in nation.yield_series or column in nation.daily_yields
     }
     return {**earliest, **nation.series_earliest}
 
 
+def parse_bpstat(data: dict, series_id: str) -> pd.Series:
+    """Return one BPstat series from its JSON-stat 2.0 answer: dated by each reference day, in percent.
+
+    The answer must hold that series alone (``extension.series``), daily, in
+    percent ("Percentage"), every dimension but ``reference_date`` of one
+    category: so the values, a flat list, are the series' own in the order of
+    its days. A day without a value is left out. No day at all (asked from a
+    day after its last) is an empty series.
+    """
+    listed = [str(entry.get("id")) for entry in (data.get("extension") or {}).get("series", [])]
+    if listed and listed != [series_id]:
+        raise ValueError(f"expected BPstat series {series_id} alone, found {listed}")
+    ids, sizes = data.get("id", []), data.get("size", [])
+    if "reference_date" not in ids or len(ids) != len(sizes):
+        raise ValueError("expected a JSON-stat dataset with a reference_date dimension")
+    labels = {}
+    for dim, size in zip(ids, sizes):
+        if dim == "reference_date":
+            continue
+        if size != 1:
+            raise ValueError(f"expected one category of BPstat's dimension {dim}, found {size}")
+        dimension = data["dimension"][dim]
+        labels[dimension.get("label")] = next(iter(dimension["category"].get("label", {}).values()), None)
+    if labels.get("Periodicity") != "Daily" or labels.get("Unit of measure") != "Percentage":
+        raise ValueError(f"expected BPstat series {series_id} daily in percent, found {labels.get('Periodicity')} in "
+                         f"{labels.get('Unit of measure')}")
+    index = data["dimension"]["reference_date"]["category"].get("index", [])
+    days = sorted(index, key=index.get) if isinstance(index, dict) else list(index)
+    values = data.get("value", [])
+    if isinstance(values, dict):  # JSON-stat's sparse form, by position
+        values = [values.get(str(position)) for position in range(len(days))]
+    if len(values) != len(days):
+        raise ValueError(f"BPstat series {series_id}: {len(values)} values for {len(days)} days")
+    numbers = pd.to_numeric(pd.Series(values, dtype=object), errors="coerce").to_numpy(dtype=float)
+    return pd.Series(numbers, index=pd.DatetimeIndex(days, name=DATE_COLUMN)).dropna().sort_index()
+
+
+def bpstat_download(series_id: str, start: pd.Timestamp | None = None) -> pd.Series:
+    """Ask BPstat for one series of ``BPSTAT_YIELD_DATASET``, from ``start`` (an ISO day, ``obs_since``) or whole (``parse_bpstat``)."""
+    domain, dataset = BPSTAT_YIELD_DATASET
+    params = {"lang": "EN", "series_ids": series_id}
+    if start is not None:
+        params["obs_since"] = f"{start:%Y-%m-%d}"
+    response = bpstat_get(BPSTAT_DATA_URL.format(domain=domain, dataset=dataset), params)
+    return parse_bpstat(response.json(), series_id)
+
+
+def bpstat_series(series_id: str) -> pd.Series:
+    """Return one BPstat series: its baked history (``ratesplot/data/bpstat/``), then its last two months asked for.
+
+    As every live source (``baked.with_recent_part``): market yields, not
+    revised, so the recent part is the last two months; with BPstat failing,
+    the bake alone, with a warning; a series not baked is asked for whole.
+    """
+    return with_recent_part(
+        BPSTAT_BAKED_SOURCE,
+        series_id,
+        f"Banco de Portugal {series_id}",
+        lambda start: bpstat_download(series_id, start),
+        RECENT_PART_UNREVISED,
+    )
+
+
 def fetch_yields(nation: EuroNation, config: PlotConfig) -> pd.DataFrame:
-    """Return the nation's yields, date-indexed: each term's monthly averages (FRED), all drawn as steps.
+    """Return the nation's yields, date-indexed: each term's monthly averages (FRED), drawn as steps, or its daily yields (Portugal's, BPstat).
 
     The columns are the chosen ones it has (``config.fetched_yield_columns``),
-    trimmed to the window; ``attrs[YIELD_HISTORY_ATTR]`` gives each column's last
-    date, since every value is monthly. A term whose series fails is left out,
-    with a warning.
+    trimmed to the window; ``attrs[YIELD_HISTORY_ATTR]`` gives each monthly
+    column's last date (every value of it monthly: steps); a daily column has
+    none, so it is drawn as a line (``plotting.add_stepped_yield_lines``). A
+    daily term is carried over a missing day for three rows at most, as
+    Germany's daily yields are, so a longer gap is a break. A term whose
+    series fails is left out, with a warning.
     """
-    chosen = [column for column in config.fetched_yield_columns if column in nation.yield_series]
-    absent = [column for column in config.yield_columns if column not in nation.yield_series]
+    chosen = [column for column in config.fetched_yield_columns
+              if column in nation.yield_series or column in nation.daily_yields]
+    absent = [column for column in config.yield_columns
+              if column not in nation.yield_series and column not in nation.daily_yields]
     if absent and len(absent) < len(config.yield_columns):  # none left: plotting._warn_no_yields
         print(f"  Note: no {nation.adjective} {', '.join(absent)} yield; the {nation.adjective} chart is drawn without it.")
     columns: dict[str, pd.Series] = {}
+    history_through: dict[str, pd.Timestamp] = {}
     for column in chosen:
+        if column in nation.daily_yields:
+            series_id = nation.daily_yields[column]
+            try:
+                daily = bpstat_series(series_id)
+            except Exception as exc:
+                print(f"  Warning: Banco de Portugal {series_id} ({nation.adjective} {column} yield) unavailable ({exc}); not drawn.")
+                continue
+            if not daily.empty:
+                columns[column] = daily
+            continue
         series_id = nation.yield_series[column]
         try:
             frame = fred_series(series_id, revised=False)
@@ -318,10 +429,15 @@ def fetch_yields(nation: EuroNation, config: PlotConfig) -> pd.DataFrame:
         if column == "10-Year" and nation.yield_history_from is not None:
             values = before(_yield_history(nation), values)
         columns[column] = values
+        history_through[column] = values.index[-1]
     if not columns:
         return pd.DataFrame()
-    frame = pd.concat(columns, axis=1).sort_index().rename_axis(DATE_COLUMN).loc[config.start : config.end]
-    frame.attrs[YIELD_HISTORY_ATTR] = {column: values.index[-1] for column, values in columns.items()}
+    frame = pd.concat(columns, axis=1).sort_index()
+    for column in frame.columns:
+        if column not in history_through:
+            frame[column] = frame[column].ffill(limit=_DAILY_FILL_LIMIT)
+    frame = frame.rename_axis(DATE_COLUMN).loc[config.start : config.end]
+    frame.attrs[YIELD_HISTORY_ATTR] = history_through
     return frame
 
 

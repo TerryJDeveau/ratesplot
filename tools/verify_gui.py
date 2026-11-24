@@ -3273,25 +3273,30 @@ def check_batch133(check: Check) -> None:
     """Batch 13.3: the real yields as terms of their own: each panel offers its nation's, none ticked; a box ticked is written and drawn, dashed, in its nominal term's colour; a real yield alone."""
     with window(f"--na:ca,us,gb,de -s:2015 --no-gdp --no-debt --no-interest {END}") as w:
         app = w.app
-        # A nation offering one yield term has no list in its panel (France's, Portugal's, Italy's, Spain's and the
-        # Netherlands' 10-year, batch 14.3).
+        # A nation offering one yield term has no list in its panel (France's, Italy's, Spain's and the Netherlands'
+        # 10-year, batch 14.3); Portugal's five daily terms have one since 9.13.
         listed = tuple(n for n in NATION_KEYS if f"{n}:yields" in app.choice_editors)
-        check("France, Portugal, Italy, Spain and the Netherlands: one term, no yields list",
-              not {"fr", "pt", "it", "es", "nl"} & set(listed) and len(listed) == len(NATION_KEYS) - 5,
+        check("France, Italy, Spain and the Netherlands: one term, no yields list; Portugal's listed",
+              not {"fr", "it", "es", "nl"} & set(listed) and "pt" in listed and len(listed) == len(NATION_KEYS) - 4,
               listed)
 
         def editor(nation: str):
             return app.choice_editors[f"{nation}:yields"]
 
+        pt_boxes = {value: box.get() for value, box in editor("pt").boxes.items()}
+        check("Portugal's panel: its five terms, 2, 5 and 10 ticked at the start (9.13)",
+              pt_boxes == {"2y": True, "3y": False, "5y": True, "7y": False, "10y": True}, pt_boxes)
         real = {n: [value for value in editor(n).boxes if value.startswith("r")] for n in listed}
         check("each panel offers its nation's real terms", real == {
             "cdn": ["r30"], "us": ["r5", "r7", "r10", "r20", "r30"], "uk": ["r5", "r7", "r10", "r20", "r30"], "de": ["r5", "r7", "r10"],
+            "pt": [],
         }, real)
         check("none ticked at the start", not any(editor(n).boxes[value].get() for n in listed for value in real[n]))
         check("a box's caption is its term", str(editor("us").widgets[list(editor("us").boxes).index("r10")].cget("text")) == "r10")
-        check("the row captioned “real:” in each panel", all(
-            any(widget.winfo_class() == "TLabel" and str(widget.cget("text")) == "real:" for widget in all_widgets(editor(n).frame)) for n in listed
-        ))
+        captioned = {n: any(widget.winfo_class() == "TLabel" and str(widget.cget("text")) == "real:" for widget in all_widgets(editor(n).frame))
+                     for n in listed}
+        check("the row captioned “real:” in each panel offering real terms, none in Portugal's (no real yields, 9.13)",
+              captioned == {n: bool(real[n]) for n in listed}, captioned)
         editor("us").boxes["r10"].set(True)
         editor("us").box_changed("r10")
         w.settle()

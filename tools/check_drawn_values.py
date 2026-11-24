@@ -96,7 +96,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from regress_charts import PINNED_END, install_disk_cache  # noqa: E402
 
-from ratesplot import cdn_data, cli, de_data, http, rates, uk_data, us_data  # noqa: E402
+from ratesplot import cdn_data, cli, de_data, euro_data, http, rates, uk_data, us_data  # noqa: E402
 from ratesplot.cdn_hist_yields import build_cdn_hist_yields  # noqa: E402
 from ratesplot.de_archive_data import (  # noqa: E402
     EMBEDDED_DE_DISCOUNT_RATE_CHANGES,
@@ -235,6 +235,10 @@ CASES: dict[str, list[str]] = {
     # 9.8, decision 176: the euro nations' variable rate beside their fixed bands, each nation's read as its own
     # (Italy's since 9.9, decision 177; Spain's since 9.11, decision 180; the Netherlands' since 9.12, decision 182).
     "euro_mortgages": ["--na:de,fr,pt,it,es,nl", "-s:2000", "--mo:var,1-5,5-10,over10"],
+    # 9.13: Portugal's five daily terms from BPstat, over their whole span (the gaps before 2003 breaks) and with Daily
+    # values on (a market yield is not filled in: each line read day by day as drawn).
+    "pt_daily_yields": ["--na:pt", "-s:1993", "--y:2,3,5,7,10", "--no-debt", "--no-gdp", "--no-interest"],
+    "daily_pt_yields": ["--na:pt", "-s:2010", "--y:2,3,5,7,10", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
     # Batch 16: Germany's GDP from 1950, each figure worked out here across every join (1960, 1970, 1991), in euros
     # and per person (the published figures to 1959; West Germany's population through 1990 and 1991); and per
     # person beside a yield, where a figure first shows on a later chart date (1959's on 1960-01-01).
@@ -334,6 +338,11 @@ def iadb(code: str, **kwargs) -> Source:
     return Source(f"Bank of England {code}", lambda: _clean(uk_data.iadb_download(code)), **kwargs)
 
 
+def bpstat(series_id: str, **kwargs) -> Source:
+    # BPstat's whole series (9.13), not its bake and recent part (``euro_data.bpstat_series``), which the drawing reads.
+    return Source(f"BPstat {series_id}", lambda: _clean(euro_data.bpstat_download(series_id)), **kwargs)
+
+
 def bundesbank(column: str, frequency: str, **kwargs) -> Source:
     key = de_data.DE_YIELD_SERIES[column]
     name = f"Bundesbank {key}, {'end of month' if frequency == 'M' else 'daily'}"
@@ -407,10 +416,13 @@ def de_real_term(column: str) -> Source:
 # it is drawn; written out here, not taken from the program's ``euro_data``.
 EURO_YIELDS = {
     "fr": ("IRLTLT01FRM156N", None),
-    "pt": ("IRLTLT01PTM156N", None),
     "it": ("IRLTLT01ITM156N", ("IT", pd.Timestamp("1991-03-01"))),
     "es": ("IRLTLT01ESM156N", None),
     "nl": ("IRLTLT01NLM156N", None),
+}
+# Portugal's daily yields since 9.13: BPstat's series of each term (written out here, not taken from ``euro_data``).
+BPSTAT_YIELDS = {
+    "pt": {"2-Year": "12099454", "3-Year": "12099455", "5-Year": "12099457", "7-Year": "12099458", "10-Year": "12099459"},
 }
 
 
@@ -427,6 +439,8 @@ def eurostat_yield(geo: str, **kwargs) -> Source:
 
 def yield_sources(nation: str, column: str) -> list[Source]:
     """The sources of one nation's yield term, newest first."""
+    if nation in BPSTAT_YIELDS:  # 9.13: Portugal's, day by day
+        return [bpstat(BPSTAT_YIELDS[nation][column])]
     if nation in EURO_YIELDS:  # 9.10: each its own (they fell through to Germany's below)
         code, history = EURO_YIELDS[nation]
         sources = [fred(code, monthly=True, carry_days=MONTHLY_CARRY_DAYS)]
@@ -757,7 +771,7 @@ def check_case(name: str, tokens: list[str]) -> bool:
                         read[source.name] = pd.Series(dtype=float)
                         print(f"  {key:4} {line.label[:44]:44} note  {source.name} could not be read ({exc})", file=sys.__stdout__)
             result = match(line.values, sources, read)
-            if line.label.endswith(" Yield") and key in EURO_YIELDS and not line.values.empty:
+            if line.label.endswith(" Yield") and (key in EURO_YIELDS or key in BPSTAT_YIELDS) and not line.values.empty:
                 # 9.10: a euro yield is drawn from where its sources begin in the window (a join lost would leave out its
                 # first years, and every point left would still match).
                 begins = min((values.index[0] for values in read.values() if not values.empty), default=None)

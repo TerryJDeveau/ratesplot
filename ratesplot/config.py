@@ -204,6 +204,10 @@ STATCAN_HOST = "www150.statcan.gc.ca"
 # Quarterly Government Finance Statistics hold Canada's interest as Statistics Canada's own (batch 49's second stage).
 IMF_SDMX_URL = "https://api.imf.org/external/sdmx/2.1/data/{flow}/{key}"
 IMF_QGFS_FLOW = "IMF.STA,QGFS,12.0.0"
+# The Banco de Portugal's BPstat data service (no key; Terry's decisions 179 and 183, 2026-11-23): one dataset of a
+# domain, a series chosen by ``series_ids``, from ``obs_since`` (an ISO day); its answer JSON-stat 2.0
+# (``euro_data.parse_bpstat``). Portugal's daily yields (``euro_data.PORTUGAL``).
+BPSTAT_DATA_URL = "https://bpstat.bportugal.pt/data/v1/domains/{domain}/datasets/{dataset}/"
 
 # Each source's name in the message log, by the host its requests go to: a
 # source that fails gets one warning per drawing, which names it once (batch
@@ -225,6 +229,7 @@ SOURCE_NAMES = {
     "quote.cnbc.com": "CNBC",
     "www2.census.gov": "Census Bureau",
     "api.imf.org": "IMF",
+    "bpstat.bportugal.pt": "Banco de Portugal",
 }
 
 _BROWSER_HEADERS = {
@@ -254,6 +259,10 @@ UK_SESSION.headers.update(_BROWSER_HEADERS | {"Accept-Language": "en-GB,en;q=0.9
 # from Terry's laptop (2026-10-06).
 DE_SESSION = requests.Session()
 DE_SESSION.headers.update(_BROWSER_HEADERS | {"Accept-Language": "en-GB,en;q=0.9,de;q=0.8"})
+# The Banco de Portugal's BPstat (9.13): a session of its own with python-requests' own headers, the request it was
+# measured with (2026-11-23). No browser's headers were tried: its robots.txt sent curl a refusal page, and no header
+# was varied to get past it.
+BPSTAT_SESSION = requests.Session()
 # The quote feed is an extra: one quick try (asked once more only as every
 # request is, RETRY_WAIT_SECONDS), then the chart is drawn without it (with a
 # warning).
@@ -1352,17 +1361,20 @@ NATIONS: tuple[Nation, ...] = (
     ),
     # Portugal (batch 14.3, decision 175): as France, on the same code
     # (ratesplot.euro_data); named by --nations:pt (or prt), a value for it
-    # alone "--pt:max:8". The OECD's monthly 10-year from 1993-07; central
-    # and local government (no state level); the variable rate ticked at the
-    # start, Germany's three fixed bands offered beside it.
+    # alone "--pt:max:8". Five daily yields from the Banco de Portugal's
+    # BPstat since 9.13 (decision 183): 2, 3, 5, 7 and 10 years, from 1993-07
+    # (the 5-year 1994-02); 2, 5 and 10 ticked at the start and 10y-2y its
+    # spread, as Germany's pattern. Central and local government (no state
+    # level); the variable rate ticked at the start, Germany's three fixed
+    # bands offered beside it.
     Nation(
-        "pt", "Portugal", ("pt", "prt"), ("10y",), "Portuguese",
+        "pt", "Portugal", ("pt", "prt"), ("2y", "3y", "5y", "7y", "10y"), "Portuguese",
         shown_by_default=False, market_timezone="Europe/Lisbon", currency="EUR", overnight_rate="€STR",
         level_boxes=(("f", "Central"), ("m", "Local")),
         own_defaults=(
-            ("yield_terms", ("10y",)),
+            ("yield_terms", ("2y", "5y", "10y")),
             ("mortgage_terms", ("var",)),
-            ("spread_pairs", ()),
+            ("spread_pairs", (("10y", "2y"),)),
         ),
     ),
     # Italy (batch 14.3, decision 177): as France, on the same code
@@ -2045,9 +2057,9 @@ PT = CountryMetadata(
     key="pt",
     country_name="Portugal",
     currency_prefix=CURRENCY_SYMBOLS["EUR"],
-    # The OECD's long-term rate: the 10-year benchmark bond's yield, a
-    # monthly average.
-    yield_title="Portuguese Government 10-Year Yield (monthly average)",
+    # The Banco de Portugal's daily yields of its fixed-rate Treasury bonds by
+    # residual maturity (BPstat, 9.13); the OECD's monthly 10-year before.
+    yield_title="Portuguese Treasury Bond Yields",
     title_nation="Portuguese",
     title_short="PRT",
     debt_column=PT_DEBT_COLUMN,

@@ -610,6 +610,12 @@ CASES: dict[str, list[str]] = {
     "cmp_trade_base_nl": ["--na:fr,it", "--com:trade", "--base:nl", "-r", "-s:2004"],
     "cmp_10y_nl1960": ["--na:de,fr,nl", "--com", "-s:1960"],
     "var6": ["--na:de,fr,pt,it,es,nl", "--mo:var", "-l", "-s:2010"],
+    # Portugal's daily yields from BPstat (9.13, decision 183): the five terms over their whole span (the gaps before
+    # 2003 drawn as breaks), the crisis of 2010-12 day by day with the spread, the last weeks, and the comparison.
+    "pt_yields_all": ["--na:pt", "--y:2,3,5,7,10", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:1993"],
+    "pt_y_sp2010": ["--na:pt", "--sp", "--no-gdp", "--no-debt", "--no-interest", "-l", "-s:2010"],
+    "pt_y2026": ["--na:pt", "--y:2,3,5,7,10", "--no-gdp", "--no-debt", "--no-interest", "-s:2026"],
+    "cmp_10y_pt_daily": ["--na:de,fr,pt", "--com", "-s:2010"],
 }
 
 
