@@ -28,6 +28,7 @@ import requests
 from urllib3.exceptions import MaxRetryError, ProtocolError
 
 from .config import (
+    BPSTAT_SESSION,
     CANADIAN_SESSION,
     DE_SESSION,
     DATE_COLUMN,
@@ -1257,6 +1258,18 @@ def de_get(
     laptop and answered on the next try (2026-10-06): the retry covers that.
     """
     response = _session_get(DE_SESSION, "de", url, params, timeout=timeout)
+    assert response is not None  # only missing_ok returns None
+    return response
+
+
+def bpstat_get(
+    url: str,
+    params: dict | None = None,
+    *,
+    timeout: int = HTTP_TIMEOUT_SECONDS,
+) -> requests.Response:
+    """GET a Banco de Portugal BPstat URL (``euro_data.bpstat_download``, 9.13), asked once more and cached as the others are."""
+    response = _session_get(BPSTAT_SESSION, "bpstat", url, params, timeout=timeout)
     assert response is not None  # only missing_ok returns None
     return response
 

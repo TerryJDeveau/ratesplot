@@ -99,6 +99,7 @@ from ratesplot.bake import (  # noqa: E402
     bake_bbk_history,
     bake_boc_history,
     bake_boe_history,
+    bake_bpstat_history,
     bake_canadian_archives,
     bake_ecb_history,
     bake_eurostat_history,
@@ -123,12 +124,13 @@ BAKES = {
     "ons": bake_ons_history,
     "bbk": bake_bbk_history,
     "statcan": bake_statcan_history,
+    "bpstat": bake_bpstat_history,
 }
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation's archives, or one live source's history (boe, boc, fred, ecb, eurostat, ons, bbk, statcan)")
+    parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation's archives, or one live source's history (boe, boc, fred, ecb, eurostat, ons, bbk, statcan, bpstat)")
     parser.add_argument("--us-hist-fin", action="store_true", help="read the Census historical database itself and write its extract before the U.S. bake (Windows: pyodbc and the Microsoft Access ODBC driver)")
     parser.add_argument("--uk-workbook", type=Path, help="the UK millennium workbook already on disk (not downloaded)")
     parser.add_argument("--de-csv", type=Path, help="the Bundesbank's WU0004 download already on disk (not downloaded)")
