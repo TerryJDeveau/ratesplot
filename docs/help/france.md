@@ -11,7 +11,8 @@ At the start it draws GDP, debt and interest on the right axis, and the 10-year 
 - [TTM interest outlays](?help=interest), from 1995: four-quarter sums of general government interest payable, Eurostat's quarters.
 - [Balance of payments](?help=payments), from 1999: Eurostat's quarterly balance of payments, not seasonally adjusted: the current account's credits and debits, or exports and imports of goods and services; the quarters after its last from its monthly figures.
 - [By level](?help=levels): the debt and interest of central government or of local government instead of the total, from Eurostat's figures by subsector: the debt quarterly from 2000, the interest yearly from 1995 (each year's at its last day), since Eurostat's quarterly interest is for general government alone. France has no state level; its social security funds are no level of the chart.
-- [Bond yields](?help=yields), from 1960: the 10-year alone, the OECD's long-term interest rate on FRED, a monthly average drawn across its month. The chart's End is then the first day of the last month published, where its last average is drawn as a point. No other terms, no real yields, and so no yield spreads.
+- [Bond yields](?help=yields), daily from 2004-11: the Banque de France's yields of French government bonds (OATs) at a constant maturity of 1, 2, 3, 5, 7, 10, 20 and 30 years, from its statistics service [Webstat](https://webstat.banque-france.fr/); the 30-year from 2006-10. The 10-year alone is ticked at the start; before 2004-11 it is the OECD's long-term interest rate on FRED, a monthly average drawn across its month, from 1960. A chart starts where every curve it draws has figures, so ticking another term starts it in 2004 or later. No real yields.
+- [Yield spreads](?help=spreads): any two of its terms, daily from 2004-11 (with the 30-year from 2006-10); none at the start.
 - [Policy rates](?help=policy-rates): the euro area's, the ECB's main refinancing rate from 1999-01-01; the overnight market's rate, EONIA from 1999-01-04, €STR from 2019-10-01. None before 1999.
 - [Inflation](?help=inflation), from 1956-01: the 12-month rise of France's consumer prices, Eurostat's harmonised index from 1996 and the national index before it, scaled to it where it begins; the rises from 1997 are the harmonised index's alone.
 - [Mortgage rates](?help=mortgages), monthly from 2000-01: the ECB's rates on new loans to households in France for house purchase, fixed for over 1 to 5, over 5 to 10 and over 10 years. All three are ticked at the start. The variable rate (a variable rate or one fixed for up to a year) is offered beside them.
@@ -19,7 +20,7 @@ At the start it draws GDP, debt and interest on the right axis, and the 10-year 
 - [Inflation adjusted](?help=constant-prices): at the consumer prices of one month, by the same index, from 1955.
 - [Price index (CPI)](?help=price-index): Eurostat's harmonised index of consumer prices for France from 1996-01, 2025 = 100, and before it, from 1955-01, the national index as the OECD published it, scaled to it; unadjusted; no seasonally adjusted index is offered.
 - [Population](?help=population): Eurostat's quarterly figures from 1980.
-- [Latest values](?help=latest-values): no quotes during the day for France; its yield is a monthly average, so the chart ends at the last month published.
+- [Latest values](?help=latest-values): no quotes during the day for France; its yields end at the last day Webstat has published, the business day before.
 
 ## Its own controls
 
