@@ -1,6 +1,6 @@
 # Bond yields
 
-The yield of each nation's government bonds, by their term to maturity, in percent a year, drawn on the left axis. Bond yields draws them; Yield terms chooses the terms, from 1 month to 30 years: by default the 3-month, 2-, 5-, 10- and 30-year, and for the UK and Germany their own (5, 10 and 20 years; 2, 5, 10 and 30). A term a nation's sources don't have is named in the log and left off its chart. The difference between two terms is drawn by [Yield spreads](?help=spreads), and with [the latest values](?help=latest-values) each line runs on to the day's quotes. The last row of terms, r5 to r30, is the real yields, described below.
+The yield of each nation's government bonds, by their term to maturity, in percent a year, drawn on the left axis. Bond yields draws them; Yield terms chooses the terms, from 1 month to 30 years: by default the 3-month, 2-, 5-, 10- and 30-year, and for the UK, Germany and Portugal their own (5, 10 and 20 years; 2, 5, 10 and 30; 2, 5 and 10). A term a nation's sources don't have is named in the log and left off its chart. The difference between two terms is drawn by [Yield spreads](?help=spreads), and with [the latest values](?help=latest-values) each line runs on to the day's quotes. The last row of terms, r5 to r30, is the real yields, described below.
 
 A yield published once a month is drawn as a step held for its month, a daily one as a line. A gap of up to three days in a daily series (a holiday, a missing print) is bridged; a longer one is a break in the line.
 
@@ -32,6 +32,13 @@ The UK has only these three nominal terms.
 - **1972 on: the Bundesbank's term structure.** Yields of zero-coupon Federal securities, estimated by the Svensson method from the yields of the listed Federal bonds outstanding ([Term structure of interest rates](https://www.bundesbank.de/en/statistics/money-and-capital-markets/interest-rates-and-yields/term-structure-of-interest-rates); the 10-year: [BBSIS.D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A](https://www.bundesbank.de/dynamic/action/en/statistics/time-series-databases/time-series-databases/759784/759784?tsId=BBSIS.D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A)). The values at each month's end from 1972-09 for 1, 2, 5, 7 and 10 years, from 1986-06 for 20 years and from 2000-01 for 30, drawn as steps; then daily from 1997-08-07, the 30-year from 2000-08-01. The Bundesbank publishes the day's values during the day: at 11:50 UTC on 2026-10-21 that day's were there.
 
 Germany has no 1-month, 3-month, 6-month or 3-year in the program.
+
+## Portugal
+
+- **1993 on: the Banco de Portugal's yields.** Yields of Portuguese Treasury bonds at a fixed rate by residual maturity, the average of the day's quotes (from LSEG), daily, in the Banco de Portugal's statistics database [BPstat](https://bpstat.bportugal.pt/) (domain "Secondary market"): the 2-, 3-, 7- and 10-year from 1993-07-16, the 5-year from 1994-02-04. Each month's average of the 10-year equals the OECD's monthly long-term interest rate for Portugal ([IRLTLT01PTM156N](https://fred.stlouisfed.org/series/IRLTLT01PTM156N)) to 0.006 in 399 of 400 months; the chart drew that monthly average before version 9.13.
+- **Gaps.** Before 1998 the 2-, 3- and 5-year miss several months each year; the 2-year misses 2002-07-17 to 2003-02-13, the 7-year 1993-10-22 to 1995-12-27 and 2015-02-03 to 2016-04-19. Each gap is a break in its line. BPstat's 4-year is not drawn (the program has no such term).
+
+France, Italy, Spain and the Netherlands have the 10-year alone, the OECD's monthly average (their pages say more).
 
 ## Real yields
 

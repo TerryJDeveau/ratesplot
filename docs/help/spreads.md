@@ -20,6 +20,10 @@ The Bank of England's yields: 20y–10y from 1963 as monthly steps until 1999, d
 
 The Bundesbank's yields: 10y–2y from 1972-09 as month-end steps, daily from 1997-08; 30y–10y from 2000-01, daily from 2000-08.
 
+## Portugal
+
+The Banco de Portugal's yields, daily: 10y–2y at the start, from 1993-07, broken where the 2-year has gaps (several months a year before 1998, and 2002-07 to 2003-02). In 2011 and early 2012 the 2-year yielded up to 8 points more than the 10-year.
+
 ## How the program keeps these figures
 
 Each source's figures are kept in the program as the source published them. A job on GitHub asks every live source each day and adds the new figures; a revision of older ones waits for review before it is taken. When a chart is drawn, the program takes only the newest figures from each source and draws the older ones from what it holds: those from 24 months before the last figure it holds where the source revises its figures (GDP, debt, interest, population and the mortgage rates from surveys), from two months before where it doesn't (the yields, and the rates that are set or traded). If a source doesn't answer, the chart is drawn from what the program holds, with a warning naming the source and its last date. Statistics Canada is checked once a day: on a day it doesn't answer, it is asked nothing more until the next day in Ottawa, and where another source publishes the same figures (the consumer price index at the Bank of Canada, GDP in the IMF's copy at FRED, interest, consolidated and federal, at the IMF itself), that source's newer figures follow Statistics Canada's last, and the warning names them. The sources that have stopped (Statistics Canada's old tables, Historical Statistics of Canada, the Bank of Canada's historical tables, the Bank of England's dataset, and the series the Federal Reserve, the Bundesbank and the ECB no longer update) are kept as they were last published, and asked nothing.
