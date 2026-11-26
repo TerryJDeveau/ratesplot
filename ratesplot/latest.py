@@ -66,14 +66,15 @@ alone. It is a better projection, not data: it is drawn as one.
 
 The current account's credits and debits (the balance of payments, batch 23)
 follow trade likewise where trade's figures run later (batch 43.3,
-``_trade_steered``): the U.S.' and the UK's trade comes a quarter sooner from
-their monthly trade releases (``payments``, ``uk_data.ONS_SOONER``), and is
-about two thirds of each. Trade's twelve-month sum is observed to its last
+``_trade_steered``): the U.S.', Canada's (batch 43.3c) and the UK's trade comes a
+quarter sooner from their monthly trade releases (``payments``,
+``uk_data.ONS_SOONER``), and is about two thirds of each (Canada's four fifths). Trade's twelve-month sum is observed to its last
 quarter, the rest (income) goes on at its own pace. Tested from 2000,
 standing at each quarter's end with the next quarter's trade known, the next
 quarter's sums came within 0.22 to 0.53 of the half year's pace's
-root-mean-square error (the U.S.' credits 0.60 % against 1.85 %); with one
-month of the three known, within 0.72 to 0.83.
+root-mean-square error (the U.S.' credits 0.60 % against 1.85 %; Canada's
+receipts and payments within 0.16 and 0.24, tested 2026-11-24); with one
+month of the three known, within 0.69 to 0.83.
 """
 
 from __future__ import annotations

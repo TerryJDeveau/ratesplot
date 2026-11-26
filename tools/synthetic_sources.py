@@ -534,9 +534,17 @@ _STATCAN_PAYMENTS = {
 }
 _MILLIONS = {"UOM": "Dollars", "SCALAR_FACTOR": "millions", "SCALAR_ID": 6}
 _UNITS = {"SCALAR_FACTOR": "units", "SCALAR_ID": 0}
-# The tables the WDS's answers are drawn from (``statcan_wds``); the Real Return Bonds' 10-10-0122 last, asked of the
-# WDS only by the bake's fallback (9.15), its vector in no other table.
-_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145", "18100004", "18100006", *_STATCAN_PAYMENTS, "10100122")
+# Canada's trade each month (batch 43.3c): goods on a balance of payments basis (12-10-0011, from 1997) and total
+# services (12-10-0144, from 2007), millions a month, to 2026-09, a quarter past the balance of payments; each line
+# (exports, imports) about a third of the quarterly "Goods and services" at its end.
+_STATCAN_MONTHLY_TRADE = {
+    "12100011": ("1997-01-01", {"v87008955": (16_000, 72_000), "v87008839": (15_000, 74_000)}),
+    "12100144": ("2007-01-01", {"v1105277795": (5_500, 18_000), "v1105277805": (7_000, 18_500)}),
+}
+# The tables the WDS's answers are drawn from (``statcan_wds``); the Real Return Bonds' 10-10-0122, asked of the
+# WDS only by the bake's fallback (9.15), its vector in no other table; the monthly trade's, asked of the WDS alone.
+_STATCAN_TABLES = ("36100467", "36100104", "10100015", "17100009", "34100145", "18100004", "18100006", *_STATCAN_PAYMENTS, "10100122",
+                   *_STATCAN_MONTHLY_TRADE)
 
 
 def statcan(table_id: str) -> bytes:
@@ -634,6 +642,15 @@ def statcan(table_id: str) -> bytes:
                 "Current account": account, **_MILLIONS, "VECTOR": vector, "VALUE": np.round(_growth(q, low, high, table_id + vector), 0),
             })
             for (side, account), (vector, low, high) in lines.items()
+        ]
+        return _zip(table_id, pd.concat(rows))
+    if table_id in _STATCAN_MONTHLY_TRADE:
+        first, lines = _STATCAN_MONTHLY_TRADE[table_id]
+        months = pd.date_range(first, "2026-09-01", freq="MS")
+        rows = [
+            pd.DataFrame({"REF_DATE": [f"{d:%Y-%m}" for d in months], "GEO": "Canada", **_MILLIONS, "VECTOR": vector,
+                          "VALUE": np.round(_growth(months, low, high, table_id + vector), 0)})
+            for vector, (low, high) in lines.items()
         ]
         return _zip(table_id, pd.concat(rows))
     raise KeyError(f"no synthetic StatCan table {table_id}")

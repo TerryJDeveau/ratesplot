@@ -65,6 +65,7 @@ from ratesplot.config import (  # noqa: E402
     PROJECTION_LABEL_STEERED,
     PROJECTION_LABEL_TRADE,
     SERIES_KINDS,
+    STATCAN_CDN_MONTHLY_TRADE_VECTORS,
     PlotConfig,
     projection_label,
 )
@@ -391,10 +392,17 @@ def main() -> int:
                                (f"{PROJECTION_LABEL_STEERED}, credits and debits trade", {CDN.debt_column, PAYMENTS_DEBITS_COLUMN})):
         check(f"the legend's words: {words!r}", projection_label(steered_set) == words, projection_label(steered_set))
     current = replace(config, payments=True)
-    for why, key, asked in (("Canada (no sooner trade)", "cdn", current), ("Germany (monthly already)", "de", current),
+    for why, key, asked in (("France (its months as far for both pairs)", "fr", current), ("Germany (monthly already)", "de", current),
                             ("trade drawn", "us", replace(current, payments_items=("trade",))), ("--payments off", "us", config),
                             ("--projections off", "uk", replace(current, projections=False)), ("a chart ending before today", "uk", replace(current, end=past.end))):
         check(f"trade_for_projection: none for {why}", payments.trade_for_projection(key, asked) is None)
+    real_fetch = payments.fetch_payments
+    try:
+        payments.fetch_payments = lambda key, item: pd.DataFrame({DATE_COLUMN: [end], PAYMENTS_CREDITS_COLUMN: [1.0], PAYMENTS_DEBITS_COLUMN: [2.0]})
+        served = payments.trade_for_projection("cdn", current)
+        check("trade_for_projection: Canada's trade served (batch 43.3c)", served is not None and list(served.columns) == [PAYMENTS_CREDITS_COLUMN, PAYMENTS_DEBITS_COLUMN], served)
+    finally:
+        payments.fetch_payments = real_fetch
 
     # The sooner quarters, with the sources stood in for.
     class _Answer:
@@ -439,6 +447,40 @@ def main() -> int:
               and joined.iloc[-1] == (7.0 + 8.0 + 9.0) * 1e6 and joined.iloc[0] == 100.0, joined)
     finally:
         payments.fred_series = real_fred
+    # Canada's monthly trade (batch 43.3c): goods and services added up, asked from the last quarter's first month.
+    (goods_x, services_x), (goods_m, services_m) = STATCAN_CDN_MONTHLY_TRADE_VECTORS
+    cdn_months = pd.date_range("2026-04-01", "2026-11-01", freq="MS")
+    cdn_monthly = pd.DataFrame({goods_x: np.arange(1.0, 9.0), services_x: np.arange(1.0, 9.0) / 10, goods_m: np.arange(11.0, 19.0),
+                                services_m: np.arange(11.0, 19.0) / 10}, index=pd.DatetimeIndex(cdn_months, name=DATE_COLUMN))
+    exports_q = pd.Series([100.0, 200.0], index=pd.DatetimeIndex(["2026-01-01", "2026-04-01"]), name="x")
+    imports_q = pd.Series([300.0, 400.0], index=pd.DatetimeIndex(["2026-01-01", "2026-04-01"]), name="m")
+    real_range = payments.statcan_wds_range_of
+    asked_with = []
+    try:
+        def answered(vectors, start, *a):
+            asked_with.append((list(vectors), start))
+            return cdn_monthly
+        payments.statcan_wds_range_of = answered
+        x_joined, m_joined = _quietly(payments._with_cdn_monthly_quarters, exports_q, imports_q)
+        check("Canada's monthly trade: asked of the WDS from the last quarter's first month, its four vectors",
+              asked_with == [([goods_x, services_x, goods_m, services_m], pd.Timestamp("2026-04-01"))], asked_with)
+        check("Canada's monthly trade: goods and services of each whole quarter after the last, in dollars, not the quarter with two months",
+              list(x_joined.index) == [pd.Timestamp("2026-01-01"), pd.Timestamp("2026-04-01"), pd.Timestamp("2026-07-01")]
+              and np.isclose(x_joined.iloc[-1], (4.0 + 5.0 + 6.0) * 1.1e6) and np.isclose(m_joined.iloc[-1], (14.0 + 15.0 + 16.0) * 1.1e6)
+              and x_joined.iloc[1] == 200.0 and m_joined.iloc[0] == 300.0, (x_joined, m_joined))
+
+        def refused(*a, **k):
+            raise ValueError("refused")
+
+        payments.statcan_wds_range_of = refused
+        warned = io.StringIO()
+        with contextlib.redirect_stdout(warned):
+            kept = payments._with_cdn_monthly_quarters(exports_q, imports_q)
+        check("Canada's monthly trade: a failure leaves both series as they were, with a warning naming where they end",
+              kept[0] is exports_q and kept[1] is imports_q and "monthly trade unavailable" in warned.getvalue() and "2026-04" in warned.getvalue(),
+              warned.getvalue())
+    finally:
+        payments.statcan_wds_range_of = real_range
 
     # --- the box -----------------------------------------------------------------------------------------------------
     print("The box (options.idle_option_reasons)")

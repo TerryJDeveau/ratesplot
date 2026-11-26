@@ -331,6 +331,19 @@ STATCAN_CDN_CPI_SA_VECTOR = "v41690914"
 STATCAN_CDN_PAYMENTS_TABLE = "36100018"
 # Each pair's (receipts, payments) vectors, by ``PAYMENTS_ITEMS``.
 STATCAN_CDN_PAYMENTS_VECTORS = {"current": ("v61915244", "v61915273"), "trade": ("v61915245", "v61915274")}
+# Canada's trade each month (batch 43.3c, ``payments._with_cdn_monthly_quarters``),
+# seasonally adjusted, millions of dollars a month, all countries: goods on a
+# balance of payments basis (12-10-0011, from 1997) and total services
+# (12-10-0144, from 2007), each (exports, imports). Released about five weeks
+# after each month, so a quarter's three months about three weeks before the
+# balance of payments carries it. Measured 2026-11-24: goods' and services'
+# three months together equal "Goods and services" (v61915245, v61915274)
+# within a million in 69 and 67 of the 78 quarters from 2007, at most 0.6 %
+# apart (the latest quarters, which the monthly release has revised since);
+# both end 2026-09 (released 2026-11-04), the quarterly 2026 Q2. Only the
+# whole quarters after the quarterly vectors' last are taken, read from the
+# WDS from the month after it: not baked, never the tables' ZIPs.
+STATCAN_CDN_MONTHLY_TRADE_VECTORS = (("v87008955", "v1105277795"), ("v87008839", "v1105277805"))
 
 # Archived (terminated) StatCan tables. They no longer change, so the bake
 # (``tools/bake_archives.py``) downloads them once and writes the required rows
