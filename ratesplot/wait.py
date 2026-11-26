@@ -4,7 +4,11 @@ Terry, 2026-11-03 (decision 101): "Please wait about N s (M s so far)", the
 time still expected first, "how much additional time is expected before
 waiting is over, not the grand total", worked out by "an internal algorithm",
 "updating the algorithm's parameters on the fly"; the time taken as measured
-second. This module holds the sum and the words; each front end shows them
+second. Terry, 2026-11-26 (batch 50.1, decision 189): "more" after the time
+still expected, "to emphasise that it is the time to complete from now", and
+the time so far carried across a drawing that replaces one still waiting,
+until the line is taken away (``web.main``; the window's queued drawing
+carried it already, ``gui._start_render``). This module holds the sum and the words; each front end shows them
 (``web._await_drawing``, ``gui._show_wait``). It imports no front end.
 
 The time still expected is the sum of the parts, each from the drawings before:
@@ -287,10 +291,10 @@ WAIT_COLOUR = "#FF00FF"
 
 
 def wait_text(left: float, taken: float) -> str:
-    """The line itself: "Please wait about 12 s (5 s so far)", or "nearly done" once the time expected has run out."""
+    """The line itself: "Please wait about 12 s more (5 s so far)", or "nearly done" once the time expected has run out."""
     if left < _NEARLY_DONE_SECONDS:
         return f"Please wait, nearly done ({taken_text(taken)} so far)"
-    return f"Please wait about {expected_text(left)} ({taken_text(taken)} so far)"
+    return f"Please wait about {expected_text(left)} more ({taken_text(taken)} so far)"
 
 
 class Wait:

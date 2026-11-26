@@ -7,7 +7,7 @@ Controls
     text field for every VALUE option (``editor="date"`` adds a calendar
     button; ``editor="size"`` gives width and height boxes with an
     aspect-ratio lock; ``editor="levels"`` gives one check box per level of
-    government, the single "By level" control for ``--debt:`` and
+    government, the single "Debt and interest by level" control ("By level" before batch 50.1) for ``--debt:`` and
     ``--interest:``, in each nation's panel), in the blocks of
     ``frontend.control_blocks`` (Terry's order of 2026-10-08: the measure
     under the curves, the regression
@@ -156,6 +156,9 @@ from .frontend import (
     GREYABLE_OPTIONS,
     LIMIT_COLUMNS,
     LIMITS,
+    LIMITS_HEADING,
+    LIMITS_HELP,
+    LIMITS_TOPIC,
     MASTER,
     NATION_OPTIONS,
     DATES_TOPIC,
@@ -668,15 +671,17 @@ class _ChoicesEditor:
         (``_SPANNED``): the comparison's "TTM interest paid on public debt"
         (decision 147) would otherwise widen the yield terms' first column, and
         the column with it. Not in a nation's panel, where a margin's field may
-        stand beside a lone box.
+        stand beside a lone box. Headings and captions in the text's own colour
+        (batch 50.1): the grey of before read as a control turned off (Terry,
+        2026-11-26, decision 189: "The word “real” appears greyed-out").
         """
         if not boxes:
-            ttk.Label(self.frame, text=caption, foreground="#555555").grid(
+            ttk.Label(self.frame, text=caption).grid(
                 row=self.rows, column=0, columnspan=_SPANNED, sticky="w", pady=(4 if self.rows else 0, 0)
             )
             self.rows += 1
             return
-        ttk.Label(self.frame, text=f"{caption}:" if caption else "", foreground="#555555").grid(
+        ttk.Label(self.frame, text=f"{caption}:" if caption else "").grid(
             row=self.rows, column=0, sticky="w", padx=(0, 4)
         )
         span = _SPANNED if len(boxes) == 1 and self.nation is None else 1
@@ -1521,7 +1526,7 @@ class RatesPlotApp:
             _Tooltip(button, "Pick a date from a calendar")
 
     def _add_levels_control(self, cell: ttk.Frame, option: Option, nation: Nation) -> None:
-        """A nation's levels of government in ``cell``, a box for each, writing its letters ("fp" …): "By level" above, two to a row.
+        """A nation's levels of government in ``cell``, a box for each, writing its letters ("fp" …): its label above, two to a row.
 
         Batch 10.5 (Terry, 2026-10-13): in each nation's panel, the boxes
         named for its governments (``Nation.level_boxes``), where the column
@@ -1883,11 +1888,21 @@ class RatesPlotApp:
         flow.add(limits)
         frame.bind("<Configure>", lambda event, flow=flow: flow.fit(event.width), add="+")
         self.panel_flows[nation.key] = flow
-        # A column per axis, Max above Min, Top above Bottom (LIMIT_COLUMNS).
+        # Their heading over both columns, with its ⓘ (batch 50.1; Terry, 2026-11-26, decision 189: "Put a heading to
+        # say “Axis Limits” above the “Max” ... “Top” block").
+        head = ttk.Frame(limits)
+        head.grid(row=0, column=0, columnspan=len(LIMIT_COLUMNS), sticky="w")
+        heading = ttk.Label(head, text=LIMITS_HEADING)
+        heading.pack(side="left")
+        _Tooltip(heading, LIMITS_HELP, info=True)
+        self._info_mark(head, f"{nation.key}:{LIMITS_TOPIC}", None, LIMITS_HELP, title=LIMITS_HEADING, topic=LIMITS_TOPIC).pack(
+            side="left", padx=(3, 0)
+        )
+        # A column per axis under it, Max above Min, Top above Bottom (LIMIT_COLUMNS).
         for axis, names in enumerate(LIMIT_COLUMNS):
             for place, name in enumerate(names):
                 cell = ttk.Frame(limits)
-                cell.grid(row=place, column=axis, sticky="e", padx=(0, 10))
+                cell.grid(row=1 + place, column=axis, sticky="e", padx=(0, 10))
                 option = by_name(name)
                 key = nation_choice(nation, option)
                 # Top and Bottom wider: an amount may carry its currency's code ("USD1.25t", batch 18.3).

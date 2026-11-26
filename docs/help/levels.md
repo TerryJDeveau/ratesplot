@@ -1,4 +1,4 @@
-# By level of government
+# Debt and interest by level of government
 
 With a level ticked in a nation's panel, its chart draws [debt](?help=debt) and [interest](?help=interest) for each level ticked instead of the nation's total, each level a line of its own. None ticked draws the totals. The levels each nation offers are its own: Canada's federal, provincial, municipal and non-federal (provincial and municipal together); the U.S.' federal, state, local, and state and local together; the UK's central and local; Germany's federal, Länder, local, and Länder and local together; Spain's central, regional (its autonomous communities), local, and regional and local together; France's, Portugal's, Italy's and the Netherlands' central and local; Japan's central and local, its debt alone (the Bank of Japan's flow of funds; no interest is drawn for Japan). The euro area's nations after Germany are described on their own pages.
 

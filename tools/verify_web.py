@@ -1001,9 +1001,10 @@ def check_batch262(check: Check) -> None:
     titles = [header.value for header in at.subheader]
     check("on it, the comparison's block; the curves and the rates on the yield axis left out",
           "Comparison chart" in titles and "Curve selection" not in titles and "Rates on the yield axis" not in titles, titles)
-    captions = [block.value for block in at.caption]
+    captions = [block.value for block in at.markdown]
     headings = ["Bond yields", "Real bond yields (inflation-linked)", "Other measures"]
     check("its three headings, in order", [caption for caption in captions if caption in headings] == headings, captions[:12])
+    check("… in the text's own colour, none a grey caption (batch 50.1)", not any(block.value in headings for block in at.caption))
     labels = {box.key.rsplit(":", 1)[1]: box.label for box in at.checkbox if box.key and box.key.startswith("choice:compare-measure:")}
     check("the amounts named in full", (labels.get("debt"), labels.get("gdp"), labels.get("interest")) == (
         "Public debt", "TTM GDP", "TTM interest paid on public debt"), labels)
@@ -2032,7 +2033,7 @@ def check_batch292(check: Check) -> None:
     check("?help=debt: the topic alone, a section per nation", not view.exception and not view.checkbox
           and all(f"## {nation}" in shown for nation in ("Canada", "The United States", "The United Kingdom", "Germany")), shown[:60])
     check("its links to other topics written as the page's own address, followed in the help view",
-          "[By level](?help=levels)" in shown and "[As % of GDP](?help=percent-of-gdp)" in shown)
+          "[Debt and interest by level](?help=levels)" in shown and "[As % of GDP](?help=percent-of-gdp)" in shown)
     # 29.2c: each nation's page links to the curves' pages and to the other nations'.
     for topic, title in (("canada", "Canada"), ("united-states", "The United States"), ("united-kingdom", "The United Kingdom"),
                          ("germany", "Germany")):
@@ -2514,7 +2515,14 @@ def check_batch133(check: Check) -> None:
     }, offered)
     check("none ticked at the start", not any(at.checkbox(key=f"choice:{nation}:yields:{term}").value for nation, terms in offered.items() for term in terms))
     check("a box's caption is its term", at.checkbox(key="choice:us:yields:r10").label == "r10", at.checkbox(key="choice:us:yields:r10").label)
-    check("the row captioned “real”, in each of the four sections", sum(block.value == "real" for block in at.caption) == 4, [block.value for block in at.caption][:12])
+    check("the row captioned “real”, in each of the four sections", sum(block.value == "real" for block in at.markdown) == 4, [block.value for block in at.markdown][:12])
+    check("… in the text's own colour, not a grey caption (batch 50.1)", not any(block.value == "real" for block in at.caption))
+    sections = [header.value for header in at.subheader if header.value.endswith(" only")]
+    heads = [block for block in at.markdown if block.value == "**Axis limits**"]
+    check("“Axis limits” over each section's limits, with its help and More (batch 50.1)", sections and len(heads) == len(sections) and all(
+        frontend.LIMITS_HELP in block.proto.help and "?help=limits" in block.proto.help for block in heads), (len(heads), sections))
+    labels = [block.value for block in at.markdown if "by level" in block.value]
+    check("the levels' label in Terry's words, in each section", labels.count("**Debt and interest by level**") == len(sections), labels[:4])
     at.checkbox(key="choice:us:yields:r10").check().run()
     tokens = address(at).split()
     config = config_from_choices(*sort_tokens(tokens)[:2])
@@ -2564,6 +2572,30 @@ def check_batch35(check: Check) -> None:
     at.session_state[web._JOB] = job
     at.text_input(key="value:start").input("2003").run()
     check("… another chart stops it, and draws its own", job.stopped.is_set() and web._JOB not in at.session_state and at.session_state[web._DRAWING].log != "never shown\n", address(at))
+    # Batch 50.1 (decision 189): the drawing that replaces one still waiting counts its time so far on from the first's.
+    started: list = []
+    original = web._start_job
+
+    def recording(config, tokens, began=None):
+        started.append(original(config, tokens, began))
+        return started[-1]
+
+    web._start_job = recording
+    try:
+        import time  # the page's clock, time.monotonic(), as the wait's
+
+        long_ago = time.monotonic() - 1000.0
+        waiting = web._new_job(config, tokens, began=long_ago)
+        at.session_state[web._JOB] = waiting
+        at.text_input(key="value:start").input("2004").run()
+        carried = list(started)
+        at.text_input(key="value:start").input("2005").run()
+    finally:
+        web._start_job = original
+    check("… the drawing replacing it keeps its wait line's time so far (batch 50.1)",
+          waiting.stopped.is_set() and len(carried) == 1 and carried[0].wait.began == long_ago, [job.wait.began for job in carried])
+    check("… and one after the line was taken away starts again", len(started) == 2 and started[1].wait.began > long_ago + 500.0,
+          [job.wait.began for job in started])
     stale = web._new_job(config, tokens)
     stale.drawing = replace(drawing, log="never shown\n")
     stale.done.set()

@@ -2259,11 +2259,11 @@ def check_batch292(check: Check) -> None:
         root.update()
         text = next(widget for widget in all_widgets(app.topic_windows["debt"]) if widget.winfo_class() == "Text")
         links = {text.get(*text.tag_ranges(tag)[:2]): tag for tag in text.tag_names() if tag.startswith("link-")}
-        check("the debt page's links: to other topics and to the sources", {"By level", "Per capita", "As % of GDP"} <= set(links)
+        check("the debt page's links: to other topics and to the sources", {"Debt and interest by level", "Per capita", "As % of GDP"} <= set(links)
               and "36-10-0467" in links, sorted(links)[:6])
         # A click on the link: the pointer moved over it first, so that Tk's
         # "current" mark, which a tag's binding follows, is on it.
-        start = text.tag_ranges(links["By level"])[0]
+        start = text.tag_ranges(links["Debt and interest by level"])[0]
         text.see(start)
         root.update()
         x, y, _width, height = text.bbox(start)
@@ -2271,7 +2271,8 @@ def check_batch292(check: Check) -> None:
         text.event_generate("<Button-1>", x=x + 2, y=y + height // 2)
         root.update()
         levels = app.topic_windows.get("levels")
-        check("a click on “By level”: the levels' topic in its own window", levels is not None and levels.title() == "By level of government",
+        check("a click on “Debt and interest by level”: the levels' topic in its own window",
+              levels is not None and levels.title() == "Debt and interest by level of government",
               levels.title() if levels is not None else None)
         app._show_topic("yields")
         root.update()
@@ -2896,6 +2897,8 @@ def check_batch262(check: Check) -> None:
         headings = ["Bond yields", "Real bond yields (inflation-linked)", "Other measures"]
         texts = [child.cget("text") for child in editor.frame.winfo_children() if isinstance(child, ttk.Label)]
         check("its three headings, in order", [text for text in texts if text in headings] == headings, texts[:8])
+        greys = [str(child.cget("foreground")) for child in editor.frame.winfo_children() if isinstance(child, ttk.Label) and child.cget("text") in headings]
+        check("… in the text's own colour, not grey (batch 50.1)", greys == ["", "", ""], greys)
         app.notebook.select(app.tabs["cdn"])
         w.pump(5)
         check("back on Canada's tab: the curves' block again, debt still unticked; no comparison block",
@@ -3166,7 +3169,7 @@ def check_batch35(check: Check) -> None:
         check("the line and its arc in fuchsia (40.2)", str(app.wait_label.cget("foreground")) == "#FF00FF" and app.wait_arc.itemcget(app._wait_arc_item, "outline") == "#FF00FF",
               (str(app.wait_label.cget("foreground")), app.wait_arc.itemcget(app._wait_arc_item, "outline")))
         check("a drawing under way: the line shown", app.rendering and app.wait_row.winfo_manager() == "grid" and app.wait_text.get().startswith("Please wait"), app.wait_text.get())
-        check("… in Terry's words, the time still expected and the time so far", re.fullmatch(r"Please wait(, nearly done| about \d+ (s|min)) \(\d+ s so far\)", app.wait_text.get()), app.wait_text.get())
+        check("… in Terry's words, the time still expected and the time so far", re.fullmatch(r"Please wait(, nearly done| about \d+ (s|min) more) \(\d+ s so far\)", app.wait_text.get()), app.wait_text.get())
         check("… right of the build line, the column being wide enough", app.wait_row.grid_info()["row"] == 0 and app.wait_row.grid_info()["column"] == 1, app.wait_row.grid_info())
         check("… and no “Drawing …” in the status line", "Drawing …" not in app.status.get(), app.status.get())
         angle = app._arc_angle
@@ -3305,6 +3308,8 @@ def check_batch133(check: Check) -> None:
                      for n in listed}
         check("the row captioned “real:” in each panel offering real terms, none in France's or Portugal's (no real yields)",
               captioned == {n: bool(real[n]) for n in listed}, captioned)
+        greys = {str(widget.cget("foreground")) for widget in all_widgets(editor("us").frame) if widget.winfo_class() == "TLabel" and str(widget.cget("text")) == "real:"}
+        check("“real:” in the text's own colour, not grey (batch 50.1)", greys == {""}, greys)
         editor("us").boxes["r10"].set(True)
         editor("us").box_changed("r10")
         w.settle()
@@ -3482,6 +3487,29 @@ def check_batch38(check: Check) -> None:
         os.environ["APPDATA"] = appdata
 
 
+def check_batch501(check: Check) -> None:
+    """Batch 50.1 (decision 189): the levels' label, the limits' heading over Max and Top with its ⓘ, in each nation's panel."""
+    with window(f"-c -u {END}") as w:
+        app, root = w.app, w.root
+        for nation in ("cdn", "us"):
+            label = app.value_labels.get(f"{nation}:debt-parts")
+            check(f"{nation}: the levels' label in Terry's words", label is not None and str(label.cget("text")) == "Debt and interest by level",
+                  label.cget("text") if label is not None else None)
+            mark = app.info_marks.get(f"{nation}:limits")
+            head = mark.master if mark is not None else None
+            texts = [str(child.cget("text")) for child in head.winfo_children()] if head is not None else []
+            check(f"{nation}: “Axis limits” and its ⓘ", texts == ["Axis limits", "ⓘ"], texts)
+            limits = head.master if head is not None else None
+            rows = sorted({int(child.grid_info()["row"]) for child in limits.grid_slaves() if child is not head}) if limits is not None else []
+            check(f"{nation}: the heading over the limits, row 0, Max and Top under it, Min and Bottom under them",
+                  head is not None and int(head.grid_info()["row"]) == 0 and int(head.grid_info()["columnspan"]) == 2 and rows == [1, 2], rows)
+        app.info_marks["us:limits"].event_generate("<Button-1>")
+        root.update()
+        check("its panel: the limits' help, More to their topic", app.info_shown is not None and app.info_shown[1] == frontend.LIMITS_HELP
+              and app.info_panel is not None and app.info_panel.title() == "Axis limits", app.info_shown)
+        app._close_info()
+
+
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
     "reset": check_reset,
@@ -3529,6 +3557,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch473": check_batch473,
     "batch141": check_batch141,
     "batch142": check_batch142,
+    "batch501": check_batch501,
 }
 
 
