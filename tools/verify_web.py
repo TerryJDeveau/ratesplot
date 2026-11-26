@@ -183,6 +183,8 @@ CHART_CASES = (
     "es_rates", "es_lv", "es_nat", "all8", "cmp_mort_es",
     # Batch 14.3, decision 182: the Netherlands, the same, all nine nations.
     "nl_rates", "nl_lv", "nl_nat", "all9", "cmp_mort_nl",
+    # Batch 14.3, decision 190: Japan, on readers of its own, all ten nations.
+    "jp_rates", "jp_lv", "jp_nat", "all10", "cmp_jp",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the page's tabs
@@ -1027,7 +1029,7 @@ def check_batch263(check: Check) -> None:
     nations = [key for key in keys if key.startswith("choice:base-nation:")]
     check("on the tab Compare, “Base nation” after the measure, its nations under it",
           "flag:base" in keys and keys.index("flag:base") > keys.index("choice:compare-measure:population")
-          and nations == [f"choice:base-nation:{code}" for code in ("ca", "us", "gb", "de", "fr", "pt", "it", "es", "nl")], keys[-12:])
+          and nations == [f"choice:base-nation:{code}" for code in ("ca", "us", "gb", "de", "fr", "pt", "it", "es", "nl", "jp")], keys[-12:])
     check("the U.S. ticked by default, the boxes greyed while “Base nation” is unticked",
           at.checkbox(key="choice:base-nation:us").value and all(at.checkbox(key=key).disabled for key in nations))
     at.checkbox(key="flag:base").check()
@@ -1213,7 +1215,7 @@ def check_batch91(check: Check) -> None:
     check("each nation's market box named for its rate (batch 24.5)",
           labels == {"cdn": "market (CORRA)", "us": "market (fed funds)", "uk": "market (SONIA)", "de": "market (€STR)", "fr": "market (€STR)",
                     "pt": "market (€STR)", "it": "market (€STR)", "es": "market (€STR)",
-                    "nl": "market (€STR)"},
+                    "nl": "market (€STR)", "jp": "market (call rate)"},
           labels)
     targets = {f"choice:{key}:policy-terms:target" for key in NATION_KEYS}
     check("the target ticked in each, the market not", {key for key in boxes if at.checkbox(key=key).value} == targets)
@@ -1304,6 +1306,7 @@ def check_batch105(check: Check) -> None:
         "it": [],
         "es": [],
         "nl": [],
+        "jp": [],
     }
     captions = {
         key: [box.label for box in at.checkbox if box.key and box.key.startswith(f"level:{key}:")] for key in NATION_KEYS
@@ -2507,6 +2510,7 @@ def check_batch133(check: Check) -> None:
         "it": set(),
         "es": set(),
         "nl": set(),
+        "jp": set(),
     }, offered)
     check("none ticked at the start", not any(at.checkbox(key=f"choice:{nation}:yields:{term}").value for nation, terms in offered.items() for term in terms))
     check("a box's caption is its term", at.checkbox(key="choice:us:yields:r10").label == "r10", at.checkbox(key="choice:us:yields:r10").label)

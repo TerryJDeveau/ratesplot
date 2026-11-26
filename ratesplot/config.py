@@ -1040,7 +1040,7 @@ POPULATION_AXIS_LABEL = "Population (Persons, Log Scale)"
 # purple; the Canadian dollar's first try, chocolate, was too near the 2-year
 # yield's orange), thinner than the amounts, a day's rate being jagged; held to
 # the next rate, in steps, so an older month's or year's average spans its period.
-FX_COLOURS = {"USD": "#008b8b", "CAD": "#283593", "GBP": "#a0336e", "EUR": "#5b6c2f"}
+FX_COLOURS = {"USD": "#008b8b", "CAD": "#283593", "GBP": "#a0336e", "EUR": "#5b6c2f", "JPY": "#b22222"}  # the yen: firebrick (14.3)
 FX_STYLE = {"linewidth": 1.5} | SERIES_KINDS["fx"].drawstyle
 FX_LABEL = "{own} per {other}"
 FX_TITLE = "Exchange Rate"

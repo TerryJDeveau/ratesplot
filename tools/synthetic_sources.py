@@ -133,6 +133,9 @@ _GROWTH = {  # id -> (start, freq, first, last), FRED's units
     "W856RC1A027NBEA": ("1959-01-01", "YS", 1.2, 230.0),
     "B230RC0Q173SBEA": ("1947-01-01", "QS", 144_000.0, 343_000.0),
     "NGDPSAXDCCAQ": ("1961-01-01", "QS", 40_000.0, 3_200_000.0),
+    # Japan's GDP (billions of yen, SAAR) and population (batch 14.3).
+    "JPNNGDP": ("1994-01-01", "QS", 500_000.0, 680_000.0),
+    "POPTOTJPA647NWDB": ("1960-01-01", "YS", 94_000_000.0, 124_000_000.0),
 }
 # The balance of payments (batch 23, ``ratesplot.payments``): id -> (start, end, first, last, sign), quarterly, FRED's
 # units: BPM6 in millions from 1999; BPM5 in billions 1960 to 2014-Q1 (stopped), its debits negative. BOPBCA,
@@ -162,6 +165,7 @@ _FX = {
     "DEXUSUK": ("1971-01-04", "2026-09-30", "B", 2.39, 1.34),
     "DEXUSEU": ("1999-01-04", "2026-09-30", "B", 1.18, 1.16),
     "EXGEUS": ("1971-01-01", "2001-12-01", "MS", 3.64, 2.19),
+    "DEXJPUS": ("1971-01-04", "2026-09-30", "B", 358.0, 147.0),
 }
 
 @dataclass(frozen=True, eq=False)
@@ -1176,6 +1180,98 @@ def eurostat(url: str, params: tuple) -> bytes:
     raise KeyError(f"no synthetic Eurostat dataset {dataset}")
 
 
+# Japan (batch 14.3, decision 190, ``ratesplot.jp_data``): its yields, call rate, flow of funds, balance of payments and
+# consumer prices, each in its source's own layout, its rates well below the U.S.' as Japan's are.
+_JP_OFFSET = -2.5
+_JP_TERMS = {"1Y": (1, "1974-09-24"), "2Y": (2, "1974-09-24"), "3Y": (3, "1974-09-24"), "4Y": (4, "1974-09-24"),
+             "5Y": (5, "1974-09-24"), "6Y": (6, "1974-09-24"), "7Y": (7, "1974-09-24"), "8Y": (8, "1974-09-24"),
+             "9Y": (9, "1974-09-24"), "10Y": (10, "1986-07-05"), "15Y": (15, "1991-08-30"), "20Y": (20, "1986-12-01"),
+             "25Y": (25, "2004-03-22"), "30Y": (30, "1999-09-02"), "40Y": (40, "2007-11-06")}
+# The Ministry's history file runs to the last month's end, its current month's file from the month's first day.
+_MOF_CURRENT_FROM = pd.Timestamp("2026-09-01")
+_FF_SECTOR_SHARES = {"0": 1.0, "1": 0.86, "2": 0.13}
+_FF_ITEM_SHARES = {"200": 0.3, "300": 0.7}
+_BOJ_PAYMENTS = {  # 100 million yen a month, first and last
+    "BPBP6JYNEX": (40_000.0, 105_000.0), "BPBP6JYNIM": (32_000.0, 108_000.0), "BPBP6JYNSC": (5_000.0, 26_000.0),
+    "BPBP6JYNSD": (6_500.0, 29_000.0), "BPBP6JYNPIC": (5_500.0, 45_000.0), "BPBP6JYNPID": (2_000.0, 14_000.0),
+    "BPBP6JYNSIC": (300.0, 3_000.0), "BPBP6JYNSID": (1_000.0, 6_000.0),
+}
+
+
+def _jgb_frame() -> pd.DataFrame:
+    """The Ministry's every term on every business day from 1974-09-24 to 2026-09-30, none before its first day."""
+    days = pd.bdate_range("1974-09-24", "2026-09-30")
+    frame = pd.DataFrame(index=days)
+    for term, (years, first) in _JP_TERMS.items():
+        values = pd.Series(_yield_path(f"JGB{term}", days, years, _JP_OFFSET), index=days)
+        frame[term] = values.where(days >= pd.Timestamp(first))
+    return frame
+
+
+def mof(url: str) -> bytes:
+    """One of the Ministry's two CSV files (``jp_data.parse_mof_csv``): a title line, the header, a row a business day,
+    "-" before a term's first day; the history to 2026-08-31, the current month's file 2026-09."""
+    frame = _jgb_frame()
+    current = url.endswith("/jgbcme.csv")
+    frame = frame.loc[frame.index >= _MOF_CURRENT_FROM] if current else frame.loc[frame.index < _MOF_CURRENT_FROM]
+    lines = ["Interest Rate (synthetic)," + "," * (len(_JP_TERMS) - 1), "Date," + ",".join(_JP_TERMS)]
+    for day, row in frame.iterrows():
+        cells = ["-" if pd.isna(value) else f"{value:.3f}" for value in row]
+        lines.append(f"{day.year}/{day.month}/{day.day}," + ",".join(cells))
+    if current:
+        lines += ["," * len(_JP_TERMS), '"  (a note, as the Ministry ends its current month\'s file with one)"']
+    return ("\r\n".join(lines) + "\r\n").encode("cp932")
+
+
+def boj_values(code: str) -> tuple[pd.Series, str]:
+    """One synthetic Bank of Japan series and its frequency as the Bank names it."""
+    if code == "STRDCLUCON":
+        dates = pd.bdate_range("1998-01-05", "2026-09-30")
+        values = np.round(np.maximum(_anchors(_SHORT, dates) + _JP_OFFSET, -0.08), 3)
+        return pd.Series(values, index=dates), "DAILY"
+    if code in ("STRACLUCON", "STRACLCOON"):
+        dates = pd.date_range("1985-07-01" if code == "STRACLUCON" else "1960-01-01", "2026-09-01", freq="MS")
+        margin = 0.05 if code == "STRACLCOON" else 0.0
+        return pd.Series(np.round(np.maximum(_anchors(_SHORT, dates) + _JP_OFFSET + margin, -0.08), 3), index=dates), "MONTHLY"
+    if code.startswith("FOF_FF"):
+        share = _FF_SECTOR_SHARES[code[-5]] * _FF_ITEM_SHARES[code[-3:]]
+        if code.startswith("FOF_FFAS"):
+            dates = pd.date_range("1997-10-01", "2026-04-01", freq="QS")
+            return pd.Series(np.round(_growth(dates, 4_500_000.0 * share, 12_700_000.0 * share, code)), index=dates), "QUARTERLY"
+        dates = pd.date_range("1979-01-01", "2025-01-01", freq="YS")
+        return pd.Series(np.round(_growth(dates, 1_000_000.0 * share, 12_600_000.0 * share, code)), index=dates), "ANNUAL(MAR)"
+    first, last = _BOJ_PAYMENTS[code]
+    dates = pd.date_range("1996-01-01", "2026-09-01", freq="MS")
+    return pd.Series(np.round(_growth(dates, first, last, code), 3), index=dates), "MONTHLY"
+
+
+def _boj_period(day: pd.Timestamp, frequency: str) -> str:
+    """A period as the Bank writes it: a day YYYYMMDD, a month YYYYMM, a quarter YYYYQQ, a year YYYY."""
+    return {"DAILY": f"{day:%Y%m%d}", "MONTHLY": f"{day:%Y%m}", "QUARTERLY": f"{day:%Y}{day.quarter:02d}"}.get(frequency, f"{day:%Y}")
+
+
+def boj(params: tuple) -> bytes:
+    """The Bank's ``getDataCode`` answer for the codes asked (``jp_data.parse_boj_csv``), whole whatever period it is asked from."""
+    asked = dict(params)
+    lines = ["STATUS,200", "MESSAGEID,M181000I", "MESSAGE,Successfully completed", f"PARAMETER,DB,{asked['db']}", "NEXTPOSITION,",
+             "SERIES_CODE,NAME_OF_TIME_SERIES,UNIT,FREQUENCY,CATEGORY,LAST_UPDATE,SURVEY_DATES,VALUES"]
+    for code in asked["code"].split(","):
+        values, frequency = boj_values(code)
+        lines += [f"{code},synthetic {code},units,{frequency},synthetic,20260930,{_boj_period(day, frequency)},{value}"
+                  for day, value in values.items()]
+    return ("\n".join(lines) + "\n").encode()
+
+
+def imf_cpi() -> bytes:
+    """The IMF's SDMX answer of Japan's consumer price index (``jp_data.parse_imf_monthly``), monthly 1955-01 to 2026-09, to one decimal."""
+    dates = pd.date_range("1955-01-01", "2026-09-01", freq="MS")
+    values = np.round(_growth(dates, 15.0, 114.5, "JPN.CPI"), 1)
+    observations = "".join(f'<Obs TIME_PERIOD="{day:%Y}-M{day:%m}" OBS_VALUE="{value}"/>' for day, value in zip(dates, values))
+    return ('<?xml version="1.0" encoding="UTF-8"?><message:StructureSpecificData '
+            'xmlns:message="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message"><message:DataSet>'
+            f'<Series>{observations}</Series></message:DataSet></message:StructureSpecificData>').encode()
+
+
 def synth(key: tuple):
     """Return the synthetic answer to one download-cache key; KeyError for a source with none."""
     if key[0] == "fred":
@@ -1203,6 +1299,12 @@ def synth(key: tuple):
         return _response(bpstat(params))
     if "webstat.banque-france.fr/api/explore/" in url:
         return _response(webstat(params))
+    if "mof.go.jp/english/policy/jgbs/" in url:
+        return _response(mof(url))
+    if "stat-search.boj.or.jp/api/v1/getDataCode" in url:
+        return _response(boj(params))
+    if "api.imf.org/external/sdmx/2.1/data/IMF.STA,CPI/JPN" in url:
+        return _response(imf_cpi())
     raise KeyError(f"no synthetic source for {key!r}")
 
 
@@ -1315,6 +1417,19 @@ def install_synthetic_bake(folder: Path) -> bool:
                 table = pd.read_csv(io.BytesIO(archive.read(f"{table_id}.csv")), low_memory=False)
             for vector, values in cdn_data._statcan_vectors(table, table_id).items():
                 bake(cdn_data.STATCAN_BAKED_SOURCE, vector, values)
+    # Japan's (batch 14.3; a tree before it reads no such file).
+    try:
+        jp_data = importlib.import_module("ratesplot.jp_data")
+    except ModuleNotFoundError:
+        jp_data = None
+    if jp_data is not None:
+        terms = pd.concat([jp_data.parse_mof_csv(mof("https://www.mof.go.jp/historical/jgbcme_all.csv")),
+                           jp_data.parse_mof_csv(mof("https://www.mof.go.jp/jgbcme.csv"))])
+        for code in jp_data.JP_YIELD_COLUMNS.values():
+            bake(jp_data.MOF_BAKED_SOURCE, code, terms[code])
+        for db, code in jp_data.BOJ_SERIES_READ:
+            bake(jp_data.BOJ_BAKED_SOURCE, code, jp_data.parse_boj_csv(boj((("code", code), ("db", db))))[0][code])
+        bake(jp_data.IMF_BAKED_SOURCE, jp_data.IMF_CPI_KEY, jp_data.parse_imf_monthly(imf_cpi(), jp_data.IMF_CPI_KEY))
     baked.DATA_FOLDER = folder
     baked.forget_read_files()
     return True
