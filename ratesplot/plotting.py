@@ -69,7 +69,6 @@ from .config import (
     DEFAULT_START_FLOOR,
     DAILY_YIELD_GAP,
     DEFAULT_CANVAS_PX,
-    DEFAULT_YIELD_TERMS,
     EARLIEST_DATA_START,
     MACRO_PLOT_STYLES,
     PAYMENTS_COLUMNS,
@@ -78,7 +77,6 @@ from .config import (
     MIN_WINDOW_DAYS,
     MORTGAGE_LEGEND_ORDER,
     NOMINAL_YIELD_TERMS,
-    NATIONS,
     POLICY_BAND_ALPHA,
     PRICE_INDEX_ADJUSTED_LABEL,
     PRICE_INDEX_ADJUSTED_TITLE,
@@ -338,7 +336,12 @@ _MONTHLY_YIELD = SERIES_KINDS["yield_monthly"].drawstyle
 
 
 def _yield_style(column: str, config: PlotConfig, nation_key: str) -> dict:
-    """Return the line style of one yield column: its term's own colour, unless the nation draws the default five.
+    """Return the line style of one yield column: its term's own colour.
+
+    Since batch 50.2 (decision 189) every chart: the defaults became seven terms
+    with r30, which the colour cycle below would draw solid in a colour of its
+    own. The cycle's first five colours are the old five's ``TERM_COLORS``, so
+    a chart drawing those five is drawn as before. Until then:
 
     With the default terms (no --yields:LIST) the lines take matplotlib's
     colour cycle in drawing order, as they always have, so those charts are
@@ -349,9 +352,6 @@ def _yield_style(column: str, config: PlotConfig, nation_key: str) -> dict:
     draws the default five), so a chart is coloured alike whether its terms
     were chosen for both charts or for it alone (``options.nation_view``).
     """
-    own = next(nation.yield_terms for nation in NATIONS if nation.key == nation_key)
-    if tuple(term for term in config.yield_terms if term in own) == DEFAULT_YIELD_TERMS:
-        return YIELD_LINE_STYLE
     term = next(key for key, name in YIELD_TERMS.items() if name == column)
     return YIELD_LINE_STYLE | {"color": TERM_COLORS[term]} | (REAL_YIELD_STYLE if term in REAL_YIELD_TERMS else {})
 
