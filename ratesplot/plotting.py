@@ -1959,6 +1959,14 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
                 firsts[(country.metadata.country_name, label)] = first
     for which in unprepared:
         print(f"  Warning: no data could be prepared for the chart of {which}; the start is found without it.")
+    # The real yields never hold the automatic start back (batch 50.2; Terry, 2026-11-26, decision 189: "Yes,
+    # exempt them"): young markets in every nation (the U.S. 30-year from 2010, the UK's from 2016), one that
+    # begins later is drawn from where it begins, the coverage warning naming it. Unless they are all there is.
+    real = {f"{YIELD_TERMS[term]} Yield" for term in REAL_YIELD_TERMS}
+    held = {curve: first for curve, first in firsts.items() if curve[1] not in real}
+    but_real = " but the real yields" if held and len(held) < len(firsts) else ""
+    if held:
+        firsts = held
 
     def named(curves: list[tuple[str, str]]) -> str:
         """``5-Year Yield and 10-Year Yield (Canada)``, one bracket per country."""
@@ -1976,7 +1984,7 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
         return replace(config, start=latest_start)
     start = max(whole.values())
     if start < DEFAULT_START_FLOOR <= latest_start:
-        print(f"Start {DEFAULT_START_FLOOR:%Y-%m-%d}, the default start; every chosen curve has data by then{left_out}.")
+        print(f"Start {DEFAULT_START_FLOOR:%Y-%m-%d}, the default start; every chosen curve{but_real} has data by then{left_out}.")
         return replace(config, start=DEFAULT_START_FLOOR)
     # The curves begin after the floor, or the chart ends too soon after it.
     before_floor = ""
@@ -1984,7 +1992,7 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
         when = "before" if DEFAULT_START_FLOOR > config.end else f"less than {MIN_WINDOW_DAYS} days after"
         before_floor = f" (the chart ends {when} the default start, {DEFAULT_START_FLOOR:%Y-%m-%d})"
     last = [curve for curve, first in whole.items() if first == start]
-    print(f"Start {start:%Y-%m-%d}, the first date on which every chosen curve has data{before_floor}; the last to begin: {named(last)}{left_out}.")
+    print(f"Start {start:%Y-%m-%d}, the first date on which every chosen curve{but_real} has data{before_floor}; the last to begin: {named(last)}{left_out}.")
     return replace(config, start=start)
 
 
