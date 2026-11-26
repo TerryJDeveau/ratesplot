@@ -12,7 +12,7 @@ At the start it draws GDP, aggregate public debt and interest on the right axis,
 - [Balance of payments](?help=payments), from 1946: Statistics Canada's international accounts, quarterly: the current account's receipts and payments, or exports and imports of goods and services.
 - [Debt and interest by level](?help=levels): the debt and interest of the federal, provincial or municipal governments, or of the provincial and municipal together (Non-federal), instead of the total.
 - [Bond yields](?help=yields), from 1919: the Bank of Canada's, monthly to 2000 (the 30-year from 1919, the 3-month from 1934, the 2-year from 1949, the 5- and 10-year from 1951), every business day from 2001. Every term but the 20-year: the 1-, 3- and 6-month, and the 1-, 2-, 3-, 5-, 7-, 10- and 30-year. One real yield, r30, the Real Return Bonds' long-term yield: monthly from 1991-11, every business day from 2001.
-- [Yield spreads](?help=spreads): 10y–2y at the start, 10y–3m and 30y–10y offered, from 1951.
+- [Yield spreads](?help=spreads): 10y–2y ticked at the start, 10y–3m and 30y–10y offered, from 1951.
 - [Policy rates](?help=policy-rates): the Bank of Canada's Bank Rate from 1935, its target for the overnight rate from 1996-02-22, and CORRA, the overnight market's rate, from 1997-08-12.
 - [Inflation](?help=inflation), from 1915: the 12-month rise of Statistics Canada's consumer price index.
 - [Mortgage rates](?help=mortgages): the 5-year from 1951 (CMHC's rate until the banks' posted rate begins in 1975), the posted 3- and 1-year from 1980, the Bank of Canada's estimated 5-year variable rate from 2011-01-06, and the banks' prime rate from 1975, drawn plus a margin with Prime margin. The 5-year is ticked at the start.

@@ -1424,7 +1424,8 @@ NATIONS: tuple[Nation, ...] = (
     # (ratesplot.euro_data); named by --nations:pt (or prt), a value for it
     # alone "--pt:max:8". Five daily yields from the Banco de Portugal's
     # BPstat since 9.13 (decision 183): 2, 3, 5, 7 and 10 years, from 1993-07
-    # (the 5-year 1994-02); 2, 5 and 10 ticked at the start and 10y-2y its
+    # (the 5-year 1994-02); 2, 3 and 10 ticked at the start since batch 50.2
+    # (2, 5 and 10 before) and 10y-2y its
     # spread, as Germany's pattern. Central and local government (no state
     # level); the variable rate ticked at the start, Germany's three fixed
     # bands offered beside it.
@@ -2353,7 +2354,7 @@ class PlotConfig:
     # --yields:LIST / --no-yields:LIST: the yield terms drawn, as keys of
     # YIELD_TERMS in that order. A term a country has no series for is
     # simply not drawn on its chart, with a note (Canada has no 20-year,
-    # Germany no 1-, 3- or 6-month or 3-year: Nation.yield_terms).
+    # Germany no 1-, 3- or 6-month: Nation.yield_terms).
     yield_terms: tuple[str, ...] = DEFAULT_YIELD_TERMS
     include_debt: bool = True
     include_gdp: bool = True

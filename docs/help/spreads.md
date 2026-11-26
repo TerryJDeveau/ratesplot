@@ -22,7 +22,7 @@ The Bundesbank's yields: 10y–2y from 1972-09 as month-end steps, daily from 19
 
 ## France
 
-The Banque de France's yields, daily, none at the start: any two of its terms from 2004-11, with the 30-year from 2006-10. Before 2004-11 the 10-year is a monthly average and no other term exists, so no spread is drawn there.
+The Banque de France's yields, daily, 10y–2y ticked at the start: any two of its terms from 2004-11, with the 30-year from 2006-10. Before 2004-11 the 10-year is a monthly average and no other term exists, so no spread is drawn there.
 
 ## Portugal
 
