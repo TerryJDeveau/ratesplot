@@ -4,7 +4,7 @@ Japan's chart is drawn only when it is asked for: while its box is ticked, or wh
 
 ## What the chart draws
 
-At the start it draws GDP and debt on the right axis, and the 2-, 5-, 10- and 30-year bond yields with the 10-year less 2-year and 30-year less 10-year spreads on the left; the policy rate, inflation, the price index or the population when they are ticked. No interest is drawn: Japan publishes no quarterly figures of it.
+At the start it draws GDP and debt on the right axis, and the 1-, 3-, 10- and 30-year bond yields with the 10-year less 2-year spread on the left; the policy rate, inflation, the price index or the population when they are ticked. No interest is drawn: Japan publishes no quarterly figures of it.
 
 - [TTM nominal GDP](?help=gdp), from 1994-Q4: the mean of four quarters' annual rates of the Cabinet Office's nominal GDP, seasonally adjusted, as FRED carries it ([JPNNGDP](https://fred.stlouisfed.org/series/JPNNGDP), from 1994-Q1; equal to the Cabinet Office's own table in all 131 quarters to 2026-Q3).
 - [Aggregate public debt](?help=debt), from 1980: general government's loans and debt securities in the Bank of Japan's flow of funds, at the end of each fiscal year (March) from 1980 to 1997, then at each quarter's end from 1997-Q4. In 2026-Q2 they were ¥1,273.8 trillion, 185 % of GDP. The flow of funds does not consolidate the levels of government: a loan from one to another is in both the lender's assets and the borrower's debt.

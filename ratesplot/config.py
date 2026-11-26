@@ -1481,9 +1481,10 @@ NATIONS: tuple[Nation, ...] = (
     # nation after Canada and the U.S.; named by --nations:jp (or jpn), a
     # value for it alone "--jp:max:8". Its own readers (ratesplot.jp_data):
     # the Ministry of Finance's daily yields at 1, 2, 3, 5, 7, 10, 20 and 30
-    # years (1 to 7 from 1974, the 10-year 1986, the 30-year 1999); 2, 5,
-    # 10 and 30 ticked at the start and 10y-2y and 30y-10y its spreads, as
-    # Germany's. Central and local government (the social security funds
+    # years (1 to 7 from 1974, the 10-year 1986, the 30-year 1999); 1, 3,
+    # 10 and 30 ticked at the start and 10y-2y its spread, as plan batch
+    # 50.2 sets each nation's (all four begin before 2000, so the automatic
+    # start is not moved). Central and local government (the social security funds
     # are no level of the chart, as Germany's). No mortgage rate (its
     # source, the Japan Housing Finance Agency, is a host not asked). Its
     # policy rate the call rate, which is its overnight rate too.
@@ -1492,9 +1493,9 @@ NATIONS: tuple[Nation, ...] = (
         shown_by_default=False, market_timezone="Asia/Tokyo", currency="JPY", overnight_rate="call rate",
         level_boxes=(("f", "Central"), ("m", "Local")),
         own_defaults=(
-            ("yield_terms", ("2y", "5y", "10y", "30y")),
+            ("yield_terms", ("1y", "3y", "10y", "30y")),
             ("mortgage_terms", ()),
-            ("spread_pairs", (("10y", "2y"), ("30y", "10y"))),
+            ("spread_pairs", (("10y", "2y"),)),
         ),
     ),
 )
