@@ -31,6 +31,14 @@ Canada's and the UK's official rate reach their banks' series a day or so after 
 
 The German rates are the euro area's from 1999.
 
+## Japan
+
+- **Daily from 1998-01-05: the uncollateralized overnight call rate.** The Bank of Japan's average of each day's (its series FM01 STRDCLUCON), its operating target most years since 1995 and since 2024; the Bank publishes no series of the target itself.
+- **1985-07 to 1997-12: its monthly averages** (FM02 STRACLUCON), each drawn across its month.
+- **1960-01 to 1985-06: the collateralized overnight call rate's monthly averages** (FM02 STRACLCOON).
+
+The call rate is also Japan's overnight market rate: "market" alone draws the same rate, named as the overnight rate, and with "target" ticked it is drawn once.
+
 ## How the program keeps these figures
 
 Each source's figures are kept in the program as the source published them. A job on GitHub asks every live source each day and adds the new figures; a revision of older ones waits for review before it is taken. When a chart is drawn, the program takes only the newest figures from each source and draws the older ones from what it holds: those from 24 months before the last figure it holds where the source revises its figures (GDP, debt, interest, population and the mortgage rates from surveys), from two months before where it doesn't (the yields, and the rates that are set or traded). If a source doesn't answer, the chart is drawn from what the program holds, with a warning naming the source and its last date. Statistics Canada is checked once a day: on a day it doesn't answer, it is asked nothing more until the next day in Ottawa, and where another source publishes the same figures (the consumer price index at the Bank of Canada, GDP in the IMF's copy at FRED, interest, consolidated and federal, at the IMF itself), that source's newer figures follow Statistics Canada's last, and the warning names them. The sources that have stopped (Statistics Canada's old tables, Historical Statistics of Canada, the Bank of Canada's historical tables, the Bank of England's dataset, and the series the Federal Reserve, the Bundesbank and the ECB no longer update) are kept as they were last published, and asked nothing.
