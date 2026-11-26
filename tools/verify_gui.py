@@ -130,6 +130,8 @@ CHART_CASES = (
     "es_rates", "es_lv", "es_nat", "all8", "cmp_mort_es",
     # Batch 14.3, decision 182: the Netherlands, the same, all nine nations.
     "nl_rates", "nl_lv", "nl_nat", "all9", "cmp_mort_nl",
+    # Batch 14.3, decision 190: Japan, on readers of its own, all ten nations.
+    "jp_rates", "jp_lv", "jp_nat", "all10", "cmp_jp",
 )
 
 NATION_KEYS = tuple(nation.key for nation in NATIONS)  # in drawing order, as the window's tabs
@@ -388,7 +390,7 @@ def check_reset(check: Check) -> None:
         w.settle()
         check("Reset: the nation boxes as they were", {name: app.flag_vars[name].get() for name in nations} == nations
               == {"cdn": True, "us": False, "uk": False, "germany": True, "france": False, "portugal": False, "italy": False,
-                 "spain": False, "netherlands": False}, nations)
+                 "spain": False, "netherlands": False, "japan": False}, nations)
         check("Reset: the rest at the defaults (the policy rate off, Canada's Max blank, the default size)",
               not app.flag_vars["policy"].get() and w.text("cdn:max") == "" and w.text("dimensions") == "2048x1536",
               (app.flag_vars["policy"].get(), w.text("cdn:max"), w.text("dimensions")))
@@ -403,7 +405,7 @@ def check_reset(check: Check) -> None:
         tabs = {key: app.notebook.tab(app.tabs[key], "state") for key in NATION_KEYS}
         check("Reset: Canada's and Germany's tabs shown, the others hidden",
               tabs == {"cdn": "normal", "us": "hidden", "uk": "hidden", "de": "normal", "fr": "hidden", "pt": "hidden", "it": "hidden",
-                      "es": "hidden", "nl": "hidden"}, tabs)
+                      "es": "hidden", "nl": "hidden", "jp": "hidden"}, tabs)
         app._back()
         w.settle()
         check("Back after Reset: the choices as before", app._snapshot() == before)
@@ -911,7 +913,7 @@ def check_policy_terms(check: Check) -> None:
         check("each nation's market box named for its rate (batch 24.5)",
               captions == {"cdn": "market (CORRA)", "us": "market (fed funds)", "uk": "market (SONIA)", "de": "market (€STR)",
                            "fr": "market (€STR)", "pt": "market (€STR)", "it": "market (€STR)",
-                           "es": "market (€STR)", "nl": "market (€STR)"},
+                           "es": "market (€STR)", "nl": "market (€STR)", "jp": "market (call rate)"},
               captions)
         check("the target ticked in each", all(ticked(n) == ["target"] for n in NATION_KEYS), {n: ticked(n) for n in NATION_KEYS})
         check("greyed while the policy rate is off", all(not enabled(widget) for n in NATION_KEYS for widget in editor(n).widgets))
@@ -945,6 +947,7 @@ LEVEL_CAPTIONS = {
     "it": ["Central", "Local"],
     "es": ["Central", "Regional", "Local", "Regional & Local"],
     "nl": ["Central", "Local"],
+    "jp": ["Central", "Local"],
 }
 
 
@@ -1051,7 +1054,7 @@ def check_limits(check: Check) -> None:
               units == {"cdn:max": "%", "cdn:top": "C$", "us:max": "%", "us:top": "$", "uk:max": "%", "uk:top": "£", "de:max": "%", "de:top": "€",
                         "fr:max": "%", "fr:top": "€", "pt:max": "%", "pt:top": "€",
                         "it:max": "%", "it:top": "€", "es:max": "%", "es:top": "€",
-                        "nl:max": "%", "nl:top": "€"},
+                        "nl:max": "%", "nl:top": "€", "jp:max": "%", "jp:top": "¥"},
               units)
         check("every All box greyed while its box is blank", all(all_greyed(key) for key in app.all_boxes))
         w.typed("us:max", "8")
@@ -2694,13 +2697,14 @@ def check_batch30(check: Check) -> None:
             "cdn": "Use CAD as the master currency", "us": "Use USD as the master currency",
             "uk": "Use GBP as the master currency", "de": "Use EUR as the master currency", "fr": "Use EUR as the master currency",
             "pt": "Use EUR as the master currency", "it": "Use EUR as the master currency",
-            "es": "Use EUR as the master currency", "nl": "Use EUR as the master currency"}, labels)
+            "es": "Use EUR as the master currency", "nl": "Use EUR as the master currency",
+            "jp": "Use JPY as the master currency"}, labels)
         check("none ticked, none greyed with two nations", all(t == (False, False) for t in ticks().values()), ticks())
         tick("us", True)
         check("the U.S.' ticked: --master:USD, the others unticked", "--master:USD" in w.command_tokens()
               and ticks() == {"cdn": (False, False), "us": (True, False), "uk": (False, False), "de": (False, False), "fr": (False, False),
                               "pt": (False, False), "it": (False, False), "es": (False, False),
-                              "nl": (False, False)}, ticks())
+                              "nl": (False, False), "jp": (False, False)}, ticks())
         figure = app.figures["cdn"][0]
         check("the Canadian chart drawn in U.S. dollars, the rate on its axis", figure.axes[1].get_ylabel().startswith("Nominal USD (at ")
               and any(label.get_text().startswith("US$") for label in figure.axes[1].get_yticklabels()), figure.axes[1].get_ylabel())
@@ -2910,7 +2914,7 @@ def check_batch263(check: Check) -> None:
         editor = app.choice_editors["base-nation"]
         check("its nations' boxes, the U.S. ticked, greyed while “Base nation” is unticked",
               [widget.cget("text") for widget in editor.widgets] == ["Canada", "United States", "United Kingdom", "Germany", "France", "Portugal", "Italy",
-                                                                 "Spain", "Netherlands"]
+                                                                 "Spain", "Netherlands", "Japan"]
               and [value for value, variable in editor.boxes.items() if variable.get()] == ["us"]
               and not any(enabled(widget) for widget in editor.widgets))
         w.tick("base", True)
@@ -3293,7 +3297,7 @@ def check_batch133(check: Check) -> None:
         real = {n: [value for value in editor(n).boxes if value.startswith("r")] for n in listed}
         check("each panel offers its nation's real terms", real == {
             "cdn": ["r30"], "us": ["r5", "r7", "r10", "r20", "r30"], "uk": ["r5", "r7", "r10", "r20", "r30"], "de": ["r5", "r7", "r10"],
-            "fr": [], "pt": [],
+            "fr": [], "pt": [], "jp": [],
         }, real)
         check("none ticked at the start", not any(editor(n).boxes[value].get() for n in listed for value in real[n]))
         check("a box's caption is its term", str(editor("us").widgets[list(editor("us").boxes).index("r10")].cget("text")) == "r10")

@@ -113,6 +113,7 @@ from .config import (
     ES,
     FR,
     IT,
+    JP,
     NL,
     PT,
     UK,
@@ -198,6 +199,7 @@ from .euro_data import (
     fetch_yields,
     series_earliest,
 )
+from . import jp_data
 from .uk_data import (
     YIELD_HISTORY_ATTR,
     fetch_uk_components,
@@ -401,6 +403,8 @@ add_pt_yield_lines = partial(add_euro_yield_lines, key="pt")
 add_it_yield_lines = partial(add_euro_yield_lines, key="it")
 add_es_yield_lines = partial(add_euro_yield_lines, key="es")
 add_nl_yield_lines = partial(add_euro_yield_lines, key="nl")
+# Japan (batch 14.3): its daily yields, drawn as a euro-area nation's daily ones are.
+add_jp_yield_lines = partial(add_euro_yield_lines, key="jp")
 
 
 def add_stepped_yield_lines(
@@ -1705,6 +1709,43 @@ prepare_es = _euro_preparer(SPAIN, ES)
 prepare_nl = _euro_preparer(NETHERLANDS, NL)
 
 
+@_with_chart_end
+def prepare_jp(config: PlotConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[RateCurve]]:
+    """Fetch and align all selected Japanese inputs, in the configured measure; return ``(yields, macro, rates)`` (batch 14.3, ``jp_data``).
+
+    As a euro-area nation's (``_euro_preparer``): the Ministry of Finance's
+    daily yields, not run on with --cur (no quote of Japan's is read); the
+    macro curves aligned on their dates and projected to a chart's last day
+    as Germany's are; no interest (none quarterly: decision 188 (9)); the
+    balance of payments the Bank of Japan's months, as Germany's.
+    """
+    _require_start(config)
+    _warn_no_yields("jp", config)
+    _note_gross_debt_drawn("jp", config)
+    warn_series_coverage(config.start, jp_data.series_earliest(config))
+    yields = jp_data.fetch_yields(config)
+    rates = rate_curves("jp", yields, config)
+    warn_series_coverage(config.start, {curve.label: curve.first for curve in rates if not curve.spread})
+    if _levels_drawn("jp", config):
+        series = (jp_data.fetch_components(config), jp_data.fetch_gdp(config))
+    else:
+        series = (jp_data.fetch_debt(config), jp_data.fetch_gdp(config), jp_data.fetch_interest(config))
+    series += (_payments("jp", config),)
+    parts = [part for part in series if part is not None]
+    observed = {column: observed_through(part[column].dropna().index) for part in parts for column in part.columns}
+    history = pd.concat(parts, axis=1) if parts else pd.DataFrame()
+    aligned = align_macro(yields, series, config)
+    macro = project_to_now(aligned, observed, config, history)
+    projected = macro.attrs.get(PROJECTION_ATTR, {})
+    population, population_from = _population(jp_data.fetch_population() if config.per_capita or config.population else None, config)
+    yields.attrs[QUOTE_TIME_ATTR] = None
+    prices, prices_from = _consumer_prices("jp", config)
+    expressed = express(macro, config, JP, population, prices, None, prices_through=prices_from)
+    expressed.attrs[PROJECTION_ATTR] = projected
+    expressed.attrs[EXTRA_CURVES_ATTR] = _extra_curves("jp", config, population, population_from)
+    return yields, expressed, rates
+
+
 @dataclass(frozen=True)
 class Country:
     """Everything needed to produce one country's chart."""
@@ -1716,8 +1757,8 @@ class Country:
     draw_yield_lines: YieldLineDrawer
 
 
-# In drawing order (Canadian, then U.S., then the UK's, Germany's, France's, Portugal's, Italy's, Spain's and the
-# Netherlands'), as the command line always has.
+# In drawing order (Canadian, then U.S., then the UK's, Germany's, France's, Portugal's, Italy's, Spain's, the
+# Netherlands' and Japan's), as the command line always has.
 COUNTRIES: tuple[Country, ...] = (
     Country("cdn", "show_cdn", CDN, prepare_cdn, add_canadian_yield_lines),
     Country("us", "show_us", US, prepare_us, add_us_yield_lines),
@@ -1728,6 +1769,7 @@ COUNTRIES: tuple[Country, ...] = (
     Country("it", "show_it", IT, prepare_it, add_it_yield_lines),
     Country("es", "show_es", ES, prepare_es, add_es_yield_lines),
     Country("nl", "show_nl", NL, prepare_nl, add_nl_yield_lines),
+    Country("jp", "show_jp", JP, prepare_jp, add_jp_yield_lines),
 )
 
 
@@ -2160,3 +2202,4 @@ run_pt = partial(run_euro_nation, "pt")
 run_it = partial(run_euro_nation, "it")
 run_es = partial(run_euro_nation, "es")
 run_nl = partial(run_euro_nation, "nl")
+run_jp = partial(run_euro_nation, "jp")  # not a euro-area nation, but drawn by its Country the same way

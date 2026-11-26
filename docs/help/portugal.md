@@ -28,4 +28,4 @@ Under Portugal's chart in the window, and under "Portugal only" on the page, are
 
 ## The other nations
 
-[Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Italy](?help=italy), [Spain](?help=spain), [the Netherlands](?help=netherlands).
+[Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Italy](?help=italy), [Spain](?help=spain), [the Netherlands](?help=netherlands), [Japan](?help=japan).

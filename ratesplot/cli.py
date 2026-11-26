@@ -42,7 +42,7 @@ from .http import drawing_downloads, enable_download_cache, enable_last_good_cop
 from .http import not_drawn as why_not_drawn
 from .compare import CHARTS, build_chart, run_compare
 from .plotting import (
-    end_to_resolve, resolve_end, resolve_start, run_cdn, run_de, run_es, run_fr, run_it, run_nl, run_pt, run_uk, run_us,
+    end_to_resolve, resolve_end, resolve_start, run_cdn, run_de, run_es, run_fr, run_it, run_jp, run_nl, run_pt, run_uk, run_us,
 )
 from .refresh import Ticker, forget_old_downloads
 
@@ -448,6 +448,7 @@ def main(argv: list[str] | None = None) -> None:
             (config.show_it, run_it, "Italy"),
             (config.show_es, run_es, "Spain"),
             (config.show_nl, run_nl, "Netherlands"),
+            (config.show_jp, run_jp, "Japan"),
             # The comparison chart (batch 26), after the nations', drawn once (no automatic refresh in the prototype).
             (config.show_compare, lambda config, _again: run_compare(config), COMPARE_TAB_TITLE),
         ):

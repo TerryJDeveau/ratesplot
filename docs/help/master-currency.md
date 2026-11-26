@@ -4,7 +4,7 @@ Each chart draws its amounts (debt, GDP, interest and the balance of payments, t
 
 ## The box
 
-In each nation's panel, "Use CAD as the master currency" (with that nation's own currency). One box at most is ticked: ticking one unticks the others. On the command line it is `--master:CODE`, at least `--mas` (`--ma` is shared with `--max`): `--master:USD`, with `CAD`, `GBP`, `EUR`, or `US$`, `C$`, `£`, `€`, in either case. There is no nation's own form (`--us:master` is refused): the master is every chart's.
+In each nation's panel, "Use CAD as the master currency" (with that nation's own currency). One box at most is ticked: ticking one unticks the others. On the command line it is `--master:CODE`, at least `--mas` (`--ma` is shared with `--max`): `--master:USD`, with `CAD`, `GBP`, `EUR`, `JPY`, or `US$`, `C$`, `£`, `€`, `¥`, in either case. There is no nation's own form (`--us:master` is refused): the master is every chart's.
 
 The box is greyed, keeping its tick, while fewer than two nations are ticked, while [% of GDP](?help=percent-of-gdp) is in effect (a share of GDP is in no currency), and while no chart draws debt, GDP or interest. A nation unticked keeps its box's tick, and its currency is not applied while it isn't drawn. The command line leaves out a master that changes nothing, and a command line that gives one says so in the log.
 

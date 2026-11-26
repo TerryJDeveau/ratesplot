@@ -74,7 +74,7 @@ def check_figures(check) -> None:
     check("starting: a chart at the default size", figures.chart_seconds(DEFAULT_CANVAS_PX[0] * DEFAULT_CANVAS_PX[1]) == wait.STARTING_CHART_SECONDS)
     check("a larger chart takes longer, a smaller less, not in proportion",
           figures.chart_seconds(800 * 600) < figures.chart == 1.0 < figures.chart_seconds(4096 * 3072) < 4 * figures.chart)
-    check("every nation has its starting requests", set(figures.asked) == {"cdn", "us", "uk", "de", "fr", "pt", "it", "es", "nl"}, sorted(figures.asked))
+    check("every nation has its starting requests", set(figures.asked) == {"cdn", "us", "uk", "de", "fr", "pt", "it", "es", "nl", "jp"}, sorted(figures.asked))
     expected = figures.expected_requests(["uk"])
     check("a nation not yet drawn: its starting count, at its host's figure",
           sorted((host, len(each)) for host, each in expected.items()) == [("www.bankofengland.co.uk", 3), ("www.ons.gov.uk", 3)]

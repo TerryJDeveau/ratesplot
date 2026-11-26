@@ -17,9 +17,11 @@ Every rate goes through the U.S. dollar, as FRED quotes them
   before it the Deutsche mark at its fixed 1.95583 marks per euro, FRED
   EXGEUS (marks per U.S. dollar, monthly averages 1971-01 to 2001-12, the
   month dated by its first day; FRED has no daily series of the mark,
-  measured 2026-10-23).
+  measured 2026-10-23);
+* the yen (batch 14.3, decision 188), FRED DEXJPUS (yen per U.S. dollar,
+  daily from 1971-01-04); no older rate: Japan's amounts begin in 1981.
 
-The four are baked with FRED's other series (``us_data.fred_series``,
+The five are baked with FRED's other series (``us_data.fred_series``,
 ``tools/bake_archives.py --only fred``): a drawing asks FRED only for their
 recent part, and nothing for a chart that ended more than a year ago
 (``baked.chart_ending``). Measured 2026-10-23: the daily rates' newest value
@@ -74,11 +76,12 @@ FX_CAD_PER_USD = "DEXCAUS"
 FX_USD_PER_GBP = "DEXUSUK"
 FX_USD_PER_EUR = "DEXUSEU"
 FX_DEM_PER_USD = "EXGEUS"
+FX_JPY_PER_USD = "DEXJPUS"
 # EXGEUS's last month (FRED, measured 2026-10-23): the mark gave way to the
 # euro, so the series has stopped and is read from its bake alone (19.3).
 FX_DEM_ENDED = pd.Timestamp("2001-12-01")
 # Every FRED series read here, for the bake (``bake.fred_baked_codes``).
-FX_SERIES = (FX_CAD_PER_USD, FX_USD_PER_GBP, FX_USD_PER_EUR, FX_DEM_PER_USD)
+FX_SERIES = (FX_CAD_PER_USD, FX_USD_PER_GBP, FX_USD_PER_EUR, FX_DEM_PER_USD, FX_JPY_PER_USD)
 
 # The Canadian dollar's first month, and its gold par with the pound until
 # J562 begins in 1913: $4.86 2/3 per pound.
@@ -143,6 +146,8 @@ def _older(currency: str) -> tuple[_Older, ...]:
             _Older(marks / DEM_PER_EUR, f"BoE millennium M14 over M15 at {DEM_PER_EUR} marks per euro"),
             _Older(parities / DEM_PER_EUR, f"the mark's parity at {DEM_PER_EUR} marks per euro"),
         )
+    if currency == "JPY":  # none before FRED's: Japan's amounts begin in 1981
+        return ()
     raise ValueError(f"no exchange rate for {currency!r}")
 
 
@@ -175,6 +180,8 @@ def _from_fred(currency: str, on: pd.Timestamp) -> Rate | None:
         if marks is None:
             return None
         return Rate(marks.value / DEM_PER_EUR, marks.dated, f"{marks.source} at {DEM_PER_EUR} marks per euro")
+    if currency == "JPY":
+        return _latest(FX_JPY_PER_USD, on)
     raise ValueError(f"no exchange rate for {currency!r}")
 
 
@@ -222,6 +229,8 @@ def _from_fred_history(currency: str) -> list[pd.Series]:
         return [1.0 / series(FX_USD_PER_GBP)]
     if currency == "EUR":
         return [1.0 / series(FX_USD_PER_EUR), series(FX_DEM_PER_USD, stopped=FX_DEM_ENDED) / DEM_PER_EUR]
+    if currency == "JPY":
+        return [series(FX_JPY_PER_USD)]
     raise ValueError(f"no exchange rate for {currency!r}")
 
 

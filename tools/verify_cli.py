@@ -404,6 +404,16 @@ CASES: list[list[str]] = [
     ["--na:nl", "--mo"], ["--na:nl", "--sp"], ["--na:nl", "--policy"], ["--na:nl", "--cpi:sa"], ["--na:nl", "--inf"],
     ["--na:es,nl", "--com"], ["--na:pt,nl", "--com:mortgage"], ["--na:us,nl", "--com", "--base:nl"],
     ["--na:nl", "--master:eur"], ["--neth:max:6"], ["--na:nl", "--nl:top:USD3t"], ["--na:nl,es", "--nl:max:9", "--es:max:6"],
+    # Batch 14.3, decision 190: Japan, on readers of its own: --nations:jp (or jpn), its prefixes --jp: and --jpn:, its
+    # own defaults, its two levels (f and m) and one it lacks (p), no mortgage term, its policy terms (the call rate
+    # once), --cpi:sa, the yen as the master currency, the comparison and a base with it, all ten nations; "--jpnx"
+    # names no nation.
+    ["--na:jp"], ["--na:jpn"], ["--na:ca,us,gb,de,fr,pt,it,es,nl,jp"], ["--na:jp", "--jp:max:9"], ["--na:jp", "--jpn:top:2000t"],
+    ["--na:jp", "--jp:d:fm"], ["--na:jp", "--jp:d:p"], ["--na:jp", "--jp:y:2,10"], ["--na:jp", "--jp:y:1,3,5,7,20"],
+    ["--na:jp", "--jp:mo:var"], ["--na:jp", "--mo"], ["--na:jp", "--sp"], ["--na:jp", "--policy"],
+    ["--na:jp", "--po:target,market"], ["--na:jp", "--cpi:sa"], ["--na:jp", "--inf"], ["--na:jp", "--master:jpy"],
+    ["--na:us,jp", "--master:¥"], ["--na:de,jp", "--com"], ["--na:de,jp", "--com:mortgage"], ["--na:us,jp", "--com", "--base:jp"],
+    ["--japa:max:6"], ["--jpnx:max:6"], ["--na:jp", "--jp:top:USD3t"], ["--na:jp,nl", "--jp:max:9", "--nl:max:6"],
 ]
 
 

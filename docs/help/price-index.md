@@ -39,6 +39,7 @@ Seasonal adjustment takes out the swings that come back each year at the same ti
 - **The Netherlands, unadjusted, from 1996-01.** Eurostat's harmonised index of consumer prices, all items, 2025 = 100 ([prc_hicp_minr](https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_minr/default/table?lang=en)).
 - **The Netherlands, unadjusted, 1960-04 to 1995.** The national consumer price index, all items, as the OECD published it in its Main Economic Indicators, through FRED ([NLDCPIALLMINMEI](https://fred.stlouisfed.org/series/NLDCPIALLMINMEI)). Published on 2015 = 100 and scaled to the harmonised index where that begins, so the line is in 2025 = 100 throughout and has no step in 1996.
 - **The Netherlands, seasonally adjusted:** none is published with the harmonised index, so with Seas. adj. ticked the Netherlands' chart draws its index not seasonally adjusted, as France's does.
+- **Japan, unadjusted, from 1955-01.** The IMF's consumer price index for Japan, all items, 2020 = 100, to one decimal ([JPN.CPI._T.IX.M](https://api.imf.org/external/sdmx/2.1/data/IMF.STA,CPI/JPN.CPI._T.IX.M)); none seasonally adjusted is offered, so with Seas. adj. ticked Japan's chart draws it unadjusted, as France's does.
 
 ## How the program keeps these figures
 

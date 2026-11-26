@@ -30,6 +30,7 @@ from urllib3.exceptions import MaxRetryError, ProtocolError
 
 from .config import (
     BPSTAT_SESSION,
+    JP_SESSION,
     CANADIAN_SESSION,
     DE_SESSION,
     DATE_COLUMN,
@@ -118,6 +119,7 @@ _START_PARAMETERS = (
     "sinceTimePeriod",  # Eurostat's (de_data): 2024-Q3, 2023
     "startRefPeriod",  # Statistics Canada's WDS (cdn_data): 2024-04-01
     "Datefrom",  # the Bank of England's database (uk_data.iadb_date): 03/Sep/2026
+    "startDate",  # the Bank of Japan's API (jp_data): 202610, 202403 (a quarter, 2024 Q3), 1997
 )
 # Treasury's Debt to the Penny asks from a day by a filter (latest.py): record_date:gte:2026-06-30.
 _FILTER_FROM = re.compile(r"(\w+):gte:(\d{4}-\d{2}-\d{2})")
@@ -176,8 +178,10 @@ def _named(paths: list[str]) -> str:
 
 
 def _start_day(text: str) -> date | None:
-    """The day a start parameter names: 2026-09-04, 2026-08, 2023, 2024-Q3, or the Bank of England's 03/Sep/2026; None for any other text."""
+    """The day a start parameter names: 2026-09-04, 2026-08, 2023, 2024-Q3, the Bank of England's 03/Sep/2026, or the Bank of Japan's 202610 (its quarter 202403 read as a month: one request's starts still in order); None for any other text."""
     try:
+        if match := re.fullmatch(r"(\d{4})(\d{2})", text):
+            return date(int(match[1]), int(match[2]), 1)
         if match := re.fullmatch(r"(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?", text):
             return date(int(match[1]), int(match[2] or 1), int(match[3] or 1))
         if match := re.fullmatch(r"(\d{4})-Q([1-4])", text):
@@ -1331,6 +1335,18 @@ def bpstat_get(
 ) -> requests.Response:
     """GET a Banco de Portugal BPstat URL (``euro_data.bpstat_download``, 9.13), asked once more and cached as the others are."""
     response = _session_get(BPSTAT_SESSION, "bpstat", url, params, timeout=timeout)
+    assert response is not None  # only missing_ok returns None
+    return response
+
+
+def jp_get(
+    url: str,
+    params: dict | None = None,
+    *,
+    timeout: int = HTTP_TIMEOUT_SECONDS,
+) -> requests.Response:
+    """GET a Ministry of Finance, Bank of Japan or IMF URL for Japan (``jp_data``, batch 14.3), asked once more and cached as the others are."""
+    response = _session_get(JP_SESSION, "jp", url, params, timeout=timeout)
     assert response is not None  # only missing_ok returns None
     return response
 

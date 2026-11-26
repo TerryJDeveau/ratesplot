@@ -108,6 +108,13 @@ The sources, measured 2026-11-11 from Buddug (the batch's measurement note):
   within 1 million in all 93 quarters; ``bop_c6_m`` holds neither pair (all
   429 months of each empty, measured 2026-11-23): both end at their
   quarters (``de_data.EURO_MONTHS_MISSING``).
+* Japan (batch 14.3, decision 188): the Bank of Japan's BP01, BPM6, monthly
+  from 1996-01, 100 million yen, not seasonally adjusted: credits the goods
+  exports, services credit, primary and secondary income credit; debits the
+  four debits; credits less debits equal the current account balance in all
+  369 months, goods and services the trade balance likewise (measured
+  2026-11-26). Twelve-month sums each month, as Germany's
+  (``jp_data.payments_months``).
 """
 
 from __future__ import annotations
@@ -135,13 +142,14 @@ from .de_data import DE_PAYMENTS_SERIES, DE_PAYMENTS_SIDES, EURO_MONTHS_MISSING,
 from .euro_data import EURO_NATIONS, EuroNation
 from .frames import at_quarter_end, rows_to_frame
 from .http import downloads_of
+from .jp_data import JP_PAYMENTS_EARLIEST, payments_months as jp_payments_months
 from .joins import ttm_sum
 from .uk_data import ons_series
 from .us_data import fred_series
 
 # The nations whose balance of payments is drawn (batch 23's stages): a chart
 # of another prints a note and draws none.
-PAYMENTS_NATIONS = ("us", "cdn", "uk", "de", "fr", "pt", "it", "es", "nl")
+PAYMENTS_NATIONS = ("us", "cdn", "uk", "de", "fr", "pt", "it", "es", "nl", "jp")
 
 # FRED's BEA series, BPM6, from 1999-Q1, millions of dollars a quarter,
 # seasonally adjusted: (credits, debits) of each pair.
@@ -337,7 +345,7 @@ _QUARTERS = {
     "us": _us_quarters, "cdn": _cdn_quarters, "uk": _uk_quarters,
     **{key: partial(_euro_quarters, nation) for key, nation in EURO_NATIONS.items()},
 }
-_MONTHS = {"de": _de_months}
+_MONTHS = {"de": _de_months, "jp": jp_payments_months}
 
 
 def _ttm_frame(credits: pd.Series, debits: pd.Series) -> pd.DataFrame:
@@ -363,7 +371,7 @@ def payments_earliest(key: str) -> pd.Timestamp | None:
     """The first quarter (Germany's: month) of nation ``key``'s balance of payments, for the coverage warning; None where none is drawn yet."""
     return {
         "us": US_PAYMENTS_EARLIEST, "cdn": CDN_PAYMENTS_EARLIEST, "uk": UK_PAYMENTS_EARLIEST, "de": DE_PAYMENTS_EARLIEST,
-        **EURO_PAYMENTS_EARLIEST,
+        **EURO_PAYMENTS_EARLIEST, "jp": JP_PAYMENTS_EARLIEST,
     }.get(key)
 
 
@@ -391,7 +399,7 @@ def fetch_payments(key: str, item: str) -> pd.DataFrame | None:
 # Germany's figures are monthly already, trade's and the current account's alike;
 # France's, Portugal's and Italy's months reach as far for both pairs; Spain's trade stops at its quarters, before
 # its current account's months (``de_data.EURO_MONTHS_MISSING``), so it cannot steer it; the Netherlands' both pairs
-# end at their quarters.
+# end at their quarters; Japan's months reach as far for both pairs.
 TRADE_STEERED_NATIONS = ("us", "cdn", "uk")
 
 
