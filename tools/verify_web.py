@@ -1206,7 +1206,7 @@ def check_batch95(check: Check) -> None:
 def check_batch91(check: Check) -> None:
     """Batch 9.1: each nation's policy terms, target and market, as boxes; the target ticked; greyed while the policy rate is off."""
     # Every nation ticked, so every nation's section is laid out (batch 28.1).
-    at = new_page("--na:ca,us,gb,de,fr,pt,it,es,nl --e:2026-09-01")
+    at = new_page("--na:ca,us,gb,de,fr,pt,it,es,nl,jp --e:2026-09-01")
     check("no exception", not at.exception, at.exception)
     boxes = {box.key for box in at.checkbox if box.key and ":policy-terms:" in box.key}
     wanted = {f"choice:{key}:policy-terms:{term}" for key in NATION_KEYS for term in ("target", "market")}
@@ -1240,7 +1240,7 @@ def check_batch91(check: Check) -> None:
           at.checkbox(key="choice:cdn:policy-terms:target").value
           and any("untick “Policy rate”" in str(item.value) for item in list(at.info) + list(at.warning)), address(at))
     check("no exception, one drawing per chart", not at.exception and charts_shown(at) == len(NATION_KEYS), at.exception)
-    page = new_page("--gdp --debt --interest --yield --po:market --na:ca,us,gb,de,fr,pt,it,es,nl --e:2026-09-01")
+    page = new_page("--gdp --debt --interest --yield --po:market --na:ca,us,gb,de,fr,pt,it,es,nl,jp --e:2026-09-01")
     markets = {f"choice:{key}:policy-terms:market" for key in NATION_KEYS}
     check("--po:market: the market ticked in every section, the target not",
           {key for key in wanted if page.checkbox(key=key).value} == markets and flags(page)["policy"],

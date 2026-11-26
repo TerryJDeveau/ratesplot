@@ -1054,7 +1054,7 @@ def check_limits(check: Check) -> None:
               units == {"cdn:max": "%", "cdn:top": "C$", "us:max": "%", "us:top": "$", "uk:max": "%", "uk:top": "£", "de:max": "%", "de:top": "€",
                         "fr:max": "%", "fr:top": "€", "pt:max": "%", "pt:top": "€",
                         "it:max": "%", "it:top": "€", "es:max": "%", "es:top": "€",
-                        "nl:max": "%", "nl:top": "€"},
+                        "nl:max": "%", "nl:top": "€", "jp:max": "%", "jp:top": "¥"},
               units)
         check("every All box greyed while its box is blank", all(all_greyed(key) for key in app.all_boxes))
         w.typed("us:max", "8")
@@ -3297,7 +3297,7 @@ def check_batch133(check: Check) -> None:
         real = {n: [value for value in editor(n).boxes if value.startswith("r")] for n in listed}
         check("each panel offers its nation's real terms", real == {
             "cdn": ["r30"], "us": ["r5", "r7", "r10", "r20", "r30"], "uk": ["r5", "r7", "r10", "r20", "r30"], "de": ["r5", "r7", "r10"],
-            "fr": [], "pt": [],
+            "fr": [], "pt": [], "jp": [],
         }, real)
         check("none ticked at the start", not any(editor(n).boxes[value].get() for n in listed for value in real[n]))
         check("a box's caption is its term", str(editor("us").widgets[list(editor("us").boxes).index("r10")].cget("text")) == "r10")
