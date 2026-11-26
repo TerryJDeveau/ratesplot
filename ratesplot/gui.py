@@ -671,15 +671,17 @@ class _ChoicesEditor:
         (``_SPANNED``): the comparison's "TTM interest paid on public debt"
         (decision 147) would otherwise widen the yield terms' first column, and
         the column with it. Not in a nation's panel, where a margin's field may
-        stand beside a lone box.
+        stand beside a lone box. Headings and captions in the text's own colour
+        (batch 50.1): the grey of before read as a control turned off (Terry,
+        2026-11-26, decision 189: "The word “real” appears greyed-out").
         """
         if not boxes:
-            ttk.Label(self.frame, text=caption, foreground="#555555").grid(
+            ttk.Label(self.frame, text=caption).grid(
                 row=self.rows, column=0, columnspan=_SPANNED, sticky="w", pady=(4 if self.rows else 0, 0)
             )
             self.rows += 1
             return
-        ttk.Label(self.frame, text=f"{caption}:" if caption else "", foreground="#555555").grid(
+        ttk.Label(self.frame, text=f"{caption}:" if caption else "").grid(
             row=self.rows, column=0, sticky="w", padx=(0, 4)
         )
         span = _SPANNED if len(boxes) == 1 and self.nation is None else 1

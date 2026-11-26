@@ -1001,9 +1001,10 @@ def check_batch262(check: Check) -> None:
     titles = [header.value for header in at.subheader]
     check("on it, the comparison's block; the curves and the rates on the yield axis left out",
           "Comparison chart" in titles and "Curve selection" not in titles and "Rates on the yield axis" not in titles, titles)
-    captions = [block.value for block in at.caption]
+    captions = [block.value for block in at.markdown]
     headings = ["Bond yields", "Real bond yields (inflation-linked)", "Other measures"]
     check("its three headings, in order", [caption for caption in captions if caption in headings] == headings, captions[:12])
+    check("… in the text's own colour, none a grey caption (batch 50.1)", not any(block.value in headings for block in at.caption))
     labels = {box.key.rsplit(":", 1)[1]: box.label for box in at.checkbox if box.key and box.key.startswith("choice:compare-measure:")}
     check("the amounts named in full", (labels.get("debt"), labels.get("gdp"), labels.get("interest")) == (
         "Public debt", "TTM GDP", "TTM interest paid on public debt"), labels)
@@ -2514,7 +2515,14 @@ def check_batch133(check: Check) -> None:
     }, offered)
     check("none ticked at the start", not any(at.checkbox(key=f"choice:{nation}:yields:{term}").value for nation, terms in offered.items() for term in terms))
     check("a box's caption is its term", at.checkbox(key="choice:us:yields:r10").label == "r10", at.checkbox(key="choice:us:yields:r10").label)
-    check("the row captioned “real”, in each of the four sections", sum(block.value == "real" for block in at.caption) == 4, [block.value for block in at.caption][:12])
+    check("the row captioned “real”, in each of the four sections", sum(block.value == "real" for block in at.markdown) == 4, [block.value for block in at.markdown][:12])
+    check("… in the text's own colour, not a grey caption (batch 50.1)", not any(block.value == "real" for block in at.caption))
+    sections = [header.value for header in at.subheader if header.value.endswith(" only")]
+    heads = [block for block in at.markdown if block.value == "**Axis limits**"]
+    check("“Axis limits” over each section's limits, with its help and More (batch 50.1)", sections and len(heads) == len(sections) and all(
+        frontend.LIMITS_HELP in block.proto.help and "?help=limits" in block.proto.help for block in heads), (len(heads), sections))
+    labels = [block.value for block in at.markdown if "by level" in block.value]
+    check("the levels' label in Terry's words, in each section", labels.count("**Debt and interest by level**") == len(sections), labels[:4])
     at.checkbox(key="choice:us:yields:r10").check().run()
     tokens = address(at).split()
     config = config_from_choices(*sort_tokens(tokens)[:2])

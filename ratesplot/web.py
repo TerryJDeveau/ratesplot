@@ -2214,7 +2214,9 @@ def _choices_control(where, option: Option, nation: Nation | None = None) -> Non
     first = next((number for number, (_caption, boxes) in enumerate(rows) if boxes), 0)
     for number, (caption, boxes) in enumerate(rows):
         if caption:
-            where.caption(caption)
+            # In the text's own colour, as a list's label is (batch 50.1): Streamlit's caption is grey, and "real"
+            # read as a control turned off (Terry, 2026-11-26, decision 189).
+            where.markdown(caption)
         if not boxes:  # a heading over the rows after it (batch 26.2, ``options._COMPARE_CHOICES``)
             continue
         # A nation's box of a term drawn plus a margin has the margin's field

@@ -2897,6 +2897,8 @@ def check_batch262(check: Check) -> None:
         headings = ["Bond yields", "Real bond yields (inflation-linked)", "Other measures"]
         texts = [child.cget("text") for child in editor.frame.winfo_children() if isinstance(child, ttk.Label)]
         check("its three headings, in order", [text for text in texts if text in headings] == headings, texts[:8])
+        greys = [str(child.cget("foreground")) for child in editor.frame.winfo_children() if isinstance(child, ttk.Label) and child.cget("text") in headings]
+        check("… in the text's own colour, not grey (batch 50.1)", greys == ["", "", ""], greys)
         app.notebook.select(app.tabs["cdn"])
         w.pump(5)
         check("back on Canada's tab: the curves' block again, debt still unticked; no comparison block",
@@ -3306,6 +3308,8 @@ def check_batch133(check: Check) -> None:
                      for n in listed}
         check("the row captioned “real:” in each panel offering real terms, none in France's or Portugal's (no real yields)",
               captioned == {n: bool(real[n]) for n in listed}, captioned)
+        greys = {str(widget.cget("foreground")) for widget in all_widgets(editor("us").frame) if widget.winfo_class() == "TLabel" and str(widget.cget("text")) == "real:"}
+        check("“real:” in the text's own colour, not grey (batch 50.1)", greys == {""}, greys)
         editor("us").boxes["r10"].set(True)
         editor("us").box_changed("r10")
         w.settle()
