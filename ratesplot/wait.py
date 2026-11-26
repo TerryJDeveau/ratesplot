@@ -107,6 +107,9 @@ _STARTING_ASKED = {
     "es": {"fred.stlouisfed.org": 1, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
     # The Netherlands' (batch 14.3), the same requests as France's.
     "nl": {"fred.stlouisfed.org": 1, "data-api.ecb.europa.eu": 1, "ec.europa.eu": 3},
+    # Japan's (batch 14.3, decision 188), counted from its default chart's requests with every series baked: the
+    # Ministry's current month's file, the flow of funds' quarters, FRED's GDP.
+    "jp": {"www.mof.go.jp": 1, "www.stat-search.boj.or.jp": 1, "fred.stlouisfed.org": 1},
 }
 # Below this the words change: "nearly done" rather than "about 0 s".
 _NEARLY_DONE_SECONDS = 1.0

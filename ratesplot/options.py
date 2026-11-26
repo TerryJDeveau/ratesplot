@@ -382,7 +382,7 @@ def parse_compare_measure(spec: str) -> tuple[str, ...]:
 
 
 def parse_base_nation(spec: str) -> tuple[str, ...]:
-    """Parse ``--base:NATION`` (batch 26.3): one nation's code, as --nations takes it (ca or cdn, us, gb or uk, de, ger or deu, fr or fra, pt or prt, it or ita, es or esp, nl or nld), to its key.
+    """Parse ``--base:NATION`` (batch 26.3): one nation's code, as --nations takes it (ca or cdn, us, gb or uk, de, ger or deu, fr or fra, pt or prt, it or ita, es or esp, nl or nld, jp or jpn), to its key.
 
     One at a time: a list of two is refused, as is "none" (--no-base draws
     the comparison without a base).
@@ -462,7 +462,7 @@ def parse_spreads(spec: str) -> tuple[tuple[str, str], ...]:
 
 
 def parse_nations(spec: str) -> tuple[str, ...]:
-    """Parse ``--nations:LIST``: nations' codes (ca or cdn, us, gb or uk, de, ger or deu, fr or fra, pt or prt, it or ita, es or esp, nl or nld), to their keys
+    """Parse ``--nations:LIST``: nations' codes (ca or cdn, us, gb or uk, de, ger or deu, fr or fra, pt or prt, it or ita, es or esp, nl or nld, jp or jpn), to their keys
     in ``NATIONS`` order."""
     codes = [item.strip().lower() for item in spec.split(",") if item.strip()]
     if not codes:
@@ -1087,13 +1087,19 @@ OPTIONS: tuple[Option, ...] = (
         "the Netherlands' chart (only when\nnamed; with -c or -u, those too)",
         names=("netherlands",), shortest=3, label="Netherlands", command_line=False, topic="netherlands",
     ),
+    # Batch 14.3: Japan (decision 188), on readers of its own (jp_data).
+    Option(
+        "japan", Kind.SWITCH, ("show_jp",), "country", "--nations:jp",
+        "Japan's chart (only when named; with\n-c or -u, those too)",
+        names=("japan",), shortest=3, label="Japan", command_line=False, topic="japan",
+    ),
     # The same by the nations' codes, for when there are more than two
     # (batch 2). The command line turns it into the switches of the nations it
     # names (``cli.sort_tokens``), so it sets no field of its own and has no
     # control: the window and the page show the switches.
     Option(
         "nations", Kind.VALUE, (), "country", "--nations:LIST / --na:LIST",
-        "the charts of these nations only, by\ncode: ca or cdn, us, gb or uk, de, ger\nor deu, fr or fra, pt or prt, it or ita,\nes or esp, nl or nld\n(--nations:ca,us,gb,de); the only way to\nname the UK's, Germany's, France's,\nPortugal's, Italy's, Spain's and the\nNetherlands'",
+        "the charts of these nations only, by\ncode: ca or cdn, us, gb or uk, de, ger\nor deu, fr or fra, pt or prt, it or ita,\nes or esp, nl or nld, jp or jpn\n(--nations:ca,us,gb,de); the only way to\nname the UK's, Germany's, France's,\nPortugal's, Italy's, Spain's, the\nNetherlands' and Japan's",
         names=("nations",), shortest=2, parse=parse_nations, in_gui=False,
     ),
     # Batch 26 (Terry, 2026-11-11, decision 146: "Let's try your proposals. It
@@ -1132,7 +1138,7 @@ OPTIONS: tuple[Option, ...] = (
     ),
     Option(
         "base-nation", Kind.VALUE, ("base_nations",), "compare", "--base:NATION",
-        "the base nation, by its code as --nations\ntakes it (ca, us, gb, de, fr, pt), one at\na time; turns --base on",
+        "the base nation, by its code as --nations\ntakes it (ca, us, gb, de, fr, pt, it, es,\nnl, jp), one at a time; turns --base on",
         names=("base",), shortest=3, parse=parse_base_nation, turns_on="base", label="Base nation's box",
         format=format_base_nation, editor="choices", choices=_BASE_CHOICES, panel="base", topic="compare",
         one_at_a_time=True,
@@ -1300,7 +1306,7 @@ OPTIONS: tuple[Option, ...] = (
         "policy", Kind.FLAG, ("policy_rates",), "rates", "--policy / --no-policy",
         "each country's policy rate, the central\nbank's official rate: the fed funds\n"
         "target (a range from 2008, the monthly\naverage before 1982-09); the Bank Rate,\n"
-        "the overnight target from 1996; the UK's\nBank Rate; Germany's: the Bundesbank's\ndiscount rate, the ECB's main\nrefinancing rate from 1999; France's,\nPortugal's, Italy's, Spain's and the\nNetherlands': the ECB's, from 1999",
+        "the overnight target from 1996; the UK's\nBank Rate; Germany's: the Bundesbank's\ndiscount rate, the ECB's main\nrefinancing rate from 1999; France's,\nPortugal's, Italy's, Spain's and the\nNetherlands': the ECB's, from 1999;\nJapan's: the call rate, from 1960",
         names=("policy-rates",), shortest=2, label="Policy rate", topic="policy-rates",
     ),
     # Batch 9.1 (Terry, decision 27): the official rate by default, the
@@ -2626,8 +2632,8 @@ _HELP_COLUMN = 36  # width of the spellings column (fits "--interest:LETTERS / -
 _HELP_MIN_GAP = 3  # a spelling longer than the column still gets this many spaces
 _HELP_INTRO = """\
 Run with no flags to open the interactive window with both charts (Canadian,
-then U.S.; the UK's, Germany's, France's, Portugal's, Italy's, Spain's and
-the Netherlands' when asked for, --nations:gb, --nations:de and so on, which
+then U.S.; the UK's, Germany's, France's, Portugal's, Italy's, Spain's, the
+Netherlands' and Japan's when asked for, --nations:gb, --nations:de and so on, which
 -c and -u may join). Flags set the window's starting values.
 
 Names are case-insensitive, the dashes in front are optional, and any leading
@@ -2646,7 +2652,7 @@ the settings remembered, with the options named laid over them.
 """
 _HELP_NATIONS = (
     "A nation's code in front sets a value for its chart only: --us:top:20t, --cdn:yields:2,10, "
-    "--us:no-y:30 (codes ca or cdn, us, gb or uk, ger or deu, fr or fra, pt or prt, it or ita, es or esp, and nl or nld, written in full; Germany's de only in "
+    "--us:no-y:30 (codes ca or cdn, us, gb or uk, ger or deu, fr or fra, pt or prt, it or ita, es or esp, nl or nld, and jp or jpn, written in full; Germany's de only in "
     "--nations, since --de is --debt). It goes on {names}; the nation's own value replaces the one for both charts. "
     "A nation's own list may be none (--cdn:yields:none). A list for every chart draws on each chart the items that "
     "nation has; a chart left none of them draws none, with a warning (-c --yields:7,20)."

@@ -54,6 +54,7 @@ from .de_data import ecb_series
 from .frames import at_middle_of_month
 from .de_data import YIELD_HISTORY_ATTR as DE_YIELD_HISTORY_ATTR
 from .http import downloads_of
+from .jp_data import call_rate as jp_call_rate
 from .latest import project_series
 from .prices import consumer_prices, inflation, twelve_month_rise
 from .uk_archive_data import EMBEDDED_UK_BANK_RATE_HISTORY, EMBEDDED_UK_MORTGAGE_HISTORY
@@ -905,6 +906,47 @@ def euro_policy_target() -> RateCurve | None:
                      parts=parts)
 
 
+def _jp_call_rate(style: dict, key: str, named_in: str) -> RateCurve | None:
+    """Japan's call rate as one curve (batch 14.3, decision 188 (3); ``jp_data.call_rate``): the collateralized monthly averages from 1960-01, the uncollateralized ones from 1985-07, the daily rate from 1998-01-05; None, with a warning, if the Bank fails with nothing baked.
+
+    Each part is read until the next begins (the monthly averages until the
+    daily rate's first month), and each holds as it was observed: a monthly
+    average across its month, a day's rate across its day.
+    """
+    try:
+        collateralized, monthly, daily = (_clean(part) for part in jp_call_rate())
+    except Exception as exc:
+        print(f"  Warning: Bank of Japan call rate unavailable ({exc}); not drawn.")
+        return None
+    if not daily.empty:
+        monthly = monthly.loc[monthly.index < daily.index[0].replace(day=1)]
+    later = monthly if not monthly.empty else daily
+    if not later.empty:
+        collateralized = collateralized.loc[collateralized.index < later.index[0].replace(day=1)]
+    values = pd.concat([collateralized, monthly, daily])
+    if values.empty:
+        return None
+    holds = pd.concat([holding(collateralized, holds_of("policy_monthly_average")), holding(monthly, holds_of("policy_monthly_average")),
+                       holding(daily, holds_of("policy_market"))])
+    parts = _parts(
+        (collateralized, "Call Rate, collateralized (monthly avg.)", "Collateralized (monthly avg.)"),
+        (monthly, "Call Rate, uncollateralized (monthly avg.)", "Uncollateralized (monthly avg.)"),
+        (daily, "Uncollateralized Overnight Call Rate", "Daily"),
+    )
+    return RateCurve(key, named_in.format(_named(parts)), values, style, title="Policy Rate", holds=holds, parts=parts,
+                     named_in=named_in)
+
+
+def jp_policy_target() -> RateCurve | None:
+    """Return Japan's policy rate (batch 14.3, decision 188 (3)): the call rate, the Bank of Japan's operating target most years since 1995 and since 2024, which publishes no series of the target itself."""
+    return _jp_call_rate(POLICY_RATE_STYLE, "policy", "{}")
+
+
+def jp_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
+    """Return Japan's overnight rate: the same call rate, drawn as the market's when "target" is not chosen with it (``rate_curves``)."""
+    return _jp_call_rate(style, "policy_market", OVERNIGHT_RATE_NAMED)
+
+
 def de_policy_market(style: dict = POLICY_RATE_STYLE) -> RateCurve | None:
     """Return the euro area's overnight rate: EONIA until €STR begins, then €STR (``DE_ESTR``); None if both fail.
 
@@ -1237,12 +1279,15 @@ def with_followed(
 # rate, as Germany's.
 _POLICY_TARGETS = {
     "us": us_policy_target, "cdn": cdn_policy_target, "uk": uk_policy_target, "de": de_policy_target,
-    **dict.fromkeys(EURO_NATION_KEYS, euro_policy_target),
+    **dict.fromkeys(EURO_NATION_KEYS, euro_policy_target), "jp": jp_policy_target,
 }
 _POLICY_MARKETS = {
     "us": us_policy_market, "cdn": cdn_policy_market, "uk": uk_policy_market, "de": de_policy_market,
-    **dict.fromkeys(EURO_NATION_KEYS, de_policy_market),
+    **dict.fromkeys(EURO_NATION_KEYS, de_policy_market), "jp": jp_policy_market,
 }
+# The nations whose overnight market rate is their policy rate (Japan's call rate, decision 188 (3)): with "target"
+# chosen, "market" draws nothing more.
+_MARKET_IS_TARGET = ("jp",)
 
 # How far ahead a blank End looks for a policy target's value (batch 32.4):
 # a change takes effect on the day of its announcement (the Bank of
@@ -1300,7 +1345,11 @@ def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[
             # The market rate first, so the target's steps are drawn over its
             # daily moves (the legend lists the target first); drawn as the
             # policy rate was before batch 9.1 when it is drawn alone.
-            if "market" in config.policy_terms:
+            market = "market" in config.policy_terms
+            if market and country in _MARKET_IS_TARGET and "target" in config.policy_terms:
+                print(f"  Note: the {adjective} policy rate is its overnight call rate, drawn once.")
+                market = False
+            if market:
                 style = POLICY_MARKET_STYLE if "target" in config.policy_terms else POLICY_RATE_STYLE
                 curves.append(_POLICY_MARKETS[country](style))
             if "target" in config.policy_terms:
@@ -1309,7 +1358,8 @@ def rate_curves(country: str, yields: pd.DataFrame, config: PlotConfig) -> list[
         terms = [term for term in config.mortgage_terms if country in MORTGAGE_TERMS[term][0]]
         if not terms:
             own = ",".join(nation_by_key(country).mortgage_terms)
-            warn_none_drawn(country, "mortgage rate", f"none of its mortgage terms ({own}) is chosen")
+            warn_none_drawn(country, "mortgage rate", f"none of its mortgage terms ({own}) is chosen" if own
+                            else "none is drawn for it (no source on a host the program asks)")
         else:
             with downloads_of(f"{adjective} mortgage rates"):
                 for term in terms:

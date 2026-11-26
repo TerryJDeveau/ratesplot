@@ -82,6 +82,7 @@ from .config import (
     ES,
     FR,
     IT,
+    JP,
     NL,
     PT,
     DEFAULT_DEBT_AGGREGATES,
@@ -170,7 +171,7 @@ _BALANCES = {
 }
 # The nations' metadata by key (their words in the title), and by currency (the
 # right axis's label and its ticks' symbol for amounts in that currency).
-_METADATA = {metadata.key: metadata for metadata in (CDN, US, UK, DE, FR, PT, IT, ES, NL)}
+_METADATA = {metadata.key: metadata for metadata in (CDN, US, UK, DE, FR, PT, IT, ES, NL, JP)}
 _METADATA_BY_CURRENCY = {nation_by_key(metadata.key).currency: metadata for metadata in _METADATA.values()}
 
 
@@ -334,6 +335,9 @@ def draw_compare(ax_yield: Axes, config: PlotConfig) -> None:
             return None
         own = solo if currency is None else _in_currency(solo, nation, currency)
         if own is None:
+            return None
+        if measure == "mortgage" and nation.key not in COMPARE_MORTGAGE_TERMS:
+            print(f"  Note: {nation.name} has no mortgage rate; it is left off the comparison.")
             return None
         if measure == "mortgage":
             # Its own headline term alone: another nation's may be one of its bands too (France's over 10 years is Germany's).

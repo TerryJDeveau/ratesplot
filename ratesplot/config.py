@@ -220,6 +220,15 @@ BPSTAT_DATA_URL = "https://bpstat.bportugal.pt/data/v1/domains/{domain}/datasets
 WEBSTAT_EXPORT_URL = "https://webstat.banque-france.fr/api/explore/v2.1/catalog/datasets/observations/exports/json"
 WEBSTAT_HOST = "webstat.banque-france.fr"
 WEBSTAT_KEY_VARIABLE = "WEBSTAT_API_KEY"
+# Japan (batch 14.3, decision 188; Terry's decision 183, 2026-11-23: two hosts the program had not asked, a few plain
+# requests each, never varying headers). The Ministry of Finance's JGB yields at constant maturities, daily: the
+# history to the last month's end and the current month to the day before, two CSV files (``jp_data.parse_mof_csv``).
+MOF_HISTORY_URL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/historical/jgbcme_all.csv"
+MOF_CURRENT_URL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/jgbcme.csv"
+# The Bank of Japan's statistics API (no key): ``getDataCode`` of one database's series, several codes a request, from
+# a ``startDate`` (``YYYYMM``; ``YYYYQQ`` for a quarterly series, ``YYYY`` for an annual one, measured 2026-11-26); its
+# answer CSV (``jp_data.parse_boj_csv``). Japan's call rate, flow of funds and balance of payments.
+BOJ_DATA_URL = "https://www.stat-search.boj.or.jp/api/v1/getDataCode"
 
 # Each source's name in the message log, by the host its requests go to: a
 # source that fails gets one warning per drawing, which names it once (batch
@@ -243,6 +252,8 @@ SOURCE_NAMES = {
     "api.imf.org": "IMF",
     "bpstat.bportugal.pt": "Banco de Portugal",
     WEBSTAT_HOST: "Banque de France",
+    "www.mof.go.jp": "Ministry of Finance",
+    "www.stat-search.boj.or.jp": "Bank of Japan",
 }
 
 _BROWSER_HEADERS = {
@@ -279,6 +290,10 @@ BPSTAT_SESSION = requests.Session()
 # The Banque de France's Webstat (9.14): a session of its own with python-requests' own headers, as it was measured
 # (2026-11-24); its key goes in each request's header, never in the session's (``http.webstat_get``).
 WEBSTAT_SESSION = requests.Session()
+# Japan's sources (batch 14.3, decision 188): the Ministry of Finance and the Bank of Japan, two hosts first asked for
+# it, and the IMF for its consumer prices: a session of their own with python-requests' own headers, the requests
+# the probe of 2026-11-26 was made with; never varied.
+JP_SESSION = requests.Session()
 # The quote feed is an extra: one quick try (asked once more only as every
 # request is, RETRY_WAIT_SECONDS), then the chart is drawn without it (with a
 # warning).
@@ -676,6 +691,9 @@ ES_DEBT_COLUMN = "Total Spanish Debt (€)"
 ES_INTEREST_COLUMN = "TTM Spanish Interest Paid (€)"
 NL_DEBT_COLUMN = "Total Dutch Debt (€)"
 NL_INTEREST_COLUMN = "TTM Dutch Interest Paid (€)"
+# Japan (batch 14.3, decision 188): no interest is drawn (none quarterly), its column named for the kinds alone.
+JP_DEBT_COLUMN = "Total Japanese Debt (¥)"
+JP_INTEREST_COLUMN = "TTM Japanese Interest Paid (¥)"
 
 # --payments[:LIST] (batch 23; Terry, 2026-10-24, decisions 61 and 62): the
 # money coming into a nation against the money going out, as two curves on the
@@ -754,10 +772,10 @@ COMPARE_DEFAULT_CURRENCY = "USD"
 # Each nation's colour on the comparison chart: red for Canada and blue for
 # the U.S., the first two of matplotlib's cycle as they are of the yields';
 # purple for the UK, near-black for Germany, orange for France, green for Portugal, cyan for Italy, olive for Spain,
-# brown for the Netherlands (batch 14.3). A nation added later gets one.
+# brown for the Netherlands (batch 14.3), pink for Japan (decision 188). A nation added later gets one.
 COMPARE_COLOURS = {
     "cdn": "#d62728", "us": "#1f77b4", "uk": "#7b3fa0", "de": "#2b2b2b", "fr": "#ff7f0e", "pt": "#2ca02c", "it": "#17becf",
-    "es": "#bcbd22", "nl": "#8c564b",
+    "es": "#bcbd22", "nl": "#8c564b", "jp": "#e377c2",
 }
 # The base nation (batch 26.3; Terry, 2026-11-12, decision 147: "a “Base
 # nation” option ... One of the nations should be “on” by default"): drawn
@@ -996,7 +1014,7 @@ PRICE_INDEX_ADJUSTED_TITLE = "Seasonally Adjusted Consumer Price Index"
 PRICE_INDEX_AXIS_LABEL = "Consumer Price Index ({base}, Log Scale)"
 PRICE_INDEX_BASES = {
     "us": "1982-84 = 100", "cdn": "2002 = 100", "uk": "2015 = 100", "de": "2020 = 100", "fr": "2025 = 100", "pt": "2025 = 100",
-    "it": "2025 = 100", "es": "2025 = 100", "nl": "2025 = 100",
+    "it": "2025 = 100", "es": "2025 = 100", "nl": "2025 = 100", "jp": "2020 = 100",
 }
 # The nations whose statistics office publishes a seasonally adjusted index
 # (--cpi:sa): every nation but the UK and France (Eurostat's harmonised index,
@@ -1139,7 +1157,7 @@ SPREAD_AXIS_LABEL = "Yield and Spread (%)"
 # which the window and the page also show right of a nation's Top and Bottom
 # boxes (batch 18.1, Terry 2026-10-14: "a $ (or other national currency
 # symbol) drawn to the right of the Top/Bot value boxes").
-CURRENCY_SYMBOLS = {"CAD": "C$", "USD": "$", "GBP": "£", "EUR": "€"}
+CURRENCY_SYMBOLS = {"CAD": "C$", "USD": "$", "GBP": "£", "EUR": "€", "JPY": "¥"}
 # The symbol a chart converted to another nation's currency writes its
 # amounts with (--master, batch 30): unmistakable there, "US$" on the
 # Canadian chart, where "$" alone would read as Canadian dollars; the U.S.
@@ -1457,6 +1475,26 @@ NATIONS: tuple[Nation, ...] = (
             ("yield_terms", ("10y",)),
             ("mortgage_terms", ("1-5", "5-10", "over10")),
             ("spread_pairs", ()),
+        ),
+    ),
+    # Japan (batch 14.3, decision 188): drawn only when asked for, as every
+    # nation after Canada and the U.S.; named by --nations:jp (or jpn), a
+    # value for it alone "--jp:max:8". Its own readers (ratesplot.jp_data):
+    # the Ministry of Finance's daily yields at 1, 2, 3, 5, 7, 10, 20 and 30
+    # years (1 to 7 from 1974, the 10-year 1986, the 30-year 1999); 2, 5,
+    # 10 and 30 ticked at the start and 10y-2y and 30y-10y its spreads, as
+    # Germany's. Central and local government (the social security funds
+    # are no level of the chart, as Germany's). No mortgage rate (its
+    # source, the Japan Housing Finance Agency, is a host not asked). Its
+    # policy rate the call rate, which is its overnight rate too.
+    Nation(
+        "jp", "Japan", ("jp", "jpn"), ("1y", "2y", "3y", "5y", "7y", "10y", "20y", "30y"), "Japanese",
+        shown_by_default=False, market_timezone="Asia/Tokyo", currency="JPY", overnight_rate="call rate",
+        level_boxes=(("f", "Central"), ("m", "Local")),
+        own_defaults=(
+            ("yield_terms", ("2y", "5y", "10y", "30y")),
+            ("mortgage_terms", ()),
+            ("spread_pairs", (("10y", "2y"), ("30y", "10y"))),
         ),
     ),
 )
@@ -2179,6 +2217,29 @@ NL = CountryMetadata(
     component_debt_title="{} Dutch Public Debt",
 )
 
+# Japan (batch 14.3, decision 188, ratesplot.jp_data).
+JP = CountryMetadata(
+    key="jp",
+    country_name="Japan",
+    currency_prefix=CURRENCY_SYMBOLS["JPY"],
+    # The Ministry of Finance's yields at constant maturities, daily.
+    yield_title="Japanese Government Bond Yields (constant maturity)",
+    title_nation="Japanese",
+    title_short="JPN",
+    debt_column=JP_DEBT_COLUMN,
+    # General government's loans and debt securities in the Bank of Japan's
+    # flow of funds, not consolidated (jp_data).
+    debt_label="Japanese General Government Debt (loans and securities)",
+    debt_title="Japanese General Government Debt",
+    interest_column=JP_INTEREST_COLUMN,
+    interest_label="TTM Interest Paid",
+    # Central and local government; the social security funds are no level
+    # of the chart (as Germany's).
+    level_names=(("f", "Central"), ("n", "Local"), ("p", "Regional"), ("m", "Local")),
+    component_debt_label="{} Japanese Public Debt",
+    component_debt_title="{} Japanese Public Debt",
+)
+
 
 def macro_column_kind(column: str) -> SeriesKind:
     """The kind (``SERIES_KINDS``, batch 42.1) of the series a right-axis column holds, for any nation; a column untagged is an error.
@@ -2188,7 +2249,7 @@ def macro_column_kind(column: str) -> SeriesKind:
     """
     keys = {component_column(kind, letter): f"{kind}_{letter}" for kind in ("debt", "interest") for letter in COMPONENT_LETTERS}
     keys |= dict(zip(PAYMENTS_COLUMNS, _PAYMENTS_KEYS))
-    for metadata in (CDN, US, UK, DE, FR, PT, IT, ES, NL):
+    for metadata in (CDN, US, UK, DE, FR, PT, IT, ES, NL, JP):
         keys |= {metadata.debt_column: "debt", metadata.gdp_column: "gdp", metadata.interest_column: "interest"}
         if metadata.federal_debt_column is not None:
             keys[metadata.federal_debt_column] = "federal_debt"
@@ -2337,6 +2398,8 @@ class PlotConfig:
     show_es: bool = False
     # The Netherlands' chart (batch 14.3): only when asked for (--nations:nl).
     show_nl: bool = False
+    # Japan's chart (batch 14.3): only when asked for (--nations:jp).
+    show_jp: bool = False
     # --debt:LETTERS / --interest:LETTERS: the levels of government to split
     # debt and interest into, as letters from COMPONENT_LETTERS in that order
     # ("" = the aggregate lines).
