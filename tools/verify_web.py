@@ -2564,6 +2564,30 @@ def check_batch35(check: Check) -> None:
     at.session_state[web._JOB] = job
     at.text_input(key="value:start").input("2003").run()
     check("… another chart stops it, and draws its own", job.stopped.is_set() and web._JOB not in at.session_state and at.session_state[web._DRAWING].log != "never shown\n", address(at))
+    # Batch 50.1 (decision 189): the drawing that replaces one still waiting counts its time so far on from the first's.
+    started: list = []
+    original = web._start_job
+
+    def recording(config, tokens, began=None):
+        started.append(original(config, tokens, began))
+        return started[-1]
+
+    web._start_job = recording
+    try:
+        import time  # the page's clock, time.monotonic(), as the wait's
+
+        long_ago = time.monotonic() - 1000.0
+        waiting = web._new_job(config, tokens, began=long_ago)
+        at.session_state[web._JOB] = waiting
+        at.text_input(key="value:start").input("2004").run()
+        carried = list(started)
+        at.text_input(key="value:start").input("2005").run()
+    finally:
+        web._start_job = original
+    check("… the drawing replacing it keeps its wait line's time so far (batch 50.1)",
+          waiting.stopped.is_set() and len(carried) == 1 and carried[0].wait.began == long_ago, [job.wait.began for job in carried])
+    check("… and one after the line was taken away starts again", len(started) == 2 and started[1].wait.began > long_ago + 500.0,
+          [job.wait.began for job in started])
     stale = web._new_job(config, tokens)
     stale.drawing = replace(drawing, log="never shown\n")
     stale.done.set()

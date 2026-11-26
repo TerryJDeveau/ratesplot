@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check the wait line (``ratesplot/wait.py``, batch 35.1) and the page's line of drawings (``web._turn``, 35.2), with no network.
 
-* the words: "Please wait about 12 s (5 s so far)", seconds to about 90 s
+* the words: "Please wait about 12 s more (5 s so far)", seconds to about 90 s
   (rounded to 5 above 20), minutes from there, "nearly done";
 * the figures (``wait.Figures``): the starting ones; read back from the settings
   file, anything else in it left out; each moved towards what was measured, the
@@ -62,8 +62,8 @@ def check_words(check) -> None:
         check(f"expected {seconds} s: {text}", wait.expected_text(seconds) == text, wait.expected_text(seconds))
     for seconds, text in [(0.0, "0 s"), (5.9, "5 s"), (89.9, "89 s"), (90.0, "1 min 30 s"), (125.0, "2 min 5 s")]:
         check(f"taken {seconds} s: {text}", wait.taken_text(seconds) == text, wait.taken_text(seconds))
-    check("the line, Terry's words", wait.wait_text(12.0, 5.0) == "Please wait about 12 s (5 s so far)", wait.wait_text(12.0, 5.0))
-    check("the line in minutes", wait.wait_text(120.0, 95.0) == "Please wait about 2 min (1 min 35 s so far)", wait.wait_text(120.0, 95.0))
+    check("the line, Terry's words", wait.wait_text(12.0, 5.0) == "Please wait about 12 s more (5 s so far)", wait.wait_text(12.0, 5.0))
+    check("the line in minutes", wait.wait_text(120.0, 95.0) == "Please wait about 2 min more (1 min 35 s so far)", wait.wait_text(120.0, 95.0))
     check("nearly done, never 0 s", wait.wait_text(0.4, 9.0) == "Please wait, nearly done (9 s so far)", wait.wait_text(0.4, 9.0))
     check("nothing says another visitor", not any("visitor" in wait.wait_text(left, 1.0) for left in (0.0, 5.0, 500.0)))
 
@@ -225,15 +225,15 @@ def check_steady(check) -> None:
     worked_out = {"value": 30.0}
     steady = wait.Wait(figures, [], 1000, began=100.0)
     steady.remaining = lambda now=None: worked_out["value"]
-    check("the first look: as worked out", steady.line(100.0) == "Please wait about 30 s (0 s so far)", steady.line(100.0))
+    check("the first look: as worked out", steady.line(100.0) == "Please wait about 30 s more (0 s so far)", steady.line(100.0))
     worked_out["value"] = 30.0
-    check("a sum that stays put: counted down all the same", steady.line(105.0) == "Please wait about 25 s (5 s so far)", steady.line(105.0))
+    check("a sum that stays put: counted down all the same", steady.line(105.0) == "Please wait about 25 s more (5 s so far)", steady.line(105.0))
     worked_out["value"] = 31.0
-    check("a small rise: not shown", steady.line(106.0) == "Please wait about 25 s (6 s so far)", steady.line(106.0))
+    check("a small rise: not shown", steady.line(106.0) == "Please wait about 25 s more (6 s so far)", steady.line(106.0))
     worked_out["value"] = 60.0
-    check("a real jump: shown", steady.line(107.0) == "Please wait about 60 s (7 s so far)", steady.line(107.0))
+    check("a real jump: shown", steady.line(107.0) == "Please wait about 60 s more (7 s so far)", steady.line(107.0))
     worked_out["value"] = 10.0
-    check("a drop: shown at once", steady.line(108.0) == "Please wait about 10 s (8 s so far)", steady.line(108.0))
+    check("a drop: shown at once", steady.line(108.0) == "Please wait about 10 s more (8 s so far)", steady.line(108.0))
     worked_out["value"] = 2.0
     check("a step overrunning: the small rise not shown once it has run out", "nearly done" in steady.line(130.0), steady.line(130.0))
     worked_out["value"] = 0.0

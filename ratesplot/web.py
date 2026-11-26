@@ -78,7 +78,7 @@ Visitors
 The wait (batch 35.2)
     A drawing runs on a worker thread of its own (``_start_job``), the page's
     script thread rewriting one line above the charts each second with a
-    spinning icon of its own: "Please wait about 12 s (5 s so far)"
+    spinning icon of its own: "Please wait about 12 s more (5 s so far)"
     (``_await_drawing``; the sum and the words in ``wait``). Before it, the
     script thread drew, so nothing on the page could change until the drawing
     ended, and a spinner's text cannot be changed once shown. Each rewrite is a
@@ -2506,8 +2506,12 @@ class _Job:
     failure: Exception | None = None  # what ``_draw`` did not expect, raised on the page as it was before batch 35.2
 
 
-def _new_job(config: PlotConfig, tokens: tuple[str, ...]) -> _Job:
-    """A drawing asked for, not yet in the line: its wait counts what is left of those ahead of it when it joins them."""
+def _new_job(config: PlotConfig, tokens: tuple[str, ...], began: float | None = None) -> _Job:
+    """A drawing asked for, not yet in the line: its wait counts what is left of those ahead of it when it joins them.
+
+    ``began``: when the wait line went up, for a drawing that replaces one still waiting (batch 50.1), its time so far
+    counted from there; None, from now.
+    """
     job: _Job
 
     def ahead() -> float:
@@ -2515,7 +2519,7 @@ def _new_job(config: PlotConfig, tokens: tuple[str, ...]) -> _Job:
             before = _DRAWINGS[: _DRAWINGS.index(job)] if job in _DRAWINGS else list(_DRAWINGS)
         return sum(other.wait.own_remaining() for other in before)
 
-    job = _Job(config, tokens, Wait.of_config(_FIGURES, config, _nations_of(config), ahead=ahead))
+    job = _Job(config, tokens, Wait.of_config(_FIGURES, config, _nations_of(config), ahead=ahead, began=began))
     return job
 
 
@@ -2649,14 +2653,14 @@ def _run_job(job: _Job) -> None:
         job.done.set()
 
 
-def _start_job(config: PlotConfig, tokens: tuple[str, ...]) -> _Job:
+def _start_job(config: PlotConfig, tokens: tuple[str, ...], began: float | None = None) -> _Job:
     """Begin drawing ``config`` on a worker thread, keeping the job in session state first.
 
     Each assignment to session state can stop the run (see ``main``), so the
     job is kept before its thread starts: none runs that no run can stop, and
     none waits in the line that has no thread.
     """
-    job = _new_job(config, tokens)
+    job = _new_job(config, tokens, began)
     st.session_state[_JOB] = job
     with _DRAWINGS_LOCK:
         _DRAWINGS.append(job)
@@ -3068,9 +3072,15 @@ def main() -> None:
     previous: Drawing | None = state.get(_DRAWING)
     forced = state.pop(_FORCE, False)
     job: _Job | None = state.get(_JOB)
+    waiting_since: float | None = None
     if job is not None and (job.stopped.is_set() or forced or config is None or not config.same_chart(job.config)):
         # Left behind by a changed control or a Refresh (whose downloads it may
         # be using): stopped between charts, so the next drawing starts sooner (batch 35.2).
+        # Its drawing never shown, its wait line is still up: the next one's
+        # time so far counts on from it, starting again only once the line is
+        # taken away (batch 50.1; Terry, 2026-11-26, decision 189: "The “so
+        # far” amount only resets when the message is finally removed").
+        waiting_since = job.wait.began
         job.stopped.set()
         del state[_JOB]
         job = None
@@ -3087,7 +3097,7 @@ def main() -> None:
     elif job is not None or previous is None or previous.config != config or forced:
         tokens = tuple(command_line_tokens(*choices))
         if job is None:
-            job = _start_job(config, tokens)
+            job = _start_job(config, tokens, waiting_since)
         _await_drawing(job, wait_slot)
         # The hover read-out's box or the refresh's may have changed meanwhile: they draw nothing.
         drawing = replace(job.drawing, config=config, tokens=tokens)
