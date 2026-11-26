@@ -27,4 +27,4 @@ Under the Netherlands' chart in the window, and under "Netherlands only" on the 
 
 ## The other nations
 
-[Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [Spain](?help=spain).
+[Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [Spain](?help=spain), [Japan](?help=japan).

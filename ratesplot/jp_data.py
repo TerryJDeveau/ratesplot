@@ -148,7 +148,7 @@ _MIDYEAR = pd.DateOffset(months=6)
 
 # The first observation of each input but the yields, for the coverage warning.
 JP_SERIES_EARLIEST = {
-    "Gross debt (Bank of Japan flow of funds: fiscal years to 1997, quarterly after)": pd.Timestamp("1981-03-31"),
+    "Gross debt (Bank of Japan flow of funds: fiscal years to 1997, quarterly after)": pd.Timestamp("1980-03-31"),
     "TTM Nominal GDP (FRED JPNNGDP)": pd.Timestamp("1994-12-31"),
 }
 

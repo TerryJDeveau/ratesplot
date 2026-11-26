@@ -27,4 +27,4 @@ Under Spain's chart in the window, and under "Spain only" on the page, are the c
 
 ## The other nations
 
-[Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [the Netherlands](?help=netherlands).
+[Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [the Netherlands](?help=netherlands), [Japan](?help=japan).
