@@ -3487,6 +3487,29 @@ def check_batch38(check: Check) -> None:
         os.environ["APPDATA"] = appdata
 
 
+def check_batch501(check: Check) -> None:
+    """Batch 50.1 (decision 189): the levels' label, the limits' heading over Max and Top with its ⓘ, in each nation's panel."""
+    with window(f"-c -u {END}") as w:
+        app, root = w.app, w.root
+        for nation in ("cdn", "us"):
+            label = app.value_labels.get(f"{nation}:debt-parts")
+            check(f"{nation}: the levels' label in Terry's words", label is not None and str(label.cget("text")) == "Debt and interest by level",
+                  label.cget("text") if label is not None else None)
+            mark = app.info_marks.get(f"{nation}:limits")
+            head = mark.master if mark is not None else None
+            texts = [str(child.cget("text")) for child in head.winfo_children()] if head is not None else []
+            check(f"{nation}: “Axis limits” and its ⓘ", texts == ["Axis limits", "ⓘ"], texts)
+            limits = head.master if head is not None else None
+            rows = sorted({int(child.grid_info()["row"]) for child in limits.grid_slaves() if child is not head}) if limits is not None else []
+            check(f"{nation}: the heading over the limits, row 0, Max and Top under it, Min and Bottom under them",
+                  head is not None and int(head.grid_info()["row"]) == 0 and int(head.grid_info()["columnspan"]) == 2 and rows == [1, 2], rows)
+        app.info_marks["us:limits"].event_generate("<Button-1>")
+        root.update()
+        check("its panel: the limits' help, More to their topic", app.info_shown is not None and app.info_shown[1] == frontend.LIMITS_HELP
+              and app.info_panel is not None and app.info_panel.title() == "Axis limits", app.info_shown)
+        app._close_info()
+
+
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "view": check_view,
     "reset": check_reset,
@@ -3536,29 +3559,6 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "batch142": check_batch142,
     "batch501": check_batch501,
 }
-
-
-def check_batch501(check: Check) -> None:
-    """Batch 50.1 (decision 189): the levels' label, the limits' heading over Max and Top with its ⓘ, in each nation's panel."""
-    with window(f"-c -u {END}") as w:
-        app, root = w.app, w.root
-        for nation in ("cdn", "us"):
-            label = app.value_labels.get(f"{nation}:debt-parts")
-            check(f"{nation}: the levels' label in Terry's words", label is not None and str(label.cget("text")) == "Debt and interest by level",
-                  label.cget("text") if label is not None else None)
-            mark = app.info_marks.get(f"{nation}:limits")
-            head = mark.master if mark is not None else None
-            texts = [str(child.cget("text")) for child in head.winfo_children()] if head is not None else []
-            check(f"{nation}: “Axis limits” and its ⓘ", texts == ["Axis limits", "ⓘ"], texts)
-            limits = head.master if head is not None else None
-            rows = sorted({int(child.grid_info()["row"]) for child in limits.grid_slaves() if child is not head}) if limits is not None else []
-            check(f"{nation}: the heading over the limits, row 0, Max and Top under it, Min and Bottom under them",
-                  head is not None and int(head.grid_info()["row"]) == 0 and int(head.grid_info()["columnspan"]) == 2 and rows == [1, 2], rows)
-        app.info_marks["us:limits"].event_generate("<Button-1>")
-        root.update()
-        check("its panel: the limits' help, More to their topic", app.info_shown is not None and app.info_shown[1] == frontend.LIMITS_HELP
-              and app.info_panel is not None and app.info_panel.title() == "Axis limits", app.info_shown)
-        app._close_info()
 
 
 def check_window(groups: list[str]) -> bool:
