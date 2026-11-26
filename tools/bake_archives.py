@@ -99,12 +99,15 @@ from ratesplot.bake import (  # noqa: E402
     bake_bbk_history,
     bake_boc_history,
     bake_boe_history,
+    bake_boj_history,
     bake_bpstat_history,
     bake_canadian_archives,
     bake_ecb_history,
     bake_eurostat_history,
     bake_fred_history,
+    bake_imf_history,
     bake_german_archives,
+    bake_mof_history,
     bake_ons_history,
     bake_statcan_history,
     bake_webstat_history,
@@ -127,12 +130,15 @@ BAKES = {
     "statcan": bake_statcan_history,
     "bpstat": bake_bpstat_history,
     "webstat": bake_webstat_history,
+    "mof": bake_mof_history,
+    "boj": bake_boj_history,
+    "imf": bake_imf_history,
 }
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation's archives, or one live source's history (boe, boc, fred, ecb, eurostat, ons, bbk, statcan, bpstat, webstat)")
+    parser.add_argument("--only", choices=sorted(BAKES), help="bake one nation's archives, or one live source's history (boe, boc, fred, ecb, eurostat, ons, bbk, statcan, bpstat, webstat, mof, boj, imf)")
     parser.add_argument("--us-hist-fin", action="store_true", help="read the Census historical database itself and write its extract before the U.S. bake (Windows: pyodbc and the Microsoft Access ODBC driver)")
     parser.add_argument("--uk-workbook", type=Path, help="the UK millennium workbook already on disk (not downloaded)")
     parser.add_argument("--de-csv", type=Path, help="the Bundesbank's WU0004 download already on disk (not downloaded)")

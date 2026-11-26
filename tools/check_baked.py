@@ -68,7 +68,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import bake, baked, cdn_data, config, de_data, euro_data, payments, rates, uk_data, us_data  # noqa: E402
+from ratesplot import bake, baked, cdn_data, config, de_data, euro_data, jp_data, payments, rates, uk_data, us_data  # noqa: E402
 from ratesplot.config import DATE_COLUMN  # noqa: E402
 
 RESULTS: list[bool] = []
@@ -108,6 +108,9 @@ def check_files() -> None:
         ("Statistics Canada", cdn_data.STATCAN_BAKED_SOURCE, bake.statcan_baked_codes()),
         ("Banco de Portugal", euro_data.BPSTAT_BAKED_SOURCE, bake.bpstat_baked_codes()),
         ("Banque de France", euro_data.WEBSTAT_BAKED_SOURCE, bake.webstat_baked_codes()),
+        ("Ministry of Finance", jp_data.MOF_BAKED_SOURCE, bake.mof_baked_codes()),
+        ("Bank of Japan", jp_data.BOJ_BAKED_SOURCE, bake.boj_baked_codes()),
+        ("IMF", jp_data.IMF_BAKED_SOURCE, bake.imf_baked_codes()),
     ):
         found = {path.stem for path in (baked.DATA_FOLDER / source).glob("*.csv")}
         codes = set(read)

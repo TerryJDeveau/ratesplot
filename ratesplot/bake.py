@@ -188,6 +188,20 @@ from .euro_data import (
     webstat_download,
 )
 from .fx import FX_SERIES
+from .jp_data import (
+    BOJ_BAKED_SOURCE,
+    BOJ_SERIES_READ,
+    IMF_BAKED_SOURCE,
+    IMF_CPI_FLOW,
+    IMF_CPI_KEY,
+    JP_GDP_SERIES,
+    JP_POPULATION_SERIES,
+    JP_YIELD_COLUMNS,
+    MOF_BAKED_SOURCE,
+    boj_download,
+    imf_cpi_download,
+    mof_download,
+)
 from .payments import US_OLD_BALANCE_SERIES, US_OLD_PAYMENTS_SERIES, US_PAYMENTS_SERIES
 from .http import canadian_get, de_get, fetch_fred_csv, get_if_published, uk_get
 from .rates import (
@@ -3052,6 +3066,10 @@ _FRED_SERIES_TITLES = {
     "DEXUSUK": "U.S. Dollars to U.K. Pound Sterling Spot Exchange Rate; daily",
     "DEXUSEU": "U.S. Dollars to Euro Spot Exchange Rate; daily",
     "EXGEUS": "German Deutsche Marks to U.S. Dollar Spot Exchange Rate (DISCONTINUED); monthly",
+    # Japan (batch 14.3, decision 188): the yen, GDP and the population, read from each series' page 2026-11-26.
+    "DEXJPUS": "Japanese Yen to U.S. Dollar Spot Exchange Rate; daily",
+    "JPNNGDP": "Gross Domestic Product for Japan (billions of yen, seasonally adjusted annual rate); quarterly",
+    "POPTOTJPA647NWDB": "Population, Total for Japan; annual",
     # The balance of payments (batch 23, ``payments``), read from each series' page 2026-11-11.
     "IEAX": "Exports of goods and services and income receipts (credits); quarterly",
     "IEAM": "Imports of goods and services and income receipts (debits); quarterly",
@@ -3082,6 +3100,7 @@ def fred_baked_codes() -> list[str]:
         FRED_CDN_GDP_SERIES, *FX_SERIES,
         *(code for pair in (*US_PAYMENTS_SERIES.values(), *US_OLD_PAYMENTS_SERIES.values()) for code in pair), US_OLD_BALANCE_SERIES,
         *(code for nation in EURO_NATIONS.values() for code in (nation.cpi_history_series, *nation.yield_series.values())),
+        JP_GDP_SERIES, JP_POPULATION_SERIES,
     })
 
 
@@ -3641,6 +3660,133 @@ def bake_webstat_history(folder: Path | None = None, *, accept_withdrawn: bool =
         )
 
     return _bake_live_series(WEBSTAT_BAKED_SOURCE, webstat_baked_series(), download, comment, folder, accept_withdrawn)
+
+
+# Japan's three new sources (batch 14.3, decision 188): the Ministry of Finance's yields, the Bank of Japan's series
+# and the IMF's consumer prices, each series' title as its source names it (read 2026-11-26).
+_MOF_TERM_TITLES = {code: f"Interest rate of Japanese Government Bonds at a constant maturity of {code[:-1]} year"
+                    f"{'' if code == '1Y' else 's'}, percent; daily" for code in JP_YIELD_COLUMNS.values()}
+_BOJ_TITLES = {
+    "STRDCLUCON": "Call Rate, Uncollateralized Overnight, Average (Daily); percent per annum",
+    "STRACLUCON": "Call Rate, Uncollateralized Overnight/Average; monthly, percent per annum",
+    "STRACLCOON": "Call Rate, Collateralized Overnight (a)/Average(b); monthly, percent per annum",
+    "BPBP6JYNEX": "Balance of payments (BPM6), Goods/Exports; monthly, 100 million yen",
+    "BPBP6JYNIM": "Balance of payments (BPM6), Goods/Imports; monthly, 100 million yen",
+    "BPBP6JYNSC": "Balance of payments (BPM6), Services/Credit; monthly, 100 million yen",
+    "BPBP6JYNSD": "Balance of payments (BPM6), Services/Debit; monthly, 100 million yen",
+    "BPBP6JYNPIC": "Balance of payments (BPM6), Primary income/Credit; monthly, 100 million yen",
+    "BPBP6JYNPID": "Balance of payments (BPM6), Primary income/Debit; monthly, 100 million yen",
+    "BPBP6JYNSIC": "Balance of payments (BPM6), Secondary income/Credit; monthly, 100 million yen",
+    "BPBP6JYNSID": "Balance of payments (BPM6), Secondary income/Debit; monthly, 100 million yen",
+}
+_FF_SECTOR_NAMES = {"0": "General government", "1": "Central government", "2": "Local governments"}
+_FF_ITEM_NAMES = {"200": "Loans", "300": "Debt securities"}
+
+
+def _boj_title(code: str) -> str:
+    """The Bank's title of one series it bakes (``jp_data.BOJ_SERIES_READ``)."""
+    if code.startswith("FOF_FF"):
+        annual = code.startswith("FOF_FFYS")
+        return (f"Flow of funds (2008 SNA), Liabilities/{_FF_ITEM_NAMES[code[-3:]]}/{_FF_SECTOR_NAMES[code[-5]]}/Stock; "
+                f"{'annual, at the end of March (fiscal year)' if annual else 'quarterly'}, 100 million yen")
+    return _BOJ_TITLES[code]
+
+
+def mof_baked_codes() -> list[str]:
+    """The names of the Ministry of Finance's baked files: the terms read (``jp_data.JP_YIELD_COLUMNS``), "10Y"."""
+    return sorted(JP_YIELD_COLUMNS.values())
+
+
+def boj_baked_codes() -> list[str]:
+    """The names of the Bank of Japan's baked files: every series read (``jp_data.BOJ_SERIES_READ``), by code."""
+    return sorted(code for _db, code in BOJ_SERIES_READ)
+
+
+def imf_baked_codes() -> list[str]:
+    """The names of the IMF's baked files: Japan's consumer price index (``jp_data.IMF_CPI_KEY``)."""
+    return [IMF_CPI_KEY]
+
+
+def bake_mof_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake the Ministry of Finance's yield of every term read, whole, into ``ratesplot/data/mof/`` (batch 14.3).
+
+    As every live source is baked (``_bake_live_series``). Both of the
+    Ministry's files are read once for all the terms (``jp_data.mof_download``),
+    each day dated by itself, in percent; a day without a value is left out.
+    """
+    print("Baking the Ministry of Finance's JGB yields …")
+    whole: list = []
+
+    def download(code: str) -> pd.Series:
+        if not whole:
+            whole.append(mof_download(None))
+        return whole[0][code].dropna().astype(float)
+
+    def comment(code: str, title: str) -> str:
+        return (
+            f"Ministry of Finance, Japan, JGB interest rates (jgbcme_all.csv and jgbcme.csv), column {code}: {title}.\n"
+            "Every value the two files give, as ratesplot.jp_data reads them: each day dated by itself, in percent.\n"
+            "Written by tools/bake_archives.py --only mof (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {code: _MOF_TERM_TITLES[code] for code in mof_baked_codes()}
+    return _bake_live_series(MOF_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
+
+
+def bake_boj_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake every Bank of Japan series read, whole, into ``ratesplot/data/boj/`` (batch 14.3).
+
+    As every live source is baked (``_bake_live_series``). The series of
+    one database are asked together (an annual series apart from the others:
+    its start is a year), so a bake is five requests (``jp_data.boj_download``).
+    Each period dated as ``jp_data`` draws it: a day by itself, a month by its
+    first day, a quarter and a fiscal year (to March) by their last; a
+    period without a value left out.
+    """
+    print("Baking the Bank of Japan's series …")
+    groups: dict[tuple[str, bool], list[str]] = {}
+    for db, code in BOJ_SERIES_READ:
+        groups.setdefault((db, code.startswith("FOF_FFYS")), []).append(code)
+    answered: dict[str, pd.Series] = {}
+
+    def download(code: str) -> pd.Series:
+        if code not in answered:
+            (db, annual), codes = next((key, codes) for key, codes in groups.items() if code in codes)
+            answered.update(boj_download(db, codes))
+        return answered[code].astype(float)
+
+    def comment(code: str, title: str) -> str:
+        db = next(db for db, read in BOJ_SERIES_READ if read == code)
+        return (
+            f"Bank of Japan, Time-Series Data Search API, database {db}, series {code}: {title}.\n"
+            "Every value the Bank gives, as ratesplot.jp_data reads it: a day by itself, a month by its first day,\n"
+            "a quarter and a fiscal year (to March) by their last day.\n"
+            "Written by tools/bake_archives.py --only boj (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {code: _boj_title(code) for code in boj_baked_codes()}
+    return _bake_live_series(BOJ_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
+
+
+def bake_imf_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
+    """Bake the IMF's consumer price index for Japan, whole, into ``ratesplot/data/imf/`` (batch 14.3): each month dated by its first day, 2020 = 100."""
+    print("Baking the IMF's series …")
+
+    def download(code: str) -> pd.Series:
+        return imf_cpi_download(None).astype(float)
+
+    def comment(code: str, title: str) -> str:
+        return (
+            f"IMF, SDMX data service, dataflow {IMF_CPI_FLOW}, series {code}: {title}.\n"
+            "Every value the IMF gives, as ratesplot.jp_data reads it: each month dated by its first day.\n"
+            "Written by tools/bake_archives.py --only imf (ratesplot.bake), read by ratesplot.baked;\n"
+            "not edited by hand."
+        )
+
+    titles = {IMF_CPI_KEY: "Consumer price index, all items, Japan, index 2020 = 100; monthly"}
+    return _bake_live_series(IMF_BAKED_SOURCE, titles, download, comment, folder, accept_withdrawn)
 
 
 def bake_statcan_history(folder: Path | None = None, *, accept_withdrawn: bool = False) -> list[SeriesBake]:
