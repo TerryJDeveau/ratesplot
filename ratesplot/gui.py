@@ -156,6 +156,9 @@ from .frontend import (
     GREYABLE_OPTIONS,
     LIMIT_COLUMNS,
     LIMITS,
+    LIMITS_HEADING,
+    LIMITS_HELP,
+    LIMITS_TOPIC,
     MASTER,
     NATION_OPTIONS,
     DATES_TOPIC,
@@ -1883,11 +1886,21 @@ class RatesPlotApp:
         flow.add(limits)
         frame.bind("<Configure>", lambda event, flow=flow: flow.fit(event.width), add="+")
         self.panel_flows[nation.key] = flow
-        # A column per axis, Max above Min, Top above Bottom (LIMIT_COLUMNS).
+        # Their heading over both columns, with its ⓘ (batch 50.1; Terry, 2026-11-26, decision 189: "Put a heading to
+        # say “Axis Limits” above the “Max” ... “Top” block").
+        head = ttk.Frame(limits)
+        head.grid(row=0, column=0, columnspan=len(LIMIT_COLUMNS), sticky="w")
+        heading = ttk.Label(head, text=LIMITS_HEADING)
+        heading.pack(side="left")
+        _Tooltip(heading, LIMITS_HELP, info=True)
+        self._info_mark(head, f"{nation.key}:{LIMITS_TOPIC}", None, LIMITS_HELP, title=LIMITS_HEADING, topic=LIMITS_TOPIC).pack(
+            side="left", padx=(3, 0)
+        )
+        # A column per axis under it, Max above Min, Top above Bottom (LIMIT_COLUMNS).
         for axis, names in enumerate(LIMIT_COLUMNS):
             for place, name in enumerate(names):
                 cell = ttk.Frame(limits)
-                cell.grid(row=place, column=axis, sticky="e", padx=(0, 10))
+                cell.grid(row=1 + place, column=axis, sticky="e", padx=(0, 10))
                 option = by_name(name)
                 key = nation_choice(nation, option)
                 # Top and Bottom wider: an amount may carry its currency's code ("USD1.25t", batch 18.3).

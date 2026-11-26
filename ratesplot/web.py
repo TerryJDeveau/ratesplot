@@ -201,6 +201,9 @@ from .frontend import (  # noqa: E402
     EXPORT_LABEL,
     LIMIT_COLUMNS,
     LIMITS,
+    LIMITS_HEADING,
+    LIMITS_HELP,
+    LIMITS_TOPIC,
     MASTER,
     NATION_OPTIONS,
     REFRESH_HELP,
@@ -2402,6 +2405,8 @@ def _nation_controls(bar, nation: Nation) -> None:
             _levels_control(bar, option, nation)
         else:
             _choices_control(bar, option, nation)
+    # Their heading, with its ⓘ, as in the window (batch 50.1; Terry, 2026-11-26, decision 189).
+    bar.markdown(f"**{LIMITS_HEADING}**", help=_line_help(LIMITS_HELP, LIMITS_TOPIC))
     for row in zip(*LIMIT_COLUMNS):  # (max, top), then (min, bottom)
         for column, name in zip(bar.columns(2), row):
             _limit_control(column, nation, by_name(name))

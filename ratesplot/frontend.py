@@ -154,6 +154,15 @@ LIMIT_COLUMNS = (("max", "min"), ("top", "bottom"))
 # The limits in that order (Max, Min, Top, Bottom), and the yield axis's.
 LIMITS = tuple(name for column in LIMIT_COLUMNS for name in column)
 _YIELD_LIMITS = LIMIT_COLUMNS[0]
+# The heading over a nation's limits, with an ⓘ of its own (batch 50.1; Terry, 2026-11-26, decision 189: "Put a
+# heading to say “Axis Limits” above the “Max” ... “Top” block"), in sentence case as every label of the program is.
+LIMITS_HEADING = "Axis limits"
+LIMITS_TOPIC = "limits"
+LIMITS_HELP = (
+    "Max and Min: the left axis, the yields, spreads and rates, in percent. Top and Bottom: the right axis, the "
+    "amounts (debt, GDP, interest and the others), in this nation's currency. Left blank, each axis fits the curves "
+    "drawn on it. “All” beside a limit sets it for every nation's chart."
+)
 
 
 # The blocks shown by the tab in front (batch 26.2; Terry, 2026-11-12,
