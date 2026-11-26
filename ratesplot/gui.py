@@ -7,7 +7,7 @@ Controls
     text field for every VALUE option (``editor="date"`` adds a calendar
     button; ``editor="size"`` gives width and height boxes with an
     aspect-ratio lock; ``editor="levels"`` gives one check box per level of
-    government, the single "By level" control for ``--debt:`` and
+    government, the single "Debt and interest by level" control ("By level" before batch 50.1) for ``--debt:`` and
     ``--interest:``, in each nation's panel), in the blocks of
     ``frontend.control_blocks`` (Terry's order of 2026-10-08: the measure
     under the curves, the regression
@@ -1521,7 +1521,7 @@ class RatesPlotApp:
             _Tooltip(button, "Pick a date from a calendar")
 
     def _add_levels_control(self, cell: ttk.Frame, option: Option, nation: Nation) -> None:
-        """A nation's levels of government in ``cell``, a box for each, writing its letters ("fp" …): "By level" above, two to a row.
+        """A nation's levels of government in ``cell``, a box for each, writing its letters ("fp" …): its label above, two to a row.
 
         Batch 10.5 (Terry, 2026-10-13): in each nation's panel, the boxes
         named for its governments (``Nation.level_boxes``), where the column

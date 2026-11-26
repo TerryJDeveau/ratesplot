@@ -2166,7 +2166,7 @@ def _size_control(where, option: Option) -> None:
 
 
 def _levels_control(where, option: Option, nation: Nation) -> None:
-    """A nation's "By level" over its boxes, named for its governments, as many to a row as fit.
+    """A nation's "Debt and interest by level" ("By level" before batch 50.1) over its boxes, named for its governments, as many to a row as fit.
 
     Batch 10.5 (Terry, 2026-10-13): in each nation's section, its own boxes
     (``Nation.level_boxes``), where the column had one control for every

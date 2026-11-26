@@ -2259,11 +2259,11 @@ def check_batch292(check: Check) -> None:
         root.update()
         text = next(widget for widget in all_widgets(app.topic_windows["debt"]) if widget.winfo_class() == "Text")
         links = {text.get(*text.tag_ranges(tag)[:2]): tag for tag in text.tag_names() if tag.startswith("link-")}
-        check("the debt page's links: to other topics and to the sources", {"By level", "Per capita", "As % of GDP"} <= set(links)
+        check("the debt page's links: to other topics and to the sources", {"Debt and interest by level", "Per capita", "As % of GDP"} <= set(links)
               and "36-10-0467" in links, sorted(links)[:6])
         # A click on the link: the pointer moved over it first, so that Tk's
         # "current" mark, which a tag's binding follows, is on it.
-        start = text.tag_ranges(links["By level"])[0]
+        start = text.tag_ranges(links["Debt and interest by level"])[0]
         text.see(start)
         root.update()
         x, y, _width, height = text.bbox(start)
@@ -2271,7 +2271,8 @@ def check_batch292(check: Check) -> None:
         text.event_generate("<Button-1>", x=x + 2, y=y + height // 2)
         root.update()
         levels = app.topic_windows.get("levels")
-        check("a click on “By level”: the levels' topic in its own window", levels is not None and levels.title() == "By level of government",
+        check("a click on “Debt and interest by level”: the levels' topic in its own window",
+              levels is not None and levels.title() == "Debt and interest by level of government",
               levels.title() if levels is not None else None)
         app._show_topic("yields")
         root.update()

@@ -1256,7 +1256,9 @@ OPTIONS: tuple[Option, ...] = (
         "debt and interest by level instead of\nin total: f federal, n non-federal,\n"
         "p or s provincial/state, m municipal;\nthe UK's f central, m (or n) local",
         names=("debt",), parse=partial(parse_components, kind="debt"),
-        label="By level", format=format_components, editor="levels", topic="levels",
+        # "By level" until batch 50.1 (Terry, 2026-11-26, decision 189: "should say “Debt and Interest by Level”"),
+        # in sentence case as every label is.
+        label="Debt and interest by level", format=format_components, editor="levels", topic="levels",
     ),
     Option(
         "interest-parts", Kind.VALUE, ("components",), "curves", "--interest:LETTERS / --i:LETTERS",

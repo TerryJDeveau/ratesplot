@@ -1,6 +1,6 @@
 # TTM interest outlays
 
-The interest each nation's governments pay on their debt over the trailing twelve months (TTM): at each quarter's end, the interest of the four quarters to that date. It is drawn on the right axis in the nation's own currency, as a step held until the next quarter, as a share of GDP under [As % of GDP](?help=percent-of-gdp) and per person under [Per capita](?help=per-capita). With levels of government ticked, each level is drawn instead of the total: [By level](?help=levels).
+The interest each nation's governments pay on their debt over the trailing twelve months (TTM): at each quarter's end, the interest of the four quarters to that date. It is drawn on the right axis in the nation's own currency, as a step held until the next quarter, as a share of GDP under [As % of GDP](?help=percent-of-gdp) and per person under [Per capita](?help=per-capita). With levels of government ticked, each level is drawn instead of the total: [Debt and interest by level](?help=levels).
 
 Each source's quarters are added up as [GDP's](?help=gdp) are: Canada's oldest and the U.S.' are at annual rates, so the TTM figure is the mean of four; Canada's since 1990, the UK's and Germany's are each one quarter's interest, so it is the sum of four. Canada's total since 1990 and the UK's leave out interest one government pays another; the U.S. total is the national accounts' interest payments of all its governments together.
 

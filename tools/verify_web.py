@@ -2032,7 +2032,7 @@ def check_batch292(check: Check) -> None:
     check("?help=debt: the topic alone, a section per nation", not view.exception and not view.checkbox
           and all(f"## {nation}" in shown for nation in ("Canada", "The United States", "The United Kingdom", "Germany")), shown[:60])
     check("its links to other topics written as the page's own address, followed in the help view",
-          "[By level](?help=levels)" in shown and "[As % of GDP](?help=percent-of-gdp)" in shown)
+          "[Debt and interest by level](?help=levels)" in shown and "[As % of GDP](?help=percent-of-gdp)" in shown)
     # 29.2c: each nation's page links to the curves' pages and to the other nations'.
     for topic, title in (("canada", "Canada"), ("united-states", "The United States"), ("united-kingdom", "The United Kingdom"),
                          ("germany", "Germany")):
