@@ -1378,7 +1378,7 @@ NATIONS: tuple[Nation, ...] = (
     # and all three fixation bands as its mortgage rates (batch 10.2, as the
     # UK's; its usual fixation, 5 to 10 years, alone before).
     Nation(
-        "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "5y", "7y", "10y", "20y", "30y", "r5", "r7", "r10"), "German",
+        "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "3y", "5y", "7y", "10y", "20y", "30y", "r5", "r7", "r10"), "German",
         shown_by_default=False, list_only_codes=("de",), market_timezone="Europe/Berlin", currency="EUR",
         overnight_rate="€STR",
         level_boxes=(("f", "Federal"), ("p", "Länder"), ("m", "Local"), ("n", "Länder & Local")),

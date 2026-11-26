@@ -195,7 +195,7 @@ CASES: dict[str, list[str]] = {
     # Batch 9.6: the Bundesbank's discount rate, then the ECB's rate from 1999.
     "de_policy": ["--gdp", "--debt", "--interest", "--na:de", "-s:1985", "--e:2004", "--policy", "--no-yield"],
     "de_1998": ["--gdp", "--debt", "--interest", "--yield", "--na:de", "-s:1998", "--e:2010", "--po:target,market", "--mo:1-5,5-10,over10"],
-    "de_2015": ["--gdp", "--debt", "--interest", "--na:de", "-s:2015", "--y:1,2,5,7,10,20,30", "--po:target,market", "--mo:1-5,5-10,over10", "--sp"],
+    "de_2015": ["--gdp", "--debt", "--interest", "--na:de", "-s:2015", "--y:1,2,3,5,7,10,20,30", "--po:target,market", "--mo:1-5,5-10,over10", "--sp"],
     # Batch 30: the master currency, its charts' right axes against the same
     # charts without it: U.S. dollars on all four, the yields unchanged; per
     # capita in Canadian dollars; euros in 1970, at the older rates through

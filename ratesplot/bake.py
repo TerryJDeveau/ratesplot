@@ -3447,6 +3447,9 @@ _BBK_SERIES_TITLES = {
     _bbk_code("1-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 1.0 years / daily data{_DAILY}",
     _bbk_code("2-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 2.0 years / monthly data{_END_OF_MONTH}",
     _bbk_code("2-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 2.0 years / daily data{_DAILY}",
+    # Batch 50.2 (decision 189): the 3-year, fitted by the Bundesbank all along and now a term of the program's.
+    _bbk_code("3-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 3.0 years / monthly data{_END_OF_MONTH}",
+    _bbk_code("3-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 3.0 years / daily data{_DAILY}",
     _bbk_code("5-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 5.0 years / monthly data{_END_OF_MONTH}",
     _bbk_code("5-Year", "D"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 5.0 years / daily data{_DAILY}",
     _bbk_code("7-Year", "M"): f"{_TERM_STRUCTURE_TITLE} / residual maturity of 7.0 years / monthly data{_END_OF_MONTH}",
