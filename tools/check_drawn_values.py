@@ -81,6 +81,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import functools
 import re
 import sys
 from dataclasses import dataclass, replace
@@ -96,7 +97,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from regress_charts import PINNED_END, install_disk_cache  # noqa: E402
 
-from ratesplot import cdn_data, cli, de_data, euro_data, http, rates, uk_data, us_data  # noqa: E402
+from ratesplot import cdn_data, cli, de_data, euro_data, http, jp_data, rates, uk_data, us_data  # noqa: E402
 from ratesplot.cdn_hist_yields import build_cdn_hist_yields  # noqa: E402
 from ratesplot.de_archive_data import (  # noqa: E402
     EMBEDDED_DE_DISCOUNT_RATE_CHANGES,
@@ -294,6 +295,18 @@ CASES: dict[str, list[str]] = {
     # and per capita from 1990.
     "daily_constant": ["--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:1900", "--constant", "--no-yield", "--daily"],
     "daily_constant_pc": ["--na:ca,us,gb,de,fr,pt,it,es,nl", "-s:1990", "--constant", "-p", "--no-yield", "--daily"],
+    # 14.3, decision 190: Japan's sources, each read whole: its eight daily terms from 1974 and with Daily values on, its
+    # call rate as target and as market (collateralized monthly from 1960, uncollateralized from 1985-07, daily from
+    # 1998), its prices (the IMF's index, its rise worked out here), its amounts at constant prices, its population.
+    "jp_yields": ["--na:jp", "-s:1974", "--y:1,2,3,5,7,10,20,30", "--no-debt", "--no-gdp", "--no-interest"],
+    "daily_jp_yields": ["--na:jp", "-s:2010", "--y:1,2,3,5,7,10,20,30", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
+    "jp_policy": ["--na:jp", "-s:1960", "--po:target", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
+    "jp_market": ["--na:jp", "-s:1960", "--po:market", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
+    "jp_prices": ["--na:jp", "-s:1955", "--inf", "--cpi", "--no-yield", "--no-debt", "--no-gdp", "--no-interest"],
+    "daily_jp_prices": ["--na:jp", "-s:2015", "--inf", "--cpi", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
+    "jp_constant": ["--na:jp", "-s:1980", "--constant", "--no-yield"],
+    "daily_jp_constant": ["--na:jp", "-s:1980", "--constant", "--no-yield", "--daily"],
+    "jp_population": ["--na:jp", "-s:1960", "--pop", "--no-yield", "--no-debt", "--no-gdp", "--no-interest", "--daily"],
 }
 
 
@@ -454,8 +467,48 @@ def eurostat_yield(geo: str, **kwargs) -> Source:
     return Source(f"Eurostat irt_lt_mcby_m {geo}", read, **kwargs)
 
 
+# Japan (batch 14.3, decision 190): the Ministry's column of each term, written out here, not taken from ``jp_data``;
+# each source asked whole through the program's own downloaders, not the bake and recent part the drawing reads.
+JP_MOF_COLUMNS = {"1-Year": "1Y", "2-Year": "2Y", "3-Year": "3Y", "5-Year": "5Y", "7-Year": "7Y", "10-Year": "10Y",
+                  "20-Year": "20Y", "30-Year": "30Y"}
+JP_CALL_DAILY_FROM = pd.Timestamp("1998-01-01")
+JP_CALL_UNCOLLATERALIZED_FROM = pd.Timestamp("1985-07-01")
+
+
+@functools.cache
+def _mof_whole() -> pd.DataFrame:
+    """The Ministry's two files whole (``jp_data.mof_download``), read once for every term."""
+    return jp_data.mof_download(None)
+
+
+def mof(column: str, **kwargs) -> Source:
+    code = JP_MOF_COLUMNS[column]
+    return Source(f"Ministry of Finance JGB {code}", lambda: _clean(_mof_whole()[code]), **kwargs)
+
+
+def boj(db: str, code: str, **kwargs) -> Source:
+    return Source(f"Bank of Japan {db} {code}", lambda: _clean(jp_data.boj_download(db, [code])[code]), **kwargs)
+
+
+def imf_jp_cpi(**kwargs) -> Source:
+    return Source("IMF JPN.CPI._T.IX.M", lambda: _clean(jp_data.imf_cpi_download(None)), **kwargs)
+
+
+def jp_call_rate() -> list[Source]:
+    """Japan's call rate (its policy rate and its overnight rate, decision 190): daily from 1998-01-05, the monthly averages before."""
+    return [
+        boj("FM01", "STRDCLUCON"),
+        within(boj("FM02", "STRACLUCON", monthly=True, carry_days=MONTHLY_CARRY_DAYS), "Bank of Japan STRACLUCON before 1998-01",
+               start=JP_CALL_UNCOLLATERALIZED_FROM, end=JP_CALL_DAILY_FROM),
+        within(boj("FM02", "STRACLCOON", monthly=True, carry_days=MONTHLY_CARRY_DAYS), "Bank of Japan STRACLCOON before 1985-07",
+               end=JP_CALL_UNCOLLATERALIZED_FROM),
+    ]
+
+
 def yield_sources(nation: str, column: str) -> list[Source]:
     """The sources of one nation's yield term, newest first."""
+    if nation == "jp":  # 14.3: the Ministry of Finance's, day by day
+        return [mof(column)]
     if nation in BPSTAT_YIELDS:  # 9.13: Portugal's, day by day
         return [bpstat(BPSTAT_YIELDS[nation][column])]
     if nation in WEBSTAT_YIELDS:  # 9.14: France's, day by day; its 10-year the OECD's monthly before
@@ -523,6 +576,8 @@ def within(source: Source, name: str, start: pd.Timestamp | None = None, end: pd
 
 def policy_sources(nation: str, key: str) -> list[Source]:
     """A policy term's sources (batch 9.1): the official rate's (``key`` "policy") or the market's ("policy_market")."""
+    if nation == "jp":  # 14.3: the call rate, both
+        return jp_call_rate()
     if key == "policy_market":
         return {
             "us": lambda: [fred(rates.US_MARKET_SERIES)],
@@ -585,6 +640,7 @@ def inflation_sources(nation: str) -> list[Source]:
         "us": lambda: fred(us_data.US_CPI_SERIES_ID),
         "cdn": lambda: statcan("18100004", "v41690973", "CPI"),
         "de": german_price_source,
+        "jp": imf_jp_cpi,
     }[nation]()
     return [rise_of(index, f"{index.name}, its 12-month rise")]
 
@@ -893,6 +949,7 @@ def price_index(nation: str) -> pd.Series:
             "us": fred(us_data.US_CPI_SERIES_ID),
             "cdn": statcan("18100004", "v41690973", "CPI"),
             "de": german_price_source(),
+            "jp": imf_jp_cpi(),
         }[nation].read()
     return values.groupby(values.index.to_period("M")).last()
 
@@ -1132,6 +1189,9 @@ def population(nation: str) -> pd.Series:
 
     if nation == "us":
         return fred(us_data.US_POPULATION_SERIES_ID).read() * 1000.0
+    if nation == "jp":  # 14.3: the World Bank's midyear estimates on FRED, each year dated by its middle
+        values = fred("POPTOTJPA647NWDB").read()
+        return values.set_axis(values.index + pd.DateOffset(months=6))
     if nation == "cdn":
         older = built_in("Canada's estimates", EMBEDDED_CDN_POPULATION_HISTORY).read()
         newer = statcan(STATCAN_CDN_POPULATION_TABLE, STATCAN_CDN_POPULATION_VECTOR, "population").read()

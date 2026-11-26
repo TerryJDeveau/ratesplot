@@ -61,7 +61,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ratesplot import announced, bake, baked, cdn_data, de_archive_data, de_data, euro_data, latest, payments, prices, rates, uk_archive_data, uk_data, us_data  # noqa: E402
+from ratesplot import announced, bake, baked, cdn_data, de_archive_data, de_data, euro_data, jp_data, latest, payments, prices, rates, uk_archive_data, uk_data, us_data  # noqa: E402
 from ratesplot.cli import parse_args  # noqa: E402
 from ratesplot.config import (  # noqa: E402
     CDN_DEBT_COLUMN,
@@ -79,6 +79,7 @@ from ratesplot.config import (  # noqa: E402
     UK_NET_DEBT_COLUMN,
     DE_DEBT_COLUMN,
     DE_INTEREST_COLUMN,
+    JP,
     YIELD_COLUMNS,
     YIELD_TERMS,
     PlotConfig,
@@ -792,6 +793,99 @@ def _euro_checks(nation: euro_data.EuroNation) -> tuple[Check, ...]:
     )
 
 
+# Japan (batch 14.3, decision 190, ``jp_data``): its own sources.
+_JP_TERMS = tuple(term for term, column in YIELD_TERMS.items() if column in jp_data.JP_YIELD_COLUMNS)
+
+
+def _jp_yields(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    frame = jp_data.fetch_yields(replace(config, yield_terms=_JP_TERMS))
+    columns = tuple(jp_data.JP_YIELD_COLUMNS)
+    return _last(_all_yields(frame, columns)), ", ".join(f"{column} {frame[column].dropna().iloc[-1]:.3f}" for column in columns)
+
+
+def _jp_column(fetch: Callable[[PlotConfig], pd.DataFrame | None], column: str, *, components: str = "") -> Callable[[PlotConfig], tuple[pd.Timestamp | None, str]]:
+    """One of Japan's macro curves, through its own fetcher; the note gives its newest value."""
+
+    def run(config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+        frame = fetch(replace(config, components=components) if components else config)
+        series = None if frame is None or column not in frame.columns else frame[column].dropna()
+        if series is None or series.empty:
+            return None, "no values"
+        return _last(series), f"¥{series.iloc[-1] / 1e12:,.1f} trillion, from {series.index[0]:%Y-%m-%d}"
+
+    return run
+
+
+def _jp_population(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    people = jp_data.fetch_population()
+    return _last(people), f"{people.iloc[-1] / 1e6:.2f} million, from {people.index[0]:%Y-%m-%d}; a year dated by its middle"
+
+
+def _jp_payments(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    frame = payments.fetch_payments("jp", "current").set_index("DATE")
+    credits, debits = frame.iloc[:, 0], frame.iloc[:, 1]
+    return _last(frame), (f"credits ¥{credits.iloc[-1] / 1e12:,.1f} trillion, debits ¥{debits.iloc[-1] / 1e12:,.1f} trillion "
+                          f"over the twelve months to {frame.index[-1]:%Y-%m-%d}, from {frame.index[0]:%Y-%m-%d}")
+
+
+def _jp_joins(_config: PlotConfig) -> tuple[pd.Timestamp | None, str]:
+    """Japan's series against another source of the same figures (batch 14.3): a note, not a pass or fail.
+
+    The Ministry's 10-year, each month's average, against the OECD's monthly
+    10-year on FRED; the flow of funds' March figures against its first
+    quarters; central, local and the social security funds against general
+    government; the balance of payments' credits less debits against the
+    Bank's current account balance.
+    """
+    notes = []
+    code = "IRLTLT01JPM156N"
+    oecd = fetch_fred_csv(code).set_index("DATE")[code].dropna()
+    oecd.index = pd.DatetimeIndex(oecd.index).strftime("%Y-%m")
+    daily = jp_data.mof_yields()["10Y"].dropna()
+    months = daily.groupby(daily.index.strftime("%Y-%m")).mean().iloc[:-1]  # the month under way is not yet whole
+    both = oecd.index.intersection(months.index)
+    gap = (oecd[both] - months[both]).abs()
+    notes.append(f"10-year: the Ministry's daily, each month's average, less FRED {code} (the OECD's), mean {gap.mean():.3f}, "
+                 f"largest {gap.max():.3f} ({gap.idxmax()}), {len(both)} months, {both[0]} to {both[-1]}")
+    for sector, name in (("0", "general government"),):
+        quarterly = sum(jp_data.boj_series("FF", f"FOF_FFAS42{sector}L{item}", revised=True) for item in jp_data.FF_ITEMS)
+        annual = sum(baked.read_series(jp_data.BOJ_BAKED_SOURCE, f"FOF_FFYS42{sector}L{item}") for item in jp_data.FF_ITEMS)
+        common = quarterly.index.intersection(annual.index)
+        notes.append(f"debt of {name}: the March figures against the first quarters, largest gap "
+                     f"{(annual[common] / quarterly[common] - 1).abs().max():.1e} over {len(common)} years")
+    parts = jp_data.boj_download("FF", [f"FOF_FFAS42{sector}L{item}" for sector in "0123" for item in jp_data.FF_ITEMS])
+    total = parts["FOF_FFAS420L200"] + parts["FOF_FFAS420L300"]
+    levels = sum(parts[f"FOF_FFAS42{sector}L{item}"].reindex(total.index).fillna(0.0) for sector in "123" for item in jp_data.FF_ITEMS)
+    notes.append(f"debt: central, local and the social security funds over general government, largest gap "
+                 f"{(levels / total - 1).abs().max():.1e} over {len(total)} quarters")
+    flows = jp_data.boj_download(jp_data.BOJ_PAYMENTS_DB, sorted({*jp_data.BOJ_PAYMENTS["current"][0], *jp_data.BOJ_PAYMENTS["current"][1], "BPBP6JYNCB"}))
+    credit_codes, debit_codes = jp_data.BOJ_PAYMENTS["current"]
+    balance = sum(flows[code] for code in credit_codes) - sum(flows[code] for code in debit_codes)
+    gap = (balance - flows["BPBP6JYNCB"]).dropna().abs()
+    notes.append(f"payments: credits less debits against the current account balance, largest gap {gap.max():.2f} "
+                 f"(100 million yen) over {len(gap)} months")
+    return None, "; ".join(notes)
+
+
+def _jp_checks() -> tuple[Check, ...]:
+    """Japan's checks (batch 14.3, ``jp_data``): its yields, call rate, debt and levels, GDP, balance of payments, prices, population, and its series against other sources."""
+    return (
+        Check("mof_jp", "Ministry of Finance Japanese daily yields, 1 2 3 5 7 10 20 30 years", DAILY, _jp_yields),
+        Check("boj_jp_call", "Bank of Japan uncollateralized overnight call rate (daily; the policy rate)", DAILY, _rate(rates.jp_policy_target)),
+        Check("boj_jp_debt", "Bank of Japan flow of funds, general government loans and debt securities (quarterly)", QUARTERLY,
+              _jp_column(jp_data.fetch_debt, JP.debt_column)),
+        Check("boj_jp_central", "Bank of Japan flow of funds, central government", QUARTERLY,
+              _jp_column(jp_data.fetch_components, component_column("debt", "f"), components="fm")),
+        Check("boj_jp_local", "Bank of Japan flow of funds, local governments", QUARTERLY,
+              _jp_column(jp_data.fetch_components, component_column("debt", "m"), components="fm")),
+        Check("fred_jp_gdp", "FRED JPNNGDP Japanese GDP (the mean of four quarters' annual rates)", QUARTERLY, _jp_column(jp_data.fetch_gdp, GDP_COLUMN)),
+        Check("boj_jp_bop", "Bank of Japan BP01 current account credits and debits (twelve-month sums, --payments)", MONTHLY, _jp_payments),
+        Check("imf_jp_cpi", "IMF Japanese consumer prices, 12-month rise (--inflation)", PRICES, _rate(partial(rates.inflation_rate, "jp"))),
+        Check("fred_jp_population", "FRED POPTOTJPA647NWDB Japanese population (yearly, midyear)", ANNUAL, _jp_population),
+        Check("jp_joins", "Japanese series against another source of the same figures (a measurement)", None, _jp_joins),
+    )
+
+
 # The FRED German series not fetched from the laptop on 2026-10-06 (timed out
 # with a browser's User-Agent; the program fetches FRED without one).
 _DE_FRED_SERIES = ("IRLTLT01DEM156N", "INTDSRDEM193N", "IR3TIB01DEM156N", "IRSTCI01DEM156N", "CPMNACSCAB1GQDE", "GGGDTADEA188N", "DEUPOPNDQ")
@@ -958,6 +1052,8 @@ CHECKS: tuple[Check, ...] = (
     Check("de_fred", "FRED German series still to be measured (a note)", None, _de_fred),
     # The euro area's nations after Germany (batch 14.3, ``euro_data``): each one's checks.
     *(check for nation in euro_data.EURO_NATIONS.values() for check in _euro_checks(nation)),
+    # Japan (batch 14.3, ``jp_data``).
+    *_jp_checks(),
 )
 
 
