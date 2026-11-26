@@ -15,7 +15,7 @@ With one of the two set, the other end is not fitted to the curves but set at a 
 
 ## A limit in another currency
 
-Top and Bottom can be given in another nation's currency by its code first: `USD20t`, `CAD5t`, `GBP2t`, `EUR3t`; `US$`, `C$`, `£` and `€` are accepted too, and written back as the code. A `$` alone is refused, since it doesn't say whose dollars (and on a command line `$20t` is read as a variable). The chart converts the amount at the exchange rate of its End date, the latest on or before it, and the log gives the rate: a chart with a fixed End draws the same each time, one ending today follows the rate.
+Top and Bottom can be given in another nation's currency by its code first: `USD20t`, `CAD5t`, `GBP2t`, `EUR3t`, `JPY400t`; `US$`, `C$`, `£`, `€` and `¥` are accepted too, and written back as the code. A `$` alone is refused, since it doesn't say whose dollars (and on a command line `$20t` is read as a variable). The chart converts the amount at the exchange rate of its End date, the latest on or before it, and the log gives the rate: a chart with a fixed End draws the same each time, one ending today follows the rate.
 
 Every rate goes through the U.S. dollar; [Exchange rates](?help=exchange-rates) draws them:
 

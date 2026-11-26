@@ -504,6 +504,7 @@ def is_percent_bound(spec: str) -> bool:
 CURRENCY_MARKS = {
     **{code: code for code in CURRENCY_SYMBOLS},
     "US$": "USD", "C$": "CAD", CURRENCY_SYMBOLS["GBP"]: "GBP", CURRENCY_SYMBOLS["EUR"]: "EUR",
+    CURRENCY_SYMBOLS["JPY"]: "JPY",  # the yen (batch 14.3)
 }
 
 
@@ -516,14 +517,14 @@ def _currency_mark(spec: str) -> tuple[str | None, str]:
 
 
 def parse_master_currency(spec: str) -> str:
-    """Parse ``--master:CODE`` (batch 30): a currency's ISO code or its mark (``CURRENCY_MARKS``: CAD, USD, GBP, EUR; C$, US$, £, €), in either case; return its code."""
+    """Parse ``--master:CODE`` (batch 30): a currency's ISO code or its mark (``CURRENCY_MARKS``: CAD, USD, GBP, EUR, JPY; C$, US$, £, €, ¥), in either case; return its code."""
     value = spec.strip()
     currency, rest = _currency_mark(value)
     if currency is not None and not rest:
         return currency
     if value.startswith("$"):
         raise ValueError(f"--master:{value}: say whose dollars, USD or CAD")
-    raise ValueError(f"--master:{value} names no currency: use CAD, USD, GBP or EUR (or C$, US$, £, €)")
+    raise ValueError(f"--master:{value} names no currency: use CAD, USD, GBP, EUR or JPY (or C$, US$, £, €, ¥)")
 
 
 # --cpi:sa (batch 13.4): the one value the price index's adjustment takes.
@@ -1422,7 +1423,7 @@ OPTIONS: tuple[Option, ...] = (
     # ambiguous with --current.
     Option(
         "master", Kind.VALUE, ("master_currency",), "units", "--master:CODE / --mas:CODE",
-        "every chart's amounts in this currency\n(CAD, USD, GBP, EUR, or C$ US$ £ €),\n"
+        "every chart's amounts in this currency\n(CAD, USD, GBP, EUR, JPY, or C$ US$ £ €\n¥),\n"
         "converted at the rate of its End date,\nwhile a chart in it is drawn with another;\n"
         "Top and Bottom keep their own; not with -r",
         names=("master",), shortest=3, parse=parse_master_currency, label="Master currency",

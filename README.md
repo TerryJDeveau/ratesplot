@@ -212,7 +212,7 @@ box takes. Top and Bottom go to the other countries with their currency: 20t in 
 `USD20t` in the others.
 
 Top and Bottom may be given in any of the four currencies, its code first: `--top:USD20t`,
-`--bottom:EUR50b` (`CAD`, `USD`, `GBP`, `EUR`; `C$`, `US$`, `£` and `€` are accepted too, but a
+`--bottom:EUR50b` (`CAD`, `USD`, `GBP`, `EUR`, `JPY`; `C$`, `US$`, `£`, `€` and `¥` are accepted too, but a
 `$` on a PowerShell or bash command line needs quotes). Each chart converts such a limit into its
 own currency at the exchange rate of its end date, the latest on or before it, and the message
 log says which rate it used: a chart with a fixed end draws the same every time, one ending today
@@ -266,7 +266,7 @@ python -m pip install -r requirements.txt
 | `--prime:0.5`, `--cdn:prime:-0.25` | the prime rate drawn plus a margin in points (negative allowed), as a variable mortgage priced from it; shown in the legend ("Prime Rate + 0.50") |
 | `--tracker:2`, `--uk:tracker:1.25` | the UK's tracker mortgage (the term `tracker`, among the UK's mortgage terms by default): Bank Rate plus a margin in points, 1.75 unless given, from 1997, when the Bank of England first quoted a tracker rate; shown in the legend ("Tracker Mortgage (Bank Rate + 1.75)") |
 | `--top:20t`, `--bottom:USD500b` | the right axis's limits (k, m, b, t; billions unsuffixed), in each chart's own currency or in the one named, converted at the rate of the chart's end date; with `-r` a percentage of GDP (`--top:150%`) |
-| `--master:USD` | every chart's amounts in that currency (`CAD`, `USD`, `GBP`, `EUR`, or `C$`, `US$`, `£`, `€`), converted at the rate of each chart's end date, while a chart in it is drawn with another; not under `-r` (at least `--mas`, since `--ma` is shared with `--max`) |
+| `--master:USD` | every chart's amounts in that currency (`CAD`, `USD`, `GBP`, `EUR`, `JPY`, or `C$`, `US$`, `£`, `€`, `¥`), converted at the rate of each chart's end date, while a chart in it is drawn with another; not under `-r` (at least `--mas`, since `--ma` is shared with `--max`) |
 | `--us:max:8`, `--cdn:yields:2,10` | a value for one country's chart only (its code in front: `ca` or `cdn`, `us`, `gb` or `uk`, `ger` or `deu`, `fr` or `fra`; Germany's `de` names it only in `--nations`, since `--de` is `--debt`); a country's own list may be `none` (`--cdn:yields:none`); in the window and on the page each country's terms, levels of government and axis limits (and the UK's aggregate debts) have their own panel, as many to a row as fit |
 | `-l` | each line's last value at its end (to three decimals where the third is not 0, as quotes and gilt yields are; a spread to a tenth of a point) |
 | `--reg`, `--reg:1` | each right-axis curve fitted by straight pieces, labelled with its growth in %/yr; each piece within 0.3 % of the axis height of the curve (or the percentage given), loosened where monthly figures would otherwise cut a curve into pieces of a few months (the message log says where) |
