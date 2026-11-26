@@ -1566,9 +1566,11 @@ TERM_COLORS = {
     "1y": "#7f7f7f",
     "7y": "#bcbd22",
     "20y": "#17becf",
-    # The 11th term (batch 9.3), past the palette's ten: dark slate, which the
-    # 3-year mortgages had as their own colour before (MORTGAGE_TERMS).
-    "3y": "#2f4f4f",
+    # The 11th term (batch 9.3), past the palette's ten. Teal since batch 50.2
+    # (decision 189), the 3-year being a default beside the 1-year: its dark
+    # slate before (#2f4f4f) read as the 1-year's grey. Teal stands apart from
+    # the defaults' brown, blue, grey, red and purple, and from Portugal's 2y.
+    "3y": "#008080",
     # The real yields (batch 13.3): their nominal terms' colours, in REAL_YIELD_STYLE's dashes.
     "r5": "#2ca02c",
     "r7": "#bcbd22",
