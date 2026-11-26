@@ -4,7 +4,7 @@ Portugal's chart is drawn only when it is asked for: while its box is ticked, or
 
 ## What the chart draws
 
-At the start it draws GDP, debt and interest on the right axis, and the 2-, 5- and 10-year bond yields on the left; the policy rate, inflation, mortgage rates, the price index or the population when they are ticked.
+At the start it draws GDP, debt and interest on the right axis, and the 2-, 3- and 10-year bond yields on the left; the policy rate, inflation, mortgage rates, the price index or the population when they are ticked.
 
 - [TTM nominal GDP](?help=gdp), from 1995: four-quarter sums of Eurostat's quarterly national accounts at current prices.
 - [Aggregate public debt](?help=debt), from 1995: general government consolidated gross debt, the ECB's year ends to 1999, Eurostat's quarters from 2000.

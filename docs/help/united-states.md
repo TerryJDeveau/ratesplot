@@ -4,7 +4,7 @@ The U.S. chart is drawn while its box is ticked, as it is at the start, beside C
 
 ## What the chart draws
 
-At the start it draws GDP, aggregate public debt and interest on the right axis, and the 3-month, 2-, 5-, 10- and 30-year bond yields on the left; the policy rate, inflation, mortgage rates, yield spreads, the price index or the population when they are ticked.
+At the start it draws GDP, aggregate public debt and interest on the right axis, and the 1- and 3-month, 1-, 3-, 10- and 30-year bond yields and the 30-year real yield (from 2010) on the left; the policy rate, inflation, mortgage rates, yield spreads, the price index or the population when they are ticked.
 
 - [TTM nominal GDP](?help=gdp), from 1947: the Bureau of Economic Analysis' GDP, read from FRED.
 - [Aggregate public debt](?help=debt), from 1966: the federal government's total public debt, from the Treasury, plus the state and local governments' debt securities and loans, from the Federal Reserve's Financial Accounts. What one government owes another isn't netted out, as it is in the other three nations' totals.
@@ -12,7 +12,7 @@ At the start it draws GDP, aggregate public debt and interest on the right axis,
 - [Balance of payments](?help=payments), from 1960: the Bureau of Economic Analysis' international transactions, quarterly, from FRED: the current account's credits and debits, or exports and imports of goods and services.
 - [Debt and interest by level](?help=levels): the debt and interest of the federal, state or local governments, or of the state and local together, instead of the total; the split between state and local comes from yearly figures.
 - [Bond yields](?help=yields), from 1962: the Treasury's constant-maturity yields, daily, read from FRED; from 1962 the 1-, 3-, 5-, 10- and 20-year, the others later. Every term: the 1-, 3- and 6-month, and the 1-, 2-, 3-, 5-, 7-, 10-, 20- and 30-year. The real yields, the Treasury's inflation-indexed securities, daily: r5, r7 and r10 from 2003, r20 from 2004-07, r30 from 2010-02.
-- [Yield spreads](?help=spreads): 10y–2y from 1976-06, 30y–10y from 1977-02 and 10y–3m from 1981-09, daily.
+- [Yield spreads](?help=spreads): 10y–2y from 1976-06 at the start; 30y–10y from 1977-02 and 10y–3m from 1981-09 offered; daily.
 - [Policy rates](?help=policy-rates): the effective federal funds rate's monthly average from 1954-07, the Federal Reserve's target from 1982-09-27 and its target range from 2008-12-16, drawn as a band; and the effective federal funds rate, the overnight market's rate, from 1954-07-01.
 - [Inflation](?help=inflation), from 1914: the 12-month rise of the CPI for all urban consumers, from FRED; none for 2025-10 or 2026-10, as the index has no October 2025.
 - [Mortgage rates](?help=mortgages): Freddie Mac's survey, the 30-year fixed rate from 1971-04-02 and the 15-year from 1991-08-30; and the bank prime loan rate from 1955-08-04, drawn plus a margin with Prime margin. The 30-year is ticked at the start.
