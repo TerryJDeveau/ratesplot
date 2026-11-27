@@ -4,15 +4,15 @@ France's chart is drawn only when it is asked for: while its box is ticked, or w
 
 ## What the chart draws
 
-At the start it draws GDP, debt and interest on the right axis, and the 10-year bond yield on the left; the policy rate, inflation, mortgage rates, the price index or the population when they are ticked.
+At the start it draws GDP, debt and interest on the right axis, and the 1-, 3-, 10- and 30-year bond yields on the left (daily from 2004-11, the 30-year from 2006-10, where its chart then starts); the policy rate, inflation, mortgage rates, the price index or the population when they are ticked.
 
 - [TTM nominal GDP](?help=gdp), from 1980: four-quarter sums of Eurostat's quarterly national accounts at current prices.
 - [Aggregate public debt](?help=debt), from 1995: general government consolidated gross debt, the ECB's year ends to 1999, Eurostat's quarters from 2000.
 - [TTM interest outlays](?help=interest), from 1995: four-quarter sums of general government interest payable, Eurostat's quarters.
 - [Balance of payments](?help=payments), from 1999: Eurostat's quarterly balance of payments, not seasonally adjusted: the current account's credits and debits, or exports and imports of goods and services; the quarters after its last from its monthly figures.
 - [Debt and interest by level](?help=levels): the debt and interest of central government or of local government instead of the total, from Eurostat's figures by subsector: the debt quarterly from 2000, the interest yearly from 1995 (each year's at its last day), since Eurostat's quarterly interest is for general government alone. France has no state level; its social security funds are no level of the chart.
-- [Bond yields](?help=yields), daily from 2004-11: the Banque de France's yields of French government bonds (OATs) at a constant maturity of 1, 2, 3, 5, 7, 10, 20 and 30 years, from its statistics service [Webstat](https://webstat.banque-france.fr/); the 30-year from 2006-10. The 10-year alone is ticked at the start; before 2004-11 it is the OECD's long-term interest rate on FRED, a monthly average drawn across its month, from 1960. A chart starts where every curve it draws has figures, so ticking another term starts it in 2004 or later. No real yields.
-- [Yield spreads](?help=spreads): any two of its terms, daily from 2004-11 (with the 30-year from 2006-10); none at the start.
+- [Bond yields](?help=yields), daily from 2004-11: the Banque de France's yields of French government bonds (OATs) at a constant maturity of 1, 2, 3, 5, 7, 10, 20 and 30 years, from its statistics service [Webstat](https://webstat.banque-france.fr/); the 30-year from 2006-10. The 1-, 3-, 10- and 30-year are ticked at the start; before 2004-11 the 10-year is the OECD's long-term interest rate on FRED, a monthly average drawn across its month, from 1960. A chart starts where every curve it draws has figures, so with these terms it starts in 2006-10; the 10-year alone reaches back to 1960. No real yields.
+- [Yield spreads](?help=spreads): 10y–2y ticked at the start, any two of its terms offered, daily from 2004-11 (with the 30-year from 2006-10).
 - [Policy rates](?help=policy-rates): the euro area's, the ECB's main refinancing rate from 1999-01-01; the overnight market's rate, EONIA from 1999-01-04, €STR from 2019-10-01. None before 1999.
 - [Inflation](?help=inflation), from 1956-01: the 12-month rise of France's consumer prices, Eurostat's harmonised index from 1996 and the national index before it, scaled to it where it begins; the rises from 1997 are the harmonised index's alone.
 - [Mortgage rates](?help=mortgages), monthly from 2000-01: the ECB's rates on new loans to households in France for house purchase, fixed for over 1 to 5, over 5 to 10 and over 10 years. All three are ticked at the start. The variable rate (a variable rate or one fixed for up to a year) is offered beside them.
@@ -24,7 +24,7 @@ At the start it draws GDP, debt and interest on the right axis, and the 10-year 
 
 ## Its own controls
 
-Under France's chart in the window, and under "France only" on the page, are the controls that set its chart alone: the policy rates and mortgage terms it draws, its levels of government, and the [limits of its axes](?help=limits): Min and Max on the left, Top and Bottom on the right, in € unless another currency is named by its code (USD20t). On the command line each is written after France's prefix, `--fr:` or `--fra:`, as in `--fr:max:8`.
+Under France's chart in the window, and under "France only" on the page, are the controls that set its chart alone: the yield terms, spreads, policy rates and mortgage terms it draws, its levels of government, and the [limits of its axes](?help=limits): Min and Max on the left, Top and Bottom on the right, in € unless another currency is named by its code (USD20t). On the command line each is written after France's prefix, `--fr:` or `--fra:`, as in `--fr:max:8`.
 
 ## The other nations
 

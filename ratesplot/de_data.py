@@ -151,7 +151,7 @@ from .joins import embedded_frame, splice_archived_series, ttm_sum
 # Svensson term structure ("R10XX" = 10.0 years), and the series key with
 # the frequency ("D" daily, "M" monthly) still to fill in.
 DE_YIELD_SERIES = {
-    "1-Year": "R01XX", "2-Year": "R02XX", "5-Year": "R05XX", "7-Year": "R07XX",
+    "1-Year": "R01XX", "2-Year": "R02XX", "3-Year": "R03XX", "5-Year": "R05XX", "7-Year": "R07XX",
     "10-Year": "R10XX", "20-Year": "R20XX", "30-Year": "R30XX",
 }
 BUNDESBANK_TERM_STRUCTURE_FLOW = "BBSIS"
@@ -173,7 +173,7 @@ BUNDESBANK_BAKED_SOURCE = "bbk"
 _BUNDESBANK_START_FORMS = {"M": "%Y-%m", "D": "%Y-%m-%d"}
 # Each term's first month (its end-of-month value; measured 2026-10-06).
 DE_YIELD_EARLIEST = {
-    "1-Year": pd.Timestamp("1972-09-30"), "2-Year": pd.Timestamp("1972-09-30"),
+    "1-Year": pd.Timestamp("1972-09-30"), "2-Year": pd.Timestamp("1972-09-30"), "3-Year": pd.Timestamp("1972-09-30"),
     "5-Year": pd.Timestamp("1972-09-30"), "7-Year": pd.Timestamp("1972-09-30"),
     "10-Year": pd.Timestamp("1972-09-30"), "20-Year": pd.Timestamp("1986-06-30"),
     "30-Year": pd.Timestamp("2000-01-31"),

@@ -912,9 +912,13 @@ class Option:
 # those it has: Canada all but the 20-year since batch 9.3, the U.S. all of
 # them since 13.6). Mortgage terms by country. Spreads: the usual pairs (the defaults first); any other pair
 # named on the command line gets a box of its own.
+# Since batch 50.2 (decision 189) the nominal terms in their order, four to a row (the bills, the short bonds,
+# the long ones): the defaults, seven with r30, no longer make a first row of five (before: the five defaults,
+# then a row "more").
 _YIELD_CHOICES = (
-    ("", tuple((term, term) for term in DEFAULT_YIELD_TERMS)),
-    ("more", tuple((term, term) for term in NOMINAL_YIELD_TERMS if term not in DEFAULT_YIELD_TERMS)),
+    ("", tuple((term, term) for term in NOMINAL_YIELD_TERMS[:4])),
+    ("", tuple((term, term) for term in NOMINAL_YIELD_TERMS[4:8])),
+    ("", tuple((term, term) for term in NOMINAL_YIELD_TERMS[8:])),
     (REAL_YIELD_ROW, tuple((term, term) for term in REAL_YIELD_TERMS)),
 )
 _MORTGAGE_CHOICES = (
@@ -941,7 +945,8 @@ _POLICY_CHOICES = (("", tuple((term, term) for term in POLICY_TERMS)),)
 _PAYMENTS_CHOICES = (("", (("current", "current account"), ("trade", "trade"))),)
 _SPREAD_CHOICES = (
     ("", tuple((f"{a}-{b}", f"{a}–{b}") for a, b in DEFAULT_SPREADS)),
-    ("", tuple((f"{a}-{b}", f"{a}–{b}") for a, b in (("2y", "3m"), ("5y", "2y"), ("30y", "2y")))),
+    # 10y-3m and 30y-10y, defaults with 10y-2y until batch 50.2 (decision 189), offered first.
+    ("", tuple((f"{a}-{b}", f"{a}–{b}") for a, b in (("10y", "3m"), ("30y", "10y"), ("2y", "3m"), ("5y", "2y"), ("30y", "2y")))),
     # The UK has only the 5-, 10- and 20-year (batch 3); the U.S. has them too.
     ("", tuple((f"{a}-{b}", f"{a}–{b}") for a, b in (("10y", "5y"), ("20y", "10y"), ("20y", "5y")))),
 )
@@ -964,12 +969,12 @@ _AGGREGATE_CHOICES = (
 # after it (``frontend.choice_rows``); a third, "Other measures", keeps the
 # real yields' heading from seeming to cover the rest. A row of one box spans
 # the block in the window, so a long name widens no column of the terms'.
-_MORE_TERMS = tuple(term for term in NOMINAL_YIELD_TERMS if term not in DEFAULT_YIELD_TERMS)
+# Its rows of terms as they were laid out from the five defaults of before batch 50.2, which changed the defaults
+# (decision 189) and left this block as it was.
+_COMPARE_TERM_ROWS = (("3m", "2y", "5y", "10y", "30y"), ("1m", "6m", "1y"), ("3y", "7y", "20y"))
 _COMPARE_CHOICES = (
     ("Bond yields", ()),
-    ("", tuple((term, term) for term in DEFAULT_YIELD_TERMS)),
-    ("", tuple((term, term) for term in _MORE_TERMS[:3])),
-    ("", tuple((term, term) for term in _MORE_TERMS[3:])),
+    *(("", tuple((term, term) for term in row)) for row in _COMPARE_TERM_ROWS),
     ("Real bond yields (inflation-linked)", ()),
     ("", tuple((term, term) for term in REAL_YIELD_TERMS)),
     ("Other measures", ()),
@@ -1291,8 +1296,8 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "yields", Kind.VALUE, ("yield_terms",), "curves", "--yields:LIST / --y:LIST",
         "the yield terms drawn: 1m 3m 6m 1 2 3 5\n7 10 20 30 (years unless m; default\n"
-        f"{','.join(DEFAULT_YIELD_TERMS)}); Canada has all but 20\n(1m 6m 1 3 7 from 2001), the U.S. all, "
-        "the\nUK 5 10 20 (its default), Germany 1 2 5 7\n10 20 30 (its default 2 5 10 30); real\n"
+        f"{','.join(DEFAULT_YIELD_TERMS)}); Canada\nhas all but 20 (1m 6m 1 3 7 from 2001),\nthe U.S. all, "
+        "the UK 5 10 20 (its\ndefault 5 10 20 r30), Germany 1 2 3 5 7\n10 20 30 (its default 1 3 10 30); real\n"
         "yields: r5 r7 r10 r20 r30, the U.S. and\nthe UK all, Germany r5 r7 r10, Canada r30",
         names=("yields",), parse=partial(parse_terms, kind="--yields"), label="Yield terms", format=format_terms,
         editor="choices", choices=_YIELD_CHOICES, topic="yields",
@@ -1386,7 +1391,7 @@ OPTIONS: tuple[Option, ...] = (
     Option(
         "spread-pairs", Kind.VALUE, ("spread_pairs",), "rates", "--spreads:LIST / --sp:LIST",
         "pairs of yield terms, the first less the\nsecond (default "
-        f"{format_spreads((DEFAULT_SPREADS,), PlotConfig())};\nthe UK's: 10y-5y,20y-10y; Germany's:\n10y-2y,30y-10y); turns --spreads on",
+        f"{format_spreads((DEFAULT_SPREADS,), PlotConfig())};\nthe UK's: 10y-5y); turns --spreads on",
         names=("spreads",), shortest=2, parse=parse_spreads, turns_on="spreads",
         label="Spreads", format=format_spreads, editor="choices", choices=_SPREAD_CHOICES, panel="rates",
         topic="spreads",

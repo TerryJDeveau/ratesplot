@@ -104,8 +104,10 @@ CASES = {
 # The FRED series the "rates" case draws (batch 19.2): in pass 3 each from its bake, named. Not
 # Canada's GDP (NGDPSAXDCCAQ) since 19.2's Statistics Canada stage: Statistics Canada's GDP is drawn
 # from its own bake when it fails, so FRED's copy, the fallback for a table that cannot be had, is not asked.
+# Since batch 50.2 (decision 189) the default terms 1m 3m 1y 3y 10y 30y r30, and the 2-year for the 10y-2y
+# spread; not the 5-year, a default before.
 FRED_DRAWN_IN_RATES = (
-    "DGS3MO", "DGS2", "DGS5", "DGS10", "DGS30", "FEDFUNDS", "DFEDTARL", "DFEDTARU",
+    "DGS1MO", "DGS3MO", "DGS1", "DGS2", "DGS3", "DGS10", "DGS30", "DFII30", "FEDFUNDS", "DFEDTARL", "DFEDTARU",
     "MORTGAGE30US", "GFDEBTN", "SLGSDODNS", "GDP", "A180RC1Q027SBEA",
 )
 # The ECB series the "rates" case draws (batch 19.2): Germany's policy rate (fixed, then the minimum
@@ -654,16 +656,20 @@ def main() -> int:
               all(len(lines) == 1 for lines in warned.values()) and "its recent values unavailable" not in log,
               ", ".join(warned))
         if name == "rates":
-            # Every Bank of England series the case draws (not SONIA, the market rate), each with its bake's last date.
+            # Every Bank of England series the case draws (not SONIA, the market rate), each with its bake's last date;
+            # the real 30-year a default since batch 50.2.
             ends = {code: baked.read_series("boe", code).index[-1]
-                    for code in ("IUDSNPY", "IUDMNPY", "IUDLNPY", "IUDBEDR", "IUMBV34", "IUMBV37", "IUMBV42", "IUMTLMV")}
+                    for code in ("IUDSNPY", "IUDMNPY", "IUDLNPY", "IUDBEDR", "IUMBV34", "IUMBV37", "IUMBV42", "IUMTLMV",
+                                 "GLC.REAL.SPOT.30")}
             check_reach("the Bank of England's series", warned, "Bank of England", ends)
-            # The Bank of Canada's the case draws: the benchmark group (named once), the 3-month, the policy rate's
-            # three parts and the 5-year mortgage rate (not CORRA, nor the bills it does not choose).
+            # The Bank of Canada's the case draws: the benchmark group (named once), the 1-month, 3-month and 1-year
+            # bills (the 1-month and 1-year defaults since batch 50.2), the policy rate's three parts and the 5-year
+            # mortgage rate (not CORRA, nor the 6-month bill).
             group = cdn_data.BOC_GROUP_CODES[cdn_data.BOC_BENCHMARK_GROUP]
             ends = {cdn_data.BOC_BENCHMARK_GROUP: max(baked.read_series("boc", code).index[-1] for code in group)}
             ends |= {code: baked.read_series("boc", code).index[-1]
-                     for code in ("TB.CDN.90D.MID", "V80691303", "V122530", "V80691310", "CBC20210", "V80691335")}
+                     for code in ("TB.CDN.30D.MID", "TB.CDN.90D.MID", "TB.CDN.1Y.MID", "V80691303", "V122530", "V80691310",
+                                  "CBC20210", "V80691335")}
             check_reach("the Bank of Canada's series", warned, "Bank of Canada", ends)
             # FRED's the case draws: the five yields, the policy rate's parts, the 30-year mortgage rate,
             # debt (federal, state and local), GDP and interest (not DFF, the market rate).

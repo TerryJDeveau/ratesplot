@@ -717,7 +717,7 @@ def check_fetchers() -> None:
         config = PlotConfig(start=pd.Timestamp("1950-01-01"), end=pd.Timestamp("2026-10-07"), yield_terms=de_data.DE_YIELD_TERMS)
         yields = de_data.fetch_de_yields(config)
         through = yields.attrs[de_data.YIELD_HISTORY_ATTR]
-        check("yields: the seven terms", list(yields.columns) == list(de_data.DE_YIELD_SERIES), list(yields.columns))
+        check("yields: the eight terms", list(yields.columns) == list(de_data.DE_YIELD_SERIES), list(yields.columns))
         check("yields: the 10-year from the baked 1956-05 (6.4), monthly to 1997-07, daily from 1997-08-07",
               yields["10-Year"].first_valid_index() == pd.Timestamp("1956-05-01") and yields.loc["1956-05-01", "10-Year"] == 6.4
               and through["10-Year"] == pd.Timestamp("1997-07-31") and yields.loc["1997-08-07", "10-Year"] == daily_value("R10XX", "1997-08-07"),
@@ -834,7 +834,7 @@ def daily_value(code: str, day: str) -> float:
 def check_cnbc() -> None:
     quotes = {quote["symbol"]: quote for quote in json.loads(text("cnbc_de_quotes.json"))["FormattedQuoteResult"]["FormattedQuote"]}
     asked = latest._quote_symbols("de", list(de_data.DE_YIELD_SERIES))
-    check("CNBC: a German symbol for each of the seven terms", set(asked) == set(de_data.DE_YIELD_SERIES), asked)
+    check("CNBC: a German symbol for each of the eight terms", set(asked) == set(de_data.DE_YIELD_SERIES), asked)
     check("CNBC: every German symbol asked for is in the feed", set(asked.values()) <= set(quotes), sorted(quotes))
     check("CNBC: DE3M-DE (unknown to the feed) is not asked for", "DE3M-DE" not in asked.values() and quotes["DE3M-DE"]["code"] == 1)
     readable = []

@@ -563,12 +563,13 @@ QUOTE_SYMBOLS = {
     # The UK's three terms (batch 3; seen answering from the laptop 2026-10-06,
     # tools/uk_fixtures). Not GB3M-GB: that is a gilt repo rate, not a yield.
     "uk": {"5-Year": "GB5Y-GB", "10-Year": "GB10Y-GB", "20-Year": "GB20Y-GB"},
-    # Germany's seven terms (batch 4; all seen answering from the laptop
-    # 2026-10-06, tools/de_fixtures). CNBC does not know DE3M-DE. Quotes of
+    # Germany's terms (batch 4; all seen answering from the laptop
+    # 2026-10-06, tools/de_fixtures; the 3-year, DE3Y-DE, from Buddug
+    # 2026-11-27, batch 50.2). CNBC does not know DE3M-DE. Quotes of
     # Bunds, against the Bundesbank's fitted zero-coupon curve: used as they
     # are, as the UK's are (a few basis points apart on the day measured).
     "de": {
-        "1-Year": "DE1Y-DE", "2-Year": "DE2Y-DE", "5-Year": "DE5Y-DE", "7-Year": "DE7Y-DE",
+        "1-Year": "DE1Y-DE", "2-Year": "DE2Y-DE", "3-Year": "DE3Y-DE", "5-Year": "DE5Y-DE", "7-Year": "DE7Y-DE",
         "10-Year": "DE10Y-DE", "20-Year": "DE20Y-DE", "30-Year": "DE30Y-DE",
     },
 }
@@ -650,7 +651,10 @@ YIELD_TERMS = {
     "r20": "20-Year Real",
     "r30": "30-Year Real",
 }
-DEFAULT_YIELD_TERMS = ("3m", "2y", "5y", "10y", "30y")
+# Terry, 2026-11-26 (batch 50.2, decision 189): "The default yield terms should be all the following 1m, 3m, 1y,
+# 3y, 10y, 30y, and r30 for every nation that supports them"; a nation lacking one has its own defaults
+# (Nation.own_defaults), a near term of its own in its place. The default five before were 3m 2y 5y 10y 30y.
+DEFAULT_YIELD_TERMS = ("1m", "3m", "1y", "3y", "10y", "30y", "r30")
 REAL_YIELD_TERMS = ("r5", "r7", "r10", "r20", "r30")
 REAL_YIELD_ROW = "real"  # their row of boxes' caption (options._YIELD_CHOICES)
 NOMINAL_YIELD_TERMS = tuple(term for term in YIELD_TERMS if term not in REAL_YIELD_TERMS)
@@ -1142,7 +1146,9 @@ PRIME_RATE_STYLE = MORTGAGE_STYLE | {"linestyle": ":", "linewidth": 1.8}
 # right-axis curve has, one per pair in the order given (then round again),
 # with their inverted stretches shaded (SPREAD_INVERSION_ALPHA). When one is
 # drawn the left axis is "Yield and Spread (%)".
-DEFAULT_SPREADS = (("10y", "2y"), ("10y", "3m"), ("30y", "10y"))
+# Terry, 2026-11-26 (batch 50.2, decision 189): "The default spread should be 10y-2y for all nations" where they
+# have both terms; 10y-3m and 30y-10y, ticked with it before, still offered (options._SPREAD_CHOICES).
+DEFAULT_SPREADS = (("10y", "2y"),)
 SPREAD_COLORS = ("#4b0082", "#c71585", "#000080", "#800000", "#008080")
 SPREAD_STYLE = {"linewidth": 2.5} | SERIES_KINDS["spread"].drawstyle
 SPREAD_AXIS_LABEL = "Yield and Spread (%)"
@@ -1363,10 +1369,12 @@ NATIONS: tuple[Nation, ...] = (
         # Central and local government: the devolved governments are inside
         # central government in its accounts (CountryMetadata UK, uk_data).
         level_boxes=(("f", "Central"), ("m", "Local")), level_synonyms=(("n", "m"),),
+        # Batch 50.2 (decision 189): Terry's default terms as near as it has them, its 5-year for the 3-year and its
+        # 20-year for the 30-year, with its own r30; 10y-5y, having no 2-year (before: 5y 10y 20y; 10y-5y, 20y-10y).
         own_defaults=(
-            ("yield_terms", ("5y", "10y", "20y")),
+            ("yield_terms", ("5y", "10y", "20y", "r30")),
             ("mortgage_terms", ("2f", "3f", "5f", "svr", "tracker")),
-            ("spread_pairs", (("10y", "5y"), ("20y", "10y"))),
+            ("spread_pairs", (("10y", "5y"),)),
         ),
     ),
     # Batch 4: drawn only when asked for, as the UK is. Its code "de" names it
@@ -1378,14 +1386,16 @@ NATIONS: tuple[Nation, ...] = (
     # and all three fixation bands as its mortgage rates (batch 10.2, as the
     # UK's; its usual fixation, 5 to 10 years, alone before).
     Nation(
-        "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "5y", "7y", "10y", "20y", "30y", "r5", "r7", "r10"), "German",
+        "de", "Germany", ("de", "ger", "deu"), ("1y", "2y", "3y", "5y", "7y", "10y", "20y", "30y", "r5", "r7", "r10"), "German",
         shown_by_default=False, list_only_codes=("de",), market_timezone="Europe/Berlin", currency="EUR",
         overnight_rate="€STR",
         level_boxes=(("f", "Federal"), ("p", "Länder"), ("m", "Local"), ("n", "Länder & Local")),
+        # Batch 50.2 (decision 189): Terry's terms it has, the 3-year added from the Bundesbank's same flow; no bill
+        # yield, and its real terms end at 10 years (before: 2y 5y 10y 30y; 10y-2y, 30y-10y).
         own_defaults=(
-            ("yield_terms", ("2y", "5y", "10y", "30y")),
+            ("yield_terms", ("1y", "3y", "10y", "30y")),
             ("mortgage_terms", ("1-5", "5-10", "over10")),
-            ("spread_pairs", (("10y", "2y"), ("30y", "10y"))),
+            ("spread_pairs", (("10y", "2y"),)),
         ),
     ),
     # Batch 14.3 (decision 171): drawn only when asked for, as the UK and
@@ -1394,9 +1404,10 @@ NATIONS: tuple[Nation, ...] = (
     # de France's Webstat since 9.14 (decision 185): its constant-maturity
     # OAT yields at 1, 2, 3, 5, 7, 10, 20 and 30 years, from 2004-11 (the
     # 30-year 2006-10), the 10-year the OECD's monthly averages before, from
-    # 1960. The 10-year alone ticked at the start and no spread, as before:
-    # a chart starts where every curve drawn has data, so any other term
-    # would start the default chart in 2004 or 2006, not 1995. Its levels:
+    # 1960. Since batch 50.2 (Terry, 2026-11-26, decision 189) the 1-, 3-,
+    # 10- and 30-year ticked at the start and 10y-2y its spread, so its
+    # default chart starts 2006-10-02, the 30-year's first day (before, the
+    # 10-year alone and no spread, decision 185, kept the start). Its levels:
     # central and local government (France has no state level; the social
     # security funds are no level of the chart, as Germany's). Its mortgage
     # bands are Germany's (the ECB's).
@@ -1405,16 +1416,17 @@ NATIONS: tuple[Nation, ...] = (
         shown_by_default=False, market_timezone="Europe/Paris", currency="EUR", overnight_rate="€STR",
         level_boxes=(("f", "Central"), ("m", "Local")),
         own_defaults=(
-            ("yield_terms", ("10y",)),
+            ("yield_terms", ("1y", "3y", "10y", "30y")),
             ("mortgage_terms", ("1-5", "5-10", "over10")),
-            ("spread_pairs", ()),
+            ("spread_pairs", (("10y", "2y"),)),
         ),
     ),
     # Portugal (batch 14.3, decision 175): as France, on the same code
     # (ratesplot.euro_data); named by --nations:pt (or prt), a value for it
     # alone "--pt:max:8". Five daily yields from the Banco de Portugal's
     # BPstat since 9.13 (decision 183): 2, 3, 5, 7 and 10 years, from 1993-07
-    # (the 5-year 1994-02); 2, 5 and 10 ticked at the start and 10y-2y its
+    # (the 5-year 1994-02); 2, 3 and 10 ticked at the start since batch 50.2
+    # (2, 5 and 10 before) and 10y-2y its
     # spread, as Germany's pattern. Central and local government (no state
     # level); the variable rate ticked at the start, Germany's three fixed
     # bands offered beside it.
@@ -1423,7 +1435,8 @@ NATIONS: tuple[Nation, ...] = (
         shown_by_default=False, market_timezone="Europe/Lisbon", currency="EUR", overnight_rate="€STR",
         level_boxes=(("f", "Central"), ("m", "Local")),
         own_defaults=(
-            ("yield_terms", ("2y", "5y", "10y")),
+            # Batch 50.2 (decision 189): its 2-year for the 1-year, its shortest; its 10-year its longest (before: 2y 5y 10y).
+            ("yield_terms", ("2y", "3y", "10y")),
             ("mortgage_terms", ("var",)),
             ("spread_pairs", (("10y", "2y"),)),
         ),
@@ -1554,9 +1567,11 @@ TERM_COLORS = {
     "1y": "#7f7f7f",
     "7y": "#bcbd22",
     "20y": "#17becf",
-    # The 11th term (batch 9.3), past the palette's ten: dark slate, which the
-    # 3-year mortgages had as their own colour before (MORTGAGE_TERMS).
-    "3y": "#2f4f4f",
+    # The 11th term (batch 9.3), past the palette's ten. Teal since batch 50.2
+    # (decision 189), the 3-year being a default beside the 1-year: its dark
+    # slate before (#2f4f4f) read as the 1-year's grey. Teal stands apart from
+    # the defaults' brown, blue, grey, red and purple, and from Portugal's 2y.
+    "3y": "#008080",
     # The real yields (batch 13.3): their nominal terms' colours, in REAL_YIELD_STYLE's dashes.
     "r5": "#2ca02c",
     "r7": "#bcbd22",
@@ -2342,7 +2357,7 @@ class PlotConfig:
     # --yields:LIST / --no-yields:LIST: the yield terms drawn, as keys of
     # YIELD_TERMS in that order. A term a country has no series for is
     # simply not drawn on its chart, with a note (Canada has no 20-year,
-    # Germany no 1-, 3- or 6-month or 3-year: Nation.yield_terms).
+    # Germany no 1-, 3- or 6-month: Nation.yield_terms).
     yield_terms: tuple[str, ...] = DEFAULT_YIELD_TERMS
     include_debt: bool = True
     include_gdp: bool = True

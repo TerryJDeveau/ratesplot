@@ -69,7 +69,6 @@ from .config import (
     DEFAULT_START_FLOOR,
     DAILY_YIELD_GAP,
     DEFAULT_CANVAS_PX,
-    DEFAULT_YIELD_TERMS,
     EARLIEST_DATA_START,
     MACRO_PLOT_STYLES,
     PAYMENTS_COLUMNS,
@@ -78,7 +77,6 @@ from .config import (
     MIN_WINDOW_DAYS,
     MORTGAGE_LEGEND_ORDER,
     NOMINAL_YIELD_TERMS,
-    NATIONS,
     POLICY_BAND_ALPHA,
     PRICE_INDEX_ADJUSTED_LABEL,
     PRICE_INDEX_ADJUSTED_TITLE,
@@ -338,7 +336,12 @@ _MONTHLY_YIELD = SERIES_KINDS["yield_monthly"].drawstyle
 
 
 def _yield_style(column: str, config: PlotConfig, nation_key: str) -> dict:
-    """Return the line style of one yield column: its term's own colour, unless the nation draws the default five.
+    """Return the line style of one yield column: its term's own colour.
+
+    Since batch 50.2 (decision 189) every chart: the defaults became seven terms
+    with r30, which the colour cycle below would draw solid in a colour of its
+    own. The cycle's first five colours are the old five's ``TERM_COLORS``, so
+    a chart drawing those five is drawn as before. Until then:
 
     With the default terms (no --yields:LIST) the lines take matplotlib's
     colour cycle in drawing order, as they always have, so those charts are
@@ -349,9 +352,6 @@ def _yield_style(column: str, config: PlotConfig, nation_key: str) -> dict:
     draws the default five), so a chart is coloured alike whether its terms
     were chosen for both charts or for it alone (``options.nation_view``).
     """
-    own = next(nation.yield_terms for nation in NATIONS if nation.key == nation_key)
-    if tuple(term for term in config.yield_terms if term in own) == DEFAULT_YIELD_TERMS:
-        return YIELD_LINE_STYLE
     term = next(key for key, name in YIELD_TERMS.items() if name == column)
     return YIELD_LINE_STYLE | {"color": TERM_COLORS[term]} | (REAL_YIELD_STYLE if term in REAL_YIELD_TERMS else {})
 
@@ -1959,6 +1959,14 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
                 firsts[(country.metadata.country_name, label)] = first
     for which in unprepared:
         print(f"  Warning: no data could be prepared for the chart of {which}; the start is found without it.")
+    # The real yields never hold the automatic start back (batch 50.2; Terry, 2026-11-26, decision 189: "Yes,
+    # exempt them"): young markets in every nation (the U.S. 30-year from 2010, the UK's from 2016), one that
+    # begins later is drawn from where it begins, the coverage warning naming it. Unless they are all there is.
+    real = {f"{YIELD_TERMS[term]} Yield" for term in REAL_YIELD_TERMS}
+    held = {curve: first for curve, first in firsts.items() if curve[1] not in real}
+    but_real = " but the real yields" if held and len(held) < len(firsts) else ""
+    if held:
+        firsts = held
 
     def named(curves: list[tuple[str, str]]) -> str:
         """``5-Year Yield and 10-Year Yield (Canada)``, one bracket per country."""
@@ -1976,7 +1984,7 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
         return replace(config, start=latest_start)
     start = max(whole.values())
     if start < DEFAULT_START_FLOOR <= latest_start:
-        print(f"Start {DEFAULT_START_FLOOR:%Y-%m-%d}, the default start; every chosen curve has data by then{left_out}.")
+        print(f"Start {DEFAULT_START_FLOOR:%Y-%m-%d}, the default start; every chosen curve{but_real} has data by then{left_out}.")
         return replace(config, start=DEFAULT_START_FLOOR)
     # The curves begin after the floor, or the chart ends too soon after it.
     before_floor = ""
@@ -1984,7 +1992,7 @@ def resolve_start(config: PlotConfig) -> PlotConfig:
         when = "before" if DEFAULT_START_FLOOR > config.end else f"less than {MIN_WINDOW_DAYS} days after"
         before_floor = f" (the chart ends {when} the default start, {DEFAULT_START_FLOOR:%Y-%m-%d})"
     last = [curve for curve, first in whole.items() if first == start]
-    print(f"Start {start:%Y-%m-%d}, the first date on which every chosen curve has data{before_floor}; the last to begin: {named(last)}{left_out}.")
+    print(f"Start {start:%Y-%m-%d}, the first date on which every chosen curve{but_real} has data{before_floor}; the last to begin: {named(last)}{left_out}.")
     return replace(config, start=start)
 
 

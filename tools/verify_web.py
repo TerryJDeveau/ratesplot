@@ -667,7 +667,7 @@ def check_choice_boxes(check: Check) -> None:
     page = new_page("--gdp --debt --interest --yield -u --e:2026-09-01 --no-y:30 --mo:15 --sp:10-2,7-1m")
     check(
         "the address's lists ticked; a pair not offered gets its own box",
-        ticked(page, "us:yields") == ["3m", "2y", "5y", "10y"]
+        ticked(page, "us:yields") == ["1m", "3m", "1y", "3y", "10y", "r30"]
         and ticked(page, "us:mortgage-terms") == ["15"]
         and ticked(page, "us:spread-pairs") == ["10y-2y", "7y-1m"],
         (ticked(page, "us:yields"), ticked(page, "us:mortgage-terms"), ticked(page, "us:spread-pairs")),
@@ -676,7 +676,7 @@ def check_choice_boxes(check: Check) -> None:
     page.run()
     # Written for the U.S. alone since batch 9.3: Canada has a 7-year now, so
     # one list for both would add it to Canada's chart too.
-    check("ticking 7y adds it to the address", "--us:yields:3m,2y,5y,7y,10y" in address(page), address(page))
+    check("ticking 7y adds it to the address", "--us:yields:1m,3m,1y,3y,7y,10y,r30" in address(page), address(page))
     page.checkbox(key="choice:us:mortgage-terms:15").uncheck()
     page.run()
     check(
@@ -768,16 +768,16 @@ def check_de(check: Check) -> None:
     check("one chart drawn", charts_shown(page) == 1, charts_shown(page))
     keys = {box.key for box in page.checkbox if box.key}
     check(
-        "Germany offers its seven terms and its mortgage bands only",
-        {f"choice:de:yields:{term}" for term in ("1y", "2y", "5y", "7y", "10y", "20y", "30y")}
+        "Germany offers its eight terms (the 3-year since batch 50.2) and its mortgage bands only",
+        {f"choice:de:yields:{term}" for term in ("1y", "2y", "3y", "5y", "7y", "10y", "20y", "30y")}
         | {"choice:de:mortgage-terms:1-5", "choice:de:mortgage-terms:over10"} <= keys
         and "choice:de:yields:3m" not in keys and "choice:de:mortgage-terms:5" not in keys,
         sorted(key for key in keys if key.startswith("choice:de:")),
     )
     check(
-        "its own defaults ticked: 2 5 10 30, all three bands (batch 10.2)",
-        all(page.checkbox(key=f"choice:de:yields:{term}").value for term in ("2y", "5y", "10y", "30y"))
-        and not page.checkbox(key="choice:de:yields:7y").value
+        "its own defaults ticked: 1 3 10 30 (batch 50.2), all three bands (batch 10.2)",
+        all(page.checkbox(key=f"choice:de:yields:{term}").value for term in ("1y", "3y", "10y", "30y"))
+        and not page.checkbox(key="choice:de:yields:2y").value and not page.checkbox(key="choice:de:yields:7y").value
         and all(page.checkbox(key=f"choice:de:mortgage-terms:{term}").value for term in ("1-5", "5-10", "over10")),
     )
     check("its value in its own field", page.text_input(key="value:de:max").value == "6", page.text_input(key="value:de:max").value)
@@ -803,13 +803,14 @@ def check_fr(check: Check) -> None:
     offered = sorted(key for key in keys if key.startswith("choice:fr:yields:"))
     check("France offers its eight terms", offered == sorted(f"choice:fr:yields:{term}" for term in terms), offered)
     ticked = [term for term in terms if page.checkbox(key=f"choice:fr:yields:{term}").value]
-    check("the 10-year alone ticked at the start", ticked == ["10y"], ticked)
+    check("the 1-, 3-, 10- and 30-year ticked at the start (batch 50.2)", ticked == ["1y", "3y", "10y", "30y"], ticked)
     page.checkbox(key="choice:fr:yields:2y").check()
     page.run()
     tokens = address(page).split()
     drawn = drawn_config(config_from_choices(*sort_tokens(tokens)[:2]), "fr").yield_terms
-    check("the 2-year ticked: written in the address, drawn with the 10-year",
-          "yields:2y,10y" in address(page) and drawn == ("2y", "10y") and charts_shown(page) == 1, (address(page), drawn))
+    check("the 2-year ticked: written in the address, drawn with the defaults",
+          "yields:1y,2y,3y,10y,30y" in address(page) and drawn == ("1y", "2y", "3y", "10y", "30y") and charts_shown(page) == 1,
+          (address(page), drawn))
 
 
 def check_none_lists(check: Check) -> None:
@@ -835,7 +836,7 @@ def check_none_lists(check: Check) -> None:
     own = new_page("--cdn:y:none --e:2026-09-01")
     check(
         "a nation's own none: its boxes unticked, the other's at its default, the address kept",
-        ticked(own, "cdn:yields") == [] and ticked(own, "us:yields") == ["3m", "2y", "5y", "10y", "30y"]
+        ticked(own, "cdn:yields") == [] and ticked(own, "us:yields") == ["1m", "3m", "1y", "3y", "10y", "30y", "r30"]
         and address(own) == "--cdn:yields:none --end:2026-09-01",
         (ticked(own, "cdn:yields"), address(own)),
     )
@@ -1132,14 +1133,16 @@ def check_batch9(check: Check) -> None:
     wanted = {f"choice:cdn:yields:{term}" for term in ("1m", "3m", "6m", "1y", "2y", "3y", "5y", "7y", "10y", "30y", "r30")}
     check("Canada offers 1m 3m 6m 1y 2y 3y 5y 7y 10y 30y and r30 (13.3), not 20y", canada == wanted, sorted(canada))
     check("13.6: the U.S. offers all eleven nominal, 3y too, and five real (13.3)", "choice:us:yields:3y" in united and len(united) == 16, sorted(united))
-    check("… its 3y not ticked (not a default term)", not at.checkbox(key="choice:us:yields:3y").value)
+    check("… its 3y ticked (a default term since batch 50.2)", at.checkbox(key="choice:us:yields:3y").value)
     ticked = {key.rsplit(":", 1)[1] for key in canada if at.checkbox(key=key).value}
-    check("Canada's default five ticked, the new terms not", ticked == {"3m", "2y", "5y", "10y", "30y"}, sorted(ticked))
-    at.checkbox(key="choice:cdn:yields:3y").check()
+    check("Canada's seven defaults ticked (batch 50.2), its other terms not", ticked == {"1m", "3m", "1y", "3y", "10y", "30y", "r30"},
+          sorted(ticked))
+    at.checkbox(key="choice:cdn:yields:7y").check()
     at.run()
     tokens = address(at).split()
     drawn = drawn_config(config_from_choices(*sort_tokens(tokens)[:2]), "cdn").yield_terms
-    check("3y ticked: the address draws Canada's 3-year with the five", drawn == ("3m", "2y", "3y", "5y", "10y", "30y"), (address(at), drawn))
+    check("7y ticked: the address draws Canada's 7-year with the defaults", drawn == ("1m", "3m", "1y", "3y", "7y", "10y", "30y", "r30"),
+          (address(at), drawn))
 
 
 def check_batch94(check: Check) -> None:
@@ -2513,7 +2516,9 @@ def check_batch133(check: Check) -> None:
         "nl": set(),
         "jp": set(),
     }, offered)
-    check("none ticked at the start", not any(at.checkbox(key=f"choice:{nation}:yields:{term}").value for nation, terms in offered.items() for term in terms))
+    check("r30 alone ticked at the start, where a nation has it (batch 50.2)",
+          {(nation, term) for nation, terms in offered.items() for term in terms if at.checkbox(key=f"choice:{nation}:yields:{term}").value}
+          == {(nation, "r30") for nation, terms in offered.items() if "r30" in terms})
     check("a box's caption is its term", at.checkbox(key="choice:us:yields:r10").label == "r10", at.checkbox(key="choice:us:yields:r10").label)
     check("the row captioned “real”, in each of the four sections", sum(block.value == "real" for block in at.markdown) == 4, [block.value for block in at.markdown][:12])
     check("… in the text's own colour, not a grey caption (batch 50.1)", not any(block.value == "real" for block in at.caption))
@@ -2527,7 +2532,7 @@ def check_batch133(check: Check) -> None:
     tokens = address(at).split()
     config = config_from_choices(*sort_tokens(tokens)[:2])
     check("r10 ticked for the U.S.: in the address, drawn with its defaults, the others' charts unchanged",
-          not at.exception and drawn_config(config, "us").yield_terms == ("3m", "2y", "5y", "10y", "30y", "r10")
+          not at.exception and drawn_config(config, "us").yield_terms == ("1m", "3m", "1y", "3y", "10y", "30y", "r10", "r30")
           and "r10" not in drawn_config(config, "cdn").yield_terms, address(at))
     at = new_page("--gdp --debt --interest -u --y:r10 --e:2026-09-01")
     check("an address of a real yield alone: its box ticked, the others not, and it draws",
