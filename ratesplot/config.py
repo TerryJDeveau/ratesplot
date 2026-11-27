@@ -563,12 +563,13 @@ QUOTE_SYMBOLS = {
     # The UK's three terms (batch 3; seen answering from the laptop 2026-10-06,
     # tools/uk_fixtures). Not GB3M-GB: that is a gilt repo rate, not a yield.
     "uk": {"5-Year": "GB5Y-GB", "10-Year": "GB10Y-GB", "20-Year": "GB20Y-GB"},
-    # Germany's seven terms (batch 4; all seen answering from the laptop
-    # 2026-10-06, tools/de_fixtures). CNBC does not know DE3M-DE. Quotes of
+    # Germany's terms (batch 4; all seen answering from the laptop
+    # 2026-10-06, tools/de_fixtures; the 3-year, DE3Y-DE, from Buddug
+    # 2026-11-27, batch 50.2). CNBC does not know DE3M-DE. Quotes of
     # Bunds, against the Bundesbank's fitted zero-coupon curve: used as they
     # are, as the UK's are (a few basis points apart on the day measured).
     "de": {
-        "1-Year": "DE1Y-DE", "2-Year": "DE2Y-DE", "5-Year": "DE5Y-DE", "7-Year": "DE7Y-DE",
+        "1-Year": "DE1Y-DE", "2-Year": "DE2Y-DE", "3-Year": "DE3Y-DE", "5-Year": "DE5Y-DE", "7-Year": "DE7Y-DE",
         "10-Year": "DE10Y-DE", "20-Year": "DE20Y-DE", "30-Year": "DE30Y-DE",
     },
 }
