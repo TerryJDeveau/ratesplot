@@ -10,6 +10,10 @@
   heading first, every link to an http(s) address or to another topic
   (``?help=TOPIC``, batch 29.2), which must exist; a name no option gives is
   refused (``frontend.help_text``), as the page's address may hold anything;
+* each nation's panel (batch 50.3): every control whose topic has nation
+  sections finds its nation's section (``frontend.help_section``), opened by a
+  short paragraph, which its help then carries, with the command line in the
+  nation's form and More at the section's anchor;
 * ``frontend.greyed_reason`` gives a reason exactly where the window greys a
   control (the rule of ``gui._update_dependent_controls`` and
   ``gui._update_auto_refresh``, which the page follows), for every control of
@@ -47,6 +51,7 @@ from ratesplot.frontend import (  # noqa: E402
     GREYABLE_OPTIONS,
     HELP_DIR,
     LINE_TOPICS,
+    LIMITS_TOPIC,
     MASTER,
     all_tick_offered,
     all_tick_reason,
@@ -54,9 +59,12 @@ from ratesplot.frontend import (  # noqa: E402
     greyed_line,
     greyed_reason,
     greyed_reasons,
+    GENERAL_IN_PANELS,
+    heading_anchor,
     help_address,
     help_blocks,
     help_link_topic,
+    help_section,
     help_text,
     help_topics,
     idle_choices,
@@ -64,8 +72,12 @@ from ratesplot.frontend import (  # noqa: E402
     master_label,
     master_text,
     master_ticked,
+    more_section,
     nation_boxes,
+    option_help_lines,
     option_of,
+    panel_lists,
+    topic_help_lines,
 )
 from ratesplot.options import OPTIONS, Kind, by_name, choices_from_config, command_line_tokens, nation_choice  # noqa: E402
 
@@ -127,6 +139,57 @@ def check_topics() -> None:
         except KeyError:
             refused = True
         check(f"a topic no option names is refused: {name!r}", refused)
+
+
+# The topics whose sections are the nations' (batch 50.3), and the longest a nation's own paragraph may be, so its ⓘ stays a panel.
+NATION_TOPICS = ("yields", "spreads", "policy-rates", "mortgages", "levels", "limits")
+LONGEST_OWN_LINES = 700
+# The margins beside a term's box in a nation's panel (``options.margin_options``): the prime rate's and the UK's tracker's.
+MARGINS = {"cdn": ("prime-margin",), "us": ("prime-margin",), "uk": ("tracker-margin",)}
+
+
+def check_nation_sections() -> None:
+    """Each nation's panel: its controls' topics each have its section, opened by its own short paragraph, which the ⓘ shows (batch 50.3)."""
+    print("-- each nation's own help (batch 50.3)")
+    for nation in NATIONS:
+        # The panel's controls that name a topic: its lists, a term's margin beside its box, Top and Bottom, the limits' heading.
+        named = [option for option in panel_lists(nation) if option.topic in NATION_TOPICS]
+        named += [by_name(name) for name in MARGINS.get(nation.key, ())]
+        named += [by_name("top"), by_name("bottom")]
+        for option in named:
+            key = nation_choice(nation, option)
+            section = help_section(option.topic, nation)
+            check(f"{nation.name}, {option.label}: its section of {option.topic}, opened by its own paragraph",
+                  section is not None and bool(section.paragraph), section)
+            if section is None or not section.paragraph:
+                continue
+            check(f"{nation.name}, {option.label}: its paragraph short ({len(section.paragraph)} characters)",
+                  len(section.paragraph) <= LONGEST_OWN_LINES, len(section.paragraph))
+            lines = option_help_lines(option, key)
+            check(f"{nation.name}, {option.label}: its ⓘ carries the paragraph, plain, and the command line in its form",
+                  section.plain in lines and "**" not in section.plain and "](" not in section.plain
+                  and lines[-1].startswith(f"Command line: --{nation.prefix}:"), lines)
+            check(f"{nation.name}, {option.label}: on the page, the paragraph as Markdown",
+                  section.paragraph in option_help_lines(option, key, markdown=True))
+            check(f"{nation.name}, {option.label}: More at its section, #{section.anchor}",
+                  help_address(option.topic, more_section(option.topic, key, option)) == f"?help={option.topic}#{heading_anchor(section.heading)}")
+        limits = help_section(LIMITS_TOPIC, nation)
+        check(f"{nation.name}: the limits' heading's ⓘ adds its currency's paragraph",
+              limits is not None and topic_help_lines("x", LIMITS_TOPIC, f"{nation.key}:{LIMITS_TOPIC}") == ("x", limits.plain))
+    for name in sorted(GENERAL_IN_PANELS):
+        lines = option_help_lines(by_name(name), f"cdn:{name}")
+        check(f"{name}: every nation's alike, the general text, its command line in the nation's form",
+              len(lines) == 3 and lines[-1].startswith("Command line: --cdn:") and more_section("limits", f"cdn:{name}", by_name(name)) is None, lines)
+    check("a control for every chart: the general text and command line, More at the top",
+          option_help_lines(by_name("yields")) == option_help_lines(by_name("yields"), "yields")
+          and option_help_lines(by_name("yields"))[-1] == f"Command line: {by_name('yields').usage}"
+          and more_section("yields", "yields") is None)
+    check("a heading naming several nations is each one's (the euro nations' policy rates)",
+          all(help_section("policy-rates", nation) is not None and help_section("policy-rates", nation).heading
+              == "France, Portugal, Italy, Spain and the Netherlands" for nation in NATIONS if nation.key in ("fr", "pt", "it", "es", "nl")))
+    check("the anchor is Streamlit's: lower case, spaces as hyphens, punctuation out",
+          heading_anchor("France, Portugal, Italy, Spain and the Netherlands") == "france-portugal-italy-spain-and-the-netherlands"
+          and heading_anchor("The United States") == "the-united-states")
 
 
 def check_reasons() -> None:
@@ -262,6 +325,7 @@ def check_fx() -> None:
 def main() -> int:
     check_texts()
     check_topics()
+    check_nation_sections()
     check_reasons()
     check_all_ticks()
     check_master()

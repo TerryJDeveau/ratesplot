@@ -3509,9 +3509,45 @@ def check_batch501(check: Check) -> None:
                   head is not None and int(head.grid_info()["row"]) == 0 and int(head.grid_info()["columnspan"]) == 2 and rows == [1, 2], rows)
         app.info_marks["us:limits"].event_generate("<Button-1>")
         root.update()
-        check("its panel: the limits' help, More to their topic", app.info_shown is not None and app.info_shown[1] == frontend.LIMITS_HELP
+        check("its panel: the limits' help, More to their topic", app.info_shown is not None and app.info_shown[1].startswith(frontend.LIMITS_HELP)
               and app.info_panel is not None and app.info_panel.title() == "Axis limits", app.info_shown)
         app._close_info()
+
+
+def check_batch503(check: Check) -> None:
+    """Batch 50.3 (decision 189): a nation's ⓘ adds its own lines and its command line; More opens the topic at its section."""
+
+    def panel_buttons(app) -> dict[str, tk.Widget]:
+        return {widget.cget("text"): widget for widget in all_widgets(app.info_panel) if widget.winfo_class() == "TButton"}
+
+    with window(f"--na:ca,jp -u {END}") as w:
+        app, root = w.app, w.root
+        for key, topic in (("cdn:yields", "yields"), ("jp:spread-pairs", "spreads"), ("jp:limits", "limits"), ("cdn:mortgage-terms", "mortgages")):
+            nation = frontend.key_nation(key)
+            section = frontend.help_section(topic, nation)
+            app.info_marks[key].event_generate("<Button-1>")
+            root.update()
+            tip = app.info_shown[1] if app.info_shown else ""
+            check(f"{key}: its panel adds {nation.name}'s own lines, plain", section is not None and section.plain in tip and "](" not in tip, tip[-200:])
+            if ":limits" not in key:
+                check(f"{key}: the command line in {nation.name}'s form", f"Command line: --{nation.prefix}:" in tip, tip[-80:])
+            panel_buttons(app)["More"].invoke()
+            root.update()
+            text = next(widget for widget in all_widgets(app.topic_windows[topic]) if widget.winfo_class() == "Text")
+            top = text.get(text.index("@0,0"), text.index("@0,0 lineend"))
+            # At the window's top, or, a section near the topic's end, shown with the view at the end.
+            at_end = text.yview()[1] >= 0.999 and text.bbox(gui._heading_mark(section.heading)) is not None
+            check(f"{key}: More opens {topic} at {nation.name}'s section", top.strip() == section.heading or at_end, (top, text.yview()))
+        app.info_marks["cdn:max"].event_generate("<Button-1>")
+        root.update()
+        check("Canada's Max: the general text, every nation's alike", "C$" not in app.info_shown[1] and "Command line: --cdn:max:" in app.info_shown[1],
+              app.info_shown[1])
+        panel_buttons(app)["More"].invoke()
+        root.update()
+        text = next(widget for widget in all_widgets(app.topic_windows["limits"]) if widget.winfo_class() == "Text")
+        check("its More: the limits at their top, the window kept", text.index("@0,0").split(".")[0] == "1", text.index("@0,0"))
+        for window_ in app.topic_windows.values():
+            window_.destroy()
 
 
 WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
@@ -3531,6 +3567,7 @@ WINDOW_CHECKS: dict[str, Callable[[Check], None]] = {
     "policy_terms": check_policy_terms,
     "levels": check_levels,
     "limits": check_limits,
+    "batch503": check_batch503,
     "projections": check_projections,
     "auto_refresh": check_auto_refresh,
     "hover": check_hover,
