@@ -6,6 +6,8 @@ A yield published once a month is drawn as a step held for its month, a daily on
 
 ## Canada
 
+Every term but the 20-year, and the 30-year real yield r30; ticked at the start: 1m, 3m, 1y, 3y, 10y, 30y and r30. The Bank of Canada's yields, monthly to 2000 (the 30-year from 1919, the 3-month from 1934, the 2-year from 1949, the 5- and 10-year from 1951) and every business day from 2001, when the 1- and 6-month and the 1-, 3- and 7-year begin; r30 from 1991-11.
+
 - **3-month, 1934 to 2000: the treasury-bill auctions.** The Bank of Canada's table of the average yield at the 3-month treasury-bill auction ([its PDF](https://www.bankofcanada.ca/wp-content/uploads/2010/09/selected_historical_v122541.pdf)), one value a month: to 1952 the month's average of the tenders, from 1953 to 1960 the tender after the month's last Wednesday. The first public tender was on 1934-03-01.
 - **2-year, 1949 to 2000.** From 1982-06 the Bank's table of the 2-year benchmark bond yield ([its PDF](https://www.bankofcanada.ca/wp-content/uploads/2010/09/selected_historical_v122538.pdf)), the mid-market closing yield of selected Canada bonds maturing in about two years, monthly. Before it, from 1949, the Bank's average yield of Canada bonds of 1 to 3 years, the last Wednesday of each month, from Statistics Canada's table [10-10-0122](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1010012201); over 1982 to 2000 that average ran 0.08 points above the benchmark.
 - **5-year, 1951 to 2000.** From 1980-11 the Bank's table of the 5-year benchmark bond yield ([its PDF](https://www.bankofcanada.ca/wp-content/uploads/2010/09/selected_historical_v122540.pdf)); before it, from 1951, the average yield of Canada bonds of 3 to 5 years from the same table 10-10-0122, which over 1982 to 2000 averaged the same as the benchmark.
@@ -17,9 +19,13 @@ The program holds the five tables as transcribed and checked month by month agai
 
 ## The United States
 
+Every term from the 1-month to the 30-year, and the real yields r5 to r30; ticked at the start: 1m, 3m, 1y, 3y, 10y, 30y and r30. The Treasury's constant-maturity yields on FRED, daily: the 1-, 3-, 5-, 10- and 20-year from 1962, the 7-year from 1969-07, the 2-year from 1976-06, the 30-year from 1977-02, the 3- and 6-month from 1981-09, the 1-month from 2001-07; r5, r7 and r10 from 2003, r20 from 2004-07, r30 from 2010-02.
+
 - **1962 on: the Treasury's constant-maturity yields.** The Federal Reserve's [H.15](https://www.federalreserve.gov/releases/h15/) release, read from FRED: yields of Treasury securities at a constant maturity, daily, the figures of the Treasury's daily par yield curve. From 1962 the 1-, 3-, 5-, 10- and 20-year ([DGS1](https://fred.stlouisfed.org/series/DGS1), [DGS3](https://fred.stlouisfed.org/series/DGS3), [DGS5](https://fred.stlouisfed.org/series/DGS5), [DGS10](https://fred.stlouisfed.org/series/DGS10), [DGS20](https://fred.stlouisfed.org/series/DGS20)); from 1969-07 the 7-year ([DGS7](https://fred.stlouisfed.org/series/DGS7)); from 1976-06 the 2-year ([DGS2](https://fred.stlouisfed.org/series/DGS2)); from 1977-02 the 30-year ([DGS30](https://fred.stlouisfed.org/series/DGS30)); from 1981-09 the 3- and 6-month ([DGS3MO](https://fred.stlouisfed.org/series/DGS3MO), [DGS6MO](https://fred.stlouisfed.org/series/DGS6MO)); from 2001-07 the 1-month ([DGS1MO](https://fred.stlouisfed.org/series/DGS1MO)). The 20-year has no figures from 1987-01 to 1993-09, a break in its line. FRED had 2026-10-26's yields on 2026-10-27; the Treasury posts each day's the same afternoon, and the latest values take them from there.
 
 ## The United Kingdom
+
+The 5-, 10- and 20-year alone, and the real yields r5 to r30; ticked at the start: 5y, 10y, 20y and r30, the 5-year standing in for the 3-year and the 20-year for the 30-year. The Bank of England's: the 10-year from 1935 and the 20-year from 1963, monthly, then its daily par yields (the 10-year from 1993-11, the 5-year from 1993-12, the 20-year from 2000-01); the real yields from its real spot curve, daily from 1985, r30 from 2016-01.
 
 - **1935 to 1993: the Bank of England's millennium dataset.** "A millennium of macroeconomic data for the UK", version 3.1 ([Research datasets](https://www.bankofengland.co.uk/statistics/research-datasets)): the 10-year gilt yield from 1935, a series the dataset splices together, and the 20-year gilt yield from 1963, monthly averages, each until its daily series begins. The dataset ends with 2016 or 2017 and is no longer updated.
 - **1993 on: the Bank of England's par yields.** Nominal par yields from the Bank's fitted curve of gilt yields, daily, in its [database](https://www.bankofengland.co.uk/boeapps/database/): the 10-year from 1993-11 (IUDMNPY), the 5-year from 1993-12 (IUDSNPY), the 20-year from 2000-01 (IUDLNPY). The Bank aims to publish each day's curves by noon of the following business day ([Yield curves](https://www.bankofengland.co.uk/statistics/yield-curves)).
@@ -28,6 +34,8 @@ The UK has only these three nominal terms.
 
 ## Germany
 
+The 1-, 2-, 3-, 5-, 7-, 10-, 20- and 30-year, and r5, r7 and r10; ticked at the start: 1y, 3y, 10y and 30y. The Bundesbank's term structure at month ends from 1972-09 (the 20-year from 1986-06, the 30-year from 2000-01), daily from 1997-08-07 (the 30-year from 2000-08-01); before it the 10-year from 1956-05, the yield of public debt securities. The real yields, from 2014-04, are the program's own working.
+
 - **10-year, 1956 to 1972: the yield of public debt securities.** The Bundesbank's monthly average yield of the public debt securities outstanding ([BBK01.WU0004](https://www.bundesbank.de/dynamic/action/en/statistics/time-series-databases/time-series-databases/759784/759784?tsId=BBK01.WU0004)), from 1956-05 to 1972-08, drawn as the 10-year. The series ends in 2020-04. At 1972-09 the fitted 10-year stood 0.18 points above it.
 - **1972 on: the Bundesbank's term structure.** Yields of zero-coupon Federal securities, estimated by the Svensson method from the yields of the listed Federal bonds outstanding ([Term structure of interest rates](https://www.bundesbank.de/en/statistics/money-and-capital-markets/interest-rates-and-yields/term-structure-of-interest-rates); the 10-year: [BBSIS.D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A](https://www.bundesbank.de/dynamic/action/en/statistics/time-series-databases/time-series-databases/759784/759784?tsId=BBSIS.D.I.ZST.ZI.EUR.S1311.B.A604.R10XX.R.A.A._Z._Z.A)). The values at each month's end from 1972-09 for 1, 2, 3, 5, 7 and 10 years, from 1986-06 for 20 years and from 2000-01 for 30, drawn as steps; then daily from 1997-08-07, the 30-year from 2000-08-01. The Bundesbank publishes the day's values during the day: at 11:50 UTC on 2026-10-21 that day's were there.
 
@@ -35,15 +43,29 @@ Germany has no 1-month, 3-month or 6-month in the program.
 
 ## Portugal
 
+The 2-, 3-, 5-, 7- and 10-year, no real yields; ticked at the start: 2y, 3y and 10y, the 2-year standing in for the 1-year. The Banco de Portugal's yields of fixed-rate Treasury bonds by residual maturity, on BPstat, daily from 1993-07-16, the 5-year from 1994-02-04. Before 1998 the shorter terms miss months each year, each gap a break in its line.
+
 - **1993 on: the Banco de Portugal's yields.** Yields of Portuguese Treasury bonds at a fixed rate by residual maturity, the average of the day's quotes (from LSEG), daily, in the Banco de Portugal's statistics database [BPstat](https://bpstat.bportugal.pt/) (domain "Secondary market"): the 2-, 3-, 7- and 10-year from 1993-07-16, the 5-year from 1994-02-04. Each month's average of the 10-year equals the OECD's monthly long-term interest rate for Portugal ([IRLTLT01PTM156N](https://fred.stlouisfed.org/series/IRLTLT01PTM156N)) to 0.006 in 399 of 400 months; the chart drew that monthly average before version 9.13.
 - **Gaps.** Before 1998 the 2-, 3- and 5-year miss several months each year; the 2-year misses 2002-07-17 to 2003-02-13, the 7-year 1993-10-22 to 1995-12-27 and 2015-02-03 to 2016-04-19. Each gap is a break in its line. BPstat's 4-year is not drawn (the program has no such term).
 
 ## France
 
+The 1-, 2-, 3-, 5-, 7-, 10-, 20- and 30-year, no real yields; ticked at the start: 1y, 3y, 10y and 30y, so with France ticked a chart with no Start begins 2006-10-02, the 30-year's first day. The Banque de France's constant-maturity OAT yields (TEC) on Webstat, daily from 2004-11-03, the 30-year from 2006-10-02; before 2004-11 the 10-year is the OECD's monthly average, from 1960.
+
 - **2004 on: the Banque de France's yields.** The yields of French government bonds (OATs) at a constant maturity ("taux de l'échéance constante", TEC), each worked out by the Banque de France between the two OATs whose maturities lie either side of the term, daily, in its statistics service [Webstat](https://webstat.banque-france.fr/): 1, 2, 3, 5, 7, 10, 20 and 30 years, from 2004-11-03, the 30-year from 2006-10-02. Webstat updates its figures three times a day; when measured (2026-11-24), a day's figures were there the next morning. Its 15- and 25-year are not drawn (the program has no such terms).
 - **The 10-year before 2004-11: the OECD's.** The OECD's monthly long-term interest rate for France ([IRLTLT01FRM156N](https://fred.stlouisfed.org/series/IRLTLT01FRM156N)), from 1960, the yield of a benchmark bond. Where both exist, each month's average of Webstat's 10-year is within 0.005 of it from 2025, but up to 0.12 apart from 2008 to 2023, where the benchmark bond's maturity is not exactly ten years; 0.008 apart in 2004-11, where the daily yields begin. The chart drew the OECD's alone before version 9.14.
 
-Italy, Spain and the Netherlands have the 10-year alone, the OECD's monthly average (their pages say more). Japan has the Ministry of Finance's daily yields at constant maturities of 1, 2, 3, 5, 7, 10, 20 and 30 years, the shorter terms from 1974-09-24, the 10-year from 1986-07-05, the 30-year from 1999-09-02 ([its page](?help=japan)).
+## Italy, Spain and the Netherlands
+
+The 10-year alone, a monthly average drawn across its month: so no other term, and no spread of their own. Italy's from 1980-01, Eurostat's EMU convergence-criterion bond yield to 1991-02, then the OECD's long-term interest rate ([IRLTLT01ITM156N](https://fred.stlouisfed.org/series/IRLTLT01ITM156N)); Spain's the OECD's from 1980-01 ([IRLTLT01ESM156N](https://fred.stlouisfed.org/series/IRLTLT01ESM156N)); the Netherlands' the OECD's from 1959-01 ([IRLTLT01NLM156N](https://fred.stlouisfed.org/series/IRLTLT01NLM156N)), each read from FRED. Their pages say more ([Italy](?help=italy), [Spain](?help=spain), [the Netherlands](?help=netherlands)).
+
+## Japan
+
+The 1-, 2-, 3-, 5-, 7-, 10-, 20- and 30-year, no real yields; ticked at the start: 1y, 3y, 10y and 30y. The Ministry of Finance's yields of Japanese government bonds at constant maturities, daily: the 1-, 2-, 3-, 5- and 7-year from 1974-09-24, the 10-year from 1986-07-05, the 20-year from 1986-12-01, the 30-year from 1999-09-02.
+
+- **1974 on: the Ministry of Finance's yields.** The yields of Japanese government bonds (JGBs) at constant maturities, daily, in two files the Ministry publishes: the history to the last month's end ([jgbcme_all.csv](https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/historical/jgbcme_all.csv)) and the current month to the day before ([jgbcme.csv](https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/jgbcme.csv)). Its 15-, 25- and 40-year are not drawn (the program has no such terms). There are no quotes during the day for Japan: its yields end at the Ministry's last day, the day before ([its page](?help=japan)).
+
+Japan has no 1-month, 3-month or 6-month in the program.
 
 ## Real yields
 
