@@ -2058,7 +2058,8 @@ def check_batch293(check: Check) -> None:
     tips = {
         "flag:label": "end-labels", "flag:regression": "regression", "value:regression-tolerance": "regression",
         "size:width": "layout", "size:height": "layout", "value:start": "dates", "value:end": "dates",
-        "value:cdn:min": "limits", "value:cdn:max": "limits", "value:cdn:top": "limits", "value:cdn:bottom": "limits",
+        # Canada's Top and Bottom at its section of the limits since batch 50.3; Min and Max, every nation's alike, at the top.
+        "value:cdn:min": "limits", "value:cdn:max": "limits", "value:cdn:top": "limits#canada", "value:cdn:bottom": "limits#canada",
         "flag:auto-refresh": "auto-refresh", "value:auto-refresh-minutes": "auto-refresh", "flag:projections": "projections",
         "flag:hover": "hover",
     }
