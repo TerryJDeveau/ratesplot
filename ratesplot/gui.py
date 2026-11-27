@@ -2082,8 +2082,8 @@ class RatesPlotApp:
             return
         blocks = help_blocks(help_text(topic))
         window = tk.Toplevel(self.root)
-        heading = next((block for block in blocks if block.kind == "heading"), None)
-        window.title(" ".join(span.text for span in heading.spans) if heading else topic)
+        title = next((block for block in blocks if block.kind == "heading"), None)
+        window.title(" ".join(span.text for span in title.spans) if title else topic)
         window.geometry(_over_window(self.root, *_TOPIC_SIZE_PX))  # on the window's own monitor (batch 31.10)
         text = tk.Text(window, wrap="word", padx=14, pady=10, borderwidth=0, cursor="arrow")
         bar = ttk.Scrollbar(window, command=text.yview)
