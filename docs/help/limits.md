@@ -8,7 +8,7 @@ In percent, as plain numbers: `--max:8`, `--min:-0.5`. A negative Min is allowed
 
 ## Top and Bottom: the right axis
 
-- **An amount** in the chart's own currency (C$ for Canada, $ for the U.S., £ for the UK, € for Germany), with k, m, b or t for thousands, millions, billions or trillions; a number alone is billions: `--top:20t`, `--bottom:500` (500 billion). Under [Per capita](?help=per-capita) the amounts are per person (`--top:100k`).
+- **An amount** in the chart's own currency (C$ for Canada, $ for the U.S., £ for the UK, € for the euro nations, ¥ for Japan), with k, m, b or t for thousands, millions, billions or trillions; a number alone is billions: `--top:20t`, `--bottom:500` (500 billion). Under [Per capita](?help=per-capita) the amounts are per person (`--top:100k`).
 - **A percentage** under [As % of GDP](?help=percent-of-gdp): `--top:150%`. An amount is refused there, a percentage elsewhere, and the boxes are cleared when the measure changes. The unit beside each box shows the currency, and is blank under % of GDP.
 
 With one of the two set, the other end is not fitted to the curves but set at a fixed default, so that this axis never mixes a limit chosen with one taken from the data: 10 billion or 100 trillion, 0.1 % or 1,000 % under % of GDP, 1 or 1 million per person. For a close view, set both. Both boxes are greyed while no curve is drawn on the right axis.
@@ -38,4 +38,44 @@ A box dragged over a chart sets that chart's limits from its height, and Start a
 
 ## Each nation's own
 
-The limits are each nation's own, under its chart in the window and in its section on the page ([Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [Spain](?help=spain), [the Netherlands](?help=netherlands), [Japan](?help=japan)). On the command line a limit with no prefix is for every chart (`--max:8`); a nation's prefix sets its chart alone (`--us:max:8`, `--cdn:top:5t`).
+The limits are each nation's own, under its chart in the window and in its section on the page ([Canada](?help=canada), [the United States](?help=united-states), [the United Kingdom](?help=united-kingdom), [Germany](?help=germany), [France](?help=france), [Portugal](?help=portugal), [Italy](?help=italy), [Spain](?help=spain), [the Netherlands](?help=netherlands), [Japan](?help=japan)). On the command line a limit with no prefix is for every chart (`--max:8`); a nation's prefix sets its chart alone (`--us:max:8`, `--cdn:top:5t`). Each nation's Top and Bottom are in its own currency:
+
+### Canada
+
+Top and Bottom are in Canadian dollars, C$, with k, m, b or t for thousands to trillions; a number alone is billions: `--cdn:top:5t`. Another nation's currency is named by its code (USD5t) and converted at the chart's End date; a limit with no code stays in C$ under a master currency.
+
+### The United States
+
+Top and Bottom are in U.S. dollars, $, with k, m, b or t for thousands to trillions; a number alone is billions: `--us:top:20t`. Another nation's currency is named by its code (CAD20t) and converted at the chart's End date; a limit with no code stays in $ under a master currency.
+
+### The United Kingdom
+
+Top and Bottom are in pounds sterling, £, with k, m, b or t for thousands to trillions; a number alone is billions: `--uk:top:5t`. Another nation's currency is named by its code (USD5t) and converted at the chart's End date; a limit with no code stays in £ under a master currency.
+
+### Germany
+
+Top and Bottom are in euros, €, with k, m, b or t for thousands to trillions; a number alone is billions: `--ger:top:5t`. Amounts before 1999 are Deutsche Marks at 1.95583 to the euro, so a limit is in euros throughout. Another nation's currency is named by its code (USD5t), converted at the chart's End date.
+
+### France
+
+Top and Bottom are in euros, €, with k, m, b or t for thousands to trillions; a number alone is billions: `--fr:top:5t`. Amounts before 1999 are French francs at 6.55957 to the euro, so a limit is in euros throughout. Another nation's currency is named by its code (USD5t), converted at the chart's End date.
+
+### Portugal
+
+Top and Bottom are in euros, €, with k, m, b or t for thousands to trillions; a number alone is billions: `--pt:top:500`. Amounts before 1999 are Portuguese escudos at 200.482 to the euro, so a limit is in euros throughout. Another nation's currency is named by its code (USD500b), converted at the chart's End date.
+
+### Italy
+
+Top and Bottom are in euros, €, with k, m, b or t for thousands to trillions; a number alone is billions: `--it:top:5t`. Amounts before 1999 are Italian lire at 1,936.27 to the euro, so a limit is in euros throughout. Another nation's currency is named by its code (USD5t), converted at the chart's End date.
+
+### Spain
+
+Top and Bottom are in euros, €, with k, m, b or t for thousands to trillions; a number alone is billions: `--es:top:2t`. Amounts before 1999 are Spanish pesetas at 166.386 to the euro, so a limit is in euros throughout. Another nation's currency is named by its code (USD2t), converted at the chart's End date.
+
+### The Netherlands
+
+Top and Bottom are in euros, €, with k, m, b or t for thousands to trillions; a number alone is billions: `--nl:top:1t`. Amounts before 1999 are Dutch guilders at 2.20371 to the euro, so a limit is in euros throughout. Another nation's currency is named by its code (USD1t), converted at the chart's End date.
+
+### Japan
+
+Top and Bottom are in yen, ¥, with k, m, b or t for thousands to trillions; a number alone is billions: `--jp:top:2000t`. Japan's debt is over ¥1,000 trillion (¥1,273.8 trillion in 2026-Q2), and with Bottom alone set Top falls back to ¥100 trillion, below it, so set both. Another nation's currency is named by its code (USD10t), converted at the chart's End date.

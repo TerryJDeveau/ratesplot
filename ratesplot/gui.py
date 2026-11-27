@@ -212,6 +212,8 @@ from .frontend import (
     nation_boxes,
     nation_of,
     option_help_lines,
+    topic_help_lines,
+    more_section,
     option_of,
     date_buttons,
     move_dates_updates,
@@ -935,9 +937,14 @@ def _block_overhead(frame: ttk.Frame) -> int:
     return _overheads[kind]
 
 
-def _tooltip_text(option: Option) -> str:
-    """Return an option's group notes, its help text and its command-line spelling, one per line."""
-    return "\n".join(option_help_lines(option))
+def _tooltip_text(option: Option, key: str | None = None) -> str:
+    """Return an option's group notes, its help text, a nation's own lines where ``key`` is its control (batch 50.3) and its command-line spelling, one per line."""
+    return "\n".join(option_help_lines(option, key))
+
+
+def _heading_mark(heading: str) -> str:
+    """The Text mark at a help topic's heading ``heading`` (batch 50.3): letters, digits and underscores alone, as an index's mark must be."""
+    return "heading_" + re.sub(r"\W", "_", heading)
 
 
 def _render_help(text: tk.Text, blocks: list[HelpBlock], open_topic: Callable[[str], None]) -> None:
@@ -960,6 +967,10 @@ def _render_help(text: tk.Text, blocks: list[HelpBlock], open_topic: Callable[[s
     for number, block in enumerate(blocks):
         if block.kind == "heading":
             tags: tuple[str, ...] = ("h1" if block.level == 1 else "h2",)
+            # Where More from a nation's panel scrolls to (batch 50.3, ``GUI._scroll_topic``).
+            mark = _heading_mark("".join(span.text for span in block.spans))
+            text.mark_set(mark, "end-1c")
+            text.mark_gravity(mark, "left")
         elif block.kind == "item":
             tags = ("item",)
             text.insert("end", "•  ", tags)
@@ -1057,6 +1068,7 @@ class RatesPlotApp:
         self.info_panel: tk.Toplevel | None = None
         self.info_shown: tuple[str, str, str] | None = None  # the open panel's key, tip and reason
         self.topic_windows: dict[str, tk.Toplevel] = {}
+        self.topic_texts: dict[str, tk.Text] = {}  # each topic window's text, scrolled to a section (batch 50.3)
         for tick in ALL_TICKS:
             self.flag_vars[tick] = tk.BooleanVar(value=False)
         # The master currency (batch 30.2): its one text, and its box in each
@@ -1511,7 +1523,7 @@ class RatesPlotApp:
         variable.trace_add("write", lambda *_args: self._text_changed(key))
         self.value_labels[key] = label
         self.value_entries[key] = entry
-        tip = _tooltip_text(option) + "\nBlank = default (shown in grey)."
+        tip = _tooltip_text(option, key) + "\nBlank = default (shown in grey)."
         for widget in (label, entry):
             _Tooltip(widget, tip, info=True)
         self.hints[key] = _Hint(entry, variable, tip)
@@ -1545,7 +1557,7 @@ class RatesPlotApp:
         # A level ticked greys the UK's aggregate debts (batch 10.4): the dependent controls first.
         editor = _LevelsEditor(payload, on_change=self._choices_changed, nation=nation)
         self.level_editors[key] = editor
-        tip = _tooltip_text(option) + "\nNone ticked = debt and interest in total."
+        tip = _tooltip_text(option, key) + "\nNone ticked = debt and interest in total."
         for index, (letter, text) in enumerate(nation.level_boxes):
             check = ttk.Checkbutton(cell, text=text, variable=editor.boxes[letter], command=editor.box_changed)
             check.grid(row=1 + index // 2, column=index % 2, sticky="w", padx=(0, 6))
@@ -1574,7 +1586,7 @@ class RatesPlotApp:
         payload = tk.StringVar()
         self.payload_vars[key] = payload
         box = ttk.Frame(frame)
-        tip = _tooltip_text(option)
+        tip = _tooltip_text(option, key)
         if nation is not None:
             # A cell of the panel's flow, which puts the gap between cells.
             head = ttk.Frame(frame)  # the label and its ⓘ
@@ -1894,8 +1906,10 @@ class RatesPlotApp:
         head.grid(row=0, column=0, columnspan=len(LIMIT_COLUMNS), sticky="w")
         heading = ttk.Label(head, text=LIMITS_HEADING)
         heading.pack(side="left")
-        _Tooltip(heading, LIMITS_HELP, info=True)
-        self._info_mark(head, f"{nation.key}:{LIMITS_TOPIC}", None, LIMITS_HELP, title=LIMITS_HEADING, topic=LIMITS_TOPIC).pack(
+        limits_key = f"{nation.key}:{LIMITS_TOPIC}"
+        limits_help = "\n".join(topic_help_lines(LIMITS_HELP, LIMITS_TOPIC, limits_key))  # with the nation's currency (batch 50.3)
+        _Tooltip(heading, limits_help, info=True)
+        self._info_mark(head, limits_key, None, limits_help, title=LIMITS_HEADING, topic=LIMITS_TOPIC).pack(
             side="left", padx=(3, 0)
         )
         # A column per axis under it, Max above Min, Top above Bottom (LIMIT_COLUMNS).
@@ -2028,7 +2042,10 @@ class RatesPlotApp:
         # Packed from the right: More in the lower right corner, Close left of
         # it. More shuts the panel, whose window would otherwise stay in front.
         if topic:
-            ttk.Button(buttons, text="More", command=lambda: (self._close_info(), self._show_topic(topic))).pack(side="right")
+            # At the nation's section in a nation's panel (batch 50.3), else the topic's top.
+            section = more_section(topic, key, option)
+            heading = section.heading if section is not None else ""
+            ttk.Button(buttons, text="More", command=lambda: (self._close_info(), self._show_topic(topic, heading))).pack(side="right")
         ttk.Button(buttons, text="Close", command=self._close_info).pack(side="right", padx=(0, 6) if topic else 0)
         panel.bind("<Escape>", lambda _event: self._close_info())
         panel.protocol("WM_DELETE_WINDOW", self._close_info)
@@ -2047,23 +2064,26 @@ class RatesPlotApp:
             self.info_panel.destroy()
         self.info_panel = None
 
-    def _show_topic(self, topic: str) -> None:
+    def _show_topic(self, topic: str, heading: str = "") -> None:
         """More: topic ``topic``'s text in a window of its own, scrollable, its links clickable; one window per topic.
 
         The text is ``docs/help/TOPIC.md``, the page's help view shows the
         same file. Tk shows no Markdown, so its headings, paragraphs, items,
         bold, code and links are rendered simply (``frontend.help_blocks``).
+        ``heading`` names the section to show at the window's top, a
+        nation's from its panel (batch 50.3), whether the window was open or not.
         """
         window = self.topic_windows.get(topic)
         if window is not None and window.winfo_exists():
             window.deiconify()
             window.lift()
             window.focus_set()
+            self._scroll_topic(topic, heading)
             return
         blocks = help_blocks(help_text(topic))
         window = tk.Toplevel(self.root)
-        heading = next((block for block in blocks if block.kind == "heading"), None)
-        window.title(" ".join(span.text for span in heading.spans) if heading else topic)
+        title = next((block for block in blocks if block.kind == "heading"), None)
+        window.title(" ".join(span.text for span in title.spans) if title else topic)
         window.geometry(_over_window(self.root, *_TOPIC_SIZE_PX))  # on the window's own monitor (batch 31.10)
         text = tk.Text(window, wrap="word", padx=14, pady=10, borderwidth=0, cursor="arrow")
         bar = ttk.Scrollbar(window, command=text.yview)
@@ -2074,6 +2094,15 @@ class RatesPlotApp:
         text.configure(state="disabled")
         window.bind("<Escape>", lambda _event: window.destroy())
         self.topic_windows[topic] = window
+        self.topic_texts[topic] = text
+        self._scroll_topic(topic, heading)
+
+    def _scroll_topic(self, topic: str, heading: str) -> None:
+        """Bring section ``heading`` of topic ``topic``'s window to its top (``_render_help`` marks each heading); none: the top."""
+        text = self.topic_texts[topic]
+        text.update_idletasks()
+        mark = _heading_mark(heading) if heading else ""
+        text.yview(mark if mark and mark in text.mark_names() else "1.0")
 
     # -- choices ------------------------------------------------------------
 

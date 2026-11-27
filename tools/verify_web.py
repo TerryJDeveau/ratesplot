@@ -2006,14 +2006,16 @@ def check_batch292(check: Check) -> None:
         check(f"{name}: its tip ends with More to its topic", not at.exception and box.help.endswith(f"[More](?help={topic})"), box.help[-50:])
     # A list's help is on its label alone (``web._choices_control``).
     labels = {block.value: block.proto.help for block in at.markdown}
+    # In Canada's section since batch 50.3: More at Canada's section of the topic.
     for label, topic in (("Yield terms", "yields"), ("Policy rates", "policy-rates"), ("Mortgage terms", "mortgages"), ("Spreads", "spreads")):
         tip = labels.get(f"**{label}**", "")
-        check(f"{label}: its label's tip ends with More to its topic", tip.endswith(f"[More](?help={topic})"), tip[-50:])
+        check(f"{label}: its label's tip ends with More to its topic, at Canada's section", tip.endswith(f"[More](?help={topic}#canada)"), tip[-50:])
     margin = at.text_input(key="value:cdn:prime-margin")
-    check("the prime margin, greyed: its reason, then More to the mortgages' topic",
-          "Greyed because" in margin.help and margin.help.endswith("[More](?help=mortgages)"), margin.help[-80:])
+    check("the prime margin, greyed: its reason, then More to the mortgages' topic, at Canada's section",
+          "Greyed because" in margin.help and margin.help.endswith("[More](?help=mortgages#canada)"), margin.help[-80:])
     tracker = new_page("--na:gb --e:2026-09-01").text_input(key="value:uk:tracker-margin")
-    check("the UK's tracker margin: More to the mortgages' topic", tracker.help.endswith("[More](?help=mortgages)"), tracker.help[-50:])
+    check("the UK's tracker margin: More to the mortgages' topic, at the UK's section",
+          tracker.help.endswith("[More](?help=mortgages#the-united-kingdom)"), tracker.help[-50:])
     for topic, link in (("yields", "[Yield spreads](?help=spreads)"), ("policy-rates", None), ("mortgages", "[Policy rates](?help=policy-rates)"),
                         ("spreads", "[Bond yields](?help=yields)")):
         view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
@@ -2056,7 +2058,8 @@ def check_batch293(check: Check) -> None:
     tips = {
         "flag:label": "end-labels", "flag:regression": "regression", "value:regression-tolerance": "regression",
         "size:width": "layout", "size:height": "layout", "value:start": "dates", "value:end": "dates",
-        "value:cdn:min": "limits", "value:cdn:max": "limits", "value:cdn:top": "limits", "value:cdn:bottom": "limits",
+        # Canada's Top and Bottom at its section of the limits since batch 50.3; Min and Max, every nation's alike, at the top.
+        "value:cdn:min": "limits", "value:cdn:max": "limits", "value:cdn:top": "limits#canada", "value:cdn:bottom": "limits#canada",
         "flag:auto-refresh": "auto-refresh", "value:auto-refresh-minutes": "auto-refresh", "flag:projections": "projections",
         "flag:hover": "hover",
     }
@@ -2764,6 +2767,45 @@ def check_batch37(check: Check) -> None:
           and all(row == [f"{drawn}; {version_text()}"] for row in saved_subtitles(at).values()), address(at))
 
 
+def check_batch503(check: Check) -> None:
+    """Batch 50.3 (decision 189): a nation's tips add its own paragraph and its command line, More at its section; the sections shown."""
+    at = new_page("--na:ca,jp,fr --e:2026-09-01")
+    labels: dict[str, list[str]] = {}
+    for block in at.markdown:
+        labels.setdefault(block.value, []).append(block.proto.help)
+    for nation, topic, label, words in (
+        ("cdn", "yields", "Yield terms", "Every term but the 20-year"),
+        ("jp", "yields", "Yield terms", "The Ministry of Finance's yields"),
+        ("fr", "policy-rates", "Policy rates", "the ECB's main refinancing rate"),
+        ("jp", "levels", "Debt and interest by level", "debt alone: no interest is drawn for Japan"),
+    ):
+        nation_ = next(each for each in NATIONS if each.key == nation)
+        section = frontend.help_section(topic, nation_)
+        tips = [tip for tip in labels.get(f"**{label}**", []) if f"--{nation_.prefix}:" in tip]
+        tip = tips[0] if tips else ""
+        check(f"{nation_.name}, {label}: its own paragraph, the command line in its form, More at its section", not at.exception
+              and words in tip and f"Command line: --{nation_.prefix}:" in tip and tip.endswith(f"[More](?help={topic}#{section.anchor})"), tip[-160:])
+    limits = [tip for tip in labels.get(f"**{frontend.LIMITS_HEADING}**", []) if "in yen" in tip]
+    check("Japan's limits' heading: its currency's paragraph, More at Japan's section",
+          len(limits) == 1 and limits[0].endswith("[More](?help=limits#japan)"), labels.get(f"**{frontend.LIMITS_HEADING}**", []))
+    top = at.text_input(key="value:jp:top")
+    check("Japan's Top: its command line in its form, More at Japan's section of the limits",
+          "Command line: --jp:top:VAL" in top.help and top.help.endswith("[More](?help=limits#japan)"), top.help[-120:])
+    maximum = at.text_input(key="value:jp:max")
+    check("Japan's Max: the general text, More at the limits' top", "in yen" not in maximum.help
+          and maximum.help.endswith("[More](?help=limits)"), maximum.help[-80:])
+    for topic, headings in (("yields", ("## Italy, Spain and the Netherlands", "## Japan")), ("spreads", ("## Japan",)),
+                            ("policy-rates", ("## France, Portugal, Italy, Spain and the Netherlands",)),
+                            ("levels", ("## France", "## Portugal", "## Italy", "## Spain", "## The Netherlands", "## Japan")),
+                            ("limits", ("### Canada", "### Japan"))):
+        view = AppTest.from_file(APP, default_timeout=TIMEOUT_SECONDS)
+        view.query_params["help"] = topic
+        view.run()
+        shown = "\n".join(block.value for block in view.markdown)
+        check(f"?help={topic}: the sections added in 50.3", not view.exception and all(heading in shown.splitlines() for heading in headings),
+              shown[:60])
+
+
 PAGE_CHECKS = (
     check_address_and_rules, check_bad_addresses, check_view_buttons, check_calendars, check_size_boxes, check_choice_boxes,
     check_nation_sections, check_uk, check_de, check_fr, check_none_lists, check_greyed, check_wrong_fields, check_layout,
@@ -2772,7 +2814,7 @@ PAGE_CHECKS = (
     check_batch281, check_batch28s2, check_batch283, check_batch284, check_batch291, check_batch292, check_batch293,
     check_batch31, check_batch324, check_batch34, check_batch30, check_line_help, check_start_stopped, check_batch134,
     check_batch135, check_batch133, check_batch35, check_wait_colour, check_batch37, check_batch38, check_batch262,
-    check_batch263, check_batch473, check_batch46, check_batch141, check_batch142,
+    check_batch263, check_batch473, check_batch46, check_batch141, check_batch142, check_batch503,
 )
 
 

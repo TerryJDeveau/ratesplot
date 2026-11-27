@@ -6,27 +6,41 @@ Each spread is taken from the yields as the chart has them: the same sources and
 
 ## Canada
 
-The Bank of Canada's yields: 10y–2y, 10y–3m and 30y–10y from 1951 as monthly steps, from 2001 daily. Before 2001 the 2-year is the 1 to 3 year average until 1982-05, the 10-year the 5 to 10 year average and the 30-year the over-10-year average, so the spreads of those years are between those averages; from 2001 the 30-year is the long-term benchmark.
+10y–2y ticked at the start; 10y–3m, 30y–10y, 2y–3m, 5y–2y, 30y–2y and 10y–5y offered, Canada having no 20-year. The Bank of Canada's yields: monthly steps from 1951 (2y–3m and 30y–2y from 1949), daily from 2001.
+
+Before 2001 the 2-year is the 1 to 3 year average until 1982-05, the 5-year the 3 to 5 year average until 1980-10, the 10-year the 5 to 10 year average and the 30-year the over-10-year average, so the spreads of those years are between those averages; from 2001 the 30-year is the long-term benchmark.
 
 ## The United States
 
-The Treasury's constant-maturity yields, daily: 10y–2y from 1976-06, 30y–10y from 1977-02, 10y–3m from 1981-09. The program's 10y–2y and 10y–3m agree with FRED's own spread series ([T10Y2Y](https://fred.stlouisfed.org/series/T10Y2Y), [T10Y3M](https://fred.stlouisfed.org/series/T10Y3M)) on every day but five, all in the 1990s, on which FRED's spread is not the difference of the yields it publishes; the program's source checks compare them again.
+10y–2y ticked at the start; 10y–3m, 30y–10y, 2y–3m, 5y–2y, 30y–2y, 10y–5y, 20y–10y and 20y–5y offered. The Treasury's constant-maturity yields, daily: 10y–2y from 1976-06, 30y–10y from 1977-02, 10y–3m from 1981-09.
+
+The program's 10y–2y and 10y–3m agree with FRED's own spread series ([T10Y2Y](https://fred.stlouisfed.org/series/T10Y2Y), [T10Y3M](https://fred.stlouisfed.org/series/T10Y3M)) on every day but five, all in the 1990s, on which FRED's spread is not the difference of the yields it publishes; the program's source checks compare them again.
 
 ## The United Kingdom
 
-The Bank of England's yields: 20y–10y from 1963 as monthly steps until 1999, daily from 2000; 10y–5y daily from 1993-12.
+10y–5y ticked at the start, the UK having no 2-year; 20y–10y and 20y–5y offered. The Bank of England's yields: 10y–5y daily from 1993-12; 20y–10y from 1963 as monthly steps until 1999, daily from 2000; 20y–5y from 1993-12, a monthly step until 1999.
 
 ## Germany
 
-The Bundesbank's yields: 10y–2y from 1972-09 as month-end steps, daily from 1997-08; 30y–10y from 2000-01, daily from 2000-08.
+10y–2y ticked at the start; 30y–10y, 5y–2y, 30y–2y, 10y–5y, 20y–10y and 20y–5y offered (no 3-month, so no 10y–3m or 2y–3m). The Bundesbank's yields: month-end steps from 1972-09, daily from 1997-08; the pairs with the 20-year from 1986-06, those with the 30-year from 2000-01, daily from 2000-08.
 
 ## France
 
-The Banque de France's yields, daily, 10y–2y ticked at the start: any two of its terms from 2004-11, with the 30-year from 2006-10. Before 2004-11 the 10-year is a monthly average and no other term exists, so no spread is drawn there.
+10y–2y ticked at the start; 30y–10y, 5y–2y, 30y–2y, 10y–5y, 20y–10y and 20y–5y offered (no 3-month). The Banque de France's yields, daily: any two of its terms from 2004-11, the pairs with the 30-year from 2006-10. Before 2004-11 the 10-year is a monthly average and no other term exists, so no spread is drawn there.
 
 ## Portugal
 
-The Banco de Portugal's yields, daily: 10y–2y at the start, from 1993-07, broken where the 2-year has gaps (several months a year before 1998, and 2002-07 to 2003-02). In 2011 and early 2012 the 2-year yielded up to 8 points more than the 10-year.
+10y–2y ticked at the start; 5y–2y and 10y–5y offered. The Banco de Portugal's yields, daily, from 1993-07 (the 5-year's pairs from 1994-02), broken where the 2-year has gaps: several months a year before 1998, and 2002-07 to 2003-02. In 2011 and early 2012 the 2-year yielded up to 8 points more than the 10-year.
+
+## Italy, Spain and the Netherlands
+
+None of their own: each has the 10-year alone, so there is no pair. The spread watched for them is the 10-year over Germany's, which [the comparison chart](?help=compare) draws with Germany as the base nation.
+
+## Japan
+
+10y–2y ticked at the start; 30y–10y, 5y–2y, 30y–2y, 10y–5y, 20y–10y and 20y–5y offered (no 3-month). The Ministry of Finance's yields, daily: 5y–2y from 1974-09-24, 10y–2y and 10y–5y from 1986-07-05, 20y–10y and 20y–5y from 1986-12-01, 30y–10y and 30y–2y from 1999-09-02.
+
+So 5y–2y is the one pair drawn before 1986. There are no quotes during the day for Japan: each spread ends at the Ministry's last day, the day before.
 
 ## How the program keeps these figures
 

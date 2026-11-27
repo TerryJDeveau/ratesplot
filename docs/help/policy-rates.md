@@ -6,11 +6,15 @@ Canada's and the UK's official rate reach their banks' series a day or so after 
 
 ## Canada
 
+target, ticked at the start: the Bank of Canada's Bank Rate from 1935, then from 1996-02-22 its target for the overnight rate; a change announced but not yet in the Bank's series is drawn from the day it takes effect. market (CORRA): the Canadian Overnight Repo Rate Average, daily from 1997-08-12.
+
 - **Official, 1935 to 1996-02-21: the Bank Rate.** The Bank of Canada's Bank Rate, monthly from 1935 (the month's last Wednesday, V122530) and weekly from 1980-01-02 (Wednesdays, V80691310) ([Canadian interest rates and monetary policy variables](https://www.bankofcanada.ca/rates/interest-rates/canadian-interest-rates/)). From 1980-03-19 to 1996-02-21 every weekly value stands a quarter point above that week's average yield at the 3-month treasury-bill auction (measured), so the line changes nearly every week in those years.
 - **Official, from 1996-02-22: the target for the overnight rate.** From that day the Bank Rate stands a quarter point above the target. So to 2000 the program draws the weekly Bank Rate less 0.25, which shows a change from the following Wednesday; from 2001-01-01 the Bank's daily series of the target (CBC20210, [Key interest rate](https://www.bankofcanada.ca/rates/interest-rates/key-interest-rates/)). The weekly Bank Rate less 0.25 equals the daily target on every Wednesday since 2001 (1,346 of them when measured, 2026-10-21), and the program's source checks compare the two again.
 - **Market, from 1997-08-12: CORRA.** The Canadian Overnight Repo Rate Average, a measure of the cost of overnight funding in Canadian dollars secured by Government of Canada bills and bonds, daily ([CORRA](https://www.bankofcanada.ca/rates/interest-rates/corra/)). The Bank publishes it every business day between 9:00 and 11:00 Eastern time; on 2026-10-28 the latest was the 27th's.
 
 ## The United States
+
+target, ticked at the start: the effective federal funds rate's monthly average from 1954-07, the Federal Reserve's target from 1982-09-27 and its target range from 2008-12-16, drawn as a band. market (fed funds): the effective federal funds rate, daily from 1954-07-01. All from FRED.
 
 - **Official, before 1982-09-27: the effective rate's monthly average.** FRED's series of the target begins on that day; before it the chart draws the federal funds effective rate's monthly average, from 1954-07 ([FEDFUNDS](https://fred.stlouisfed.org/series/FEDFUNDS)), each held for its month.
 - **Official, 1982-09-27 to 2008-12-15: the target.** The federal funds target rate, daily ([DFEDTAR](https://fred.stlouisfed.org/series/DFEDTAR), discontinued). Before 1994 FRED takes it from a working paper that reconstructed it (Thornton, Federal Reserve Bank of St. Louis, 2005), from 1994 from the FOMC's meeting transcripts and statements.
@@ -19,10 +23,14 @@ Canada's and the UK's official rate reach their banks' series a day or so after 
 
 ## The United Kingdom
 
+target, ticked at the start: the Bank of England's Bank Rate from 1833, on each day it changed; a change announced is drawn from the day it takes effect. market (SONIA): the Sterling Overnight Index Average, daily from 1997-01-02.
+
 - **Official, from 1833: Bank Rate.** The Bank of England's Bank Rate (Minimum Lending Rate from 1972 to 1981), on each day it changed, from the Bank's millennium dataset ([Research datasets](https://www.bankofengland.co.uk/statistics/research-datasets)) until 1974, then the Bank's daily series from 1975-01-02 (IUDBEDR, [Bank Rate history and data](https://www.bankofengland.co.uk/boeapps/database/Bank-Rate.asp)).
 - **Market, from 1997-01-02: SONIA.** The Sterling Overnight Index Average, the average of the rates banks pay to borrow sterling overnight from other financial institutions and other institutional investors, based on actual transactions, daily ([SONIA](https://www.bankofengland.co.uk/markets/sonia-benchmark)). Each day's rate is in the Bank's database by 10:00 on the business day after it is first published.
 
 ## Germany
+
+target, ticked at the start: the Bundesbank's discount rate from 1948-07 (the Bank deutscher Länder's until 1957), then the ECB's main refinancing rate from 1999-01-01. market (€STR): the euro area's overnight rate, EONIA from 1999-01-04, €STR from 2019-10-01. From 1999 both are the euro area's.
 
 - **Official, 1948-07 to 1998: the Bundesbank's discount rate.** The rate on the days it changed: the Bank deutscher Länder's until the Bundesbank took its place in 1957 ([BBIN1.M.DE.BBK.BBKDIS.DEM.ME](https://www.bundesbank.de/dynamic/action/en/statistics/time-series-databases/time-series-databases/759784/759784?tsId=BBIN1.M.DE.BBK.BBKDIS.DEM.ME)). The series gives each month's end; the day of each change comes from its own notes ("From 31 March 4.00%"), checked against the month ends. Its last change was on 1996-04-19, to 2.50.
 - **Official, from 1999-01-01: the ECB's main refinancing rate.** On the days it changed ([Official interest rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/key_ecb_interest_rates/html/index.en.html)): the rate of the fixed-rate tenders ([MRR_FR](https://data.ecb.europa.eu/data/datasets/FM/FM.B.U2.EUR.4F.KR.MRR_FR.LEV)); from 2000-06-28 to 2008-10-14, while the tenders were variable, the minimum bid rate ([MRR_MBR](https://data.ecb.europa.eu/data/datasets/FM/FM.B.U2.EUR.4F.KR.MRR_MBR.LEV)); fixed again from 2008-10-15. From 2009 the euro area's overnight rate has stood below it on all but 58 of 4,563 days, by a median 0.41 points (measured 2026-10-28): on 2026-10-27 €STR was 2.44 and the main refinancing rate 2.65.
@@ -31,7 +39,17 @@ Canada's and the UK's official rate reach their banks' series a day or so after 
 
 The German rates are the euro area's from 1999.
 
+## France, Portugal, Italy, Spain and the Netherlands
+
+target, ticked at the start: the ECB's main refinancing rate, the euro area's, from 1999-01-01; nothing is drawn before 1999, the program having none of the national central banks' own rates. market (€STR): the euro area's overnight rate, EONIA from 1999-01-04, €STR from 2019-10-01. Both are the lines Germany's chart draws from 1999.
+
+- **Official, from 1999-01-01: the ECB's main refinancing rate.** The euro area's, on the days it changed ([Official interest rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/key_ecb_interest_rates/html/index.en.html)): the rate of the fixed-rate tenders ([MRR_FR](https://data.ecb.europa.eu/data/datasets/FM/FM.B.U2.EUR.4F.KR.MRR_FR.LEV)); from 2000-06-28 to 2008-10-14 the minimum bid rate ([MRR_MBR](https://data.ecb.europa.eu/data/datasets/FM/FM.B.U2.EUR.4F.KR.MRR_MBR.LEV)).
+- **Market, 1999 to 2019: EONIA.** The euro overnight index average, daily from 1999-01-04 ([EON.D.EONIA_TO.RATE](https://data.ecb.europa.eu/data/datasets/EON/EON.D.EONIA_TO.RATE)).
+- **Market, from 2019-10-01: €STR.** The euro short-term rate ([Euro short-term rate](https://www.ecb.europa.eu/stats/financial_markets_and_interest_rates/euro_short-term_rate/html/index.en.html), [EST.B.EU000A2X2A25.WT](https://data.ecb.europa.eu/data/datasets/EST/EST.B.EU000A2X2A25.WT)). At the join the line steps down by 0.085. The panel's box says €STR, though EONIA is drawn before 2019-10.
+
 ## Japan
+
+target and market (call rate) draw the same rate, the Bank of Japan's uncollateralized overnight call rate: daily from 1998-01-05, its monthly averages from 1985-07, and the collateralized call rate's monthly averages from 1960-01. target is ticked at the start; with both ticked the rate is drawn once.
 
 - **Daily from 1998-01-05: the uncollateralized overnight call rate.** The Bank of Japan's average of each day's (its series FM01 STRDCLUCON), its operating target most years since 1995 and since 2024; the Bank publishes no series of the target itself.
 - **1985-07 to 1997-12: its monthly averages** (FM02 STRACLUCON), each drawn across its month.

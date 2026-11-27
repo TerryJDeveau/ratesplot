@@ -255,6 +255,8 @@ from .frontend import (  # noqa: E402
     master_ticked,
     nation_boxes,
     option_help_lines,
+    topic_help_lines,
+    more_section,
     option_of,
     panel_lists,
     png_bytes,
@@ -1875,17 +1877,24 @@ def _help(option: Option, extra: str = "", key: str | None = None) -> str:
     now (``frontend.greyed_reasons``, judged as the controls are laid out),
     and ends with a link to the option's topic where it has one, opened
     alone in a new tab (``_show_help``). ``key`` names a nation's own control
-    ("us:max"), else the option's. Its dollar signs are shown as such
-    (``dollars_shown``): Top's help names "US$ C$".
+    ("us:max"), else the option's: a nation's adds its own lines and More
+    opens the topic at its section (batch 50.3, ``frontend.option_help_lines``).
+    Its dollar signs are shown as such (``dollars_shown``): Top's help names "US$ C$".
     """
     reason = st.session_state.get(_REASONS, {}).get(key or option.name, "")
-    more = f"[More]({help_address(option.topic)})" if option.topic else ""
-    return dollars_shown("\n\n".join(line for line in (*option_help_lines(option), extra, greyed_line(reason), more) if line))
+    more = f"[More]({help_address(option.topic, more_section(option.topic, key, option))})" if option.topic else ""
+    lines = option_help_lines(option, key, markdown=True)
+    return dollars_shown("\n\n".join(line for line in (*lines, extra, greyed_line(reason), more) if line))
 
 
-def _line_help(text: str, topic: str) -> str:
-    """The help of a line under the charts (``frontend.COMMAND_LINE_HELP``, ``WEB_PAGE_HELP``), as a control's: its text, then More."""
-    return dollars_shown(f"{text}\n\n[More]({help_address(topic)})")
+def _line_help(text: str, topic: str, key: str | None = None) -> str:
+    """The help of a line under the charts (``frontend.COMMAND_LINE_HELP``, ``WEB_PAGE_HELP``), as a control's: its text, then More.
+
+    The limits' heading in a nation's section too (``key`` "us:limits"), with the nation's own lines and More at its
+    section (batch 50.3).
+    """
+    lines = topic_help_lines(text, topic, key, markdown=True)
+    return dollars_shown("\n\n".join((*lines, f"[More]({help_address(topic, more_section(topic, key))})")))
 
 
 def _now(key: str, blank: object = False) -> object:
@@ -2408,7 +2417,7 @@ def _nation_controls(bar, nation: Nation) -> None:
         else:
             _choices_control(bar, option, nation)
     # Their heading, with its ⓘ, as in the window (batch 50.1; Terry, 2026-11-26, decision 189).
-    bar.markdown(f"**{LIMITS_HEADING}**", help=_line_help(LIMITS_HELP, LIMITS_TOPIC))
+    bar.markdown(f"**{LIMITS_HEADING}**", help=_line_help(LIMITS_HELP, LIMITS_TOPIC, f"{nation.key}:{LIMITS_TOPIC}"))
     for row in zip(*LIMIT_COLUMNS):  # (max, top), then (min, bottom)
         for column, name in zip(bar.columns(2), row):
             _limit_control(column, nation, by_name(name))
