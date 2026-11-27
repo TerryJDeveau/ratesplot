@@ -1202,13 +1202,117 @@ def choice_refusal(option: Option) -> str:
     return f"At least one of the {option.label.lower()} stays ticked; to draw none, untick “{list_switch(option).label}”."
 
 
-def option_help_lines(option: Option) -> tuple[str, str, str]:
-    """Return an option's group notes, its help text and its command-line spelling."""
-    return (
-        f"{' '.join(GROUPS[option.group].split())}",
-        f"{option.label}: {' '.join(option.help.split())}",
-        f"Command line: {option.usage}",
-    )
+def option_help_lines(option: Option, key: str | None = None, markdown: bool = False) -> tuple[str, ...]:
+    """Return an option's group notes, its help text, its nation's own lines, and its command-line spelling.
+
+    For a control in a nation's panel (``key`` "cdn:yields", batch 50.3;
+    Terry, 2026-11-26, decision 189: "tailor the help to be specific for that
+    nation, whenever appropriate") the paragraph that opens the nation's
+    section of the option's topic follows the help text (``help_section``),
+    as Markdown for the page or plain for the window, and the command line is
+    in that nation's form ("--cdn:yields:LIST"). A control whose meaning is
+    the same for every nation (``GENERAL_IN_PANELS``) keeps the general text.
+    """
+    lines = [f"{' '.join(GROUPS[option.group].split())}", f"{option.label}: {' '.join(option.help.split())}"]
+    nation = key_nation(key)
+    section = more_section(option.topic, key, option)
+    if section is not None and section.paragraph:
+        lines.append(section.paragraph if markdown else section.plain)
+    usage = nation_usage(option, nation) if nation is not None and per_nation(option) else option.usage
+    return (*lines, f"Command line: {usage}")
+
+
+def topic_help_lines(text: str, topic: str, key: str | None = None, markdown: bool = False) -> tuple[str, ...]:
+    """A heading's help with no option (``LIMITS_HELP``), then its nation's own paragraph of ``topic`` in a nation's panel (batch 50.3)."""
+    section = more_section(topic, key)
+    own = (section.paragraph if markdown else section.plain) if section is not None else ""
+    return (text, own) if own else (text,)
+
+
+# A control of a nation's panel whose meaning is every nation's alike keeps the
+# general help, though its topic has nation sections (batch 50.3): Min and Max,
+# on the yield axis in percent, where the limits' nation sections are Top's and
+# Bottom's currency.
+GENERAL_IN_PANELS = frozenset({"min", "max"})
+
+
+@dataclass(frozen=True)
+class HelpSection:
+    """A nation's section of a help topic (batch 50.3): its heading and the paragraph that opens it ("" before a list)."""
+
+    heading: str
+    paragraph: str  # Markdown, as the page shows it
+
+    @property
+    def plain(self) -> str:
+        """The paragraph as the window shows it, its Markdown taken out (``help_blocks``'s spans)."""
+        return "".join(span.text for span in _help_spans(self.paragraph))
+
+    @property
+    def anchor(self) -> str:
+        """The heading's anchor on the page, as Streamlit names it (measured in headless Chrome, ``tools/verify_web.py``)."""
+        return heading_anchor(self.heading)
+
+
+def heading_anchor(heading: str) -> str:
+    """The id Streamlit gives a Markdown heading, which an address's ``#ID`` scrolls to: "The United States", "the-united-states"."""
+    return re.sub(r"[^\w-]", "", re.sub(r"\s+", "-", heading.strip().lower()))
+
+
+def heading_names(heading: str) -> list[str]:
+    """The names a section's heading lists, each without "the": "France, Portugal, Italy, Spain and the Netherlands" gives five."""
+    return [re.sub(r"^the\s+", "", name.strip(), flags=re.IGNORECASE) for name in re.split(r",\s*|\s+and\s+", heading) if name.strip()]
+
+
+def help_section(topic: str | None, nation: Nation | None) -> HelpSection | None:
+    """``nation``'s section of topic ``topic`` (batch 50.3): the first heading under the title that names it, else None.
+
+    A section's heading names its nation as the nation's panel does
+    ("The United States", "Germany"), or names several in one list (the
+    euro nations' policy rates). Its own lines are the paragraph right under
+    the heading, kept in the topic so the facts live in one place (the plan's
+    call, against a table in the code that would drift from the pages); a
+    section that opens with a list has none, and its nation's ⓘ the general
+    text alone.
+    """
+    if not topic or nation is None:
+        return None
+    try:
+        lines = [line.strip() for line in help_text(topic).splitlines()]
+    except KeyError:
+        return None
+    for number, line in enumerate(lines):
+        heading = _HELP_HEADING.fullmatch(line)
+        if not heading or len(heading.group(1)) < 2 or nation.name not in heading_names(heading.group(2)):
+            continue
+        paragraph: list[str] = []
+        for after in lines[number + 1:]:
+            if not after:
+                if paragraph:
+                    break
+            elif _HELP_HEADING.fullmatch(after) or _HELP_ITEM.fullmatch(after):
+                break
+            else:
+                paragraph.append(after)
+        return HelpSection(heading.group(2), " ".join(paragraph))
+    return None
+
+
+def key_nation(key: str | None) -> Nation | None:
+    """The nation whose own control ``key`` names ("us:max", "us:limits"), else None (an option's own name, "yields")."""
+    return next((nation for nation in NATIONS if nation.key == key.split(":", 1)[0]), None) if key and ":" in key else None
+
+
+def more_section(topic: str | None, key: str | None, option: Option | None = None) -> HelpSection | None:
+    """The section More opens ``topic`` at for control ``key`` (batch 50.3): its nation's, in a nation's panel; else None, the top."""
+    if option is not None and option.name in GENERAL_IN_PANELS:
+        return None
+    return help_section(topic, key_nation(key))
+
+
+def nation_usage(option: Option, nation: Nation) -> str:
+    """``option``'s command-line spelling in ``nation``'s form, its prefix before each ("--cdn:yields:LIST / --cdn:y:LIST")."""
+    return " / ".join(f"--{nation.prefix}:{part.strip().removeprefix('--')}" for part in option.usage.split(" / "))
 
 
 # ---------------------------------------------------------------------------
@@ -1243,14 +1347,16 @@ def chart_link(base: str | None, tokens: Sequence[str]) -> str:
     return f"{root}?{urllib.parse.urlencode({ADDRESS_KEY: ' '.join(tokens)})}"
 
 
-def help_address(topic: str) -> str:
+def help_address(topic: str, section: HelpSection | None = None) -> str:
     """The address of topic ``topic``'s help view, relative to the page: ``?help=TOPIC``, the query replaced whole.
 
     The page's More links to it (batch 29.1), and since batch 29.2 a topic
     links to another the same way: the page follows the link as it is, the
-    window opens that topic's own window (``help_link_topic``).
+    window opens that topic's own window (``help_link_topic``). A nation's
+    More (batch 50.3) adds its section's anchor, ``#ID``, which Streamlit's
+    heading scrolls itself to once drawn.
     """
-    return f"?{HELP_KEY}={topic}"
+    return f"?{HELP_KEY}={topic}" + (f"#{section.anchor}" if section is not None else "")
 
 
 def help_link_topic(url: str) -> str | None:
