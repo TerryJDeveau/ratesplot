@@ -618,7 +618,8 @@ def check_grey_values(check: Check) -> None:
     """Batches 7 and 8: a blank field shows the value drawn in grey, hidden by typing, back when cleared, hidden while greyed."""
     with window(f"-u --reg {END}", size=placed("1600x1000")) as w:
         w.pump()
-        check("Start: the automatic start in grey", hint(w, "start") == (True, "2000-01-01"), hint(w, "start"))
+        # 2001-07-31 since batch 50.2 (decision 189): the U.S. 1-month bill's first day, the real yields not holding it back.
+        check("Start: the automatic start in grey", hint(w, "start") == (True, "2001-07-31"), hint(w, "start"))
         check("End typed: no grey value", not hint(w, "end")[0], hint(w, "end"))
         check("the tolerance: 0.3 in grey (batch 8)", hint(w, "regression-tolerance") == (True, "0.3"), hint(w, "regression-tolerance"))
         shown, text = hint(w, "us:max")
@@ -3291,18 +3292,20 @@ def check_batch133(check: Check) -> None:
             return app.choice_editors[f"{nation}:yields"]
 
         pt_boxes = {value: box.get() for value, box in editor("pt").boxes.items()}
-        check("Portugal's panel: its five terms, 2, 5 and 10 ticked at the start (9.13)",
-              pt_boxes == {"2y": True, "3y": False, "5y": True, "7y": False, "10y": True}, pt_boxes)
+        check("Portugal's panel: its five terms, 2, 3 and 10 ticked at the start (9.13, batch 50.2)",
+              pt_boxes == {"2y": True, "3y": True, "5y": False, "7y": False, "10y": True}, pt_boxes)
         fr_boxes = {value: box.get() for value, box in editor("fr").boxes.items()}
-        check("France's panel: its eight terms, the 10-year alone ticked at the start (9.14)",
-              fr_boxes == {"1y": False, "2y": False, "3y": False, "5y": False, "7y": False, "10y": True, "20y": False,
-                           "30y": False}, fr_boxes)
+        check("France's panel: its eight terms, the 1-, 3-, 10- and 30-year ticked at the start (9.14, batch 50.2)",
+              fr_boxes == {"1y": True, "2y": False, "3y": True, "5y": False, "7y": False, "10y": True, "20y": False,
+                           "30y": True}, fr_boxes)
         real = {n: [value for value in editor(n).boxes if value.startswith("r")] for n in listed}
         check("each panel offers its nation's real terms", real == {
             "cdn": ["r30"], "us": ["r5", "r7", "r10", "r20", "r30"], "uk": ["r5", "r7", "r10", "r20", "r30"], "de": ["r5", "r7", "r10"],
             "fr": [], "pt": [], "jp": [],
         }, real)
-        check("none ticked at the start", not any(editor(n).boxes[value].get() for n in listed for value in real[n]))
+        check("r30 alone ticked at the start, where a nation has it (batch 50.2)",
+              {(n, value) for n in listed for value in real[n] if editor(n).boxes[value].get()}
+              == {(n, "r30") for n in listed if "r30" in real[n]})
         check("a box's caption is its term", str(editor("us").widgets[list(editor("us").boxes).index("r10")].cget("text")) == "r10")
         captioned = {n: any(widget.winfo_class() == "TLabel" and str(widget.cget("text")) == "real:" for widget in all_widgets(editor(n).frame))
                      for n in listed}
@@ -3314,7 +3317,8 @@ def check_batch133(check: Check) -> None:
         editor("us").box_changed("r10")
         w.settle()
         config = options.drawn_config(cli.parse_args(["--no-gui", *w.command_tokens()]), "us")
-        check("r10 ticked for the U.S.: written, and drawn with its defaults", config.yield_terms == ("3m", "2y", "5y", "10y", "30y", "r10"), w.command_tokens())
+        check("r10 ticked for the U.S.: written, and drawn with its defaults",
+              config.yield_terms == ("1m", "3m", "1y", "3y", "10y", "30y", "r10", "r30"), w.command_tokens())
         check("the others' charts unchanged", "r10" not in options.drawn_config(cli.parse_args(["--no-gui", *w.command_tokens()]), "cdn").yield_terms)
         lines = {line.get_label(): line for axis in app.figures["us"][0].axes for line in axis.get_lines()}
         check("drawn dashed, in the nominal 10-year's colour", "10-Year Real Yield" in lines and lines["10-Year Real Yield"].get_linestyle() != "-"

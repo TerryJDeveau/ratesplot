@@ -173,7 +173,10 @@ DAY_COUNT_EPOCH = pd.Timestamp("1970-01-01").as_unit("s")
 CASES: dict[str, list[str]] = {
     "ca_1960": ["--gdp", "--debt", "--interest", "--yield", "-c", "-s:1960", "--e:1985", "--policy", "--mo:5"],
     "ca_1995": ["--gdp", "--debt", "--interest", "--yield", "-c", "-s:1995", "--e:2005", "--po:target,market", "--mo:5,3,1,prime"],
-    "ca_2015": ["--gdp", "--debt", "--interest", "--yield", "-c", "-s:2015", "--po:target,market", "--mo:5,3,1,5v,prime", "--sp"],
+    # The 2-year added in batch 50.2 (decision 189): no longer a default term, and the default spread 10y-2y is
+    # explained from the yields drawn.
+    "ca_2015": ["--gdp", "--debt", "--interest", "--yield", "--y:1m,3m,1y,2y,3y,10y,30y,r30", "-c", "-s:2015", "--po:target,market",
+                "--mo:5,3,1,5v,prime", "--sp"],
     # Batch 9.3: every Canadian term across the start of the five new ones
     # (2001-01-02), and spreads of them.
     "ca_terms": ["--gdp", "--debt", "--interest", "-c", "-s:2000-06-01", "--y:1m,3m,6m,1,2,3,5,7,10,30", "--sp:7y-1m,3y-6m"],
